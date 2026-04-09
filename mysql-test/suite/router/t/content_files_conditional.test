@@ -1,0 +1,180 @@
+--source include/have_router.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes to DB_OBJECTS.
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify that request with If-None-Match containing ETag 
+--echo ##    equal to Content File ETag will result in Not Modified(304)
+--echo #
+--echo ## II. Verify that request with If-None-Match containing ETag 
+--echo ##     different than Content File ETag will result in 200 OK
+--echo #
+--echo ## III. Verify that request with If-None-Match containing empty
+--echo ##      value will result in 200 OK
+--echo #
+--echo ## IV. Verify If-None-Match used together with If-Modified-Since
+--echo ##     when If-None-Match matches the Content File ETag
+--echo #
+--echo ## V. Verify If-None-Match used together with If-Modified-Since
+--echo ##    when If-None-Match does not match the Content File ETag
+--echo #
+--echo
+
+
+--source ../include/mrs/start_object_definition.inc
+
+# Service
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+# Content set
+--let $mrs_add_content_set_path=/set
+--let $mrs_add_content_set_enabled=1
+--source ../include/mrs/content_set/add.inc
+
+# Content files
+--let $mrs_add_content="first file"
+--let $mrs_add_content_file_path=/first.html
+--source ../include/mrs/content_file/add.inc
+
+# Workaround: the end_object_definition, needs at least one db_object
+# to sync to its refresh.
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/obj
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+# Response containing ETag redirected to a file
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --display HEADER,BODY
+  --response-type RAW > $MYSQL_TMP_DIR/output.txt;
+
+# Get ETag value fof first.html and create a header file to be used later
+
+--perl
+my $tmpdir = $ENV{MYSQL_TMP_DIR} or die "Need $MYSQL_TMP_DIR";
+my $file = "$tmpdir/output.txt";
+
+open(my $fh, "<", $file) or die "Cannot open file: $!";
+
+my $etag;
+while (my $line = <$fh>) {
+    chomp($line);
+    if ($line =~ /^ETag\s*->\s*(\S+)/) {
+        $etag = $1;
+        last;
+    }
+}
+close($fh);
+
+my $output_file = "$tmpdir/header_session.dat";
+if ($etag) {
+    open(my $out_fh, ">", $output_file) or die "Cannot open file $output_file for writing: $!";
+    print $out_fh "header If-None-Match: $etag\n";  # file used to pass the header value
+    close($out_fh);
+} else {
+    print "ETag not found in the file\n";
+}
+EOF
+
+--echo #
+--echo # I
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/header_session.dat
+  --expected-status 304;
+
+
+--echo #
+--echo # II
+
+--perl
+my $tmpdir = $ENV{MYSQL_TMP_DIR} or die "Need $MYSQL_TMP_DIR";
+open(FILE, ">", "$tmpdir/header_not_matched.dat") or die;
+print FILE "header If-None-Match: NOTMATCHED";
+close(FILE);
+EOF
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/header_not_matched.dat
+  --expected-status 200;
+
+
+--echo #
+--echo # III
+
+--perl
+my $tmpdir = $ENV{MYSQL_TMP_DIR} or die "Need $MYSQL_TMP_DIR";
+open(FILE, ">", "$tmpdir/empty_match.dat") or die;
+print FILE "header If-None-Match: ";
+close(FILE);
+EOF
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/empty_match.dat
+  --expected-status 200;
+
+
+--echo #
+--echo # IV
+
+--perl
+my $tmpdir = $ENV{MYSQL_TMP_DIR} or die "Need $MYSQL_TMP_DIR";
+open(my $out_fh, ">>", "$tmpdir/header_session.dat") or die;
+print $out_fh "header If-Modified-Since: Thu, 27 Feb 2020 17:34:34 GMT";
+close($out_fh);
+EOF
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/header_session.dat
+  --expected-status 304;
+
+
+--echo #
+--echo # V
+
+--perl
+my $tmpdir = $ENV{MYSQL_TMP_DIR} or die "Need $MYSQL_TMP_DIR";
+open(my $out_fh, ">>", "$tmpdir/header_not_matched.dat") or die;
+print $out_fh "header If-Modified-Since: Thu, 27 Feb 2020 17:34:34 GMT";
+close($out_fh);
+EOF
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/header_not_matched.dat
+  --expected-status 200;
+
+# Cleanup
+--let $cleanup_arg_mrs_existing_service=/svc1/sch/first.html
+--source ../include/mrs/cleanup.inc
+--remove_file $MYSQL_TMP_DIR/header_not_matched.dat
+--remove_file $MYSQL_TMP_DIR/empty_match.dat
+--remove_file $MYSQL_TMP_DIR/header_session.dat
+--remove_file $MYSQL_TMP_DIR/output.txt

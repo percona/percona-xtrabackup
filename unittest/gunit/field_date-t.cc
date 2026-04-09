@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,14 +60,14 @@ const sql_mode_t FieldDateTest::strict_modes[no_modes] = {
 const type_conversion_status FieldDateTest::nozero_expected_status[] = {
     TYPE_ERR_BAD_VALUE, TYPE_ERR_BAD_VALUE, TYPE_ERR_BAD_VALUE};
 
-class Mock_field_date : public Field_newdate {
+class Mock_field_date : public Field_date {
  public:
   Mock_field_date()
-      : Field_newdate(nullptr,                    // ptr_arg
-                      &Field::dummy_null_buffer,  // null_ptr_arg
-                      1,                          // null_bit_arg
-                      Field::NONE,                // auto_flags_arg
-                      "field_name")               // field_name_arg
+      : Field_date(nullptr,                    // ptr_arg
+                   &Field::dummy_null_buffer,  // null_ptr_arg
+                   1,                          // null_bit_arg
+                   Field::NONE,                // auto_flags_arg
+                   "field_name")               // field_name_arg
   {}
 
   void make_writable() { bitmap_set_bit(table->write_set, field_index()); }

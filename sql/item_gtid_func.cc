@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,11 +24,15 @@
 
 #include <algorithm>
 
-#include "include/scope_guard.h"  //Scope_guard
-#include "sql/derror.h"           // ER_THD
-#include "sql/rpl_mi.h"           // Master_info
-#include "sql/rpl_msr.h"          // channel_map
-#include "sql/sql_class.h"        // THD
+#include "include/scope_guard.h"   //Scope_guard
+#include "include/sql_string.h"    // to_string_view
+#include "mysql/gtids/gtids.h"     // Gtid_set
+#include "sql/derror.h"            // ER_THD
+#include "sql/lib_glue/gtids.h"    // git_set_from_text_report_errors
+#include "sql/lib_glue/strconv.h"  // out_str_growable(String &)
+#include "sql/rpl_mi.h"            // Master_info
+#include "sql/rpl_msr.h"           // channel_map
+#include "sql/sql_class.h"         // THD
 #include "sql/sql_lex.h"
 
 using std::max;
@@ -127,9 +131,10 @@ longlong Item_wait_for_executed_gtid_set::val_int() {
 */
 longlong Item_func_gtid_subset::val_int() {
   DBUG_TRACE;
+  using mysql::utils::Return_status;
   assert(fixed);
 
-  // Evaluate strings without lock
+  // Evaluate strings.
   String *string1 = args[0]->val_str(&buf1);
   if (string1 == nullptr) {
     return error_int();
@@ -139,25 +144,19 @@ longlong Item_func_gtid_subset::val_int() {
     return error_int();
   }
 
-  const char *charp1 = string1->c_ptr_safe();
-  assert(charp1 != nullptr);
-  const char *charp2 = string2->c_ptr_safe();
-  assert(charp2 != nullptr);
-  int ret = 1;
-  enum_return_status status;
+  // Convert to sets
+  mysql::gtids::Gtid_set set1;
+  mysql::gtids::Gtid_set set2;
+  if (gtid_set_decode_text_report_errors(to_string_view(*string1), set1) ==
+      Return_status::error)
+    return 1;
+  if (gtid_set_decode_text_report_errors(to_string_view(*string2), set2) ==
+      Return_status::error)
+    return 1;
 
-  Tsid_map tsid_map(nullptr /*no rwlock*/);
-  // compute sets while holding locks
-  const Gtid_set sub_set(&tsid_map, charp1, &status);
-  if (status == RETURN_STATUS_OK) {
-    const Gtid_set super_set(&tsid_map, charp2, &status);
-    if (status == RETURN_STATUS_OK) {
-      ret = sub_set.is_subset(&super_set) ? 1 : 0;
-    }
-  }
-
+  // Compute the result.
   null_value = false;
-  return ret;
+  return mysql::sets::is_subset(set1, set2) ? 1 : 0;
 }
 
 bool Item_func_gtid_subtract::resolve_type(THD *thd) {
@@ -180,40 +179,36 @@ bool Item_func_gtid_subtract::resolve_type(THD *thd) {
 
 String *Item_func_gtid_subtract::val_str_ascii(String *str) {
   DBUG_TRACE;
+  static constexpr auto return_ok = mysql::utils::Return_status::ok;
   assert(fixed);
 
-  String *str1 = args[0]->val_str_ascii(&buf1);
-  if (str1 == nullptr) {
+  // Evaluate strings.
+  String *string1 = args[0]->val_str_ascii(&buf1);
+  if (string1 == nullptr) return error_str();
+  String *string2 = args[1]->val_str_ascii(&buf2);
+  if (string2 == nullptr) return error_str();
+
+  // Convert to sets
+  mysql::gtids::Gtid_set set1;
+  mysql::gtids::Gtid_set set2;
+  if (gtid_set_decode_text_report_errors(to_string_view(*string1), set1) !=
+      return_ok) {
     return error_str();
   }
-  String *str2 = args[1]->val_str_ascii(&buf2);
-  if (str2 == nullptr) {
+  if (gtid_set_decode_text_report_errors(to_string_view(*string2), set2) !=
+      return_ok) {
     return error_str();
   }
 
-  const char *charp1 = str1->c_ptr_safe();
-  assert(charp1 != nullptr);
-  const char *charp2 = str2->c_ptr_safe();
-  assert(charp2 != nullptr);
-
-  enum_return_status status;
-
-  Tsid_map tsid_map(nullptr /*no rwlock*/);
-  // compute sets while holding locks
-  Gtid_set set1(&tsid_map, charp1, &status);
-  if (status == RETURN_STATUS_OK) {
-    const Gtid_set set2(&tsid_map, charp2, &status);
-    size_t length;
-    // subtract, save result, return result
-    if (status == RETURN_STATUS_OK) {
-      set1.remove_gtid_set(&set2);
-      if (!str->mem_realloc((length = set1.get_string_length()) + 1)) {
-        set1.to_string(str->ptr());
-        str->length(length);
-        null_value = false;
-        return str;
-      }
-    }
+  // Compute the result
+  if (set1.inplace_subtract(set2) != return_ok) {
+    my_error(ER_OUT_OF_RESOURCES, MYF(0));
+    return error_str();
   }
-  return error_str();
+
+  if (mysql::strconv::encode_text(out_str_growable(*str), set1) != return_ok) {
+    return error_str();
+  }
+  null_value = false;
+  return str;
 }

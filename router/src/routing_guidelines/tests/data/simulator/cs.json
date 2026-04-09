@@ -1,0 +1,169 @@
+{
+"version": "1.0",
+"destinations": [
+    {
+      "name": "globalPrimary",
+      "match": "$.server.memberRole = PRIMARY and $.server.clusterRole = PRIMARY"
+    },
+    {
+        "name": "localSecondaries",
+        "match": "$.server.memberRole = SECONDARY and network($.server.address, 24) = network($.router.bindAddress, 24)"
+    },
+    {
+        "name": "remoteSecondaries",
+        "match": "$.server.memberRole = SECONDARY and network($.server.address, 24) <> network($.router.bindAddress, 24)"
+    },
+    {
+        "name": "primaryClusterPrimary",
+        "match": "$.server.memberRole = PRIMARY and $.server.clusterRole = PRIMARY"
+    },
+    {
+        "name": "primaryClusterSecondaries",
+        "match": "$.server.memberRole = SECONDARY and $.server.clusterRole = PRIMARY"
+    },
+    {
+        "name": "serverB",
+        "match": "$.server.address = '192.168.5.5'"
+    }
+],
+"routes": [
+    {
+      "name": "192.168.1.13",
+      "match": "$.session.sourceIP = '192.168.1.13'",
+      "destinations":  [{"classes": ["serverB"], "strategy": "first-available", "priority": 0}]
+    },
+    {
+      "name": "app_sync",
+      "match": "$.session.user = 'app_sync'",
+      "destinations": [{"classes": ["primaryClusterSecondaries"], "strategy": "round-robin", "priority": 0},
+                       {"classes": ["primaryClusterPrimary"], "strategy": "first-available", "priority": 1}]
+    },
+    {
+      "name": "reads",
+      "match": "$.session.targetPort in ($.router.port.ro)",
+      "destinations": [{"classes": ["localSecondaries"], "strategy": "round-robin", "priority": 0},
+                       {"classes": ["remoteSecondaries"], "strategy": "round-robin", "priority": 1}]
+    },
+    {
+      "name": "writes",
+      "match": "$.session.targetPort in ($.router.port.rw)",
+      "destinations": [{"classes": ["globalPrimary"], "strategy": "first-available", "priority": 0}]
+    }
+]
+}
+{
+  "type": "router",
+  "port.rw": 3306,
+  "port.ro": 3307,
+  "port.rw_split": 3308,
+  "address": "123.123.123.1",
+  "localCluster": "clusterA",
+  "hostname": "mysql1",
+  "tags.cat": "tiger"
+}
+
+# Clasify destinations
+{
+  "type": "destination:globalPrimary,primaryClusterPrimary",
+  "uuid": "GP",
+  "memberRole": "PRIMARY",
+  "port": 3306,
+  "label": "No. 1",
+  "address": "123.100.123.12",
+  "version": 80023,
+  "clusterName": "TheCluster",
+  "clusterSetName": "1",
+  "clusterRole": "PRIMARY"
+}
+{
+  "type": "destination:remoteSecondaries,primaryClusterSecondaries",
+  "uuid": "RS",
+  "memberRole": "SECONDARY",
+  "port": 3306,
+  "label": "No. 4",
+  "address": "123.1.123.12",
+  "version": 80023,
+  "clusterName": "TheCluster",
+  "clusterSetName": "1",
+  "clusterRole": "PRIMARY"
+}
+{
+  "type": "destination:localSecondaries",
+  "uuid": "LS",
+  "memberRole": "SECONDARY",
+  "port": 3306,
+  "label": "No. 3",
+  "address": "123.123.123.12",
+  "version": 80023,
+  "clusterName": "TheBackup",
+  "clusterSetName": "2",
+  "clusterRole": "REPLICA"
+}
+{
+  "type": "destination:serverB",
+  "uuid": "SB",
+  "memberRole": "PRIMARY",
+  "port": 3306,
+  "label": "No. 7",
+  "address": "192.168.5.5",
+  "version": 80023,
+  "tags.firepower": "12",
+  "tags.shield": "7",
+  "clusterName": "TheBackup",
+  "clusterSetName": "2",
+  "clusterRole": "REPLICA"
+}
+{
+  "type": "destination:remoteSecondaries,primaryClusterSecondaries",
+  "uuid": "GP",
+  "memberRole": "SECONDARY"
+}
+{
+  "type": "destination:globalPrimary,primaryClusterPrimary",
+  "uuid": "RS",
+  "memberRole": "PRIMARY"
+}
+{
+  "type": "destination:globalPrimary,primaryClusterPrimary,serverB",
+  "uuid": "SB",
+  "clusterRole": "PRIMARY"
+}
+
+# clasify session
+{
+  "type": "source:app_sync",
+  "serial": 1,
+  "targetPort": 3306,
+  "targetIp": "123.123.123.123",
+  "sourceIp": "7.7.7.7",
+  "user": "app_sync",
+  "schema": "mystuff"
+}
+{
+  "type": "source:reads",
+  "serial": 2,
+  "targetPort": 3307,
+  "targetIp": "123.123.123.123",
+  "sourceIp": "7.7.7.7",
+  "user": "youknowwho",
+  "schema": "mystuff"
+}
+{
+  "type": "source:writes",
+  "serial": 2,
+  "targetPort": 3306
+}
+{
+  "type": "source:192.168.1.13",
+  "serial": 3,
+  "targetPort": 3306,
+  "targetIp": "123.123.123.123",
+  "sourceIp": "192.168.1.13",
+  "user": "youknowwho",
+  "schema": "mystuff"
+}
+{
+  "type": "source:reads",
+  "serial": 2,
+  "targetPort": 3307
+}

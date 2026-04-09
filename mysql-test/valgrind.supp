@@ -1,4 +1,4 @@
-# Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,19 @@
 }
 
 {
-   semi_sync_master_plugin_init
+   pthread allocate_tls timer memory loss
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   ...
+   fun:_dl_allocate_tls
+   fun:pthread_create*
+   ...
+   fun:timer_create*
+}
+
+{
+   semi_sync_source_plugin_init
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:malloc
@@ -2773,4 +2785,44 @@
    fun:_ZN4absl12lts_2023080212log_internal10LogMessage9SendToLogEv
    fun:_ZN4absl12lts_2023080212log_internal10LogMessageD1Ev
    ...
+}
+
+{
+   mysqltest_do_shutdown_timeout
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   ...
+   fun:allocate
+   ...
+   fun:_ZL18do_shutdown_serverP10st_command
+   fun:main
+}
+
+# This leak occurs when 3. party lib linked with plugin or component uses TLS
+{
+   supress_tls_allocations
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   fun:UnknownInlinedFun
+   fun:allocate_dtv_entry
+   fun:allocate_and_init
+   fun:tls_get_addr_tail.isra.0
+   fun:__tls_get_addr
+   obj:*
+   obj:*
+   obj:*
+   ...
+}
+# This leak occurs in mysqltest, so it is not relevant for mysqld, its plugins and components
+{
+   supress_shutdown_from_mysqltest
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:_Znwm
+   fun:_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE9_M_mutateEmmPKcm
+   fun:_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE10_M_replaceEmmPKcm.isra.0
+   fun:_Z16query_get_stringP5MYSQLPKciPNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE
+   fun:_ZL18do_shutdown_serverP10st_command
+   fun:main
 }

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -33,11 +33,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "ut0list.h"
 
-#include <stddef.h>
+#include <cstddef>
 
 /** Create a new list.
  @return list */
-ib_list_t *ib_list_create(void) {
+ib_list_t *ib_list_create() {
   return (static_cast<ib_list_t *>(
       ut::zalloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, sizeof(ib_list_t))));
 }

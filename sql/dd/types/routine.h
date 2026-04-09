@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -85,7 +85,7 @@ class Routine : virtual public Entity_object {
   virtual bool update_aux_key(Aux_key *) const { return true; }
 
  public:
-  enum enum_routine_type { RT_FUNCTION = 1, RT_PROCEDURE };
+  enum enum_routine_type { RT_FUNCTION = 1, RT_PROCEDURE, RT_LIBRARY };
 
   enum enum_sql_data_access {
     SDA_CONTAINS_SQL = 1,
@@ -214,6 +214,15 @@ class Routine : virtual public Entity_object {
   virtual Parameter *add_parameter() = 0;
 
   virtual const Parameter_collection &parameters() const = 0;
+
+  /////////////////////////////////////////////////////////////////////////
+  // options.
+  /////////////////////////////////////////////////////////////////////////
+
+  virtual const Properties &options() const = 0;
+  virtual Properties &options() = 0;
+  virtual bool set_options(const Properties &options) = 0;
+  virtual bool set_options(const String_type &options_raw) = 0;
 
   /**
     Allocate a new object graph and invoke the copy constructor for

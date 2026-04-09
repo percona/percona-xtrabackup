@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -63,8 +63,8 @@ struct Ndb_free_list_t {
 
  private:
   /** No copying.*/
-  Ndb_free_list_t(const Ndb_free_list_t &);
-  Ndb_free_list_t &operator=(const Ndb_free_list_t &);
+  Ndb_free_list_t(const Ndb_free_list_t &) = delete;
+  Ndb_free_list_t &operator=(const Ndb_free_list_t &) = delete;
 
   /**
    * update_stats() is called whenever a new local peak of 'm_used_cnt'
@@ -209,7 +209,6 @@ class NdbImpl : public trp_client {
   */
   static inline void setNdbError(Ndb &ndb, int code) {
     ndb.theError.code = code;
-    return;
   }
 
   bool forceShortRequests;
@@ -220,6 +219,12 @@ class NdbImpl : public trp_client {
   }
 
   Uint32 get_waitfor_timeout() const {
+    DBUG_EXECUTE_IF("ndb_reduced_api_protocol_timeout", {
+      // Value > 1000 millis as check_send_timeout() has coarse
+      // resolution optimisation
+      DBUG_PRINT("info", ("Reducing timeout base to 2000 millis"));
+      return 2000;
+    });
     return m_ndb_cluster_connection.m_ndbapiconfig.m_waitfor_timeout;
   }
   const NdbApiConfig &get_ndbapi_config_parameters() const {

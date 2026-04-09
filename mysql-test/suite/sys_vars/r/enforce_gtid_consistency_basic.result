@@ -2,7 +2,8 @@ RESET BINARY LOGS AND GTIDS;
 SET @start_global_value = @@global.enforce_gtid_consistency;
 SELECT @start_global_value;
 @start_global_value
-OFF
+ON
+include/rpl/set_gtid_mode_off.inc
 select @@global.enforce_gtid_consistency;
 @@global.enforce_gtid_consistency
 OFF
@@ -154,3 +155,4 @@ SET SESSION GTID_NEXT = 'AUTOMATIC';
 SET GLOBAL GTID_MODE = 'off';
 DROP TABLE t1;
 set global enforce_gtid_consistency= @start_global_value;
+include/rpl/set_gtid_mode_on.inc

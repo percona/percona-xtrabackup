@@ -108,6 +108,7 @@ EXPLAIN FORMAT = tree
 --echo #
 --echo # Bug#33905918 Server crashes after using explain of a query with except/intersect.
 --echo #
+SET explain_json_format_version = 1;
 EXPLAIN SELECT * FROM r UNION ALL SELECT * FROM s;
 EXPLAIN SELECT * FROM r EXCEPT ALL SELECT * FROM s;
 EXPLAIN SELECT * FROM r INTERSECT ALL SELECT * FROM s;
@@ -157,6 +158,7 @@ EXPLAIN FORMAT = json
    (SELECT * FROM r EXCEPT DISTINCT SELECT * FROM s) UNION DISTINCT
    (SELECT * FROM t INTERSECT DISTINCT SELECT * FROM t);
 
+SET explain_json_format_version = DEFAULT;
 DROP TABLE r, s, t;
 
 --echo #

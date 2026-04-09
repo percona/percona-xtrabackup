@@ -36,19 +36,34 @@ CREATE TABLE t1 ( a INT, KEY (a) );
 CREATE TABLE t2 ( a INT, KEY (a) INVISIBLE );
 
 INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
 INSERT INTO t2 SELECT * FROM t1;
 
 ANALYZE TABLE t1, t2;
 
-EXPLAIN SELECT a FROM t1;
-ALTER TABLE t1 ALTER INDEX a INVISIBLE;
-EXPLAIN SELECT a FROM t1;
-ALTER TABLE t1 ALTER INDEX a VISIBLE;
-EXPLAIN SELECT a FROM t1;
+--replace_regex $elide_costs
+--replace_column 10 X
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
 
-EXPLAIN SELECT a FROM t2;
+ALTER TABLE t1 ALTER INDEX a INVISIBLE;
+--replace_regex $elide_costs
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
+
+ALTER TABLE t1 ALTER INDEX a VISIBLE;
+--replace_regex $elide_costs
+--replace_column 10 X
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
+
+--replace_regex $elide_costs
+EXPLAIN SELECT a FROM t2 WHERE a > 3;
+
 ALTER TABLE t2 ALTER INDEX a VISIBLE;
-EXPLAIN SELECT a FROM t2;
+--replace_regex $elide_costs
+--replace_column 10 X
+EXPLAIN SELECT a FROM t2 WHERE a > 3;
 
 DROP TABLE t1, t2;
 
@@ -224,6 +239,7 @@ DROP TABLE t1, t2, t3, t4, t5;
 CREATE TABLE t1 ( a INT NOT NULL, UNIQUE KEY (a) );
 --error ER_PK_INDEX_CANT_BE_INVISIBLE
 ALTER TABLE t1 ALTER INDEX a INVISIBLE;
+--replace_regex $elide_costs
 EXPLAIN
 SELECT * FROM t1;
 SELECT * FROM t1;
@@ -263,6 +279,7 @@ DROP TABLE t1, t2;
 
 CREATE TEMPORARY TABLE t1 ( a INT, KEY (a) INVISIBLE );
 SHOW INDEXES FROM t1;
+--replace_regex $elide_costs
 EXPLAIN SELECT a FROM t1;
 DROP TABLE t1;
 
@@ -299,11 +316,13 @@ WHERE ST_Within(g,
 
 --echo # There appears to be a bug causing the cardinality number to fluctuate
 --echo # for spatial indexes.
+--replace_regex $elide_costs
 --replace_column 10 X
 --eval $query
 ALTER TABLE t1 ALTER INDEX g INVISIBLE;
 --replace_column 7 X
 SHOW INDEXES FROM t1;
+--replace_regex $elide_costs
 --replace_column 10 X
 --eval $query
 
@@ -334,19 +353,32 @@ if (!$invisible_indexes_skip_spatial)
 --echo # Test of invisible fulltext indexes.
 --echo #
 CREATE TABLE t1 (a VARCHAR(200), b TEXT, FULLTEXT (a,b));
-INSERT INTO t1 VALUES('Some data', 'for full-text search');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and sixty-seven');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and sixty-eight');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and sixty-nine');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and seventy');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and seventy-one');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and seventy-two');
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
 ANALYZE TABLE t1;
 
-let $query1= SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("collections");
+let $query1= SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("sixty");
 let $query2=
-SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("collections" IN BOOLEAN MODE);
+SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("sixty" IN BOOLEAN MODE);
 
+--replace_regex $elide_costs
 --eval EXPLAIN $query1
+--replace_regex $elide_costs
 --eval EXPLAIN $query2
 ALTER TABLE t1 ALTER INDEX a INVISIBLE;
 SHOW INDEXES FROM t1;
+--replace_regex $elide_costs
 --disable_abort_on_error
 --eval EXPLAIN $query1
+--replace_regex $elide_costs
 --eval EXPLAIN $query2
 --eval $query1
 --eval $query2
@@ -363,12 +395,17 @@ if (!$invisible_indexes_skip_non_pk_autoincrement)
 --echo #
 CREATE TABLE t1 ( a INT AUTO_INCREMENT, KEY ( a ) );
 INSERT INTO t1 VALUES (), (), ();
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
 ANALYZE TABLE t1;
 
-EXPLAIN SELECT a FROM t1;
+--replace_regex $elide_costs
+EXPLAIN SELECT a FROM t1 WHERE a > 4;
 ALTER TABLE t1 ALTER INDEX a INVISIBLE;
 SHOW INDEXES FROM t1;
-EXPLAIN SELECT a FROM t1;
+--replace_regex $elide_costs
+EXPLAIN SELECT a FROM t1 WHERE a > 4;
 
 DROP TABLE t1;
 }

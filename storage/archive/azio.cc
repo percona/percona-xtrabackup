@@ -8,16 +8,16 @@
  * For conditions of distribution and use, see copyright notice in zlib.h
  *
  * This file was modified by Oracle on 2015-01-23.
- * Modifications Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Modifications Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  */
 
 /* @(#) $Id$ */
 
-#include <errno.h>
 #include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 
 #include "my_byteorder.h"
 #include "my_dbug.h"
@@ -63,8 +63,8 @@ extern "C" PSI_file_key arch_key_file_data;
 */
 int az_open(azio_stream *s, const char *path, int Flags, File fd) {
   int err;
-  int level = Z_DEFAULT_COMPRESSION; /* compression level */
-  int strategy = Z_DEFAULT_STRATEGY; /* compression strategy */
+  int const level = Z_DEFAULT_COMPRESSION; /* compression level */
+  int const strategy = Z_DEFAULT_STRATEGY; /* compression strategy */
 
   memset(s, 0, sizeof(azio_stream));
   s->stream.next_in = s->inbuf;
@@ -231,7 +231,8 @@ int get_byte(azio_stream *s) {
     if (s->stream.avail_in == 0) {
       s->z_eof = 1;
       return EOF;
-    } else if (s->stream.avail_in == (uInt)-1) {
+    }
+    if (s->stream.avail_in == (uInt)-1) {
       s->z_eof = 1;
       s->z_err = Z_ERRNO;
       return EOF;
@@ -392,7 +393,7 @@ int destroy(azio_stream *s) {
   azread returns the number of bytes actually read (0 for end of file).
 */
 size_t ZEXPORT azread(azio_stream *s, voidp buf, size_t len, int *error) {
-  Bytef *start = (Bytef *)buf; /* starting point for crc computation */
+  auto *start = (Bytef *)buf; /* starting point for crc computation */
   Byte *next_out; /* == stream.next_out but not forced far (for MSDOS) */
   *error = 0;
 
@@ -600,14 +601,13 @@ int ZEXPORT azflush(azio_stream *s, int flush) {
     read_header(s, buffer); /* skip the .az header */
 
     return Z_OK;
-  } else {
-    s->forced_flushes++;
-    err = do_flush(s, flush);
-
-    if (err) return err;
-    my_sync(s->file, MYF(0));
-    return s->z_err == Z_STREAM_END ? Z_OK : s->z_err;
   }
+  s->forced_flushes++;
+  err = do_flush(s, flush);
+
+  if (err) return err;
+  my_sync(s->file, MYF(0));
+  return s->z_err == Z_STREAM_END ? Z_OK : s->z_err;
 }
 
 /* ===========================================================================
@@ -732,7 +732,7 @@ void putLong(File file, uLong x) {
   of error.
 */
 uLong getLong(azio_stream *s) {
-  uLong x = (uLong)get_byte(s);
+  auto x = (uLong)get_byte(s);
   int c;
 
   x += ((uLong)get_byte(s)) << 8;

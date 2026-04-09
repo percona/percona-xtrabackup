@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ bool printUTIL_PREPARE_REQ(FILE *out, const Uint32 *data, Uint32 len,
     return false;
   }
 
-  const UtilPrepareReq *sig = (const UtilPrepareReq *)data;
+  const auto *sig = (const UtilPrepareReq *)data;
   fprintf(out, " senderRef: H'%.8x senderData: H'%.8x schemaTransId: H'%.8x\n",
           sig->senderRef, sig->senderData, sig->schemaTransId);
 
@@ -46,7 +46,7 @@ bool printUTIL_PREPARE_CONF(FILE *out, const Uint32 *data, Uint32 len,
     return false;
   }
 
-  const UtilPrepareConf *sig = (const UtilPrepareConf *)data;
+  const auto *sig = (const UtilPrepareConf *)data;
   fprintf(out, " senderData: H'%.8x prepareId: %d\n", sig->senderData,
           sig->prepareId);
   return true;
@@ -59,7 +59,7 @@ bool printUTIL_PREPARE_REF(FILE *out, const Uint32 *data, Uint32 len,
     return false;
   }
 
-  const UtilPrepareRef *sig = (const UtilPrepareRef *)data;
+  const auto *sig = (const UtilPrepareRef *)data;
   fprintf(out, " senderData: H'%.8x, ", sig->senderData);
   fprintf(out, " error: %d, ", sig->errorCode);
 

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,11 +26,11 @@
 #include <kernel_types.h>
 #include <ndb_global.h>
 #include <ndb_limits.h>
-#include <stdlib.h>
-#include <string.h>
 #include <ConfigObject.hpp>
 #include <ConfigSection.hpp>
 #include <Properties.hpp>
+#include <cstdlib>
+#include <cstring>
 #include "util/require.h"
 #ifndef _WIN32
 #include <arpa/inet.h>
@@ -89,7 +89,7 @@ ConfigSection::~ConfigSection() {
     /* Neither invalid config section or pointer sections should have any
      * entries.
      */
-    require(m_entry_array.size() == 0);
+    require(m_entry_array.empty());
     return;
   }
   require(m_entry_array.size() == m_num_entries);
@@ -221,8 +221,8 @@ void ConfigSection::Entry::create_v1_entry(Uint32 **v1_ptr,
     }
     case Int64TypeId: {
       Uint64 val = m_int64;
-      Uint32 low = Uint32(val & 0xFFFFFFFF);
-      Uint32 high = Uint32(val >> 32);
+      Uint32 low = val & 0xFFFFFFFF;
+      Uint32 high = val >> 32;
       create_v1_entry_key(v1_ptr, Int64TypeId, m_key, section_id);
       create_int_value(v1_ptr, high);
       create_int_value(v1_ptr, low);
@@ -259,8 +259,8 @@ void ConfigSection::Entry::create_v2_entry(Uint32 **v2_ptr) const {
     }
     case Int64TypeId: {
       Uint64 val = m_int64;
-      Uint32 low = Uint32(val & 0xFFFFFFFF);
-      Uint32 high = Uint32(val >> 32);
+      Uint32 low = val & 0xFFFFFFFF;
+      Uint32 high = val >> 32;
       create_v2_entry_key(v2_ptr, Int64TypeId, m_key);
       create_int_value(v2_ptr, high);
       create_int_value(v2_ptr, low);
@@ -290,7 +290,7 @@ void ConfigSection::Entry::create_v2_entry(Uint32 **v2_ptr) const {
 Uint32 ConfigSection::Entry::unpack_entry(const Uint32 **data) {
   Uint32 key = read_v2_int_value(data);
   Uint32 key_type = (key >> V2_TYPE_SHIFT) & V2_TYPE_MASK;
-  ValueType type = (ValueType)key_type;
+  auto type = (ValueType)key_type;
   key = (key >> V2_KEY_SHIFT) & V2_KEY_MASK;
   m_key = key;
   m_type = type;
@@ -337,9 +337,11 @@ bool ConfigSection::Entry::equal(Entry *cmp) const {
   }
   if (m_type == IntTypeId) {
     return (m_int == cmp->m_int);
-  } else if (m_type == Int64TypeId) {
+  }
+  if (m_type == Int64TypeId) {
     return (m_int64 == cmp->m_int64);
-  } else if (m_type == StringTypeId) {
+  }
+  if (m_type == StringTypeId) {
     Uint32 first_len = strlen(m_string);
     Uint32 second_len = strlen(cmp->m_string);
     if (first_len != second_len) {
@@ -430,10 +432,8 @@ Uint32 ConfigSection::get_section_type_value() {
 static bool compare_entry_key(ConfigSection::Entry *first,
                               ConfigSection::Entry *second) {
   if (first == second) return false;
-  if (first->m_key < second->m_key)
-    return true;
-  else if (first->m_key > second->m_key)
-    return false;
+  if (first->m_key < second->m_key) return true;
+  if (first->m_key > second->m_key) return false;
   /* Two entries should never have the same key */
   require(false);
   return false;
@@ -543,7 +543,6 @@ void ConfigSection::create_v1_section(Uint32 **v1_ptr, Uint32 section_id) {
     create_v1_entry_key(v1_ptr, IntTypeId, CONFIG_KEY_PARENT, section_id);
     create_int_value(v1_ptr, 0);
   }
-  return;
 }
 
 void ConfigSection::create_v2_section(Uint32 **v2_ptr) const {
@@ -717,7 +716,7 @@ void ConfigSection::set_node_ids(ConfigSection::Entry *entry) {
 
 ConfigSection::Entry *ConfigSection::copy_entry(
     const ConfigSection::Entry *dup_entry) const {
-  ConfigSection::Entry *new_entry = new Entry;
+  auto *new_entry = new Entry;
   *new_entry = *dup_entry;
   if (dup_entry->m_type == StringTypeId) {
     const char *str = strdup(dup_entry->m_string);
@@ -770,7 +769,7 @@ void ConfigSection::verify_section() {
       break;
     default:
       require(!is_real_section());
-      require(m_entry_array.size() == 0);
+      require(m_entry_array.empty());
       break;
   }
 }
@@ -802,7 +801,7 @@ void ConfigSection::set_node_id_from_keys() {
 }
 
 ConfigSection *ConfigSection::copy() const {
-  ConfigSection *new_config_section = new ConfigSection(m_cfg_object);
+  auto *new_config_section = new ConfigSection(m_cfg_object);
   DEB_MALLOC(("new(%u) => %p", __LINE__, new_config_section));
   require(is_real_section());
   new_config_section->m_magic = this->m_magic;
@@ -824,7 +823,7 @@ ConfigSection *ConfigSection::copy() const {
 
 ConfigSection *ConfigSection::copy_no_primary_keys(
     const Key_bitset &keys) const {
-  ConfigSection *new_config_section = new ConfigSection(m_cfg_object);
+  auto *new_config_section = new ConfigSection(m_cfg_object);
   DEB_MALLOC(("new(%u) => %p", __LINE__, new_config_section));
   require(is_real_section());
   new_config_section->m_magic = this->m_magic;

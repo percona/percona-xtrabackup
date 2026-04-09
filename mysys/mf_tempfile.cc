@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,19 +32,19 @@
 
 #include "my_config.h"
 
-#include <errno.h>
+#include <cerrno>
 #ifdef HAVE_O_TMPFILE
 #include <fcntl.h>
 #endif
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
 #include "m_string.h"
-#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
@@ -282,8 +282,9 @@ File create_temp_file(char *to, const char *dir, const char *prefix,
     convert_dirname(dirname_buf, dir, nullptr);
 
     // Verify that the generated filename will fit in a FN_REFLEN size buffer.
-    int max_filename_len = snprintf(to, FN_REFLEN, "%s%.20sfd=%d", dirname_buf,
-                                    prefix ? prefix : "tmp.", 4 * 1024 * 1024);
+    int const max_filename_len =
+        snprintf(to, FN_REFLEN, "%s%.20sfd=%d", dirname_buf,
+                 prefix ? prefix : "tmp.", 4 * 1024 * 1024);
     if (max_filename_len >= FN_REFLEN) {
       errno = ENAMETOOLONG;
       set_my_errno(ENAMETOOLONG);

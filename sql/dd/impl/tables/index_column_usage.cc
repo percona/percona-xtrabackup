@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,11 +29,10 @@
 #include "sql/dd/impl/tables/dd_properties.h"  // TARGET_DD_VERSION
 #include "sql/dd/impl/types/object_table_definition_impl.h"
 
-namespace dd {
-namespace tables {
+namespace dd::tables {
 
 const Index_column_usage &Index_column_usage::instance() {
-  static Index_column_usage *s_instance = new Index_column_usage();
+  static auto *s_instance = new Index_column_usage();
   return *s_instance;
 }
 
@@ -94,5 +93,4 @@ Object_key *Index_column_usage::create_primary_key(Object_id index_id,
 
 ///////////////////////////////////////////////////////////////////////////
 
-}  // namespace tables
-}  // namespace dd
+}  // namespace dd::tables

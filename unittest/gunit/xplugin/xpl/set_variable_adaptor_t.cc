@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,8 +27,7 @@
 
 #include "plugin/x/src/capabilities/set_variable_adaptor.h"
 
-namespace xpl {
-namespace test {
+namespace xpl::test {
 
 const ulonglong k_label_a = 1 << 0;
 const ulonglong k_label_b = 1 << 1;
@@ -97,5 +96,4 @@ INSTANTIATE_TEST_SUITE_P(Set_variable_adaptor_is_allowed_value,
                          Set_variable_adaptor_is_allowed_value_test,
                          testing::ValuesIn(is_allowed_value_param));
 
-}  // namespace test
-}  // namespace xpl
+}  // namespace xpl::test

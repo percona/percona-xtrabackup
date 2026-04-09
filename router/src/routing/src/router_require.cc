@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/rapidjson.h>
 
-#include "classic_connection_base.h"
+#include "classic_query_sender.h"
 #include "mysql/harness/logging/logging.h"
 
 IMPORT_LOG_FUNCTIONS()
@@ -147,12 +147,16 @@ class SelectUserAttributesHandler : public QuerySender::Handler {
     rapidjson::Document doc;
 
     doc.Parse(json_doc.data(), json_doc.size());
+
+    // fail auth on parse-error or json-doc not being an object.
     if (doc.HasParseError()) return std::nullopt;
     if (!doc.IsObject()) return std::nullopt;
 
     auto router_require_it = doc.FindMember("router_require");
-    // no requirements
-    if (router_require_it == doc.MemberEnd()) return std::nullopt;
+    if (router_require_it == doc.MemberEnd()) {
+      // no requirements
+      return RouterRequire::Attributes{};
+    }
 
     // if router_require exists, it MUST be an object. Otherwise fail auth.
 

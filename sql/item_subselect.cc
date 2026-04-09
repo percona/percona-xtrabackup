@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -114,7 +114,8 @@ class Query_result_scalar_subquery : public Query_result_subquery {
 /**
   Check if a query block is guaranteed to return one row. We know that
   this is the case if it has no tables and is not filtered with WHERE,
-  HAVING or LIMIT clauses.
+  HAVING, QUALIFY or LIMIT/OFFSET clauses. Also, it should not use non-primitive
+  grouping (such as ROLLUP), as that may increase the number of rows.
 
   @param qb  the Query_block to check
 
@@ -123,7 +124,9 @@ class Query_result_scalar_subquery : public Query_result_subquery {
 */
 static bool guaranteed_one_row(const Query_block *qb) {
   return !qb->has_tables() && qb->where_cond() == nullptr &&
-         qb->having_cond() == nullptr && !qb->has_limit();
+         qb->having_cond() == nullptr && qb->qualify_cond() == nullptr &&
+         qb->olap == UNSPECIFIED_OLAP_TYPE &&
+         qb->limit_offset_preserves_first_row();
 }
 
 /**
@@ -139,6 +142,29 @@ static bool wrapped_in_intersect_except(Query_term *qb) {
       return true;
   }
   return false;
+}
+
+/**
+  Generate a comparison function, possibly with negation.
+
+  @param pos    Parser position information for function
+  @param func   Comparison function factory
+  @param left   Left argument to comparison function
+  @param right  Right argument to comparison function
+  @param negate Negate the comparison function
+
+  @returns pointer to comparison function, or NULL if error
+*/
+static Item_bool_func *new_comparison_func(const POS &pos, Comp_creator *func,
+                                           Item *left, Item *right,
+                                           bool negate) {
+  Item_bool_func *comp = func->create(pos, left, right);
+  if (comp == nullptr) return nullptr;
+  current_thd->add_item(comp);
+  if (negate) {
+    comp = down_cast<Item_func_comparison *>(comp)->negate_item();
+  }
+  return comp;
 }
 
 void Item_subselect::bind(Query_expression *qe) {
@@ -364,10 +390,9 @@ bool Item_singlerow_subselect::fix_fields(THD *thd, Item **ref) {
   if (thd->lex->is_view_context_analysis()) return false;
 
   // A subquery containing a simple selected expression can be eliminated
-  if (!query_expr()->is_set_operation() && !inner->has_tables() &&
+  if (!query_expr()->is_set_operation() && guaranteed_one_row(inner) &&
       single_field != nullptr && !single_field->has_aggregation() &&
-      !single_field->has_wf() && inner->where_cond() == nullptr &&
-      inner->having_cond() == nullptr && !is_maxmin()) {
+      !single_field->has_wf() && !is_maxmin()) {
     if (thd->lex->is_explain()) {
       char warn_buff[MYSQL_ERRMSG_SIZE];
       sprintf(warn_buff, ER_THD(thd, ER_SELECT_REDUCED), inner->select_number);
@@ -433,7 +458,7 @@ void Item_singlerow_subselect::cleanup() {
 bool Item_in_subselect::mark_as_outer(Item *left_row, size_t col) {
   const Item *left_col = left_row->element_index(col);
   return !left_col->const_item() ||
-         (!abort_on_null && left_col->is_nullable()) ||
+         (process_nulls() && left_col->is_nullable()) ||
          (left_row->type() == SUBQUERY_ITEM && !left_col->basic_const_item());
 }
 
@@ -597,7 +622,9 @@ bool Item_subselect::fix_fields(THD *thd, Item **) {
 
   assert(!fixed);
   assert(indexsubquery_engine == nullptr);
-
+#ifndef NDEBUG
+  assert(contextualized);
+#endif
   if (check_stack_overrun(thd, STACK_MIN_SIZE, (uchar *)&res)) return true;
 
   if (!query_expr()->is_prepared() &&
@@ -889,6 +916,14 @@ bool Query_result_scalar_subquery::send_data(
 
   it->set_value_assigned();
   return false;
+}
+
+Item_singlerow_subselect::Item_singlerow_subselect(const POS &pos,
+                                                   Query_block *query_block)
+    : Item_subselect(pos) {
+  bind(query_block->master_query_expression());
+
+  m_max_columns = UINT_MAX;
 }
 
 Item_singlerow_subselect::Item_singlerow_subselect(Query_block *query_block)
@@ -1250,23 +1285,34 @@ bool Item_singlerow_subselect::val_json(Json_wrapper *result) {
   }
 }
 
-bool Item_singlerow_subselect::get_date(MYSQL_TIME *ltime,
-                                        my_time_flags_t fuzzydate) {
+bool Item_singlerow_subselect::val_date(Date_val *date, my_time_flags_t flags) {
   assert(fixed);
   if (!m_no_rows && !exec(current_thd) && !m_value->null_value) {
     null_value = false;
-    return m_value->get_date(ltime, fuzzydate);
+    return m_value->val_date(date, flags);
   } else {
     reset();
     return true;
   }
 }
 
-bool Item_singlerow_subselect::get_time(MYSQL_TIME *ltime) {
+bool Item_singlerow_subselect::val_time(Time_val *time) {
   assert(fixed);
   if (!m_no_rows && !exec(current_thd) && !m_value->null_value) {
     null_value = false;
-    return m_value->get_time(ltime);
+    return m_value->val_time(time);
+  } else {
+    reset();
+    return true;
+  }
+}
+
+bool Item_singlerow_subselect::val_datetime(Datetime_val *dt,
+                                            my_time_flags_t flags) {
+  assert(fixed);
+  if (!m_no_rows && !exec(current_thd) && !m_value->null_value) {
+    null_value = false;
+    return m_value->val_datetime(dt, flags);
   } else {
     reset();
     return true;
@@ -1306,8 +1352,9 @@ bool Query_result_exists_subquery::send_data(THD *,
   return false;
 }
 
-Item_exists_subselect::Item_exists_subselect(Query_block *query_block)
-    : Item_subselect() {
+Item_exists_subselect::Item_exists_subselect(const POS &pos,
+                                             Query_block *query_block)
+    : Item_subselect(pos) {
   DBUG_TRACE;
   bind(query_block->master_query_expression());
 
@@ -1320,40 +1367,53 @@ Item_exists_subselect::Item_exists_subselect(Query_block *query_block)
 
 void Item_exists_subselect::print(const THD *thd, String *str,
                                   enum_query_type query_type) const {
+  // Resolvinghas eliminate all other transforms:
+  assert(value_transform == BOOL_IS_TRUE || value_transform == BOOL_IS_FALSE ||
+         !fixed);
+
   const char *tail = Item_bool_func::bool_transform_names[value_transform];
-  if (implicit_is_op) tail = "";
+  if (fixed) tail = "";
+
   // Put () around NOT as it has lower associativity than IS TRUE, or '+'
-  if (value_transform == BOOL_NEGATED) str->append(STRING_WITH_LEN("(not "));
+  if (value_transform == BOOL_IS_FALSE || value_transform == BOOL_NEGATED)
+    str->append(STRING_WITH_LEN("(not "));
   str->append(STRING_WITH_LEN("exists"));
   Item_subselect::print(thd, str, query_type);
-  if (value_transform == BOOL_NEGATED) str->append(STRING_WITH_LEN(")"));
-  if (tail[0]) {
+  if (value_transform == BOOL_IS_FALSE || value_transform == BOOL_NEGATED)
+    str->append(STRING_WITH_LEN(")"));
+  if (tail[0] != '\0') {
     str->append(STRING_WITH_LEN(" "));
     str->append(tail, strlen(tail));
   }
 }
 
 /**
-  Translates the value of the naked EXISTS to a value taking into account the
-  optional NULL and IS [NOT] TRUE/FALSE.
-  @param[in,out] null_v      NULL state of the value
-  @param         v           TRUE/FALSE state of the value
+  Translates the value of the EXISTS predicate taking into account
+  IS [NOT] TRUE/FALSE. Note that underlying value is never NULL.
 */
-bool Item_exists_subselect::translate(bool &null_v, bool v) {
-  if (null_v)  // Naked IN returns UNKNOWN
-  {
-    assert(subquery_type() != EXISTS_SUBQUERY);
+bool Item_exists_subselect::return_value(bool v) {
+  assert(!null_value);
+  assert(value_transform == BOOL_IS_TRUE || value_transform == BOOL_IS_FALSE);
+
+  return value_transform == BOOL_IS_TRUE ? v : !v;
+}
+
+/**
+  Same as for Item_exists_subselect(), except it has to process NULL values.
+*/
+bool Item_in_subselect::return_value(bool v) {
+  if (null_value) {  // Naked IN returns UNKNOWN
     switch (value_transform) {
       case BOOL_IDENTITY:
       case BOOL_NEGATED:
         return false;
       case BOOL_IS_TRUE:
       case BOOL_IS_FALSE:
-        null_v = false;
+        null_value = false;
         return false;
       case BOOL_NOT_TRUE:
       case BOOL_NOT_FALSE:
-        null_v = false;
+        null_value = false;
         return true;
       default:
         assert(false);
@@ -1376,10 +1436,28 @@ bool Item_exists_subselect::translate(bool &null_v, bool v) {
   }
 }
 
+/**
+  ALL and ANY subquery predicates are wrapped in an Item_func_not_all or
+  Item_func_nop_all object that performs final value conversion.
+  Here we only process inversion.
+*/
+bool Item_allany_subselect::return_value(bool v) {
+  switch (value_transform) {
+    case BOOL_IDENTITY:
+    case BOOL_IS_TRUE:
+    case BOOL_NOT_FALSE:
+      return v;
+    case BOOL_NEGATED:
+    case BOOL_NOT_TRUE:
+    case BOOL_IS_FALSE:
+      return !v;
+    default:
+      assert(false);
+      return v;
+  }
+}
+
 Item *Item_exists_subselect::truth_transformer(THD *, enum Bool_test test) {
-  // Quantified comparison subquery predicates are always wrapped in
-  // Item_func_{not|nop}_all, so never come here. Which is good as they don't
-  // support all possible value transforms.
   assert(subquery_type() == EXISTS_SUBQUERY || subquery_type() == IN_SUBQUERY);
   switch (test) {
     case BOOL_NEGATED:
@@ -1413,8 +1491,9 @@ bool Item_in_subselect::test_limit() {
   return false;
 }
 
-Item_in_subselect::Item_in_subselect(Item *left_exp, Query_block *query_block)
-    : Item_exists_subselect(query_block), pt_subselect(nullptr) {
+Item_in_subselect::Item_in_subselect(const POS &pos, Item *left_exp,
+                                     Query_block *query_block)
+    : Item_exists_subselect(pos, query_block), pt_subselect(nullptr) {
   DBUG_TRACE;
   left_expr = left_exp;
   m_max_columns = UINT_MAX;
@@ -1448,14 +1527,13 @@ bool Item_in_subselect::do_itemize(Parse_context *pc, Item **res) {
   return false;
 }
 
-Item_allany_subselect::Item_allany_subselect(Item *left_exp,
+Item_allany_subselect::Item_allany_subselect(const POS &pos, Item *left_exp,
                                              chooser_compare_func_creator fc,
-                                             Query_block *query_block,
-                                             bool all_arg)
-    : Item_in_subselect(), m_func_creator(fc), m_all(all_arg) {
+                                             Query_block *query_block, bool all)
+    : Item_in_subselect(pos), m_func_creator(fc), m_all_subquery(all) {
   DBUG_TRACE;
   left_expr = left_exp;
-  m_func = m_func_creator(all_arg);
+  m_compare_func = m_func_creator(false);
   bind(query_block->master_query_expression());
 
   // Only a single column is supported in the SELECT list
@@ -1504,7 +1582,12 @@ bool Item_exists_subselect::transformer(THD *, Item **) {
   return false;
 }
 
-bool Item_exists_subselect::is_semijoin_candidate(THD *thd) {
+bool Item_exists_subselect::is_semijoin_candidate(THD *thd) const {
+  // Not supported for quantified comparison predicates, only EXISTS and IN
+  if (subquery_type() == Item_subselect::ANY_SUBQUERY ||
+      subquery_type() == Item_subselect::ALL_SUBQUERY) {
+    return false;
+  }
   Query_block *inner = query_expr()->first_query_block();
   Query_block *outer = query_expr()->outer_query_block();
 
@@ -1555,8 +1638,8 @@ bool Item_exists_subselect::is_semijoin_candidate(THD *thd) {
       10. Neither parent nor child query block has straight join.
       11. Parent query block does not prohibit semi-join.
       12. LHS of IN predicate is deterministic
-      13. The surrounding truth test, and the nullability of expressions,
-          are compatible with the conversion.
+      13. The subquery predicate, surrounding truth test, and nullability of
+          expressions, are compatible with the transformation.
       14. Antijoins are supported, or it's not an antijoin (it's a semijoin).
       15. OFFSET starts from the first row and LIMIT is not 0.
   */
@@ -1587,29 +1670,44 @@ bool Item_exists_subselect::is_semijoin_candidate(THD *thd) {
         SELECT_STRAIGHT_JOIN) &&                                           // 10
       !(outer->active_options() & SELECT_NO_SEMI_JOIN) &&                  // 11
       is_deterministic &&                                                  // 12
-      choose_semijoin_or_antijoin() &&                                     // 13
-      (!cannot_do_antijoin || !can_do_aj) &&                               // 14
-      inner->is_row_count_valid_for_semi_join()) {                         // 15
+      allow_table_subquery_transform() &&                                  // 13
+      !(use_anti_join_transform() && cannot_do_antijoin) &&                // 14
+      inner->limit_offset_preserves_first_row()) {                         // 15
     return true;
   }
   return false;
 }
 
-bool Item_exists_subselect::is_derived_candidate(THD *thd) {
+bool Item_exists_subselect::is_derived_candidate(THD *thd) const {
   Query_block *inner = query_expr()->first_query_block();
   Query_block *outer = query_expr()->outer_query_block();
+
+  const bool derived_transform_enabled =
+      thd->optimizer_switch_flag(OPTIMIZER_SWITCH_SUBQUERY_TO_DERIVED) ||
+      (thd->lex->m_sql_cmd != nullptr &&
+       thd->secondary_engine_optimization() ==
+           Secondary_engine_optimization::SECONDARY);
 
   const bool aggregated = inner->is_grouped() || inner->with_sum_func ||
                           inner->having_cond() != nullptr ||
                           inner->has_windows();
   /*
-    Check if the subquery can be transformed to a derived table:
-    FROM ot WHERE ot.x IN (SELECT y FROM it1, it2)
-    =>
-    FROM ot LEFT JOIN (SELECT DISTINCT y FROM it1, it2) AS derived
-            ON ot.x=derived.y
-    WHERE derived.y IS NOT NULL.
+    Check if an EXISTS or IN subquery can be transformed to a derived table:
 
+      FROM ot WHERE ot.x [NOT] IN (SELECT y FROM it1, it2)
+
+    => [IN]
+
+      FROM ot INNER JOIN (SELECT DISTINCT y FROM it1, it2) AS derived
+           ON ot.x=derived.y
+
+    => [NOT IN]
+
+      FROM ot LEFT JOIN (SELECT DISTINCT y FROM it1, it2) AS derived
+           ON ot.x=derived.y
+      WHERE derived.y IS NOT NULL.
+
+      0. Subquery predicate is IN or EXISTS (not ALL or ANY)
       1. Transformation to derived table is enabled
       2. Subquery is a simple query block (not a set operation or a
          parenthesized query expression). This is because a certain secondary
@@ -1620,83 +1718,146 @@ bool Item_exists_subselect::is_derived_candidate(THD *thd) {
         4a. in WHERE clause (we have not implemented the transformation for the
             ON clause)
         4b. linked to the root of that clause with ANDs or ORs.
-      5. Parent query block accepts semijoins (i.e we are not in a subquery of
-         a single table UPDATE/DELETE (TODO: We should handle this at some
-         point by switching to multi-table UPDATE/DELETE)
+      5. Parent query block accepts subquery transforms (i.e we are not in
+         a subquery of a single table UPDATE/DELETE (TODO: We should handle
+         this at some point by switching to multi-table UPDATE/DELETE)
       6. Parent query block has tables, as we'll link to them with LEFT JOIN
-      7. Parent query block does not prohibit semi-join.
-      8. LHS of IN predicate is deterministic
-      9. The surrounding truth test, and the nullability of expressions,
-         are compatible with the conversion.
-      10. The left argument isn't a row (multi-column) subquery; it would lead
-          to creating conditions like WHERE (outer_subq) =
-          ROW(derived.col1,derived.col2), which would complicate code.
-      11. Certain other subquery transformations, incompatible with this one,
+      7. LHS of predicate (if any) is deterministic
+      8. The subquery predicate, surrounding truth test, and nullability of
+         expressions, are compatible with the transformation.
+      9. The left argument isn't a row (multi-column) subquery; it would lead
+         to creating conditions like WHERE (outer_subq) =
+         ROW(derived.col1,derived.col2), which would complicate code.
+      10. Certain other subquery transformations, incompatible with this one,
           have not been done.
   */
-  if ((thd->optimizer_switch_flag(OPTIMIZER_SWITCH_SUBQUERY_TO_DERIVED) ||
-       (thd->lex->m_sql_cmd != nullptr &&                              //  1
-        thd->secondary_engine_optimization() ==                        //  1
-            Secondary_engine_optimization::SECONDARY)) &&              //  1
+  if ((subquery_type() == Item_subselect::EXISTS_SUBQUERY ||           //  0
+       subquery_type() == Item_subselect::IN_SUBQUERY) &&              //  0
+      derived_transform_enabled &&                                     //  1
       inner->is_simple_query_block() &&                                //  2
       (left_expr != nullptr || !aggregated) &&                         //  3
-      outer->resolve_place == Query_block::RESOLVE_CONDITION &&        //  4a
+      (outer->resolve_place == Query_block::RESOLVE_CONDITION ||       //  4
+       outer->resolve_place == Query_block::RESOLVE_SELECT_LIST) &&    //  4
       outer->condition_context != enum_condition_context::NEITHER &&   //  4b
       outer->has_subquery_transforms() &&                              //  5
       outer->leaf_table_count != 0 &&                                  //  6
-      !(outer->active_options() & SELECT_NO_SEMI_JOIN) &&              //  7
-      (left_expr == nullptr || !left_expr->is_non_deterministic()) &&  //  8
-      choose_semijoin_or_antijoin() &&                                 //  9
-      !(left_expr != nullptr &&                                        // 10
-        left_expr->type() == Item::SUBQUERY_ITEM &&                    // 10
-        left_expr->cols() > 1) &&                                      // 10
-      !thd->lex->m_subquery_to_derived_is_impossible) {                // 11
+      (left_expr == nullptr || !left_expr->is_non_deterministic()) &&  //  7
+      allow_table_subquery_transform() &&                              //  8
+      !(left_expr != nullptr &&                                        //  9
+        left_expr->type() == Item::SUBQUERY_ITEM &&                    //  9
+        left_expr->cols() > 1) &&                                      //  9
+      !thd->lex->m_subquery_to_derived_is_impossible) {                // 10
     return true;
   }
+  /*
+    Check if a quantified comparison predicate can be transformed to
+    a derived table:
+
+      FROM ot WHERE ot.x <op>ANY (SELECT y FROM it1, it2) or
+      FROM ot WHERE ot.x <op>ALL (SELECT y FROM it1, it2)
+
+    =>
+
+      FROM ot INNER JOIN (SELECT MIN/MAX(y) FROM it1, it2) AS derived
+              ON ot.x <op> derived.y AND <extra conditions>
+
+      0. Subquery predicate is ANY or ALL
+      1. Transformation to derived table is enabled
+      2. Subquery is a simple query block (not a set operation or a
+         parenthesized query expression).
+      3. Subquery must not be grouped or windowed
+      4. Subquery predicate is in WHERE clause or SELECT list
+      5. Outer query block accepts transformations (i.e we are not in
+         a subquery of a single table UPDATE/DELETE (TODO: We should handle
+         this at some point by switching to multi-table UPDATE/DELETE)
+      6. Outer query block has tables, as we'll link to them with LEFT JOIN
+      7. Inner query block has tables, since we need to establish a JOIN cond.
+      8. LHS of quantified comparison predicate is deterministic
+      9. The left argument isn't a row (multi-column) subquery; it would lead
+         to creating conditions like WHERE (outer_subq) =
+         ROW(derived.col1,derived.col2), which would complicate code.
+     10. Certain other subquery transformations, incompatible with this one,
+         have not been done.
+  */
+  if ((subquery_type() == Item_subselect::ANY_SUBQUERY ||            //  0
+       subquery_type() == Item_subselect::ALL_SUBQUERY) &&           //  0
+      derived_transform_enabled &&                                   //  1
+      inner->is_simple_query_block() &&                              //  2
+      !aggregated &&                                                 //  3
+      (outer->resolve_place == Query_block::RESOLVE_CONDITION ||     //  4
+       outer->resolve_place == Query_block::RESOLVE_SELECT_LIST) &&  //  4
+      outer->has_subquery_transforms() &&                            //  5
+      outer->leaf_table_count != 0 &&                                //  6
+      inner->leaf_table_count != 0 &&                                //  7
+      !left_expr->is_non_deterministic() &&                          //  8
+      !(left_expr->type() == Item::SUBQUERY_ITEM &&                  //  9
+        left_expr->cols() > 1) &&                                    //  9
+      !thd->lex->m_subquery_to_derived_is_impossible) {              // 10
+    return true;
+  }
+
   return false;
 }
+
 /**
    Helper for is_semijoin_candidate() and is_derived_candidate().
 
-   @returns true if semijoin or antijoin is allowed; if returning true, also
-   records in the Item's can_do_aj member if this will be an antijoin (true)
-   or semijoin (false) nest.
+   @returns true  if transform to semijoin or antijoin is allowed.
+            true  if transform to derived table using either a semijoin-like or
+                  antijoin-like alogorithm, with subquery predicate in
+                  SELECT list, is allowed.
+            false otherwise.
 */
-bool Item_exists_subselect::choose_semijoin_or_antijoin() {
-  can_do_aj = false;
-  [[maybe_unused]] bool might_do_sj = false, might_do_aj = false;
-  bool null_problem = false;
+bool Item_exists_subselect::allow_table_subquery_transform() const {
+  // EXISTS and NOT EXISTS filter out NULL values, so are always allowed
+  if (subquery_type() == EXISTS_SUBQUERY) return true;
+
   switch (value_transform) {
     case BOOL_IS_TRUE:
-      might_do_sj = true;
-      break;
     case BOOL_NOT_TRUE:
-      might_do_aj = true;
-      break;
+      return true;
     case BOOL_IS_FALSE:
-      might_do_aj = true;
-      null_problem = true;
-      break;
     case BOOL_NOT_FALSE:
-      might_do_sj = true;
-      null_problem = true;
-      break;
+    case BOOL_IDENTITY:
+    case BOOL_NEGATED:
+      // antijoin/semijoin cannot work with NULLs on either side of IN
+      if (down_cast<const Item_in_subselect *>(this)->left_expr->is_nullable())
+        return false;
+      for (Item *inner : query_expr()->first_query_block()->visible_fields()) {
+        if (inner->is_nullable()) {
+          return false;
+        }
+      }
+      return true;
     default:
+      assert(false);
       return false;
   }
-  assert((might_do_sj ^ might_do_aj) == 1);
-  if (subquery_type() == EXISTS_SUBQUERY)  // never returns NULL
-    null_problem = false;
-  if (null_problem) {
-    // antijoin/semijoin cannot work with NULLs on either side of IN
-    if (down_cast<Item_in_subselect *>(this)->left_expr->is_nullable())
+}
+
+/**
+  @returns true  if transformation of subquery must be done with an anti-join
+                 or anti-join like operation.
+           false otherwise, ie. it can be done with a semi-join.
+*/
+bool Item_exists_subselect::use_anti_join_transform() const {
+  switch (subquery_type()) {
+    case EXISTS_SUBQUERY:
+      assert(value_transform == BOOL_IS_TRUE ||
+             value_transform == BOOL_IS_FALSE);
+      return value_transform == BOOL_IS_FALSE;
+    case IN_SUBQUERY:
+      return value_transform == BOOL_IS_FALSE ||
+             value_transform == BOOL_NOT_TRUE ||
+             value_transform == BOOL_NEGATED;
+    case ALL_SUBQUERY:
+      return true;
+    case ANY_SUBQUERY:
       return false;
-    for (Item *inner : query_expr()->first_query_block()->visible_fields()) {
-      if (inner->is_nullable()) return false;
-    }
+    default:
+      assert(false);
   }
-  can_do_aj = might_do_aj;
-  return true;
+  return false;
 }
 
 double Item_exists_subselect::val_real() { return val_bool(); }
@@ -1743,9 +1904,7 @@ bool Item_exists_subselect::val_bool() {
     reset();
     return false;
   }
-  // EXISTS can never return NULL value
-  assert(!null_value);
-  return translate(null_value, m_value);
+  return return_value(m_value);
 }
 
 double Item_in_subselect::val_real() {
@@ -1778,6 +1937,7 @@ bool Item_in_subselect::val_bool() {
 
 bool Item_in_subselect::val_bool_naked() {
   assert(fixed);
+  null_value = false;
   if (exec(current_thd)) {
     reset();
     return false;
@@ -1828,7 +1988,7 @@ my_decimal *Item_in_subselect::val_decimal(my_decimal *) {
 
 bool Item_in_subselect::single_value_transformer(THD *thd, Comp_creator *func,
                                                  Item **transformed) {
-  bool subquery_maybe_null = false;
+  bool subquery_is_nullable = false;
   DBUG_TRACE;
 
   Query_block *outer = thd->lex->current_query_block();
@@ -1844,7 +2004,7 @@ bool Item_in_subselect::single_value_transformer(THD *thd, Comp_creator *func,
        sel = sel->next_query_block()) {
     Item *only_item = sel->single_visible_field();
     assert(only_item != nullptr);
-    if ((subquery_maybe_null = only_item->is_nullable())) break;
+    if ((subquery_is_nullable = only_item->is_nullable())) break;
   }
   /*
     If this is an ALL/ANY single-value subquery predicate, try to rewrite
@@ -1856,18 +2016,20 @@ bool Item_in_subselect::single_value_transformer(THD *thd, Comp_creator *func,
     A predicate may be transformed to use a MIN/MAX subquery if it:
     1. has a greater than/less than comparison operator, and
     2. is not correlated with the outer query, and
-    3. UNKNOWN results are treated as FALSE, by this item or the outer item,
-    or can never be generated.
+    3. UNKNOWN results are treated as FALSE, or can never be generated, and
+    4. is for a target engine that supports subqueries.
   */
-  if (!func->eqne_op() &&                                              // 1
-      !query_expr()->uncacheable &&                                    // 2
-      (abort_on_null ||                                                // 3
-       (m_upper_item != nullptr && m_upper_item->ignore_unknown()) ||  // 3
-       (!left_expr->is_nullable() && !subquery_maybe_null))) {
+  if (!func->eqne_op() &&                                        // 1
+      !query_expr()->uncacheable &&                              // 2
+      (ignore_unknown() ||                                       // 3
+       (!left_expr->is_nullable() && !subquery_is_nullable)) &&  // 3
+      thd->secondary_engine_optimization() !=                    // 4
+          Secondary_engine_optimization::SECONDARY) {            // 4
     Query_block *select = query_expr()->first_query_block();
 
     Item_singlerow_subselect *subquery;
     Query_result_interceptor *new_result;
+    bool all_predicate = subquery_type() == ALL_SUBQUERY;
 
     if (!query_expr()->is_set_operation() && !select->is_explicitly_grouped() &&
         select->having_cond() == nullptr &&
@@ -1876,7 +2038,7 @@ bool Item_in_subselect::single_value_transformer(THD *thd, Comp_creator *func,
         select->has_tables() &&
         // For ALL: MIN ignores NULL: 3<=ALL(4 and NULL) is UNKNOWN, while
         // NOT(3>(SELECT MIN(4 and NULL)) is TRUE
-        !(subquery_type() == ALL_SUBQUERY && subquery_maybe_null)) {
+        !(all_predicate && subquery_is_nullable)) {
       OPT_TRACE_TRANSFORM(&thd->opt_trace, oto0, oto1, select->select_number,
                           "> ALL/ANY (SELECT)", "SELECT(MIN)");
       oto1.add("chosen", true);
@@ -1886,7 +2048,7 @@ bool Item_in_subselect::single_value_transformer(THD *thd, Comp_creator *func,
       thd->lex->m_subquery_to_derived_is_impossible = true;
       Item_sum_hybrid *item;
       nesting_map save_allow_sum_func;
-      if (func->l_op()) {
+      if (func->l_op() ^ all_predicate) {
         /*
           (ALL && (> || =>)) || (ANY && (< || =<))
           for ALL condition is inverted
@@ -1936,12 +2098,13 @@ bool Item_in_subselect::single_value_transformer(THD *thd, Comp_creator *func,
                           "> ALL/ANY (SELECT)", "MIN (SELECT)");
       oto1.add("chosen", true);
 
+      bool max_op = func->l_op() ^ all_predicate;
       Item_maxmin_subselect *item =
-          new Item_maxmin_subselect(this, select, func->l_op());
+          new (thd->mem_root) Item_maxmin_subselect(this, select, max_op);
       if (item == nullptr) return true;
 
-      new_result = new (thd->mem_root) Query_result_max_min_subquery(
-          item, func->l_op(), subquery_type() == ANY_SUBQUERY);
+      new_result = new (thd->mem_root)
+          Query_result_max_min_subquery(item, max_op, !all_predicate);
       if (new_result == nullptr) return true;
 
       subquery = item;
@@ -1955,7 +2118,8 @@ bool Item_in_subselect::single_value_transformer(THD *thd, Comp_creator *func,
 
     m_query_result = new_result;
 
-    *transformed = func->create(left_expr, subquery);
+    *transformed =
+        new_comparison_func(m_pos, func, left_expr, subquery, all_predicate);
     if (*transformed == nullptr) return true;
 
     return false;
@@ -1986,7 +2150,7 @@ bool Item_in_subselect::single_value_transformer(THD *thd, Comp_creator *func,
   m_in2exists_info->dependent_after =
       query_expr()->uncacheable & UNCACHEABLE_DEPENDENT;
 
-  if (!abort_on_null && left_expr->is_nullable() &&
+  if (process_nulls() && left_expr->is_nullable() &&
       m_pushed_cond_guards == nullptr) {
     m_pushed_cond_guards = (bool *)thd->alloc(sizeof(bool));
     if (m_pushed_cond_guards == nullptr) return true;
@@ -2055,6 +2219,8 @@ bool Item_in_subselect::single_value_in_to_exists_transformer(
                       "IN (SELECT)", "EXISTS (CORRELATED SELECT)");
   oto1.add("chosen", true);
 
+  bool all_predicate = subquery_type() == ALL_SUBQUERY;
+
   // Transformation will make the subquery a dependent one.
   if (!left_expr->const_item()) select->uncacheable |= UNCACHEABLE_DEPENDENT;
 
@@ -2064,8 +2230,10 @@ bool Item_in_subselect::single_value_in_to_exists_transformer(
       select->with_sum_func || select->has_windows()) {
     Item_ref_null_helper *ref_null = new Item_ref_null_helper(
         &select->context, this, &select->base_ref_items[0]);
-    Item_bool_func *item = func->create(m_injected_left_expr, ref_null);
+    Item_bool_func *item = new_comparison_func(
+        m_pos, func, m_injected_left_expr, ref_null, all_predicate);
     if (item == nullptr) return true;
+
     item->set_created_by_in2exists();
 
     /*
@@ -2099,7 +2267,7 @@ bool Item_in_subselect::single_value_in_to_exists_transformer(
         selected_sum->referenced_by[1] = ref_null->ref_pointer();
       }
     }
-    if (!abort_on_null && left_expr->is_nullable()) {
+    if (process_nulls() && left_expr->is_nullable()) {
       /*
         We can encounter "NULL IN (SELECT ...)". Wrap the added condition
         within a trig_cond.
@@ -2131,7 +2299,8 @@ bool Item_in_subselect::single_value_in_to_exists_transformer(
     Item *orig_item = select->single_visible_field();
 
     if (!select->source_table_is_one_row() || select->where_cond() != nullptr) {
-      Item_bool_func *item = func->create(m_injected_left_expr, orig_item);
+      Item_bool_func *item = new_comparison_func(
+          m_pos, func, m_injected_left_expr, orig_item, all_predicate);
       if (item == nullptr) return true;
       /*
         We may soon add a 'OR inner IS NULL' to 'item', but that may later be
@@ -2139,7 +2308,7 @@ bool Item_in_subselect::single_value_in_to_exists_transformer(
         'item' too. Not only on the OR node.
       */
       item->set_created_by_in2exists();
-      if (!abort_on_null && orig_item->is_nullable()) {
+      if (process_nulls() && orig_item->is_nullable()) {
         Item_bool_func *having = new Item_is_not_null_test(this, orig_item);
         if (having == nullptr) return true;
         having->set_created_by_in2exists();
@@ -2174,7 +2343,7 @@ bool Item_in_subselect::single_value_in_to_exists_transformer(
         If we may encounter NULL IN (SELECT ...) and care whether subquery
         result is NULL or FALSE, wrap condition in a trig_cond.
       */
-      if (!abort_on_null && left_expr->is_nullable()) {
+      if (process_nulls() && left_expr->is_nullable()) {
         item = new Item_func_trig_cond(
             item, get_cond_guard(0), nullptr, NO_PLAN_IDX,
             Item_func_trig_cond::OUTER_FIELD_IS_NOT_NULL);
@@ -2206,13 +2375,15 @@ bool Item_in_subselect::single_value_in_to_exists_transformer(
         we can assign query_block->having_cond() here, and pass NULL as last
         argument (reference) to fix_fields()
       */
-      Item_bool_func *new_having =
-          func->create(m_injected_left_expr,
-                       new Item_ref_null_helper(&select->context, this,
-                                                &select->base_ref_items[0]));
+      Item_bool_func *new_having = new_comparison_func(
+          m_pos, func, m_injected_left_expr,
+          new Item_ref_null_helper(&select->context, this,
+                                   &select->base_ref_items[0]),
+          all_predicate);
       if (new_having == nullptr) return true;
+
       new_having->set_created_by_in2exists();
-      if (!abort_on_null && left_expr->is_nullable()) {
+      if (process_nulls() && left_expr->is_nullable()) {
         new_having = new Item_func_trig_cond(
             new_having, get_cond_guard(0), nullptr, NO_PLAN_IDX,
             Item_func_trig_cond::OUTER_FIELD_IS_NOT_NULL);
@@ -2275,7 +2446,7 @@ bool Item_in_subselect::row_value_transformer(THD *thd, Item **transformed) {
   m_in2exists_info->dependent_after =
       query_expr()->uncacheable & UNCACHEABLE_DEPENDENT;
 
-  if (!abort_on_null && left_expr->is_nullable() &&
+  if (process_nulls() && left_expr->is_nullable() &&
       m_pushed_cond_guards == nullptr) {
     m_pushed_cond_guards = thd->mem_root->ArrayAlloc<bool>(left_expr->cols());
     if (m_pushed_cond_guards == nullptr) return true;
@@ -2312,7 +2483,7 @@ bool Item_in_subselect::row_value_transformer(THD *thd, Item **transformed) {
   and the FOR statements as this:
   for (each left operand)
     create the equi-join condition
-    if (is_having_used || !abort_on_null)
+    if (is_having_used || process_nulls())
       create the "is null" and is_not_null_test items
     if (is_having_used)
       add the equi-join and the null tests to HAVING
@@ -2356,18 +2527,19 @@ bool Item_in_subselect::row_value_in_to_exists_transformer(
     for (uint i = 0; i < cols_num; i++) {
       Item *item_i = select->base_ref_items[i];
       Item **pitem_i = &select->base_ref_items[i];
-      assert((left_expr->fixed && item_i->fixed) ||
-             (item_i->type() == REF_ITEM &&
-              ((Item_ref *)(item_i))->ref_type() == Item_ref::OUTER_REF));
+      assert(
+          (left_expr->fixed && item_i->fixed) ||
+          (item_i->type() == REF_ITEM &&
+           down_cast<Item_ref *>(item_i)->ref_type() == Item_ref::OUTER_REF));
       if (item_i->check_cols(left_expr->element_index(i)->cols())) return true;
       Item_ref *const left =
           new Item_ref(&select->context, (*optimizer->get_cache())->addr(i),
                        in_left_expr_name);
       if (left == nullptr) return true; /* purecov: inspected */
 
-      if (mark_as_outer(left_expr, i))
+      if (mark_as_outer(left_expr, i)) {
         left->depended_from = select->outer_query_block();
-
+      }
       Item_bool_func *item_eq = new Item_func_eq(
           left, new Item_ref(&select->context, pitem_i, "<list ref>"));
       if (item_eq == nullptr) return true;
@@ -2379,7 +2551,7 @@ bool Item_in_subselect::row_value_in_to_exists_transformer(
       Item_bool_func *col_item = new Item_cond_or(item_eq, item_isnull);
       if (col_item == nullptr) return true;
       col_item->set_created_by_in2exists();
-      if (!abort_on_null && left_expr->element_index(i)->is_nullable()) {
+      if (process_nulls() && left_expr->element_index(i)->is_nullable()) {
         col_item = new Item_func_trig_cond(
             col_item, get_cond_guard(i), nullptr, NO_PLAN_IDX,
             Item_func_trig_cond::OUTER_FIELD_IS_NOT_NULL);
@@ -2394,7 +2566,7 @@ bool Item_in_subselect::row_value_in_to_exists_transformer(
           this, new Item_ref(&select->context, pitem_i, "<list ref>"));
       if (item_nnull_test == nullptr) return true;
       item_nnull_test->set_created_by_in2exists();
-      if (!abort_on_null && left_expr->element_index(i)->is_nullable()) {
+      if (process_nulls() && left_expr->element_index(i)->is_nullable()) {
         item_nnull_test = new Item_func_trig_cond(
             item_nnull_test, get_cond_guard(i), nullptr, NO_PLAN_IDX,
             Item_func_trig_cond::OUTER_FIELD_IS_NOT_NULL);
@@ -2447,7 +2619,7 @@ bool Item_in_subselect::row_value_in_to_exists_transformer(
           left, new Item_ref(&select->context, pitem_i, "<list ref>"));
       if (item == nullptr) return true;
       item->set_created_by_in2exists();
-      if (!abort_on_null) {
+      if (process_nulls()) {
         Item_bool_func *having_col_item = new Item_is_not_null_test(
             this, new Item_ref(&select->context, pitem_i, "<list ref>"));
         if (having_col_item == nullptr) return true;
@@ -2537,17 +2709,20 @@ bool Item_in_subselect::quantified_comp_transformer(THD *thd,
 
   DBUG_TRACE;
 
+  bool all_predicate = subquery_type() == ALL_SUBQUERY;
+
   Query_block *inner = query_expr()->first_query_block();
 
   /*
     A table-less IN or NOT IN subquery that is not grouped and has no
-    WHERE clause or HAVING clause can be transformed into a simple
+    WHERE, HAVING or QUALIFY clause can be transformed into a simple
     equality or non-equality.
   */
   if (!query_expr()->is_set_operation() && inner->source_table_is_one_row() &&
       func->eqne_op() && !inner->is_grouped() &&
       inner->where_cond() == nullptr && inner->having_cond() == nullptr &&
-      !inner->has_windows() && left_expr->cols() == 1) {
+      inner->qualify_cond() == nullptr && !inner->has_windows() &&
+      left_expr->cols() == 1) {
     /*
       Keep applicability conditions in sync with
       Item_exists_subselect::truth_transformer().
@@ -2560,8 +2735,10 @@ bool Item_in_subselect::quantified_comp_transformer(THD *thd,
     selected_item->fix_after_pullout(outer, inner);
 
     // Resolving of substitution item will be done in time of substituting
-    *transformed = func->create(left_expr, selected_item);
+    *transformed = new_comparison_func(m_pos, func, left_expr, selected_item,
+                                       all_predicate);
     if (*transformed == nullptr) return true;
+
     if (thd->lex->is_explain()) {
       char warn_buff[MYSQL_ERRMSG_SIZE];
       sprintf(warn_buff, ER_THD(thd, ER_SELECT_REDUCED), inner->select_number);
@@ -2659,9 +2836,6 @@ bool Item_exists_subselect::fix_fields(THD *thd, Item **ref) {
   m_query_result = new (thd->mem_root) Query_result_exists_subquery(this);
   if (m_query_result == nullptr) return true;
 
-  abort_on_null =
-      value_transform == BOOL_IS_TRUE || value_transform == BOOL_NOT_TRUE;
-
   Query_block *outer = thd->lex->current_query_block();
   assert(outer == query_expr()->outer_query_block());
 
@@ -2688,6 +2862,10 @@ bool Item_exists_subselect::fix_fields(THD *thd, Item **ref) {
     if (left_expr->is_nullable()) {
       set_nullable(true);
     }
+    add_accum_properties(left_expr);
+  } else {
+    // EXISTS and NOT EXISTS will never handle NULL values
+    value_transform = Item_bool_func::bool_simplify[value_transform];
   }
 
   fixed = true;
@@ -2914,10 +3092,62 @@ bool Item_subselect::collect_subqueries(uchar *arg) {
   return false;
 }
 
+Item *Item_allany_subselect::truth_transformer(THD *, enum Bool_test test) {
+  switch (test) {
+    case BOOL_NEGATED:
+    case BOOL_IS_TRUE:
+    case BOOL_IS_FALSE:
+    case BOOL_NOT_TRUE:
+    case BOOL_NOT_FALSE:
+      break;
+    default:
+      assert(false);
+  }
+
+  if (test != BOOL_NEGATED) return nullptr;
+
+  // Invert the quantified comparison operator:
+  m_all_subquery = !m_all_subquery;
+  m_inverted = !m_inverted;
+  m_compare_func = m_func_creator(m_inverted);
+
+  return this;
+}
+
 bool Item_allany_subselect::transformer(THD *thd, Item **transformed) {
   DBUG_TRACE;
-  if (m_upper_item != nullptr) m_upper_item->show = true;
-  return quantified_comp_transformer(thd, m_func, transformed);
+
+  Item_func_not_all *outer = m_all_subquery ? new Item_func_not_all(this)
+                                            : new Item_func_nop_all(this);
+  if (outer == nullptr) return true;
+
+  m_upper_item = outer;
+  /*
+    The "ignore unknown" property is placed on the quantified comparison
+    predicate and is tested here. However, we ensure that the wrapper
+    object has the same property so that we see the same consistent image
+    when walking an Item tree from the root.
+  */
+  if (ignore_unknown()) outer->apply_is_true();
+
+  if (outer->fix_fields(thd, nullptr)) return true;
+
+  outer->show = true;
+
+  if (quantified_comp_transformer(thd, m_compare_func, outer->arguments())) {
+    return true;
+  }
+  if (!outer->arguments()[0]->fixed &&
+      outer->arguments()[0]->fix_fields(thd, outer->arguments())) {
+    return true;
+  }
+  *transformed = outer;
+
+  return false;
+}
+
+bool Item_allany_subselect::eqne_op() const {
+  return m_compare_func->eqne_op();
 }
 
 bool Item_subselect::is_evaluated() const {
@@ -2932,8 +3162,8 @@ void Item_allany_subselect::print(const THD *thd, String *str,
   else {
     left_expr->print(thd, str, query_type);
     str->append(' ');
-    str->append(m_func->symbol(m_all));
-    str->append(m_all ? " all " : " any ", 5);
+    str->append(m_compare_func->symbol(false));
+    str->append(m_all_subquery ? " all " : " any ", 5);
   }
   Item_subselect::print(thd, str, query_type);
 }
@@ -3396,7 +3626,7 @@ bool subselect_hash_sj_engine::setup(
           thd, tmp_columns,
           true,  // Eliminate duplicates
           thd->variables.option_bits | TMP_TABLE_ALL_COLUMNS,
-          "<materialized_subquery>", true, true))
+          "<materialized_subquery>", true))
     return true;
 
   tmp_table = tmp_result_sink->table;
@@ -3508,7 +3738,7 @@ bool subselect_hash_sj_engine::setup(
     }
     if (nullable &&  // nullable column in tmp table,
                      // and UNKNOWN should not be interpreted as FALSE
-        !item->abort_on_null) {
+        item->process_nulls()) {
       // It must be the single column, or we wouldn't be here
       assert(tmp_key_parts == 1);
       // Be ready to search for NULL into inner column:

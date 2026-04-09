@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,7 @@ class HTTP_SERVER_LIB_EXPORT HttpAuth {
    * @retval true request handled
    */
   static bool require_auth(http::base::Request &req,
-                           std::shared_ptr<HttpAuthRealm> realm);
+                           const std::shared_ptr<HttpAuthRealm> &realm);
 };
 
 #endif  // ROUTER_SRC_HTTP_INCLUDE_MYSQLROUTER_COMPONENT_HTTP_SERVER_AUTH_H_

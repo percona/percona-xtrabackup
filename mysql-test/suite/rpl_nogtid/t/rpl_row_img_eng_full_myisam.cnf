@@ -1,1 +1,5 @@
 !include suite/rpl/t/rpl_row_img.cnf
+
+[mysqld]
+gtid_mode=off
+enforce-gtid-consistency=off

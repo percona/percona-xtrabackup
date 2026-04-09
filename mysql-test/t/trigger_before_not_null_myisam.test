@@ -1,5 +1,7 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 SET sql_mode = 'traditional';
 
@@ -199,3 +201,6 @@ SELECT * FROM t2;
 
 DROP TRIGGER t1_bu;
 DROP TABLE t1, t2;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

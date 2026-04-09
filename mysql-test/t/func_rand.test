@@ -79,3 +79,16 @@ SELECT r FROM t LEFT JOIN (SELECT RAND(0) AS r) AS dt ON TRUE;
 SELECT r FROM t LEFT JOIN LATERAL (SELECT i, RAND(0) AS r) AS dt ON TRUE;
 
 DROP TABLE t;
+
+--echo #
+--echo # Bug#35940224: Hypergraph: Semijoin with rand() gives wrong result
+--echo #
+
+CREATE TABLE t(a INT);
+INSERT INTO t VALUES (0), (1), (2), (0), (1), (2), (0), (1), (2),
+                     (0), (1), (2), (0), (1), (2), (0), (1), (2),
+                     (0), (1), (2), (0), (1), (2), (0), (1), (2),
+                     (0), (1), (2), (0), (1), (2), (0), (1), (2);
+--sorted_result
+SELECT * FROM t WHERE a IN (SELECT FLOOR(RAND(0) * 2) FROM t);
+DROP TABLE t;

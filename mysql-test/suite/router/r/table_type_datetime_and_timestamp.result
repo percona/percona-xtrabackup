@@ -1,0 +1,1437 @@
+RESET BINARY LOGS AND GTIDS;
+## Run parametric tests, where REST object column under test is
+## DATETIME, and its compared against dates encoded inside a JsonObject using "" key.
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+CREATE TABLE `test`.`datetime_values` (
+`id` int NOT NULL AUTO_INCREMENT, `dt` DATETIME(1) DEFAULT NULL, PRIMARY KEY (`id`));
+INSERT INTO `test`.`datetime_values` (id, dt) VALUES 
+(1, '2024-10-01 14:34:00.1234'),
+(2, '2025-10-01 18:34:00.1234'),
+(3, NULL),
+(4, '2026-10-01'),
+(5, '1970-10-01 06:34:20.2345');
+
+
+## I. Verify JSON encoding of DATETIME type, returned in FEED response
+#
+# 1. Verify JSON response containing datetime values encoded as string generated from column of type DATETIME
+#    returning single object.
+# 2. Verify JSON response containing datetime values encoded as string generated from column of type DATETIME
+#    returning multiple objects.
+# 3. Verify that object can be updated with different datimetime-values encoded as string and response
+#    contains same data but truncated to precision of datatype in that column (DATETIME(1)).
+# 4. Verify error message, in case of invalid DATETIME value.
+#
+## II. Verify JSON encoding of DATETIME in filter object with eq operator.
+# 1. Verify that objects can be filtered using DATETIME column using datetime-value encoded as string after truncation to DATETIME(1).
+# 2. Verify that objects can't be found using DATETIME column using accurate datetime-value encoded as string (same precision as in insert).
+# 3. Verify that objects can be filtered with null value.
+#
+## III. Verify JSON encoding of DATETIME in filter object with gt operator.
+# 1. Verify that objects can be filtered using DATETIME column using datetime-value encoded as string
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/test
+# Registred DB_OBJECT at path: /svc/test/datetime
+
+#
+# I.1
+GET /svc/test/datetime/2
+{
+    "dt": "2025-10-01 18:34:00.100000"
+}
+OK
+
+#
+# I.2
+GET /svc/test/datetime
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000"
+        },
+        {
+            "dt": "2025-10-01 18:34:00.100000"
+        },
+        {
+            "dt": null
+        },
+        {
+            "dt": "2026-10-01 00:00:00.000000"
+        },
+        {
+            "dt": "1970-10-01 06:34:20.200000"
+        }
+    ]
+}
+OK
+
+#
+# I.3
+PUT /svc/test/datetime/2 (payload-size:40)
+{
+    "dt": "2002-02-02 02:02:02.100000",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "CF0705ED394A748E8C59DCD276B557D946368AB747D4661CC3DAA0197E7DE538",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/test/datetime/2 (payload-size:40)
+{
+    "dt": "2000-01-01 00:00:00.100000",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "4927534F19FEB423292D19D17B958DC4CBC1C92969C3DCEF2F5E2D2793C9DBE9",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# I.4
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%2214:34:00.1000%22%7D%7D
+{
+    "message": "Incorrect DATETIME value: '14:34:00.1000'",
+    "status": 400
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%22TEST%20STRING%22%7D%7D
+{
+    "message": "Incorrect DATETIME value: 'TEST STRING'",
+    "status": 400
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%20false%7D%7D
+{
+    "message": "Invalid `FilterObject`",
+    "status": 400
+}
+OK
+
+#
+# II.1
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222024-10-01%2014:34:00.1000%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222024-10-01%2014:34:00.1%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222000-01-01%2000:00:00.1%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2000-01-01 00:00:00.100000",
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "4927534F19FEB423292D19D17B958DC4CBC1C92969C3DCEF2F5E2D2793C9DBE9"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24eq%22:%7B%22%24date%22:%222024-10-01%2014:34:00.1000%22%7D%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# II.2
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222024-10-01%2014:34:00.1234%22%7D%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222000-01-01%2000:00:00.1234%22%7D%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# II.3
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24null%22:null%7D%7D
+{
+    "items": [
+        {
+            "dt": null,
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "EA211F9FD737B25F6E3FCE756A311309F8C0234A8E6C758555078E902ACEAD25"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# III.1
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24gt%22:%7B%22%24date%22:%222024-10-01%2014:30:00.1234%22%7D%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        },
+        {
+            "dt": "2026-10-01 00:00:00.000000",
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "23090B828E67FF4CAFD9AF504A550143CB38F411F07EE2EA7769170D1654A608"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+DROP TABLE `test`.`datetime_values`;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;
+## Run parametric tests, where REST object column under test is
+## TIMESTAMP, and its compared against dates encoded inside a JsonObject using "" key.
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+CREATE TABLE `test`.`datetime_values` (
+`id` int NOT NULL AUTO_INCREMENT, `dt` TIMESTAMP(1) DEFAULT NULL, PRIMARY KEY (`id`));
+INSERT INTO `test`.`datetime_values` (id, dt) VALUES 
+(1, '2024-10-01 14:34:00.1234'),
+(2, '2025-10-01 18:34:00.1234'),
+(3, NULL),
+(4, '2026-10-01'),
+(5, '1970-10-01 06:34:20.2345');
+
+
+## I. Verify JSON encoding of TIMESTAMP type, returned in FEED response
+#
+# 1. Verify JSON response containing datetime values encoded as string generated from column of type TIMESTAMP
+#    returning single object.
+# 2. Verify JSON response containing datetime values encoded as string generated from column of type TIMESTAMP
+#    returning multiple objects.
+# 3. Verify that object can be updated with different datimetime-values encoded as string and response
+#    contains same data but truncated to precision of datatype in that column (TIMESTAMP(1)).
+# 4. Verify error message, in case of invalid TIMESTAMP value.
+#
+## II. Verify JSON encoding of TIMESTAMP in filter object with eq operator.
+# 1. Verify that objects can be filtered using TIMESTAMP column using datetime-value encoded as string after truncation to TIMESTAMP(1).
+# 2. Verify that objects can't be found using TIMESTAMP column using accurate datetime-value encoded as string (same precision as in insert).
+# 3. Verify that objects can be filtered with null value.
+#
+## III. Verify JSON encoding of TIMESTAMP in filter object with gt operator.
+# 1. Verify that objects can be filtered using TIMESTAMP column using datetime-value encoded as string
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/test
+# Registred DB_OBJECT at path: /svc/test/datetime
+
+#
+# I.1
+GET /svc/test/datetime/2
+{
+    "dt": "2025-10-01 18:34:00.100000"
+}
+OK
+
+#
+# I.2
+GET /svc/test/datetime
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000"
+        },
+        {
+            "dt": "2025-10-01 18:34:00.100000"
+        },
+        {
+            "dt": null
+        },
+        {
+            "dt": "2026-10-01 00:00:00.000000"
+        },
+        {
+            "dt": "1970-10-01 06:34:20.200000"
+        }
+    ]
+}
+OK
+
+#
+# I.3
+PUT /svc/test/datetime/2 (payload-size:40)
+{
+    "dt": "2002-02-02 02:02:02.100000",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "CF0705ED394A748E8C59DCD276B557D946368AB747D4661CC3DAA0197E7DE538",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/test/datetime/2 (payload-size:40)
+{
+    "dt": "2000-01-01 00:00:00.100000",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "4927534F19FEB423292D19D17B958DC4CBC1C92969C3DCEF2F5E2D2793C9DBE9",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# I.4
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%2214:34:00.1000%22%7D%7D
+{
+    "message": "Incorrect TIMESTAMP value: '14:34:00.1000'",
+    "status": 400
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%22TEST%20STRING%22%7D%7D
+{
+    "message": "Incorrect TIMESTAMP value: 'TEST STRING'",
+    "status": 400
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%20false%7D%7D
+{
+    "message": "Invalid `FilterObject`",
+    "status": 400
+}
+OK
+
+#
+# II.1
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222024-10-01%2014:34:00.1000%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222024-10-01%2014:34:00.1%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222000-01-01%2000:00:00.1%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2000-01-01 00:00:00.100000",
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "4927534F19FEB423292D19D17B958DC4CBC1C92969C3DCEF2F5E2D2793C9DBE9"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24eq%22:%7B%22%24date%22:%222024-10-01%2014:34:00.1000%22%7D%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# II.2
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222024-10-01%2014:34:00.1234%22%7D%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24date%22:%222000-01-01%2000:00:00.1234%22%7D%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# II.3
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24null%22:null%7D%7D
+{
+    "items": [
+        {
+            "dt": null,
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "EA211F9FD737B25F6E3FCE756A311309F8C0234A8E6C758555078E902ACEAD25"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# III.1
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24gt%22:%7B%22%24date%22:%222024-10-01%2014:30:00.1234%22%7D%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        },
+        {
+            "dt": "2026-10-01 00:00:00.000000",
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "23090B828E67FF4CAFD9AF504A550143CB38F411F07EE2EA7769170D1654A608"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+DROP TABLE `test`.`datetime_values`;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;
+## Run parametric tests, where REST object column under test is
+## DATETIME, and its compared against dates encoded inside a JsonString.
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+CREATE TABLE `test`.`datetime_values` (
+`id` int NOT NULL AUTO_INCREMENT, `dt` DATETIME(1) DEFAULT NULL, PRIMARY KEY (`id`));
+INSERT INTO `test`.`datetime_values` (id, dt) VALUES 
+(1, '2024-10-01 14:34:00.1234'),
+(2, '2025-10-01 18:34:00.1234'),
+(3, NULL),
+(4, '2026-10-01'),
+(5, '1970-10-01 06:34:20.2345');
+
+
+## I. Verify JSON encoding of DATETIME type, returned in FEED response
+#
+# 1. Verify JSON response containing datetime values encoded as string generated from column of type DATETIME
+#    returning single object.
+# 2. Verify JSON response containing datetime values encoded as string generated from column of type DATETIME
+#    returning multiple objects.
+# 3. Verify that object can be updated with different datimetime-values encoded as string and response
+#    contains same data but truncated to precision of datatype in that column (DATETIME(1)).
+# 4. Verify error message, in case of invalid DATETIME value.
+#
+## II. Verify JSON encoding of DATETIME in filter object with eq operator.
+# 1. Verify that objects can be filtered using DATETIME column using datetime-value encoded as string after truncation to DATETIME(1).
+# 2. Verify that objects can't be found using DATETIME column using accurate datetime-value encoded as string (same precision as in insert).
+# 3. Verify that objects can be filtered with null value.
+#
+## III. Verify JSON encoding of DATETIME in filter object with gt operator.
+# 1. Verify that objects can be filtered using DATETIME column using datetime-value encoded as string
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/test
+# Registred DB_OBJECT at path: /svc/test/datetime
+
+#
+# I.1
+GET /svc/test/datetime/2
+{
+    "dt": "2025-10-01 18:34:00.100000"
+}
+OK
+
+#
+# I.2
+GET /svc/test/datetime
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000"
+        },
+        {
+            "dt": "2025-10-01 18:34:00.100000"
+        },
+        {
+            "dt": null
+        },
+        {
+            "dt": "2026-10-01 00:00:00.000000"
+        },
+        {
+            "dt": "1970-10-01 06:34:20.200000"
+        }
+    ]
+}
+OK
+
+#
+# I.3
+PUT /svc/test/datetime/2 (payload-size:40)
+{
+    "dt": "2002-02-02 02:02:02.100000",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "CF0705ED394A748E8C59DCD276B557D946368AB747D4661CC3DAA0197E7DE538",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/test/datetime/2 (payload-size:40)
+{
+    "dt": "2000-01-01 00:00:00.100000",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "4927534F19FEB423292D19D17B958DC4CBC1C92969C3DCEF2F5E2D2793C9DBE9",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# I.4
+GET /svc/test/datetime/?q=%7B%22dt%22:%2214:34:00.1000%22%7D
+{
+    "message": "Incorrect DATETIME value: '14:34:00.1000'",
+    "status": 400
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%22TEST%20STRING%22%7D
+{
+    "message": "Incorrect DATETIME value: 'TEST STRING'",
+    "status": 400
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%20false%7D
+{
+    "message": "Not supported type used in `FilterObject`.",
+    "status": 400
+}
+OK
+
+#
+# II.1
+GET /svc/test/datetime/?q=%7B%22dt%22:%222024-10-01%2014:34:00.1000%22%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%222024-10-01%2014:34:00.1%22%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%222000-01-01%2000:00:00.1%22%7D
+{
+    "items": [
+        {
+            "dt": "2000-01-01 00:00:00.100000",
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "4927534F19FEB423292D19D17B958DC4CBC1C92969C3DCEF2F5E2D2793C9DBE9"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24eq%22:%222024-10-01%2014:34:00.1000%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# II.2
+GET /svc/test/datetime/?q=%7B%22dt%22:%222024-10-01%2014:34:00.1234%22%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%222000-01-01%2000:00:00.1234%22%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# II.3
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24null%22:null%7D%7D
+{
+    "items": [
+        {
+            "dt": null,
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "EA211F9FD737B25F6E3FCE756A311309F8C0234A8E6C758555078E902ACEAD25"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# III.1
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24gt%22:%222024-10-01%2014:30:00.1234%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        },
+        {
+            "dt": "2026-10-01 00:00:00.000000",
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "23090B828E67FF4CAFD9AF504A550143CB38F411F07EE2EA7769170D1654A608"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+DROP TABLE `test`.`datetime_values`;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;
+## Run parametric tests, where REST object column under test is
+## TIMESTAMP, and its compared against dates encoded inside a JsonString.
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+CREATE TABLE `test`.`datetime_values` (
+`id` int NOT NULL AUTO_INCREMENT, `dt` TIMESTAMP(1) DEFAULT NULL, PRIMARY KEY (`id`));
+INSERT INTO `test`.`datetime_values` (id, dt) VALUES 
+(1, '2024-10-01 14:34:00.1234'),
+(2, '2025-10-01 18:34:00.1234'),
+(3, NULL),
+(4, '2026-10-01'),
+(5, '1970-10-01 06:34:20.2345');
+
+
+## I. Verify JSON encoding of TIMESTAMP type, returned in FEED response
+#
+# 1. Verify JSON response containing datetime values encoded as string generated from column of type TIMESTAMP
+#    returning single object.
+# 2. Verify JSON response containing datetime values encoded as string generated from column of type TIMESTAMP
+#    returning multiple objects.
+# 3. Verify that object can be updated with different datimetime-values encoded as string and response
+#    contains same data but truncated to precision of datatype in that column (TIMESTAMP(1)).
+# 4. Verify error message, in case of invalid TIMESTAMP value.
+#
+## II. Verify JSON encoding of TIMESTAMP in filter object with eq operator.
+# 1. Verify that objects can be filtered using TIMESTAMP column using datetime-value encoded as string after truncation to TIMESTAMP(1).
+# 2. Verify that objects can't be found using TIMESTAMP column using accurate datetime-value encoded as string (same precision as in insert).
+# 3. Verify that objects can be filtered with null value.
+#
+## III. Verify JSON encoding of TIMESTAMP in filter object with gt operator.
+# 1. Verify that objects can be filtered using TIMESTAMP column using datetime-value encoded as string
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/test
+# Registred DB_OBJECT at path: /svc/test/datetime
+
+#
+# I.1
+GET /svc/test/datetime/2
+{
+    "dt": "2025-10-01 18:34:00.100000"
+}
+OK
+
+#
+# I.2
+GET /svc/test/datetime
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000"
+        },
+        {
+            "dt": "2025-10-01 18:34:00.100000"
+        },
+        {
+            "dt": null
+        },
+        {
+            "dt": "2026-10-01 00:00:00.000000"
+        },
+        {
+            "dt": "1970-10-01 06:34:20.200000"
+        }
+    ]
+}
+OK
+
+#
+# I.3
+PUT /svc/test/datetime/2 (payload-size:40)
+{
+    "dt": "2002-02-02 02:02:02.100000",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "CF0705ED394A748E8C59DCD276B557D946368AB747D4661CC3DAA0197E7DE538",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/test/datetime/2 (payload-size:40)
+{
+    "dt": "2000-01-01 00:00:00.100000",
+    "id": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "4927534F19FEB423292D19D17B958DC4CBC1C92969C3DCEF2F5E2D2793C9DBE9",
+        "gtid": "GTID"
+    }
+}
+OK
+
+#
+# I.4
+GET /svc/test/datetime/?q=%7B%22dt%22:%2214:34:00.1000%22%7D
+{
+    "message": "Incorrect TIMESTAMP value: '14:34:00.1000'",
+    "status": 400
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%22TEST%20STRING%22%7D
+{
+    "message": "Incorrect TIMESTAMP value: 'TEST STRING'",
+    "status": 400
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%20false%7D
+{
+    "message": "Not supported type used in `FilterObject`.",
+    "status": 400
+}
+OK
+
+#
+# II.1
+GET /svc/test/datetime/?q=%7B%22dt%22:%222024-10-01%2014:34:00.1000%22%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%222024-10-01%2014:34:00.1%22%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%222000-01-01%2000:00:00.1%22%7D
+{
+    "items": [
+        {
+            "dt": "2000-01-01 00:00:00.100000",
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "4927534F19FEB423292D19D17B958DC4CBC1C92969C3DCEF2F5E2D2793C9DBE9"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24eq%22:%222024-10-01%2014:34:00.1000%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# II.2
+GET /svc/test/datetime/?q=%7B%22dt%22:%222024-10-01%2014:34:00.1234%22%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+GET /svc/test/datetime/?q=%7B%22dt%22:%222000-01-01%2000:00:00.1234%22%7D
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# II.3
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24null%22:null%7D%7D
+{
+    "items": [
+        {
+            "dt": null,
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "EA211F9FD737B25F6E3FCE756A311309F8C0234A8E6C758555078E902ACEAD25"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+
+#
+# III.1
+GET /svc/test/datetime/?q=%7B%22dt%22:%7B%22%24gt%22:%222024-10-01%2014:30:00.1234%22%7D%7D
+{
+    "items": [
+        {
+            "dt": "2024-10-01 14:34:00.100000",
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "84205F9D6F82AB81E167D7E63164566A11E47DEE3903C8163E8372E9C5D2685B"
+            }
+        },
+        {
+            "dt": "2026-10-01 00:00:00.000000",
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/test/datetime/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "23090B828E67FF4CAFD9AF504A550143CB38F411F07EE2EA7769170D1654A608"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/test/datetime/"
+        }
+    ]
+}
+OK
+DROP TABLE `test`.`datetime_values`;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

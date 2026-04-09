@@ -123,8 +123,6 @@ select null sounds like 'null';
 select 'null' sounds like null;
 select null sounds like null;
 select crc32("123");
-select sha('abc');
-select sha1('abc');
 select aes_decrypt(aes_encrypt('abc','1'),'1');
 select aes_decrypt(aes_encrypt('abc','1'),1);
 select aes_encrypt(NULL,"a");
@@ -227,6 +225,101 @@ DROP TABLE t1;
 
 # Test collation and coercibility
 #
+# EXPLICIT coercibility:
+
+# Two equal COLLATE clauses are OK:
+
+SELECT '1' COLLATE latin1_swedish_ci = '1' COLLATE latin1_swedish_ci;
+SELECT CONCAT('1' COLLATE latin1_swedish_ci, '2' COLLATE latin1_swedish_ci);
+
+# Two conflicting COLLATE clauses:
+
+--error ER_CANT_AGGREGATE_2COLLATIONS
+SELECT '1' COLLATE latin1_swedish_ci = '1' COLLATE latin1_general_ci;
+--error ER_CANT_AGGREGATE_2COLLATIONS
+SELECT CONCAT('1' COLLATE latin1_swedish_ci, '2' COLLATE latin1_general_ci);
+
+# One COLLATE clause takes precedence
+
+SELECT '1' COLLATE latin1_swedish_ci = '1';
+SELECT CONCAT('1' COLLATE latin1_swedish_ci, '2');
+
+# IMPLICIT coercibility
+
+CREATE TABLE t1(
+  b0 VARBINARY(10),
+  c0 VARCHAR(10) COLLATE utf8mb4_bin,
+  c1 VARCHAR(10) COLLATE utf8mb4_0900_ai_ci,
+  c2 VARCHAR(10) COLLATE utf8mb4_0900_as_cs,
+  c3 VARCHAR(10) COLLATE utf8mb3_general_ci,
+  c4 VARCHAR(10) COLLATE utf16_general_ci,
+  c5 VARCHAR(10) COLLATE utf32_unicode_ci,
+  c6 VARCHAR(10) COLLATE ascii_general_ci,
+  c7 VARCHAR(10) COLLATE latin1_swedish_ci,
+  c8 VARCHAR(10) COLLATE latin2_general_ci
+);
+
+INSERT INTO t1 VALUES
+ (x'e6f8e5', 'abc', 'abc', 'ABC', 'æøå', 'abc', 'abc', 'abc', 'æøå', 'abc');
+
+# Binary string takes precedence:
+
+SELECT c1 = b0 FROM t1;
+SELECT CONCAT(c1, b0) FROM t1;
+
+# Binary collation takes precedence:
+
+SELECT c1 = c0 FROM t1;
+SELECT CONCAT(c1, c0) FROM t1;
+
+# Same character set, different collations: conflict for compare, OK for result:
+
+--error ER_CANT_AGGREGATE_2COLLATIONS
+SELECT c1 = c2 FROM t1;
+SELECT CONCAT(c1, c2) FROM t1;
+
+# Superset character set: UNICODE:
+
+SELECT c1 = c3 FROM t1;
+SELECT CONCAT(c1, c3) FROM t1;
+
+SELECT c1 = c4 FROM t1;
+SELECT CONCAT(c1, c4) FROM t1;
+
+SELECT c1 = c5 FROM t1;
+SELECT CONCAT(c1, c5) FROM t1;
+
+# Superset character set: UNICODE vs ASCII/LATIN1/2:
+
+SELECT c1 = c6 FROM t1;
+SELECT CONCAT(c1, c6) FROM t1;
+
+SELECT c1 = c7 FROM t1;
+SELECT CONCAT(c1, c7) FROM t1;
+
+SELECT c1 = c8 FROM t1;
+SELECT CONCAT(c1, c8) FROM t1;
+
+# Non superset character sets: LATIN1 vs. LATIN2:
+
+--error ER_CANT_AGGREGATE_2COLLATIONS
+SELECT c7 = c8 FROM t1;
+--error ER_CANT_AGGREGATE_2COLLATIONS
+SELECT CONCAT(c7, c8) FROM t1;
+
+# SYSCONST coercibility
+
+# Testing is irrelevant since most system constant strings get the same
+# character set and collation.
+
+# Testing against COERCIBLE constants:
+
+SELECT DATABASE() = _utf8mb4'æøå';
+SELECT CONCAT(DATABASE(), _utf8mb4'æøå');
+SELECT DATABASE() = _utf8mb4'āđē';
+SELECT CONCAT(DATABASE(), _utf8mb4'āđē');
+
+# COERCIBLE coercibility
 
 select 1=_latin1'1';
 select _latin1'1'=1;
@@ -249,6 +342,44 @@ select concat(_latin1'a',_latin2'a',_latin5'a');
 select concat(_latin1'a',_latin2'a',_latin5'a',_latin7'a');
 --error ER_CANT_AGGREGATE_2COLLATIONS
 select concat_ws(_latin1'a',_latin2'a');
+
+# NUMERIC coercibility, again irrelevant since all numeric constant values
+# get the same character set and collation.
+
+# Testing against COERCIBLE constants (only CONCAT() since comparisons would
+# be numeric):
+
+SELECT CONCAT(_utf8mb4'æøå', 1);
+SELECT CONCAT(_utf8mb4'āđē', 1);
+
+# NULL coercibility, also irrelevant since all NULL values get the same
+# character set and collation.
+
+# Testing against COERCIBLE constants:
+
+SELECT _utf8mb4'æøå' = NULL;
+SELECT CONCAT(_utf8mb4'æøå', NULL);
+
+# NONE coercibility
+
+# c1 and c2 are different collations on the same character set.
+# For CONCAT(), this is assigned NONE coercibility and binary collation is set.
+# Equality sees the NONE coercibility and uses collation of c3 as collation
+# for the comparison. There is similar logic for the GREATEST() function.
+
+SELECT c3 = CONCAT(c1, c2) FROM t1;
+SELECT GREATEST(c3, CONCAT(c1, c2)) FROM t1;
+
+SELECT COERCIBILITY(CONCAT(c1, c2)) FROM t1;
+
+# Similar logic as above for CONCAT(), but the comparison operator does not
+# allow NONE coercibility, hence the error. But CONCAT allows NONE.
+
+--error ER_CANT_AGGREGATE_2COLLATIONS
+SELECT CONCAT(c1, c2) = CONCAT(c1, c2) FROM t1;
+SELECT CONCAT(CONCAT(c1, c2), CONCAT(c1, c2)) FROM t1;
+
+DROP TABLE t1;
 
 #
 # Test FIELD() and collations
@@ -435,8 +566,6 @@ drop table t7;
 
 select substring_index("1abcd;2abcd;3abcd;4abcd", ';', 2),substring_index("1abcd;2abcd;3abcd;4abcd", ';', -2);
 
-explain select sha('abc');
-explain select sha1('abc');
 explain select soundex('');
 explain select 'mood' sounds like 'mud';
 explain select aes_decrypt(aes_encrypt('abc','1'),'1');
@@ -575,9 +704,7 @@ CREATE TABLE t2 (num int primary key);
 INSERT INTO t1 VALUES ('notnumber');
 INSERT INTO t2 VALUES (0), (1); 
 
---skip_if_hypergraph  # Different warnings.
 SELECT * FROM t1, t2 WHERE num=str;
---skip_if_hypergraph  # Different warnings.
 SELECT * FROM t1, t2 WHERE num=substring(str from 1 for 6);
 
 DROP TABLE t1,t2;
@@ -792,9 +919,6 @@ select benchmark(-1, 1);
 # the binary representation of the string without charset/collation.
 # 2) These tests can not print the encoded text directly, because it's binary,
 # and doing this would cause problems with source control.
-# Instead, an md5() checksum is used, to verify the result indirectly.
-# 3) Each md5() result must be identical.
-# 4) The md5() result must never change, and must be stable across releases.
 #
 set @dec=5;
 select format(pi(), (1+1));
@@ -1381,7 +1505,7 @@ round(
       bit_count('')
     ) ),
     ( lpad( ( elt('01','}:K5')),
-              sha1('P'),
+              sha2('P',256),
               ( ( select '-9223372036854775808.1' > all (select '')))
           )
     )
@@ -2497,7 +2621,7 @@ SELECT _utf8mb3 'ß' = _utf8mb4 'ss' AS c;
 --echo #              Assertion `is_nullable()' failed.
 SET @@sql_mode='';
 --disable_warnings
-DO SPACE(SHA(UUID_SHORT()));
+DO SPACE(SHA2(UUID_SHORT(),256));
 --enable_warnings
 SET @@sql_mode = default;
 
@@ -2814,3 +2938,81 @@ DROP TABLE t1;
 
 --error ER_CANNOT_CONVERT_STRING
 DO '' SOUNDS LIKE LEAD(DATABASE(), 1, x'cafe') OVER();
+
+--echo #
+--echo # Bug#37086818 mysqld assertion failure `(slen % 4) == 0'
+--echo #              in my_strnncollsp_utf32 at ../strings/ctype-ucs2.cc
+--echo #
+CREATE TABLE t1 (f1 VARCHAR(10) COLLATE UTF32_GENERAL_CI);
+SELECT * FROM t1 WHERE LOCATE('Q',f1,1) BETWEEN 'a' AND 'b';
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#37554688 Collation name aliases should not be case significant
+--echo #
+
+SET NAMES UTF8;
+
+SELECT "hello" COLLATE UTF8_bin;
+
+SET NAMES default;
+
+--echo #
+--echo # Bug#37601389 Assertion `!thd->is_error()' failed|sql_resolver.cc
+--echo #
+
+CREATE TABLE customer_demographics (
+  cd_demo_sk int NOT NULL,
+  cd_purchase_estimate int DEFAULT NULL,
+  PRIMARY KEY (cd_demo_sk)
+);
+
+INSERT INTO customer_demographics VALUES (1,500) ;
+
+--error ER_DATA_OUT_OF_RANGE
+SELECT * FROM  customer_demographics
+WHERE CEILING( customer_demographics.cd_purchase_estimate )
+BETWEEN '2037' AND ( -71 * ( -1552207807 * 440370369 ) )
+COLLATE utf8mb4_et_0900_as_cs;
+
+DROP TABLE customer_demographics;
+
+--echo #
+--echo # Bug#37285902: Illegal mix of collations NONE vs. COERCIBLE
+--echo #
+
+CREATE TABLE t1(
+  id DECIMAL(38,0)
+);
+
+CREATE TABLE t2(
+  name VARCHAR(150) COLLATE utf8mb4_0900_as_cs
+);
+
+WITH cte0 AS
+ (SELECT CAST(t1.id AS CHAR(38)) AS c2
+  FROM t1
+ ),
+     cte1 AS
+ (SELECT t2.name AS c1
+  FROM t2
+ ),
+     cte2 AS
+ (SELECT d3.c1 AS c1, d1.c2 AS c2
+  FROM cte0 AS d1 LEFT JOIN cte1 AS d3 ON TRUE
+  WHERE IFNULL(d3.c1, d1.c2) LIKE 'Vision Operations'
+ )
+SELECT * FROM cte2;
+
+SELECT IFNULL(name, CAST(t1.id AS CHAR(38))) LIKE 'Vision Operations'
+FROM t1 LEFT JOIN t2 ON TRUE;
+
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug37815490 - vector_to_string returns data in non-standard collation
+--echo #
+
+select CHARSET(vector_to_string(string_to_vector('[1,2]')));
+select COLLATION(vector_to_string(string_to_vector('[1,2]')));
+select JSON_OBJECT('a', vector_to_string(string_to_vector('[1,2]')));

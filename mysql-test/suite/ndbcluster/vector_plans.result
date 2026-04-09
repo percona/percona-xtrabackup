@@ -1,0 +1,92 @@
+create table t1 (
+pk int primary key, uk int, ok int default 7,
+v1 vector, v2 vector(5000), v3 vector(446),
+key(ok), unique key (uk)
+) engine ndbcluster;
+create temporary table t2 (
+ai int auto_increment primary key, pk int, uk int, ok int default 7,
+v1 vector, v2 vector(5000), v3 vector(446),
+key(pk), key(ok), key (uk));
+begin;
+# Insert 2001 rows
+commit;
+analyze table t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+========== pk ============== 
+## Query ##
+insert into t2(pk,uk,v1,v2,v3)
+select pk, pk, v1, v2, v3 from t1
+where pk <= 5
+or pk between 10 and 15
+or pk >= 20
+order by pk
+## Plan ##
+plan	insert_from.ordering_operation
+access_type	"range"
+pushed_condition	"((`test`.`t1`.`pk` <= 5) or (`test`.`t1`.`pk` between 10 and 15) or (`test`.`t1`.`pk` >= 20))"
+using_MRR	true
+## Result ##
+COUNT(*)	COUNT(v1)	COUNT(v2)	COUNT(v3)	v1	v2	v3
+1993	1993	1993	1993	[1.00000e+01	[2.00000e+01	[3.00000e+01
+========== pk ============== 
+## Query ##
+insert into t2(pk,uk,v1,v2,v3)
+select pk, pk, v1, v2, v3 from t1
+where pk in (1,2,3,5,8,13,100)
+order by pk
+## Plan ##
+plan	insert_from.ordering_operation
+access_type	"range"
+pushed_condition	"(`test`.`t1`.`pk` in (1,2,3,5,8,13,100))"
+using_MRR	true
+## Result ##
+COUNT(*)	COUNT(v1)	COUNT(v2)	COUNT(v3)	v1	v2	v3
+7	7	7	7	[1.10000e+01	[2.10000e+01	[3.10000e+01
+========== uk ============== 
+## Query ##
+insert into t2(pk,uk,v1,v2,v3)
+select pk, pk, v1, v2, v3 from t1
+where uk <= 5
+or uk between 10 and 15
+or uk >= 20
+order by uk
+## Plan ##
+plan	insert_from.ordering_operation
+access_type	"range"
+pushed_condition	"((`test`.`t1`.`uk` <= 5) or (`test`.`t1`.`uk` between 10 and 15) or (`test`.`t1`.`uk` >= 20))"
+using_MRR	true
+## Result ##
+COUNT(*)	COUNT(v1)	COUNT(v2)	COUNT(v3)	v1	v2	v3
+1993	1993	1993	1993	[1.00000e+01	[2.00000e+01	[3.00000e+01
+========== ok ============== 
+## Query ##
+insert into t2(pk,uk,v1,v2,v3)
+select pk, pk, v1, v2, v3 from t1
+where ok <= 8
+or ok between 10 and 15
+or ok >= 20
+order by ok
+## Plan ##
+plan	insert_from.ordering_operation
+access_type	"range"
+pushed_condition	"((`test`.`t1`.`ok` <= 8) or (`test`.`t1`.`ok` between 10 and 15) or (`test`.`t1`.`ok` >= 20))"
+using_MRR	true
+## Result ##
+COUNT(*)	COUNT(v1)	COUNT(v2)	COUNT(v3)	v1	v2	v3
+2001	2001	2001	2001	[1.00000e+01	[2.00000e+01	[3.00000e+01
+========== v1 ============== 
+## Query ##
+insert into t2(pk,uk,v1,v2,v3)
+select t1.pk, t1.pk, t1.v1, t1.v2, t1.v3 from t1 join t1 t2
+where t1.pk=t2.pk AND t1.v1 = t2.v1
+## Plan ##
+plan	insert_from.nested_loop
+access_type	["ALL", "eq_ref"]
+pushed_condition	["(`test`.`t2`.`v1` = `test`.`t1`.`v1`)"]
+pushed_join	["Parent of 2 pushed join@1", "Child of 't1' in pushed join@1"]
+using_MRR	NULL
+## Result ##
+COUNT(*)	COUNT(v1)	COUNT(v2)	COUNT(v3)	v1	v2	v3
+2001	2001	2001	2001	[1.00000e+01	[2.00000e+01	[3.00000e+01
+drop tables t1,t2;

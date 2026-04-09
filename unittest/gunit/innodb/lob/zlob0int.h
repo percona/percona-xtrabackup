@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -104,11 +104,10 @@ struct z_index_entry_t {
   bool can_be_purged(trx_id_t trxid) { return (trxid == get_trx_id()); }
 
   /** Purge one index entry.
-  @param[in]  trxid  purging data belonging to trxid.
   @param[in,out]  lst  the list from which this entry will be removed.
   @param[in,out]  free_list the list to which this entry will be added. */
-  fil_addr_t purge_version(trx_id_t trxid, z_first_page_t &first,
-                           flst_base_node_t *lst, flst_base_node_t *free_list);
+  fil_addr_t purge_version(z_first_page_t &first, flst_base_node_t *lst,
+                           flst_base_node_t *free_list);
 
   /** Purge the current index entry. An index entry points to either a FIRST
   page or DATA page.  That LOB page will be freed if it is DATA page.  A FIRST
@@ -230,10 +229,9 @@ struct z_index_entry_t {
   not have older versions.  If older version is there, bring it back to the
   index list from the versions list.  Then remove the current entry from
   the index list.  Move the versions list from current entry to older entry.
-  @param[in]  trxid  The transaction identifier.
   @param[in]  first  The first lob page containing index list and free
                           list. */
-  fil_addr_t make_old_version_current(trx_id_t trxid, z_first_page_t &first);
+  fil_addr_t make_old_version_current(z_first_page_t &first);
 
   flst_node_t *get_node() { return (m_node); }
   bool is_null() const { return (m_node == nullptr); }

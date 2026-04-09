@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -363,7 +363,7 @@ const char *NdbDictionary::Table::getMysqlName() const {
 int NdbDictionary::Table::getTableId() const { return m_impl.m_id; }
 
 int NdbDictionary::Table::addColumn(const Column &c) {
-  NdbColumnImpl *col = new NdbColumnImpl;
+  auto *col = new NdbColumnImpl;
   if (col == nullptr) {
     errno = ENOMEM;
     return -1;
@@ -849,10 +849,8 @@ const NdbDictionary::Column *NdbDictionary::Index::getColumn(
 const char *NdbDictionary::Index::getIndexColumn(int no) const {
   const NdbDictionary::Column *col = getColumn(no);
 
-  if (col)
-    return col->getName();
-  else
-    return nullptr;
+  if (col) return col->getName();
+  return nullptr;
 }
 
 const NdbRecord *NdbDictionary::Index::getDefaultRecord() const {
@@ -860,7 +858,7 @@ const NdbRecord *NdbDictionary::Index::getDefaultRecord() const {
 }
 
 int NdbDictionary::Index::addColumn(const Column &c) {
-  NdbColumnImpl *col = new NdbColumnImpl;
+  auto *col = new NdbColumnImpl;
   if (col == nullptr) {
     errno = ENOMEM;
     return -1;
@@ -1064,7 +1062,7 @@ Uint32 NdbDictionary::Event::getReportOptions() const {
 }
 
 void NdbDictionary::Event::addColumn(const Column &c) {
-  NdbColumnImpl *col = new NdbColumnImpl;
+  auto *col = new NdbColumnImpl;
   (*col) = NdbColumnImpl::getImpl(c);
   m_impl.m_columns.push_back(col);
 }
@@ -1600,7 +1598,8 @@ int NdbDictionary::Dictionary::prepareHashMap(const Table &oldTableF,
       newTable.m_hash_map_id = oldTable.m_hash_map_id;
       newTable.m_hash_map_version = oldTable.m_hash_map_version;
       return 0;
-    } else if (newTable.getFullyReplicated()) {
+    }
+    if (newTable.getFullyReplicated()) {
       // Fully replicated tables may not change partition count.
       m_impl.m_error.code = 797;  // WrongPartitionBalanceFullyReplicated
       return -1;
@@ -2205,7 +2204,7 @@ void NdbDictionary::Dictionary::releaseRecord(NdbRecord *rec) {
 }
 
 void NdbDictionary::Dictionary::putTable(const NdbDictionary::Table *table) {
-  NdbDictionary::Table *copy_table = new NdbDictionary::Table;
+  auto *copy_table = new NdbDictionary::Table;
   *copy_table = *table;
   m_impl.putTable(&NdbTableImpl::getImpl(*copy_table));
 }
@@ -2448,7 +2447,7 @@ static void pretty_print_string(NdbOut &out,
                                 const NdbDictionary::NdbDataPrintFormat &f,
                                 const char *type, bool is_binary,
                                 const void *aref, unsigned sz) {
-  const unsigned char *ref = (const unsigned char *)aref;
+  const auto *ref = (const unsigned char *)aref;
   int i, len, printable = 1;
 
   if (is_binary && f.hex_format) {
@@ -2520,7 +2519,7 @@ NdbOut &NdbDictionary::printFormattedValue(NdbOut &out,
     return out;
   }
 
-  const unsigned char *val_p = (const unsigned char *)val;
+  const auto *val_p = (const unsigned char *)val;
 
   uint length = c->getLength();
   Uint32 j;
@@ -2542,7 +2541,7 @@ NdbOut &NdbDictionary::printFormattedValue(NdbOut &out,
       case NdbDictionary::Column::Bit: {
         out << format.hex_prefix << "0x";
         {
-          const Uint32 *buf = (const Uint32 *)val;
+          const auto *buf = (const Uint32 *)val;
           unsigned int k = (length + 31) / 32;
           const unsigned int sigbits = length & 31;
           Uint32 wordMask = (1 << sigbits) - 1;
@@ -2658,7 +2657,7 @@ NdbOut &NdbDictionary::printFormattedValue(NdbOut &out,
         decimal_make_zero(&tmpDec);
         int rc;
 
-        const uchar *data = (const uchar *)val_p;
+        const auto *data = (const uchar *)val_p;
         if ((rc = bin2decimal(data, &tmpDec, precision, scale))) {
           out.print("***Error : Bad bin2decimal conversion %d ***", rc);
           break;
@@ -3174,8 +3173,8 @@ int NdbDictionary::Dictionary::dropForeignKey(const ForeignKey &fk) {
 
 int NdbDictionary::Dictionary::List::Element::compareById(const void *p,
                                                           const void *q) {
-  const Element *x = static_cast<const Element *>(p);
-  const Element *y = static_cast<const Element *>(q);
+  const auto *x = static_cast<const Element *>(p);
+  const auto *y = static_cast<const Element *>(q);
   int cmp = (x->id < y->id) ? -1 : (x->id > y->id) ? +1 : 0;
   if (cmp != 0) return cmp;
   /**
@@ -3189,8 +3188,8 @@ int NdbDictionary::Dictionary::List::Element::compareById(const void *p,
 
 int NdbDictionary::Dictionary::List::Element::compareByName(const void *p,
                                                             const void *q) {
-  const Element *x = static_cast<const Element *>(p);
-  const Element *y = static_cast<const Element *>(q);
+  const auto *x = static_cast<const Element *>(p);
+  const auto *y = static_cast<const Element *>(q);
   int cmp = strcmp(x->database, y->database);
   if (cmp != 0) return cmp;
   cmp = strcmp(x->schema, y->schema);

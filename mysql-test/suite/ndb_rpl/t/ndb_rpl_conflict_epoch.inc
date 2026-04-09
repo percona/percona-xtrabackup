@@ -191,12 +191,12 @@ START REPLICA;
 
 --source suite/ndb_rpl/t/ndb_connect_to_primary.inc
 --echo -- Look at Seconday row
-select a,b,sha1(c) from test.t1 where a=1;
+select a,b,sha2(c,256) from test.t1 where a=1;
 
 --source suite/ndb_rpl/t/ndb_sync_primary_to_secondary.inc
 --source suite/ndb_rpl/t/ndb_connect_to_secondary.inc
 --echo -- Check it's the same on the Secondary
-select a,b,sha1(c) from test.t1 where a=1;
+select a,b,sha2(c,256) from test.t1 where a=1;
 
 --source suite/ndb_rpl/t/ndb_connect_to_primary.inc
 --echo Test batching of DELETE vs DELETE with following INSERT

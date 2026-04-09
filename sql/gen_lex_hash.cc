@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -85,10 +85,10 @@ So, we can read full search-structure as 32-bit word
 */
 
 #define NO_YACC_SYMBOLS
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <set>
 #include <utility>
 

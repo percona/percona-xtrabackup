@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,9 @@
 /* Remove all rows from a MyISAM table */
 /* This clears the status information and truncates files */
 
-#include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <cerrno>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -72,7 +72,7 @@ int mi_delete_all_rows(MI_INFO *info) {
   return 0;
 
 err : {
-  int save_errno = my_errno();
+  int const save_errno = my_errno();
   (void)_mi_writeinfo(info, WRITEINFO_UPDATE_KEYFILE);
   info->update |= HA_STATE_WRITTEN; /* Buffer changed */
   set_my_errno(save_errno);

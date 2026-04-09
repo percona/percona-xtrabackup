@@ -15,7 +15,6 @@ SET default_storage_engine=InnoDB;
 let $file_per_table=`select @@innodb_file_per_table`;
 SET GLOBAL innodb_file_per_table=on;
 
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
 SET @saved_innodb_strict_mode=@@SESSION.innodb_strict_mode;
 SET SESSION innodb_strict_mode=OFF;
 

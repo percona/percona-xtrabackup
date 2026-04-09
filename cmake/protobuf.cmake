@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -166,7 +166,9 @@ MACRO(MYSQL_CHECK_PROTOBUF)
     #             )
     # INTERFACE_LINK_LIBRARIES will be needed once this is built
     # with protobuf 22 and above (lots of abseil libs).
-    ADD_LIBRARY(ext::libprotobuf UNKNOWN IMPORTED)
+    IF(NOT TARGET ext::libprotobuf)
+      ADD_LIBRARY(ext::libprotobuf UNKNOWN IMPORTED)
+    ENDIF()
     SET_TARGET_PROPERTIES(ext::libprotobuf PROPERTIES
       INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${Protobuf_INCLUDE_DIR}")
     SET_TARGET_PROPERTIES(ext::libprotobuf PROPERTIES
@@ -177,7 +179,9 @@ MACRO(MYSQL_CHECK_PROTOBUF)
         INTERFACE_LINK_LIBRARIES "${protobuf_dependencies}")
     ENDIF()
 
-    ADD_LIBRARY(ext::libprotobuf-lite UNKNOWN IMPORTED)
+    IF(NOT TARGET ext::libprotobuf-lite)
+      ADD_LIBRARY(ext::libprotobuf-lite UNKNOWN IMPORTED)
+    ENDIF()
     SET_TARGET_PROPERTIES(ext::libprotobuf-lite PROPERTIES
       INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${Protobuf_INCLUDE_DIR}")
     SET_TARGET_PROPERTIES(ext::libprotobuf-lite PROPERTIES
@@ -188,7 +192,9 @@ MACRO(MYSQL_CHECK_PROTOBUF)
         INTERFACE_LINK_LIBRARIES "${lite_dependencies}")
     ENDIF()
 
-    ADD_LIBRARY(ext::libprotoc UNKNOWN IMPORTED)
+    IF(NOT TARGET ext::libprotoc)
+      ADD_LIBRARY(ext::libprotoc UNKNOWN IMPORTED)
+    ENDIF()
     SET_TARGET_PROPERTIES(ext::libprotoc PROPERTIES
       INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${Protobuf_INCLUDE_DIR}")
     SET_TARGET_PROPERTIES(ext::libprotoc PROPERTIES

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -136,10 +136,7 @@ stdx::expected<std::pair<size_t, T>, std::error_code> decode(
 template <class T, class... Args>
 stdx::expected<std::pair<size_t, T>, std::error_code> decode(
     const net::const_buffer &buffer, capabilities::value_type caps,
-    // clang-format off
-    Args &&... args
-    // clang-format on
-) {
+    Args &&...args) {
   return Codec<T>::decode(buffer, caps, std::forward<Args>(args)...);
 }
 

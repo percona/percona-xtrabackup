@@ -1,4 +1,4 @@
-# Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -72,7 +72,7 @@ LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
 # mysqlclient symbols
 IF(WIN32)
   LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
-    ?client_errors@@3PAPEBDA
+    my_get_err_msg
   )
 ENDIF()
 
@@ -153,6 +153,19 @@ ELSE()
   )
 ENDIF()
 
+# for SecureMemoryPool
+IF(MSVC)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    my_aligned_malloc
+    my_aligned_free
+  )
+ELSE()
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    _Z17my_aligned_mallocmm
+    _Z15my_aligned_freePv
+  )
+ENDIF()
+
 # charset stuff for SqlLexer.cc
 IF(WIN32)
   LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
@@ -165,9 +178,19 @@ IF(WIN32)
     get_charset
     strmake_root
     my_init
+    my_end
     my_free
+    ?my_progname@@3PEBDEB  # char const * const my_progname
 
     set_fips_mode
+  )
+ENDIF()
+
+# WL#16504 stuff
+IF(WIN32)
+  LIST(APPEND ROUTER_MYSQLCLIENT_EXPORTS
+    my_EVP_sha1
+    my_EVP_sha256
   )
 ENDIF()
 
@@ -227,6 +250,7 @@ SET(harness_source
   config_option.cc
   config_parser.cc
   plugin_config.cc
+  plugin_state.cc
   designator.cc
   dynamic_state.cc
   event_state_tracker.cc
@@ -236,6 +260,7 @@ SET(harness_source
   string_utils.cc
   arg_handler.cc
   builtin_plugins.cc
+  config_section_printer.cc
   dim.cc
   hostname_validator.cc
   mysql_router_thread.cc
@@ -250,9 +275,9 @@ SET(harness_source
   log_reopen.cc
   random_generator.cc
   signal_handler.cc
+  scoped_callback.cc
   sd_notify.cc
   socket_operations.cc
-  tcp_address.cc
   tls_cipher.cc
   tty.cc
   vt100.cc
@@ -265,7 +290,20 @@ SET(harness_source
   log_reopen_component.cc
   dynamic_config.cc
   section_config_exposer.cc
+  destination.cc
+  destination_acceptor.cc
+  destination_endpoint.cc
+  destination_socket.cc
+  secure_string.cc
+  regex_matcher.cc
+  auto_cleaner.cc
   )
+
+IF(NOT SOLARIS)
+  LIST(APPEND harness_source
+    secure_memory_pool.cc
+  )
+ENDIF()
 
 IF(WIN32)
   LIST(APPEND harness_source
@@ -328,6 +366,7 @@ ROUTER_ADD_SHARED_LIBRARY(harness-library
   ${common_libraries}
   router_mysqlclient
   extra::rapidjson
+  ext::icu
   )
 
 TARGET_INCLUDE_DIRECTORIES(harness-library PUBLIC

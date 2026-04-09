@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,6 @@
 IF(NOT WITH_MYSQLX)
   RETURN()
 ENDIF()
-
-INCLUDE(CTest)
 
 OPTION(MYSQLX_ADDITIONAL_TESTS_ENABLE "MYSQLX - enable additional tests" OFF)
 

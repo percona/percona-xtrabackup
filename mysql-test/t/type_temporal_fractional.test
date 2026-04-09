@@ -1721,7 +1721,7 @@ SELECT CONCAT(CAST(a AS TIME(6))), CONCAT(CAST(b AS TIME(6))) FROM t1;
 SELECT CONCAT(CAST(a AS TIME)), CONCAT(CAST(b AS TIME)) FROM t1;
 
 --echo #
---echo # Testing Item_typecast_time::get_time
+--echo # Testing Item_typecast_time::val_time()
 --echo #
 SELECT CAST(a AS TIME(0)), CAST(b AS TIME(0)) FROM t1;
 SELECT CAST(a AS TIME(6)), CAST(b AS TIME(6)) FROM t1;
@@ -2007,7 +2007,7 @@ DROP TABLE t1;
 
 --echo #
 --echo # Testing that CAST from various fields to TIME rounds.
---echo # This tests Field::get_time().
+--echo # This tests Field::val_time().
 CREATE TABLE t1 (a VARCHAR(32));
 INSERT INTO t1 VALUES
 ('838:59:58.0000009'), ('838:59:58.9'),
@@ -2028,7 +2028,7 @@ SELECT a, CAST(a AS TIME), CAST(a AS TIME(6)) FROM t1;
 DROP TABLE t1;
 
 --echo #
---echo # Testing that Item::get_time() rounds
+--echo # Testing that Item::val_time() rounds
 --echo #
 query_vertical SELECT
   CAST('10:10:10.9999994' AS TIME),
@@ -2591,7 +2591,6 @@ INSERT INTO t1 VALUES ('2000-01-01 10:00:00.000002');
 INSERT INTO t1 VALUES ('2000-01-01 23:00:00.000000');
 INSERT INTO t1 VALUES ('2000-01-01 23:00:00.000001');
 INSERT INTO t1 VALUES ('2000-01-01 23:00:00.000002');
---skip_if_hypergraph   # Different warnings.
 SELECT * FROM t1 WHERE a IN ('2000-01-01 00:00:00', '0000-00-00 00:00:00.000001', '2000-01-01 23:00:00.000002');
 SELECT * FROM t1 WHERE a IN (0, 20000101000000, 20000101230000);
 SELECT * FROM t1 WHERE a IN (0.000001, 20000101000000.000001, 20000101230000.000001);
@@ -2605,7 +2604,6 @@ EXPLAIN SELECT * FROM t1 WHERE a IN (0.000001,0);
 --echo # Testing IN with index: involves field->store_packed()
 --echo #
 ALTER TABLE t1 ADD KEY(a);
---skip_if_hypergraph   # Different warnings.
 SELECT * FROM t1 WHERE a IN ('2000-01-01 00:00:00', '0000-00-00 00:00:00.000001','2000-01-01 23:00:00.000002');
 SELECT * FROM t1 WHERE a IN (0, 20000101000000, 20000101230000);
 SELECT * FROM t1 WHERE a IN (0.000001, 20000101000000.000001, 20000101230000.000001);
@@ -3699,7 +3697,7 @@ SELECT CONCAT(CAST(a AS DATETIME(6))), CONCAT(CAST(b AS DATETIME(6))) FROM t1;
 SELECT CONCAT(CAST(a AS DATETIME)), CONCAT(CAST(b AS DATETIME)) FROM t1;
 
 --echo #
---echo # Testing Item_typecast_datetime::get_time
+--echo # Testing Item_typecast_datetime::val_datetime()
 --echo #
 SELECT CAST(a AS DATETIME(0)), CAST(b AS DATETIME(0)) FROM t1;
 SELECT CAST(a AS DATETIME(6)), CAST(b AS DATETIME(6)) FROM t1;
@@ -4473,7 +4471,6 @@ INSERT INTO t1 VALUES ('2000-01-01 23:00:00.000000');
 INSERT INTO t1 VALUES ('2000-01-01 23:00:00.000001');
 INSERT INTO t1 VALUES ('2000-01-01 23:00:00.000002');
 SELECT * FROM t1;
---skip_if_hypergraph   # Different warnings.
 SELECT * FROM t1 WHERE a IN ('2000-01-01 00:00:00', '0000-00-00 00:00:00.000001', '2000-01-01 23:00:00.000002');
 SELECT * FROM t1 WHERE a IN (0, 20000101000000, 20000101230000);
 # This returns an empty set with a warning:
@@ -4495,7 +4492,6 @@ SELECT * FROM t1 WHERE a IN (0e0, 0.000001e0);
 --echo # Testing IN with index: involves field->store_packed()
 --echo #
 ALTER TABLE t1 ADD KEY(a);
---skip_if_hypergraph   # Different warnings.
 SELECT * FROM t1 WHERE a IN ('2000-01-01 00:00:00', '0000-00-00 00:00:00.000001', '2000-01-01 23:00:00.000002');
 SELECT * FROM t1 WHERE a IN (0, 20000101000000, 20000101230000);
 SELECT * FROM t1 WHERE a IN (0.000001, 20000101000000.000001, 20000101230000.000001);
@@ -6359,7 +6355,6 @@ CREATE TABLE t1 (
   col_datetime_4_not_null_key datetime(4) NOT NULL,
   KEY col_time_3_not_null_key (col_time_3_not_null_key),
   KEY col_datetime_4_not_null_key (col_datetime_4_not_null_key));
---skip_if_hypergraph   # Different warnings.
 SELECT col_time_3_not_null_key 
 FROM t1 
 WHERE col_datetime_4_not_null_key > 7;
@@ -6933,7 +6928,6 @@ INSERT INTO t1 VALUES (
   CURRENT_TIME(1),
   CURRENT_TIMESTAMP(),
   CURRENT_TIMESTAMP(4));
---skip_if_hypergraph  # Different warnings.
 SELECT col_datetime_5_not_null AS c1, col_time_1_not_null_key AS c2 
 FROM t1 
 WHERE
@@ -7372,7 +7366,6 @@ CREATE TABLE t1 (
 key (col_datetime_6_not_null_key),
 key (col_datetime_3_key)) ENGINE=innodb;
 CREATE OR REPLACE VIEW v1 AS SELECT * FROM t1;
---skip_if_hypergraph   # Different warnings.
 SELECT col_datetime_3_key AS c1 FROM v1
 WHERE SYSDATE() IS NULL
 OR col_datetime_6_not_null_key < TIMEDIFF('0000-00-00','2002-11-24' )

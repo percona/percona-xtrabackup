@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -374,6 +374,12 @@ TEST_F(ItemFilterTest, BasicConstAnd) {
   Item *eq_item1 = create_item_check_filter(
       COND_FILTER_EQUALITY, Item_func::MULTI_EQ_FUNC, m_field[0], 10,
       unused_int, used_tables, &ignore_flds);
+
+  // Create predicate: field0 = 10
+  Item *eq_item11 = create_item_check_filter(
+      COND_FILTER_EQUALITY, Item_func::MULTI_EQ_FUNC, m_field[0], 10,
+      unused_int, used_tables, &ignore_flds);
+
   // Create predicate: field1 = 10
   Item *eq_item2 = create_item_check_filter(
       COND_FILTER_EQUALITY, Item_func::MULTI_EQ_FUNC, m_field[1], 10,
@@ -383,6 +389,18 @@ TEST_F(ItemFilterTest, BasicConstAnd) {
   Item *lt_item = create_item_check_filter(
       COND_FILTER_INEQUALITY, Item_func::LT_FUNC, m_field[2], 99, unused_int,
       used_tables, &ignore_flds);
+
+  // Create predicate: field2 < 99
+  Item *lt_item2 = create_item_check_filter(
+      COND_FILTER_INEQUALITY, Item_func::LT_FUNC, m_field[2], 99, unused_int,
+      used_tables, &ignore_flds);
+
+  EXPECT_NE(eq_item1->hash(), 0);
+  EXPECT_EQ(eq_item1->hash(), eq_item11->hash());
+  EXPECT_NE(eq_item1->hash(), eq_item2->hash());
+  EXPECT_NE(eq_item1->hash(), lt_item->hash());
+  EXPECT_NE(lt_item->hash(), 0);
+  EXPECT_EQ(lt_item->hash(), lt_item2->hash());
 
   List<Item> and_lst;
   and_lst.push_back(eq_item1);
@@ -546,6 +564,17 @@ TEST_F(ItemFilterTest, InPredicate) {
   Item_func_in *in_it =
       create_initem_check_filter(filter, in_lst2, used_tables, &ignore_flds);
 
+  // Calculate filtering effect of "col IN (1, ..., 4)"
+  mem_root_deque<Item *> in_lst21(*THR_MALLOC);
+  in_lst21.push_back(new Item_field(m_field[0]));
+  in_lst21.push_back(new Item_int(2));
+  in_lst21.push_back(new Item_int(1));
+  in_lst21.push_back(new Item_int(4));
+  in_lst21.push_back(new Item_int(3));
+  Item_func_in *in_it21 =
+      create_initem_check_filter(filter, in_lst21, used_tables, &ignore_flds);
+  EXPECT_NE(in_it21->hash(), 0);
+  EXPECT_EQ(in_it21->hash(), in_it->hash());
   /*
     Calculate filtering effect of "col IN (1, ..., 110)"
 

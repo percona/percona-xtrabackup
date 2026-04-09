@@ -1,0 +1,594 @@
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes.
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+CREATE USER user2@'%' IDENTIFIED BY 'secretpass2';
+
+--source ../include/mrs/start_object_definition.inc
+
+# Roles
+--let $mrs_add_role_caption=AllPriv
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc1
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=NoRead
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc1
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+# Service
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+# Auth
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc1
+--source ../include/mrs/auth_app/add.inc
+
+# Users
+--let $mrs_add_user_ext_uid='user1@%'
+--let $mrs_add_user_name='user1'
+--let $mrs_add_user_role=AllPriv
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid='user2@%'
+--let $mrs_add_user_name='user2'
+--let $mrs_add_user_role=NoRead
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+# Content Set
+--let $mrs_add_content_set_path=/secret_set
+--let $mrs_add_content_set_enabled=1
+--source ../include/mrs/content_set/add.inc
+SET @auth_content_set_id=@content_set_id;
+
+# Content files
+--let $mrs_add_content="first file"
+--let $mrs_add_content_file_path=/first.gif
+--source ../include/mrs/content_file/add.inc
+
+--let $mrs_add_content="second file"
+--let $mrs_add_content_file_path=/second.txt
+--source ../include/mrs/content_file/add.inc
+
+# Content Set
+--let $mrs_add_content_set_path=/set
+--let $mrs_add_content_set_enabled=1
+--source ../include/mrs/content_set/add.inc
+SET @my_set=@content_set_id;
+
+# Content files
+--let $mrs_add_content="a file"
+--let $mrs_add_content_file_path=/a.txt
+--source ../include/mrs/content_file/add.inc
+SET @auth_content_file_id=@content_file_id;
+
+--let $mrs_add_content="b file"
+--let $mrs_add_content_file_path=/b.txt
+--source ../include/mrs/content_file/add.inc
+
+# Content files
+--let $mrs_add_content="private file"
+--let $mrs_add_content_file_path=/private_file.txt
+--let $mrs_add_content_custom_fields=,enabled
+--let $mrs_add_content_custom_values=,2
+--source ../include/mrs/content_file/add.inc
+
+# Content files
+--let $mrs_add_content="disabled file"
+--let $mrs_add_content_file_path=/disabled_file.txt
+--let $mrs_add_content_custom_fields=,enabled
+--let $mrs_add_content_custom_values=,0
+--source ../include/mrs/content_file/add.inc
+
+# Content Set
+--let $mrs_add_content_set_path=/set_private
+--let $mrs_add_content_set_enabled=2
+--source ../include/mrs/content_set/add.inc
+SET @private_set=@content_set_id;
+
+# Content files
+--let $mrs_add_content="private"
+--let $mrs_add_content_file_path=/1.txt
+--source ../include/mrs/content_file/add.inc
+
+# Content Set
+--let $mrs_add_content_set_path=/set_disabled
+--let $mrs_add_content_set_enabled=0
+--source ../include/mrs/content_set/add.inc
+SET @disabled_set=@content_set_id;
+
+# Content files
+--let $mrs_add_content="not accessible"
+--let $mrs_add_content_file_path=/1.txt
+--source ../include/mrs/content_file/add.inc
+
+# Content set that needs auth
+--let $mrs_sql_id_variable=@auth_content_set_id
+--let $mrs_content_set_requires_auth=1
+--source ../include/mrs/content_set/modify_auth.inc
+
+# Content file that needs auth
+--let $mrs_sql_id_variable=@auth_content_file_id
+--let $mrs_content_file_requires_auth=1
+--source ../include/mrs/content_file/modify_auth.inc
+
+# Workaround: the end_object_definition, needs at least one db_object
+# to sync to its refresh.
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/obj
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Accessing Content File from Content Set that requires authentication.
+--echo #
+--echo # 1. User is authenticated with correct privileges
+--echo # 2. User is not authenticated
+--echo # 3. User is authenticated with insufficient privilages.
+--echo #
+--echo ## II. Accessing Content Set that requires authentication directly through directoryIndexDirective.
+--echo #
+--echo # 1. User is authenticated with correct privileges
+--echo # 2. User is not authenticated
+--echo # 3. User is authenticated with insufficient privilages.
+--echo #
+--echo ## III. Accessing Content File that requires authentication.
+--echo #
+--echo # 1. User is authenticated with correct privileges
+--echo # 2. User is not authenticated
+--echo # 3. User is authenticated with insufficient privilages.
+--echo #
+--echo ## IV. Accessing Content File from private Content Set.
+--echo #
+--echo # 1. User is not authenticated.
+--echo # 2. User is authenticated.
+--echo #
+--echo ## V. Accessing Content File from disabled Content Set.
+--echo #
+--echo # 1. User is not authenticated.
+--echo # 2. User is authenticated.
+--echo # 3. redirection not allowed.
+--echo # 4. default index not accessible.
+--echo # 5. static file not accessible
+--echo #
+--echo ## VI. Accessing private Content File.
+--echo #
+--echo # 1. User is not authenticated.
+--echo # 2. User is authenticated.
+--echo # 3. redirection not allowed.
+--echo # 4. default index not accessible.
+--echo # 5. static file not accessible
+--echo #
+--echo ## VII. Accessing disabled Content File.
+--echo #
+--echo # 1. User is not authenticated.
+--echo # 2. User is authenticated.
+--echo #
+--echo ## VIII. Unsupported HTTP requsts (PUT, POST, DELETE)
+--echo #
+--echo # 1. for defaultRedirects address
+--echo # 2. for Content Set with directoryIndexDirective
+--echo # 3. for Content File
+--echo #
+--echo
+
+
+--echo #
+--echo # I.1
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^ETag.*/ETag -> %ETag%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/secret_set/first.gif
+  --display HEADER,BODY
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+
+--echo #
+--echo # I.2
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/secret_set/first.gif
+  --response-type RAW
+  --expected-status 401;
+
+
+--echo #
+--echo # I.3
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/secret_set/first.gif
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session2.dat
+  --expected-status 403;
+
+
+--echo #
+--echo # II.1
+
+--let $mrs_sql_id_variable=@auth_content_set_id
+--let $mrs_modify_options='{"directoryIndexDirective":["first.gif"]}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^ETag.*/ETag -> %ETag%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/secret_set/
+  --display HEADER,BODY
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+
+--echo #
+--echo # II.2
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/secret_set/
+  --response-type RAW
+  --expected-status 401;
+
+
+--echo #
+--echo # II.3
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/secret_set/
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session2.dat
+  --expected-status 403;
+
+
+--echo #
+--echo # III.1
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^ETag.*/ETag -> %ETag%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/a.txt
+  --display HEADER,BODY
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+
+--echo #
+--echo # III.2
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/a.txt
+  --response-type RAW
+  --expected-status 401;
+
+
+--echo #
+--echo # III.3
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/a.txt
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session2.dat
+  --expected-status 403;
+
+
+--echo #
+--echo # IV.1
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_private/1.txt
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # IV.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_private/1.txt
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session1.dat
+  --expected-status 404;
+
+
+--echo #
+--echo # V.1
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_disabled/1.txt
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # V.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_disabled/1.txt
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session1.dat
+  --expected-status 404;
+
+
+--echo #
+--echo # V.3
+
+--let $mrs_sql_id_variable=@disabled_set
+--let $mrs_modify_options='{"defaultRedirects":{"redirect.html":"/svc1/set/b.txt"},"directoryIndexDirective":["1.txt"],"defaultStaticContent":{"index.html":"first page"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_disabled/redirect.html
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # V.4
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_disabled/
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # V.5
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_disabled/index.html
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # VI.1
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/private_file.txt
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # VI.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/private_file.txt
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session1.dat
+  --expected-status 404;
+
+
+--echo #
+--echo # VI.3
+
+--let $mrs_sql_id_variable=@private_set
+--let $mrs_modify_options='{"defaultRedirects":{"redirect.html":"/svc1/set/b.txt"},"directoryIndexDirective":["1.txt"],"defaultStaticContent":{"index.html":"first page"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_private/redirect.html
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # VI.4
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_private/
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # VI.5
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set_private/index.html
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # VII.1
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/disabled_file.txt
+  --response-type RAW
+  --expected-status 404;
+
+
+--echo #
+--echo # VII.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc1/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/disabled_file.txt
+  --response-type RAW
+  --session-file $MYSQL_TMP_DIR/user_session1.dat
+  --expected-status 404;
+
+
+
+--echo #
+--echo # VIII.1
+
+--let $mrs_sql_id_variable=@my_set
+--let $mrs_modify_options='{"defaultRedirects":{"redirect.html":"/svc1/set/b.txt"},"directoryIndexDirective":["b.txt"]}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  -t POST
+  --path /svc1/set/redirect.html
+  --response-type RAW
+  --expected-status 403;
+
+exec $MRS_CLIENT_ARGS
+  -t PUT
+  --path /svc1/set/redirect.html
+  --response-type RAW
+  --expected-status 403;
+
+exec $MRS_CLIENT_ARGS
+  -t DELETE
+  --path /svc1/set/redirect.html
+  --response-type RAW
+  --expected-status 403;
+
+
+--echo #
+--echo # VIII.2
+
+exec $MRS_CLIENT_ARGS
+  -t POST
+  --path /svc1/set/
+  --response-type RAW
+  --expected-status 403;
+
+exec $MRS_CLIENT_ARGS
+  -t PUT
+  --path /svc1/set/
+  --response-type RAW
+  --expected-status 403;
+
+exec $MRS_CLIENT_ARGS
+  -t DELETE
+  --path /svc1/set/
+  --response-type RAW
+  --expected-status 403;
+
+
+--echo #
+--echo # VIII.3
+
+exec $MRS_CLIENT_ARGS
+  -t POST
+  --path /svc1/set/b.txt
+  --response-type RAW
+  --expected-status 403;
+
+exec $MRS_CLIENT_ARGS
+  -t PUT
+  --path /svc1/set/b.txt
+  --response-type RAW
+  --expected-status 403;
+
+exec $MRS_CLIENT_ARGS
+  -t DELETE
+  --path /svc1/set/b.txt
+  --response-type RAW
+  --expected-status 403;
+
+
+# Cleanup
+--let $cleanup_arg_mrs_existing_service=/svc1/secret_set/first.gif
+--let $cleanup_arg_mrs_existing_service=/svc1/set/a.txt
+--let $cleanup_arg_mrs_existing_service=/svc1/set/b.txt
+--let $cleanup_arg_mrs_existing_service=/svc1/set/private_file.txt
+--let $cleanup_arg_mrs_existing_service=/svc1/set/disabled_file.txt
+--let $cleanup_arg_mrs_existing_service=/svc1/set_private/1.txt
+--let $cleanup_arg_mrs_existing_service=/svc1/set_disabled/1.txt
+remove_file $MYSQL_TMP_DIR/user_session1.dat;
+remove_file $MYSQL_TMP_DIR/user_session2.dat;
+drop user user1@'%';
+drop user user2@'%';
+--source ../include/mrs/cleanup.inc

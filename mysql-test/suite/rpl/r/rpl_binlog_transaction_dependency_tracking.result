@@ -7,14 +7,8 @@ Note	####	Storing MySQL user name or password information in the connection meta
 call mtr.add_suppression("Transaction is tagged with inconsistent logical timestamps");
 call mtr.add_suppression("Cannot execute the current event group in the parallel mode.");
 include/rpl/stop_replica.inc
-SET @save_replica_parallel_type = @@GLOBAL.replica_parallel_type;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET @save_replica_parallel_workers = @@GLOBAL.replica_parallel_workers;
 SET @save_replica_transaction_retries = @@GLOBAL.replica_transaction_retries;
-SET GLOBAL replica_parallel_type = LOGICAL_CLOCK;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers = 3;
 SET GLOBAL replica_transaction_retries = 0;
 SET @save_binlog_transaction_dependency_history_size = @@GLOBAL.binlog_transaction_dependency_history_size;
@@ -35,7 +29,7 @@ SET GLOBAL binlog_transaction_dependency_history_size= DEFAULT;
 #### STEP 1.1 TEST Writeset ####
 SELECT @@binlog_transaction_dependency_history_size;
 @@binlog_transaction_dependency_history_size
-25000
+10000000
 CREATE TABLE `t1` (`id` int(11) NOT NULL, `val` int(11) NOT NULL,
 PRIMARY KEY (`id`)) ENGINE=InnoDB;
 Warnings:
@@ -88,7 +82,7 @@ include/include/rpl/assert_logical_timestamps.inc [0 1;1 2;1 3;1 4;3 5;3 6;4 7;7
 #### STEP 1.2 TEST Writeset+DDL ####
 SELECT @@binlog_transaction_dependency_history_size;
 @@binlog_transaction_dependency_history_size
-25000
+10000000
 CREATE TABLE `t1` (`id` int(11) NOT NULL, `val` int(11) NOT NULL,
 PRIMARY KEY (`id`)) ENGINE=InnoDB;
 Warnings:
@@ -148,7 +142,7 @@ include/include/rpl/assert_logical_timestamps.inc [0 1;1 2;1 3;1 4;4 5;5 6;6 7;7
 #### STEP 1.3 TEST Writeset+rotation ####
 SELECT @@binlog_transaction_dependency_history_size;
 @@binlog_transaction_dependency_history_size
-25000
+10000000
 CREATE TABLE `t1` (`id` int(11) NOT NULL, `val` int(11) NOT NULL,
 PRIMARY KEY (`id`)) ENGINE=InnoDB;
 Warnings:
@@ -593,9 +587,6 @@ DROP TABLE parent;
 #### CLEANUP ####
 include/rpl/sync_to_replica.inc
 include/rpl/stop_replica.inc
-SET @@GLOBAL.replica_parallel_type= @save_replica_parallel_type;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET @@GLOBAL.replica_parallel_workers= @save_replica_parallel_workers;
 SET @@GLOBAL.replica_transaction_retries= @save_replica_transaction_retries;
 include/rpl/start_replica.inc

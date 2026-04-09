@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,8 @@ int heap_rsame(HP_INFO *info, uchar *record, int inx) {
     if (inx < -1 || inx >= (int)share->keys) {
       set_my_errno(HA_ERR_WRONG_INDEX);
       return HA_ERR_WRONG_INDEX;
-    } else if (inx != -1) {
+    }
+    if (inx != -1) {
       info->lastinx = inx;
       hp_make_key(share->keydef + inx, info->lastkey, record);
       if (!hp_search(info, share->keydef + inx, info->lastkey, 3)) {

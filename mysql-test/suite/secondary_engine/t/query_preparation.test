@@ -181,9 +181,7 @@ SECONDARY_ENGINE MOCK
 PARTITION BY HASH(id);
 INSERT INTO t_partitioned VALUES (1, 2), (2, 3), (3, 4), (4, 5);
 ALTER TABLE t_partitioned SECONDARY_LOAD;
---disable_testcase Bug#36306426
 SELECT * FROM t_partitioned;
---enable_testcase
 DROP TABLE t_partitioned;
 
 # Multiple queries in a single statement.
@@ -633,7 +631,6 @@ ALTER TABLE t1 SECONDARY_LOAD;
 ANALYZE TABLE t1;
 FLUSH STATUS;
 SHOW SESSION STATUS LIKE 'Secondary_engine_execution_count';
---disable_testcase Bug#36306426
 --error ER_SECONDARY_ENGINE
 SELECT /*+ SET_VAR(use_secondary_engine = FORCED) */ a FROM t1;
 SELECT a FROM t1;
@@ -642,7 +639,6 @@ SELECT b FROM t1;
 SHOW SESSION STATUS LIKE 'Secondary_engine_execution_count';
 SELECT /*+ SET_VAR(use_secondary_engine = FORCED) */ b FROM t1;
 SHOW SESSION STATUS LIKE 'Secondary_engine_execution_count';
---enable_testcase
 DROP TABLE t1;
 
 --echo #
@@ -833,20 +829,24 @@ DROP TABLE t;
 --echo #               two entries in performance schema
 --echo #
 
-CREATE TABLE t(x INT);
-INSERT INTO t VALUES (1), (2), (3), (4), (5), (6), (7);
+# Use a specific table name,
+# to make it easier to see digests for this table.
+CREATE TABLE t_33390949(x INT);
+INSERT INTO t_33390949 VALUES (1), (2), (3), (4), (5), (6), (7);
 
-PREPARE ps FROM 'SELECT * FROM t';
+PREPARE ps FROM 'SELECT * FROM t_33390949';
 
 let $show_events =
 SELECT count_star, count_secondary, sum_select_scan
 FROM performance_schema.events_statements_summary_by_digest
-WHERE digest_text LIKE 'SELECT %';
+WHERE digest_text LIKE '%t_33390949%'
+ORDER BY digest_text;
 
 let $show_events_ps =
 SELECT count_star, count_secondary, sum_select_scan
 FROM performance_schema.events_statements_summary_by_digest
-WHERE digest_text LIKE 'EXECUTE %';
+WHERE digest_text LIKE '%t_33390949%'
+ORDER BY digest_text;
 
 let $show_ps_instances =
 SELECT execution_engine, count_execute, count_secondary
@@ -862,7 +862,7 @@ TRUNCATE TABLE performance_schema.prepared_statements_instances;
 TRUNCATE TABLE performance_schema.events_statements_summary_by_digest;
 --disable_ps_protocol
 --sorted_result
-SELECT * FROM t;
+SELECT * FROM t_33390949;
 --enable_ps_protocol
 --eval $show_events
 
@@ -871,7 +871,7 @@ EXECUTE ps;
 --eval $show_events_ps
 --eval $show_ps_instances
 
-ALTER TABLE t SECONDARY_ENGINE MOCK;
+ALTER TABLE t_33390949 SECONDARY_ENGINE MOCK;
 
 # The table has a secondary engine, but it's not loaded into the
 # secondary engine, so the statement is not offloaded to the secondary
@@ -879,7 +879,7 @@ ALTER TABLE t SECONDARY_ENGINE MOCK;
 TRUNCATE TABLE performance_schema.events_statements_summary_by_digest;
 --disable_ps_protocol
 --sorted_result
-SELECT * FROM t;
+SELECT * FROM t_33390949;
 --enable_ps_protocol
 --eval $show_events
 
@@ -888,7 +888,7 @@ EXECUTE ps;
 --eval $show_events_ps
 --eval $show_ps_instances
 
-ALTER TABLE t SECONDARY_LOAD;
+ALTER TABLE t_33390949 SECONDARY_LOAD;
 
 # The table is loaded in the secondary engine. The statement is
 # offloaded. Count_star should be 1, since the query is executed once.
@@ -901,7 +901,7 @@ ALTER TABLE t SECONDARY_LOAD;
 # if it finds it relevant.)
 TRUNCATE TABLE performance_schema.events_statements_summary_by_digest;
 --disable_ps_protocol
-SELECT * FROM t;
+SELECT * FROM t_33390949;
 --enable_ps_protocol
 --eval $show_events
 
@@ -939,11 +939,11 @@ DROP PREPARE ps;
 
 # Expect no double-counting in CREATE TABLE AS SELECT either.
 FLUSH STATUS;
-CREATE TABLE tt AS SELECT * FROM t;
+CREATE TABLE tt AS SELECT * FROM t_33390949;
 SHOW STATUS LIKE 'Select_scan';
 DROP TABLE tt;
 
-DROP TABLE t;
+DROP TABLE t_33390949;
 
 --disable_query_log
 UNINSTALL PLUGIN mock;

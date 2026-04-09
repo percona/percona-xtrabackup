@@ -1,1 +1,2 @@
 --mandatory_roles='PUBLIC'
+--activate_mandatory_roles=OFF

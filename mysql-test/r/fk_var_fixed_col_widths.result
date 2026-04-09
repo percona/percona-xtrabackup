@@ -1,0 +1,413 @@
+# FR 2.2) Foreign key must be supported between fixed length column types
+# and variable length column types.
+# FR 2.2.1) Test foreign key support between VARCHAR and CHAR columns with mismatched length.
+CREATE TABLE t1 (vc1 VARCHAR(10) PRIMARY KEY) ENGINE=InnoDB;
+CREATE TABLE t2 (c1 CHAR(4), FOREIGN KEY (c1) REFERENCES t1 (vc1) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO t1 VALUES ('this'), ('that'),('the other');
+INSERT INTO t2 VALUES ('this'), ('that'),('this'), ('that');
+SELECT * FROM t1;
+vc1
+that
+the other
+this
+SELECT * FROM t2 order by c1;
+c1
+that
+that
+this
+this
+# verify corresponding actions are cascaded
+UPDATE t1 SET vc1='what' WHERE vc1='that';
+SELECT * FROM t1;
+vc1
+the other
+this
+what
+SELECT * FROM t2 order by c1;
+c1
+this
+this
+what
+what
+# verify corresponding actions are cascaded
+DELETE FROM t1 WHERE vc1 = 'this';
+SELECT * FROM t1;
+vc1
+the other
+what
+SELECT * FROM t2 order by c1;
+c1
+what
+what
+# Verify that inserting a value into t2 that matches a value in t1 apart from trailing spaces
+#  fails the relational constraint.
+INSERT INTO t1 VALUES ('hi'), ('hi  ');
+INSERT INTO t2 VALUES ('hi'), ('hi  ');
+SELECT CONCAT('"',vc1,'"') FROM t1;
+CONCAT('"',vc1,'"')
+"hi"
+"hi  "
+"the other"
+"what"
+SELECT CONCAT('"',c1,'"') FROM t2 order by c1;
+CONCAT('"',c1,'"')
+"hi"
+"hi"
+"what"
+"what"
+# Verify that the VARCHAR values in t2 are not padded to match the corresponding
+#  CHAR(10) values in t1
+DELETE FROM t1 WHERE vc1='hi  ';
+SELECT CONCAT('"',vc1,'"') FROM t1;
+CONCAT('"',vc1,'"')
+"hi"
+"the other"
+"what"
+SELECT CONCAT('"',c1,'"') FROM t2 order by c1;
+CONCAT('"',c1,'"')
+"what"
+"what"
+DELETE FROM t1 WHERE vc1='hi';
+SELECT CONCAT('"',vc1,'"') FROM t1;
+CONCAT('"',vc1,'"')
+"the other"
+"what"
+SELECT CONCAT('"',c1,'"') FROM t2 order by c1;
+CONCAT('"',c1,'"')
+"what"
+"what"
+DROP TABLE t2,t1;
+# FR 2.2.2) Test varchar/char foreign keys in both parent and child tables
+# with matching var/fixed column length
+CREATE TABLE t1 (vc1 VARCHAR(10) PRIMARY KEY) ENGINE=InnoDB;
+CREATE TABLE t2 (c1 CHAR(10), FOREIGN KEY (c1) REFERENCES t1 (vc1) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO t1 VALUES ('this'), ('that'),('the other');
+INSERT INTO t2 VALUES ('this'), ('that'),('this'), ('that');
+SELECT * FROM t1;
+vc1
+that
+the other
+this
+SELECT * FROM t2 order by c1;
+c1
+that
+that
+this
+this
+# Update t1 and verify cascade update
+UPDATE t1 SET vc1='what' WHERE vc1='that';
+SELECT * FROM t1;
+vc1
+the other
+this
+what
+SELECT * FROM t2 order by c1;
+c1
+that
+that
+this
+this
+# Delete from t1 and verify cascade delete 
+DELETE FROM t1 WHERE vc1 = 'this';
+SELECT * FROM t1;
+vc1
+the other
+what
+SELECT * FROM t2 order by c1;
+c1
+that
+that
+this
+this
+INSERT INTO t1 VALUES ('hi'), ('hi  ');
+INSERT INTO t2 VALUES ('hi'), ('hi  ');
+SELECT CONCAT('"',vc1,'"') FROM t1;
+CONCAT('"',vc1,'"')
+"hi"
+"hi  "
+"the other"
+"what"
+SELECT CONCAT('"',c1,'"') FROM t2 order by c1;
+CONCAT('"',c1,'"')
+"hi"
+"hi"
+"that"
+"that"
+"this"
+"this"
+# Verify cascade delete for newly inserted data
+DELETE FROM t1 WHERE vc1='hi  ';
+SELECT CONCAT('"',vc1,'"') FROM t1;
+CONCAT('"',vc1,'"')
+"hi"
+"the other"
+"what"
+SELECT CONCAT('"',c1,'"') FROM t2 order by c1;
+CONCAT('"',c1,'"')
+"hi"
+"hi"
+"that"
+"that"
+"this"
+"this"
+DELETE FROM t1 WHERE vc1='hi';
+SELECT CONCAT('"',vc1,'"') FROM t1;
+CONCAT('"',vc1,'"')
+"the other"
+"what"
+SELECT CONCAT('"',c1,'"') FROM t2 order by c1;
+CONCAT('"',c1,'"')
+"hi"
+"hi"
+"that"
+"that"
+"this"
+"this"
+DROP TABLE t2,t1;
+# FR 2.2.3) Test varchar/char foreign keys in both parent and child tables
+# with binary collation
+CREATE TABLE t1 (a INT PRIMARY KEY,s1 VARCHAR(2) BINARY NOT NULL UNIQUE) engine=innodb;
+Warnings:
+Warning	1287	'BINARY as attribute of a type' is deprecated and will be removed in a future release. Please use a CHARACTER SET clause with _bin collation instead
+CREATE TABLE t2 (s1 CHAR(2) BINARY NOT NULL, CONSTRAINT c FOREIGN KEY(s1) REFERENCES t1(s1) ON UPDATE CASCADE) engine=innodb;
+Warnings:
+Warning	1287	'BINARY as attribute of a type' is deprecated and will be removed in a future release. Please use a CHARACTER SET clause with _bin collation instead
+INSERT INTO t1 VALUES(1,0x4100),(2,0x41);
+INSERT INTO t2 VALUES(0x41);
+SELECT HEX(s1) FROM t2 order by s1;
+HEX(s1)
+41
+UPDATE t1 SET s1=0x1234 where a=1;
+SELECT HEX(s1) FROM t2 order by s1;
+HEX(s1)
+41
+UPDATE t1 SET s1=0x12 where a=2;
+SELECT HEX(s1) FROM t2 order by s1;
+HEX(s1)
+12
+DELETE FROM t1 where a=1;
+Attempt to delete row from t1 where a=2, should be prevented due to referencing child row 
+DELETE FROM t1 where a=2;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `c` FOREIGN KEY (`s1`) REFERENCES `t1` (`s1`) ON UPDATE CASCADE)
+SELECT a,HEX(s1) FROM t1;
+a	HEX(s1)
+2	12
+SELECT HEX(s1) FROM t2 order by s1;
+HEX(s1)
+12
+DROP TABLE t2,t1;
+# FR 2.2.4) Test char/varchar foreign keys in both parent and child tables
+# with mismatching length
+CREATE TABLE t1 (c1 CHAR(10) PRIMARY KEY);
+CREATE TABLE t2 (vc1 VARCHAR(20), FOREIGN KEY (vc1) REFERENCES t1 (c1) ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB;
+INSERT INTO t1 VALUES ('this'), ('that'), ('the other'), ('0123456789');
+INSERT INTO t2 VALUES ('this');
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`vc1`) REFERENCES `t1` (`c1`) ON DELETE CASCADE ON UPDATE CASCADE)
+# Inserting a VARCHAR value that matches apart from trailing spaces will fail
+# the relational constraint
+INSERT INTO t2 VALUES ('this ');
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`vc1`) REFERENCES `t1` (`c1`) ON DELETE CASCADE ON UPDATE CASCADE)
+# The VARCHAR values should NOT be padded matched to the corresponding CHAR(10) values
+INSERT INTO t2 VALUES ('that'), ('the other'), ('0123456789');
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`vc1`) REFERENCES `t1` (`c1`) ON DELETE CASCADE ON UPDATE CASCADE)
+INSERT INTO t2 VALUES ('0123456789');
+INSERT INTO t2 VALUES ('this      ');
+INSERT INTO t2 VALUES ('that      ');
+# update parent and verify cascade
+UPDATE t1 SET c1 = 'otherwise' where c1 = 'this';
+SELECT * FROM t1;
+c1
+0123456789
+otherwise
+that
+the other
+SELECT * FROM t2 order by vc1;
+vc1
+0123456789
+otherwise 
+that      
+# delete from parent and verify cascade
+DELETE FROM t1 WHERE c1 = 'that';
+SELECT * FROM t1;
+c1
+0123456789
+otherwise
+the other
+SELECT * FROM t2 order by vc1;
+vc1
+0123456789
+otherwise 
+DROP TABLE t2,t1;
+# FR 2.2.5) Test varchar/varchar foreign keys in both parent and child tables
+# with mismatching length
+CREATE TABLE t1 (a INT PRIMARY KEY,s1 VARCHAR(10) NOT NULL UNIQUE) engine=innodb;
+CREATE TABLE t2 (s1 VARCHAR(5) NOT NULL, CONSTRAINT c FOREIGN KEY(s1) REFERENCES t1(s1) ON UPDATE CASCADE) engine=innodb;
+INSERT INTO t1 VALUES(1, 'one');
+INSERT INTO t2 VALUES('one');
+# Verify that updating t1 to a value that is too long for t2 fails
+UPDATE t1 SET s1 = 'too long' WHERE a = 1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `c` FOREIGN KEY (`s1`) REFERENCES `t1` (`s1`) ON UPDATE CASCADE)
+SELECT a,s1 FROM t1;
+a	s1
+1	one
+SELECT s1 FROM t2 order by s1;
+s1
+one
+INSERT INTO t1 VALUES (2, 'two');
+# Update should succeed because there is no referencing child row
+UPDATE t1 SET s1 = 'too long' WHERE s1='two';
+# Verify that that a legal update to the parent table will cascade successfully
+UPDATE t1 SET s1='fives' WHERE s1='one';
+SELECT a,s1 FROM t1;
+a	s1
+1	fives
+2	too long
+SELECT s1 FROM t2 order by s1;
+s1
+fives
+DROP TABLE t2,t1;
+# FR 2.2.6) Test char/char foreign keys in both parent and child tables
+# with mismatching length
+CREATE TABLE t1 (a INT PRIMARY KEY,s1 CHAR(10) NOT NULL UNIQUE) engine=innodb;
+CREATE TABLE t2 (s1 CHAR(5)  NOT NULL, CONSTRAINT c FOREIGN KEY(s1) REFERENCES t1(s1) ON UPDATE CASCADE) engine=innodb;
+INSERT INTO t1 VALUES (1, 'one');
+INSERT INTO t2 VALUES ('one');
+UPDATE t1 SET s1='too long' WHERE a=1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `c` FOREIGN KEY (`s1`) REFERENCES `t1` (`s1`) ON UPDATE CASCADE)
+# Verify that updating t1 to a value that is too long for t2 succeeds when there is no referencing child row
+INSERT INTO t1 VALUES (2, 'two');
+UPDATE t1 SET s1 = 'too long' WHERE s1='two';
+# InnoDB FK processing of the UPDATE below raises an error 
+# ER_ROW_IS_REFERENCED_2, So SQL layer FK processing also throws error
+UPDATE t1 SET s1='fives' WHERE s1='one';
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `c` FOREIGN KEY (`s1`) REFERENCES `t1` (`s1`) ON UPDATE CASCADE)
+SELECT a,s1 FROM t1;
+a	s1
+1	one
+2	too long
+SELECT s1 FROM t2 order by s1;
+s1
+one
+DROP TABLE t2,t1;
+# FR 2.2.7) Test char/varchar foreign keys in both parent and child tables
+# with no pad collation
+# Refer Bug#7716139
+CREATE TABLE p(id INT PRIMARY KEY, p1 CHAR(5) UNIQUE NOT NULL) COLLATE utf8mb4_0900_ai_ci;
+CREATE TABLE c(id INT PRIMARY KEY, c1 VARCHAR(5), FOREIGN KEY (c1) REFERENCES p(p1) ON UPDATE CASCADE) COLLATE utf8mb4_0900_ai_ci;
+INSERT INTO p (id, p1) VALUES (1,'12345'),(2,'67890');
+INSERT INTO p (id, p1) VALUES (3,'1234'),(4,'678'), (5,'789');
+INSERT INTO c (id, c1) VALUES (1,'12345'),(2,'67890');
+INSERT INTO c (id, c1) VALUES (3,'1234');
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`c`, CONSTRAINT `c_ibfk_1` FOREIGN KEY (`c1`) REFERENCES `p` (`p1`) ON UPDATE CASCADE)
+# If we pad with a space, it matches
+INSERT INTO c (id, c1) VALUES (4,'1234 ');
+INSERT INTO c (id, c1) VALUES (5,'678  ');
+UPDATE c SET c1 = '789  ' WHERE  c1 = '678  ';
+SELECT p1, c1 FROM p INNER JOIN c ON p.p1 = c.c1 ORDER BY p.id, c.id;
+p1	c1
+12345	12345
+67890	67890
+SELECT id, CONCAT('"', c1, '"') FROM c ORDER BY id;
+id	CONCAT('"', c1, '"')
+1	"12345"
+2	"67890"
+4	"1234 "
+5	"789  "
+# The JOIN operation DOES NOT consider the c.c1 value '1234 ' to be
+# equal to the p.p1 value '1234' (recall that utf8mb4_0900_ai_ci is NO_PAD)
+SELECT p.id AS 'p.id', CONCAT('"', p1, '"'), CONCAT('"', c1, '"'), c.id AS 'c.id' FROM p INNER JOIN c ON p.p1 = c.c1 ORDER BY p.id, c.id;
+p.id	CONCAT('"', p1, '"')	CONCAT('"', c1, '"')	c.id
+1	"12345"	"12345"	1
+2	"67890"	"67890"	2
+# Search do not match with a space, so cascade do not happen
+UPDATE p set p1='910' WHERE id=3;
+SELECT id, CONCAT('"', p1, '"') FROM p ORDER BY id;
+id	CONCAT('"', p1, '"')
+1	"12345"
+2	"67890"
+3	"910"
+4	"678"
+5	"789"
+SELECT id, CONCAT('"', c1, '"') FROM c ORDER BY id;
+id	CONCAT('"', c1, '"')
+1	"12345"
+2	"67890"
+4	"910  "
+5	"789  "
+DROP TABLE c,p;
+# FR 2.2.8) Test char/varchar foreign keys in both parent and child tables
+# with PAD SPACE collation
+# Refer Bug#7716139
+CREATE TABLE p(id INT PRIMARY KEY, p1 CHAR(5) UNIQUE NOT NULL) COLLATE utf8mb4_general_ci;
+CREATE TABLE c(id INT PRIMARY KEY, c1 VARCHAR(5), FOREIGN KEY (c1) REFERENCES p(p1) ON UPDATE CASCADE) COLLATE utf8mb4_general_ci;
+INSERT INTO p (id, p1) VALUES (1,'12345'),(2,'67890');
+INSERT INTO c (id, c1) VALUES (1,'12345'),(2,'67890');
+INSERT INTO p (id, p1) VALUES (3,'1234'),(4,'678');
+# Note that now a PAD SPACE collation is being used, both '1234' and '1234 '
+# pass the foreign key constraint and can successfully be inserted into the
+# child table.
+INSERT INTO c (id, c1) VALUES (3,'1234');
+INSERT INTO c (id, c1) VALUES (4,'1234 ');
+# The JOIN operation matches BOTH '1234' and '1234 ' rows in the child to the
+# same row in the parent:
+SELECT p.id AS 'p.id', CONCAT('"', p1, '"'), CONCAT('"', c1, '"'), c.id AS 'c.id' FROM p INNER JOIN c ON p.p1 = c.c1 ORDER BY p.id, c.id;
+p.id	CONCAT('"', p1, '"')	CONCAT('"', c1, '"')	c.id
+1	"12345"	"12345"	1
+2	"67890"	"67890"	2
+3	"1234"	"1234"	3
+3	"1234"	"1234 "	4
+# The UPDATE operation ON the parent likewise cascades to both child rows:
+UPDATE p set p1='910' WHERE id=3;
+SELECT id, CONCAT('"', c1, '"') FROM c ORDER BY id;
+id	CONCAT('"', c1, '"')
+1	"12345"
+2	"67890"
+3	"910  "
+4	"910  "
+# Note that the cascaded values are padded in the child
+SELECT p.id AS 'p.id', CONCAT('"', p1, '"'), CONCAT('"', c1, '"'), c.id AS 'c.id' FROM p INNER JOIN c ON p.p1 = c.c1 ORDER BY p.id, c.id;
+p.id	CONCAT('"', p1, '"')	CONCAT('"', c1, '"')	c.id
+1	"12345"	"12345"	1
+2	"67890"	"67890"	2
+3	"910"	"910  "	3
+3	"910"	"910  "	4
+# Note that for PAD SPACE collations if the length of a child VARCHAR value
+# exceeds the width of a parent CHAR column an insert attempt into the
+# child table can still succeed thus:
+CREATE TABLE c_long(id INT PRIMARY KEY, c1 VARCHAR(10), FOREIGN KEY (c1) REFERENCES p(p1) ON UPDATE CASCADE) COLLATE utf8mb4_general_ci;
+INSERT INTO c_long (id, c1) VALUES (1, '910');
+INSERT INTO c_long (id, c1) VALUES (2, '910 ');
+INSERT INTO c_long (id, c1) VALUES (3, '910  ');
+INSERT INTO c_long (id, c1) VALUES (4, '910   ');
+# Note the "too long" c1 value '910   ' with id = 4 is also found by the
+# inner join statement:
+SELECT p.id AS 'p.id', CONCAT('"', p1, '"'), CONCAT('"', c1, '"'), c_long.id AS 'c_long.id' FROM p INNER JOIN c_long ON p.p1 = c_long.c1 ORDER BY p.id, c_long.id;
+p.id	CONCAT('"', p1, '"')	CONCAT('"', c1, '"')	c_long.id
+3	"910"	"910"	1
+3	"910"	"910 "	2
+3	"910"	"910  "	3
+3	"910"	"910   "	4
+UPDATE p set p1='456' WHERE id = 3;
+SELECT id, CONCAT('"',c1,'"') FROM c_long ORDER BY id;
+id	CONCAT('"',c1,'"')
+1	"456  "
+2	"456  "
+3	"456  "
+4	"456  "
+DROP TABLE c_long,c,p;
+# FR 2.2.9) Test char/varchar foreign keys in both parent and child tables
+# with mismatching length + VARCHAR length exceeding HA_KEY_BLOB_LENGTH
+CREATE TABLE t1 (c1 CHAR(10) PRIMARY KEY);
+CREATE TABLE t2 (vc1 VARCHAR(300), FOREIGN KEY (vc1) REFERENCES t1 (c1) ON UPDATE CASCADE);
+INSERT INTO t1 VALUES ('this');
+INSERT INTO t2 VALUES ('this');
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`vc1`) REFERENCES `t1` (`c1`) ON UPDATE CASCADE)
+INSERT INTO t2 VALUES ('this      ');
+UPDATE t1 SET c1 = 'that';
+SELECT * FROM t1;
+c1
+that
+SELECT * FROM t2;
+vc1
+that      
+DROP TABLE t2, t1;

@@ -431,7 +431,7 @@ replicate-ignore-db=mysql
 replicate-ignore-db=performance_schema
 replicate-ignore-db=sys
 secure-file-priv=""
-innodb_log_file_size=48M
+innodb_redo_log_capacity=48M
 ${MYSQLD_EXTRA_MY_CNF_OPTS:-}
 #core-file
 
@@ -757,7 +757,7 @@ function get_gtid_executed()
             break;
         fi
         count=$((count+1))
-    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS --commands -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
 
     echo $res
 }
@@ -778,7 +778,7 @@ function get_binlog_file()
             break;
         fi
         count=$((count+1))
-    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS --commands -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
 
     echo $res
 }
@@ -799,7 +799,7 @@ function get_binlog_pos()
             break;
         fi
         count=$((count+1))
-    done <<< "`run_cmd $MYSQL $MYSQL_ARGS -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
+    done <<< "`run_cmd $MYSQL $MYSQL_ARGS --commands -Nse 'SHOW BINARY LOG STATUS\G' mysql`"
 
     echo $res
 }
@@ -876,7 +876,7 @@ EOF
 function record_db_state()
 {
     $MYSQLDUMP $MYSQL_ARGS $MYSQLDUMP_ARGS -t --compact --skip-extended-insert \
-        $1 >"$topdir/tmp/$1_old.sql"
+        --set-gtid-purged=OFF $1 >"$topdir/tmp/$1_old.sql"
 }
 
 
@@ -887,7 +887,7 @@ function record_db_state()
 function verify_db_state()
 {
     $MYSQLDUMP $MYSQL_ARGS $MYSQLDUMP_ARGS -t --compact --skip-extended-insert \
-        $1 >"$topdir/tmp/$1_new.sql"
+        --set-gtid-purged=OFF $1 >"$topdir/tmp/$1_new.sql"
     run_cmd diff -u "$topdir/tmp/$1_old.sql" "$topdir/tmp/$1_new.sql"
 }
 
@@ -1287,7 +1287,7 @@ function has_feature_enabled()
 {
     local var=$1
 
-    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE '$var'\G" \
+    if $MYSQL $MYSQL_ARGS -s --commands -e "SHOW VARIABLES LIKE '$var'\G" \
               2> /dev/null | egrep -q 'Value: YES$'
     then
         return 0
@@ -1296,7 +1296,7 @@ function has_feature_enabled()
     # Was the server available?
     if [[ ${PIPESTATUS[0]} != 0 ]]
     then
-        die "Server is unavailable"
+      die "Server is unavailable: has_feature_enabled(): $var"
     fi
 
     return 1
@@ -1309,7 +1309,7 @@ function has_status_variable()
 {
     local var=$1
 
-    if $MYSQL $MYSQL_ARGS -s -e "SHOW STATUS LIKE '$var'\G" \
+    if $MYSQL $MYSQL_ARGS -s --commands -e "SHOW STATUS LIKE '$var'\G" \
               2> /dev/null | egrep -q "^Variable_name: $var"
     then
         return 0
@@ -1318,7 +1318,7 @@ function has_status_variable()
     # Was the server available?
     if [[ ${PIPESTATUS[0]} != 0 ]]
     then
-        die "Server is unavailable"
+      die "Server is unavailable: has_status_variable(): $var"
     fi
 
     return 1
@@ -1331,7 +1331,7 @@ function is_variable_on()
 {
     local var=$1
 
-    if $MYSQL $MYSQL_ARGS -s -e "SHOW VARIABLES LIKE '$var'\G" \
+    if $MYSQL $MYSQL_ARGS --commands -s -e "SHOW VARIABLES LIKE '$var'\G" \
               2> /dev/null | egrep -q "Value: ON"
     then
         return 0
@@ -1340,7 +1340,7 @@ function is_variable_on()
     # Was the server available?
     if [[ ${PIPESTATUS[0]} != 0 ]]
     then
-        die "Server is unavailable"
+      die "Server is unavailable: is_variable_on(): $var"
     fi
 
     return 1
@@ -1414,7 +1414,7 @@ function innodb_wait_for_flush_all()
 ########################################################################
 function innodb_lsn()
 {
-    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
+    ${MYSQL} ${MYSQL_ARGS} --vertical -e "SHOW ENGINE InnoDB STATUS" | \
         grep "Log sequence number" | awk '{ print $4 }'
 }
 
@@ -1422,15 +1422,14 @@ function innodb_lsn()
 ########################################################################
 function innodb_flushed_lsn()
 {
-    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
-        grep "Log flushed up to" | awk '{ print $5 }'
+    ${MYSQL} ${MYSQL_ARGS} --vertical -e "SHOW ENGINE InnoDB STATUS" | grep "Log flushed up to" | awk '{ print $5 }'
 }
 
 # Return checkpoint LSN
 ########################################################################
 function innodb_checkpoint_lsn()
 {
-    ${MYSQL} ${MYSQL_ARGS} -e "SHOW ENGINE InnoDB STATUS\G" | \
+    ${MYSQL} ${MYSQL_ARGS} --vertical -e "SHOW ENGINE InnoDB STATUS" | \
         grep "Last checkpoint at" | awk '{ print $4 }'
 }
 
@@ -1507,7 +1506,7 @@ function grep_general_log()
 function kill_query_pattern()
 {
   local condition=$1
-  $MYSQL $MYSQL_ARGS --force --batch <<EOF
+  $MYSQL $MYSQL_ARGS --commands --force --batch <<EOF
   select concat('KILL ',id,';') from information_schema.processlist
   where $condition into outfile '$MYSQLD_TMPDIR/killcondition.sql';
   source $MYSQLD_TMPDIR/killcondition.sql;

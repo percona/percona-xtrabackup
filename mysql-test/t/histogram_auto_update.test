@@ -60,10 +60,19 @@ CREATE TABLE t1 (x INT) STATS_AUTO_RECALC=0;
 INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
 ANALYZE TABLE t1;
 
+# Get the selectivity of the topmost filter in a query plan.
+CREATE FUNCTION get_filter_percentage(plan JSON)
+  RETURNS DECIMAL(5, 2) DETERMINISTIC NO SQL
+  RETURN
+   ROUND(
+     100 *
+     JSON_VALUE(plan, '$.query_plan.estimated_rows' RETURNING DOUBLE) /
+     JSON_VALUE(plan, '$.query_plan.inputs[0].estimated_rows' RETURNING DOUBLE),
+     2);
+
 --echo # With no histogram the default assumed selectivity when filtering a range is 0.333...
 EXPLAIN FORMAT=JSON INTO @v SELECT x FROM t1 WHERE x > 0;
---skip_if_hypergraph  # Depends on optimizer EXPLAIN JSON format.
-SELECT JSON_EXTRACT(@v, '$.query_block.table.filtered') AS should_be_33;
+SELECT get_filter_percentage(@v) AS should_be_33;
 DROP TABLE t1;
 
 CREATE TABLE t1 (x INT) STATS_AUTO_RECALC=0;
@@ -72,8 +81,7 @@ INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
 ANALYZE TABLE t1;
 --echo # With the updated histogram we should have a selectivity of 1.0.
 EXPLAIN FORMAT=JSON INTO @v SELECT x FROM t1 WHERE x > 0;
---skip_if_hypergraph  # Depends on optimizer EXPLAIN JSON format.
-SELECT JSON_EXTRACT(@v, '$.query_block.table.filtered') AS should_be_100;
+SELECT get_filter_percentage(@v) AS should_be_100;
 DROP TABLE t1;
 
 --echo #
@@ -96,8 +104,7 @@ DO SLEEP(0.1);
 
 --echo # Verify that the optimizer uses the new histogram.
 EXPLAIN FORMAT=JSON INTO @v SELECT x FROM t1 WHERE x = 1;
---skip_if_hypergraph  # Depends on optimizer EXPLAIN JSON format.
-SELECT JSON_EXTRACT(@v, '$.query_block.table.filtered') AS should_be_100;
+SELECT get_filter_percentage(@v) AS should_be_100;
 
 --echo # Insert values into the table and wait for the histogram to be updated in the background.
 INSERT INTO t1 VALUES (2), (2), (2), (2), (2);
@@ -108,9 +115,10 @@ DO SLEEP(0.1);
 
 --echo # Verify that the optimizer uses the new histogram.
 EXPLAIN FORMAT=JSON INTO @v SELECT x FROM t1 WHERE x = 2;
---skip_if_hypergraph  # Depends on optimizer EXPLAIN JSON format.
-SELECT JSON_EXTRACT(@v, '$.query_block.table.filtered') AS should_be_50;
+SELECT get_filter_percentage(@v) AS should_be_50;
 DROP TABLE t1;
+
+DROP FUNCTION get_filter_percentage;
 
 --echo #
 --echo # Test how failures are handled during histogram updates under ANALYZE TABLE.

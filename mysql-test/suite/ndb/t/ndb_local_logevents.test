@@ -1,0 +1,77 @@
+# Test verifies that log event messages related to connectivity issues show up
+# in data node local log.
+#
+# This test is not meaningful to run with --repeat since data node logs are not
+# cleared in between.  Still test can be run with --repeat since only existence
+# of specific log messages is checked, not their count.
+
+--source include/have_ndb.inc
+--source have_ndb_error_insert.inc
+
+--let $assert_text= Find Connected log event
+--let $assert_select= -- Node 1 Connected
+--let $assert_file= $MYSQLTEST_VARDIR/mysql_cluster.1/ndbd.2/ndbd.log
+--let $assert_count_condition= >=1
+--source include/assert_grep.inc
+
+--let $assert_text= Find FIND_NEIGHBOURS log event
+--let $assert_select= -- We are Node 2 with dynamic ID [0-9]*, our left neighbour is Node 1, our right is Node 1
+--let $assert_file= $MYSQLTEST_VARDIR/mysql_cluster.1/ndbd.2/ndbd.log
+--let $assert_count_condition= >=1
+--source include/assert_grep.inc
+
+--echo Restart node 2 to ensure node 1 is master
+--exec $NDB_MGM -e "2 RESTART"
+--exec $NDB_WAITER
+
+--let $assert_text= Find NDBStopCompleted log event
+--let $assert_select= -- Node shutdown completed
+--let $assert_file= $MYSQLTEST_VARDIR/mysql_cluster.1/ndbd.2/ndbd.log
+--let $assert_count_condition= >=1
+--source include/assert_grep.inc
+
+select dynamic_id from ndbinfo.ndb$membership where node_id=2 into @old_dynamic_id_2;
+
+--echo Block node 2 signals to reach node 1 to cause heartbeat issues
+--exec $NDB_MGM -e "1 DUMP 9992 2"
+
+--echo Wait until node 2 have disconnected or reconnected to cluster.
+--disable_query_log
+--disable_warnings
+set @new_dynamic_id_2 = @old_dynamic_id_2;
+while (`select @old_dynamic_id_2 = @new_dynamic_id_2`) {
+  sleep 0.1;
+  set @new_dynamic_id_2 = NULL;
+  --error 0,ER_GET_ERRMSG
+  select dynamic_id from ndbinfo.ndb$membership where node_id=2 into @new_dynamic_id_2;
+}
+--enable_warnings
+--enable_query_log
+
+--echo Allow node 2 to communicate with node 1 again
+--exec $NDB_MGM -e "1 DUMP 9993 2"
+--exec $NDB_WAITER
+
+--let $assert_text= Find MissedHeartbeat log event
+--let $assert_select= -- Node 2 missed heartbeat 2
+--let $assert_file= $MYSQLTEST_VARDIR/mysql_cluster.1/ndbd.1/ndbd.log
+--let $assert_count_condition= >= 1
+--source include/assert_grep.inc
+
+--let $assert_text= Find DeadDueToHeartbeat log event
+--let $assert_select= -- Node 2 declared dead due to missed heartbeat
+--let $assert_file= $MYSQLTEST_VARDIR/mysql_cluster.1/ndbd.1/ndbd.log
+--let $assert_count_condition= >= 1
+--source include/assert_grep.inc
+
+--let $assert_text= Find NDBStopForced log event
+--let $assert_select= -- Forced node shutdown completed
+--let $assert_file= $MYSQLTEST_VARDIR/mysql_cluster.1/ndbd.2/ndbd.log
+--let $assert_count_condition= >= 1
+--source include/assert_grep.inc
+
+--let $assert_text= Find NodeFailCompleted log event
+--let $assert_select= -- Node 1 completed failure of Node 2
+--let $assert_file= $MYSQLTEST_VARDIR/mysql_cluster.1/ndbd.1/ndbd.log
+--let $assert_count_condition= >=1
+--source include/assert_grep.inc

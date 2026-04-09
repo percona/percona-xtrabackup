@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -51,6 +51,7 @@ OPT_EXTERN(int, opt_connect_retries, NONE);
 OPT_EXTERN(const char *, opt_charsets_dir, = nullptr);
 OPT_EXTERN(const char *, opt_tls_search_path, = NDB_TLS_SEARCH_PATH);
 OPT_EXTERN(unsigned long long, opt_mgm_tls, = 0);
+OPT_EXTERN(unsigned long long, opt_ndb_log_timestamps, = 1);
 
 #ifndef NDEBUG
 OPT_EXTERN(const char *, opt_debug, = nullptr);
@@ -80,6 +81,10 @@ namespace NdbStdOpt {
 
 static const char *tls_names[] = {"relaxed", "strict", nullptr};
 static TYPELIB mgm_tls_typelib = {2, "TLS requirement", tls_names, nullptr};
+static const char *timestamps_names[] = {"legacy", "utc", "system", nullptr};
+static TYPELIB timestamps_typelib = {std::size(timestamps_names) - 1,
+                                     "log timestamps format", timestamps_names,
+                                     nullptr};
 
 static constexpr struct my_option usage = {
     "usage",    '?',     "Display this help and exit.",
@@ -265,6 +270,22 @@ static constexpr struct my_option mgm_tls = {"ndb-mgm-tls",
                                              nullptr,
                                              0,
                                              nullptr};
+
+static constexpr struct my_option log_timestamps = {
+    "ndb-log-timestamps",
+    NDB_OPT_NOSHORT,
+    "Log timestamps format (legacy, utc, system)",
+    &opt_ndb_log_timestamps,
+    nullptr,
+    &timestamps_typelib,
+    GET_ENUM,
+    REQUIRED_ARG,
+    1 /* default */,
+    0 /*min*/,
+    2 /*max*/,
+    nullptr,
+    0,
+    nullptr};
 
 #ifndef NDEBUG
 static constexpr struct my_option debug = {

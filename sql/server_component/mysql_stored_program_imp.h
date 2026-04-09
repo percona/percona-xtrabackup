@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -278,4 +278,16 @@ class mysql_stored_program_external_program_handle_imp {
   static DEFINE_BOOL_METHOD(set, (stored_program_handle sp,
                                   external_program_handle value));
 };
+
+class mysql_stored_program_import_metadata_query_imp {
+ public:
+  static DEFINE_BOOL_METHOD(get,
+                            (stored_program_handle sp_handle, uint32_t index,
+                             mysql_cstring_with_length *schema_name,
+                             mysql_cstring_with_length *library_name,
+                             mysql_cstring_with_length *version,
+                             mysql_cstring_with_length *alias,
+                             void *extension));
+};
+
 #endif /* MYSQL_STORED_PROGRAM_IMP_H */

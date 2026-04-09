@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,12 +32,12 @@
 
 #include "my_config.h"
 
-#include <errno.h>
 #include <fcntl.h>
-#include <signal.h>
-#include <stdarg.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cerrno>
+#include <csignal>
+#include <cstdarg>
+#include <cstdlib>
 
 #include "client/include/client_priv.h"
 #include "my_aes.h"
@@ -83,18 +83,18 @@ static bool opt_verbose, opt_all,
     login_path_specified = false;
 
 static int execute_commands(int command);
-static int set_command(void);
-static int remove_command(void);
-static int print_command(void);
+static int set_command();
+static int remove_command();
+static int print_command();
 static void print_login_path(DYNAMIC_STRING *file_buf, const char *path_name);
 static void remove_login_path(DYNAMIC_STRING *file_buf, const char *path_name);
 static char *locate_login_path(DYNAMIC_STRING *file_buf, const char *path_name);
-static bool check_and_create_login_file(void);
+static bool check_and_create_login_file();
 static void mask_password_and_print(char *buf);
 static int reset_login_file(bool gen_key);
 
 static int encrypt_buffer(const char *plain, int plain_len, char cipher[],
-                          const int aes_len);
+                          int aes_len);
 static int decrypt_buffer(const char *cipher, int cipher_len, char plain[]);
 static int encrypt_and_write_file(DYNAMIC_STRING *file_buf);
 static int read_and_decrypt_file(DYNAMIC_STRING *file_buf);
@@ -102,14 +102,14 @@ static int do_handle_options(int argc, char *argv[]);
 static void remove_options(DYNAMIC_STRING *file_buf, const char *path_name);
 static void remove_option(DYNAMIC_STRING *file_buf, const char *path_name,
                           const char *option_name);
-bool generate_login_key(void);
-static int read_login_key(void);
-static int add_header(void);
+bool generate_login_key();
+static int read_login_key();
+static int add_header();
 static void my_perror(const char *msg);
 
 static void verbose_msg(const char *fmt, ...)
     MY_ATTRIBUTE((format(printf, 1, 2)));
-static void usage_program(void);
+static void usage_program();
 static void usage_command(int command);
 extern "C" bool get_one_option(int optid, const struct my_option *opt,
                                char *argument);
@@ -494,7 +494,7 @@ done:
            0              Success
 */
 
-static int set_command(void) {
+static int set_command() {
   DBUG_TRACE;
 
   DYNAMIC_STRING file_buf, path_buf;
@@ -577,7 +577,7 @@ error:
   return -1;
 }
 
-static int remove_command(void) {
+static int remove_command() {
   DBUG_TRACE;
 
   DYNAMIC_STRING file_buf, path_buf;
@@ -592,7 +592,7 @@ static int remove_command(void) {
 
   /* Warn if no login path is specified. */
   if (opt_warn && ((locate_login_path(&file_buf, opt_login_path)) != nullptr) &&
-      (login_path_specified == false)) {
+      (!login_path_specified)) {
     int choice;
     printf(
         "WARNING : No login path specified, so options from the default "
@@ -625,7 +625,7 @@ error:
            0              Success
 */
 
-static int print_command(void) {
+static int print_command() {
   DBUG_TRACE;
   DYNAMIC_STRING file_buf;
 
@@ -655,7 +655,7 @@ error:
            false          Success
 */
 
-static bool check_and_create_login_file(void) {
+static bool check_and_create_login_file() {
   DBUG_TRACE;
 
   MY_STAT stat_info;
@@ -895,10 +895,9 @@ static void remove_option(DYNAMIC_STRING *file_buf, const char *path_name,
       }
       option_found = true;
       break;
-    } else {
-      /* Move to next line. */
-      while ((--search_len > 1) && (*(++start) != '\n')) {
-      }
+    }
+    /* Move to next line. */
+    while ((--search_len > 1) && (*(++start) != '\n')) {
     }
   }
 
@@ -1211,7 +1210,7 @@ static int decrypt_buffer(const char *cipher, int cipher_len, char plain[]) {
                           length written, otherwise.
 */
 
-static int add_header(void) {
+static int add_header() {
   DBUG_TRACE;
 
   /* Reserved for future use. */
@@ -1245,9 +1244,9 @@ bool generate_login_key() {
 
   verbose_msg("Generating a new key.\n");
   /* Get a sequence of random non-printable ASCII */
-  for (uint i = 0; i < LOGIN_KEY_LEN; i++) {
+  for (char &i : my_key) {
     bool failed;
-    my_key[i] = (char)((int)(my_rnd_ssl(&failed) * 100000) % 32);
+    i = (char)((int)(my_rnd_ssl(&failed) * 100000) % 32);
     if (failed) return true;
   }
   return false;
@@ -1260,7 +1259,7 @@ bool generate_login_key() {
            0              Success
 */
 
-static int read_login_key(void) {
+static int read_login_key() {
   DBUG_TRACE;
 
   verbose_msg("Reading the login key.\n");
@@ -1315,7 +1314,7 @@ static void usage_command(int command) {
   my_print_variables(command_data[command].options);
 }
 
-static void usage_program(void) {
+static void usage_program() {
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2012"));
   puts("MySQL Configuration Utility.");

@@ -11,13 +11,7 @@ Note	####	Storing MySQL user name or password information in the connection meta
 [connection slave]
 CALL mtr.add_suppression("You need to use --log-bin to make --binlog-format work");
 SET @save_replica_parallel_workers= @@global.replica_parallel_workers;
-SET @save_replica_parallel_type= @@global.replica_parallel_type;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET @save_replica_preserve_commit_order= @@global.replica_preserve_commit_order;
-SET GLOBAL replica_parallel_type = 'LOGICAL_CLOCK';
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers= 4;
 SET GLOBAL replica_preserve_commit_order= ON;
 include/rpl/start_replica.inc
@@ -140,9 +134,6 @@ include/assert.inc [Verify t2 contain only one row]
 #     successfully replicated to the slave.
 
 RESET REPLICA;
-SET GLOBAL replica_parallel_type = 'LOGICAL_CLOCK';
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers= 4;
 SET GLOBAL replica_preserve_commit_order= ON;
 include/rpl/start_replica.inc

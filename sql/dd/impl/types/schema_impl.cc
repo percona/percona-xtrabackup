@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,6 +49,7 @@
 #include "sql/dd/impl/utils.h"       // dd::my_time_t_to_ull_datetime()
 #include "sql/dd/types/event.h"      // Event
 #include "sql/dd/types/function.h"   // Function
+#include "sql/dd/types/library.h"    // Library
 #include "sql/dd/types/procedure.h"  // Procedure
 #include "sql/dd/types/table.h"
 #include "sql/dd/types/view.h"  // View
@@ -222,6 +223,22 @@ Function *Schema_impl::create_function(THD *thd) const {
 
 Procedure *Schema_impl::create_procedure(THD *thd) const {
   std::unique_ptr<Procedure> p(dd::create_object<Procedure>());
+  p->set_schema_id(this->id());
+
+  // Get statement start time.
+  ulonglong ull_curtime =
+      dd::my_time_t_to_ull_datetime(thd->query_start_in_secs());
+
+  p->set_created(ull_curtime);
+  p->set_last_altered(ull_curtime);
+
+  return p.release();
+}
+
+///////////////////////////////////////////////////////////////////////////
+
+Library *Schema_impl::create_library(THD *thd) const {
+  std::unique_ptr<Library> p(dd::create_object<Library>());
   p->set_schema_id(this->id());
 
   // Get statement start time.

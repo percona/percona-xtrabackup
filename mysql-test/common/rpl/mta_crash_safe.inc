@@ -38,7 +38,6 @@ if ($commands == configure)
 
   --sync_slave_with_master
   --source include/rpl/stop_replica.inc
-  let $saved_workers= `SELECT @@global.replica_parallel_workers`;
   let $saved_checkpoint= `SELECT @@global.replica_checkpoint_period`;
 
   SHOW CREATE TABLE mysql.slave_master_info;
@@ -60,7 +59,6 @@ if ($commands == clean)
   --connection slave
   --source include/rpl/stop_replica.inc
   --disable_query_log
-  eval SET @@global.replica_parallel_workers= $saved_workers;
   eval SET @@global.replica_checkpoint_period= $saved_checkpoint;
   --enable_query_log
   --source include/rpl/start_replica.inc
@@ -117,7 +115,7 @@ if ($commands == recovery)
   {
     --echo ** fixing gaps **
     --let $rpl_server_number= 2
-    --let $rpl_server_parameters= --skip-replica-start --relay-log-recovery=0 --replica-parallel-workers=0
+    --let $rpl_server_parameters= --skip-replica-start --relay-log-recovery=0
 
     --source include/rpl/start_server.inc
     # Disable warnings as with GTIDS the clause SQL_AFTER_MTS_GAPS has no effect

@@ -72,10 +72,6 @@ delete from test.t2 where a like "S%";
 
 --source suite/ndb/t/ndb_backup_nowait_wait.inc
 
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
-select a,b,length(c), md5(c), right(c, 20), length(d), md5(d), right(d,20) from test.t2 order by a;
-
-
 drop table test.t1;
 truncate table test.t2;
 
@@ -96,8 +92,6 @@ create table test.t1 (a varchar(20) not null,
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
-
 drop table test.t1;
 truncate table test.t2;
 
@@ -112,8 +106,6 @@ create table test.t1 (a varchar(40) not null,
 --echo Restore will require use of a staging table due to the blobs
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --promote-attributes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --promote-attributes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
-
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
 
 drop table test.t1;
 truncate table test.t2;
@@ -130,8 +122,6 @@ create table test.t1 (a varchar(15) not null,
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
-
 drop table test.t1;
 truncate table test.t2;
 
@@ -146,8 +136,6 @@ create table test.t1 (a varchar(40) not null,
 --echo Restore will require use of a staging table due to the blobs
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
-
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
 
 drop table test.t1;
 truncate table test.t2;
@@ -164,8 +152,6 @@ create table test.t1 (a varchar(20) not null,
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
-
 drop table test.t1;
 truncate table test.t2;
 
@@ -179,8 +165,6 @@ create table test.t1 (b varchar(20) not null,
 --echo Run restore
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --lossy-conversions --exclude-missing-columns $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --lossy-conversions --exclude-missing-columns $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
-
-select b,c,length(d), md5(d), right(d,20) from test.t1 order by b;
 
 drop table test.t1;
 truncate table test.t2;
@@ -198,8 +182,6 @@ create table test.t1 (a varchar(200) not null,
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
-
 drop table test.t1;
 truncate table test.t2;
 
@@ -217,8 +199,6 @@ create table test.t1 (a varchar(200) not null,
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
-
 drop table test.t1;
 truncate table test.t2;
 
@@ -234,8 +214,6 @@ create table test.t1 (b varchar(15) not null,
 --echo Run restore
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --promote-attributes --lossy-conversions --exclude-missing-columns $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --promote-attributes --lossy-conversions --exclude-missing-columns $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
-
-select b,c,length(d), md5(d), right(d,20) from test.t1 order by b;
 
 drop table test.t1;
 truncate table test.t2;
@@ -266,9 +244,6 @@ create table test.t2 (a varchar(20) not null,
 --echo Run restore
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --allow-pk-changes --promote-attributes --lossy-conversions $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT 2>&1
-
-select a,b,c,length(d), md5(d), right(d,20) from test.t1 order by a;
-select a,b,length(c), md5(c), right(c, 20), length(d), md5(d), right(d,20) from test.t2 order by a;
 
 drop table test.t1;
 drop table test.t2;

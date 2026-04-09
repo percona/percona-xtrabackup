@@ -280,4 +280,6 @@ The following commands may appear in the input script:
   Receive a message using a previously stored metadata
 -->clear_stored_metadata
   Clear metadata information stored by the recvresult_store_metadata
+-->debug_stmt <STMT>
+  Specify MySQLxTEST statement to be executed at failed run
 # comment

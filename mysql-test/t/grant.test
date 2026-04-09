@@ -2275,7 +2275,7 @@ UPDATE mysql.user SET password_last_changed = (now() - INTERVAL 3 DAY) where use
 FLUSH PRIVILEGES;
 --echo # Attempt to execute query should fail
 --error 1
---exec $MYSQL -uwl7131 -pwl7131 -e "EXIT" 2>&1
+--exec $MYSQL --commands -uwl7131 -pwl7131 -e "EXIT" 2>&1
 
 connect(con1,localhost,wl7131,wl7131,,);
 --echo # Doing something should fail
@@ -2307,7 +2307,7 @@ UPDATE mysql.user SET password_last_changed = (now() - INTERVAL 5 DAY) where use
 FLUSH PRIVILEGES;
 
 --echo # This should pass as password is never expired.
---exec $MYSQL -uwl7131 -pwl7131 -e "EXIT" 2>&1
+--exec $MYSQL --commands -uwl7131 -pwl7131 -e "EXIT" 2>&1
 
 ALTER USER 'wl7131' PASSWORD EXPIRE DEFAULT;
 --echo # This should report NULL
@@ -2316,7 +2316,7 @@ SELECT password_lifetime FROM mysql.user where user='wl7131';
 --echo # This should not pass as default_password_lifetime
 --echo # (which is 2 now) is being used.
 --error 1
---exec $MYSQL -uwl7131 -pwl7131 -e "EXIT" 2>&1
+--exec $MYSQL --commands -uwl7131 -pwl7131 -e "EXIT" 2>&1
 
 SET GLOBAL default_password_lifetime = 0;
 
@@ -2325,7 +2325,7 @@ ALTER USER 'wl7131' PASSWORD EXPIRE INTERVAL 4 DAY;
 SELECT password_lifetime FROM mysql.user where user='wl7131';
 --echo # This should not pass.
 --error 1
---exec $MYSQL -uwl7131 -pwl7131 -e "EXIT" 2>&1
+--exec $MYSQL --commands -uwl7131 -pwl7131 -e "EXIT" 2>&1
 
 SET GLOBAL default_password_lifetime = @saved_value;
 
@@ -2333,7 +2333,7 @@ ALTER USER 'wl7131' PASSWORD EXPIRE INTERVAL 6 DAY;
 --echo # Should report 6
 select password_lifetime from mysql.user where user='wl7131';
 --echo # This should pass.
---exec $MYSQL -uwl7131 -pwl7131 -e "EXIT" 2>&1
+--exec $MYSQL --commands -uwl7131 -pwl7131 -e "EXIT" 2>&1
 DROP USER 'wl7131';
 
 CREATE USER 'wl7131';
@@ -3228,6 +3228,90 @@ GRANT DROP ON performance_schema.* TO bug33578113;
 REVOKE DROP ON performance_schema.* FROM bug33578113;
 
 DROP USER bug33578113;
+
+--echo #
+--echo # Bug#37003502 inconsistency in whether SHOW GRANTS quotes Function or Stored Procedure's name
+--echo #
+
+CREATE DATABASE test_db;
+USE test_db;
+
+DELIMITER |;
+CREATE PROCEDURE sp_test()
+BEGIN
+    SELECT 'Hello, World!';
+END|
+DELIMITER ;|
+
+DELIMITER |;
+CREATE FUNCTION fc_test()
+RETURNS VARCHAR(50)
+BEGIN
+    RETURN 'Hello, World!';
+END|
+DELIMITER ;|
+
+CREATE TABLE t1 (
+    id INT PRIMARY KEY
+);
+
+CREATE USER test;
+
+GRANT EXECUTE ON FUNCTION fc_test TO test;
+
+GRANT EXECUTE ON PROCEDURE sp_test TO test;
+
+GRANT SELECT ON t1 TO test;
+
+GRANT ALL ON test_db.t1 TO test;
+
+GRANT EXECUTE ON test_db.* TO test;
+
+SET sql_mode='ANSI_QUOTES';
+
+CREATE DATABASE "test_.'`db";
+USE "test_.'`db";
+
+DELIMITER |;
+CREATE PROCEDURE "sp.'`_test"()
+BEGIN
+    SELECT 'Hello, World!';
+END|
+DELIMITER ;|
+
+DELIMITER |;
+CREATE FUNCTION "fc_.'`test"()
+RETURNS VARCHAR(50)
+BEGIN
+    RETURN 'Hello, World!';
+END|
+DELIMITER ;|
+
+CREATE TABLE "t.'`1" (
+    id INT PRIMARY KEY
+);
+
+GRANT EXECUTE ON FUNCTION "fc_.'`test" TO test;
+
+GRANT EXECUTE ON PROCEDURE "sp.'`_test" TO test;
+
+GRANT SELECT ON "t.'`1" TO test;
+
+GRANT ALL ON "test_.'`db"."t.'`1" TO test;
+
+GRANT EXECUTE ON "test_.'`db".* TO test;
+
+SHOW GRANTS FOR test;
+
+SET sql_mode='';
+
+SHOW GRANTS FOR test;
+
+SET SQL_MODE='ANSI_QUOTES';
+
+DROP DATABASE "test_.'`db";
+DROP DATABASE test_db;
+DROP USER test;
 
 # Wait till we reached the initial number of concurrent sessions
 --source include/wait_until_count_sessions.inc

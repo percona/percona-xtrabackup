@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,15 +26,12 @@
 #ifndef MYSQLROUTER_DESTINATION_STATUS_COMPONENT_INCLUDED
 #define MYSQLROUTER_DESTINATION_STATUS_COMPONENT_INCLUDED
 
+#include <chrono>
 #include <memory>
-#include <mutex>
-#include <unordered_map>
-#include <vector>
 
+#include "mysql/harness/destination.h"
 #include "mysqlrouter/destination_status_export.h"
 #include "mysqlrouter/destination_status_types.h"
-
-#include "tcp_address.h"
 
 class UnreachableDestinationsQuarantine;
 
@@ -110,7 +107,7 @@ class DESTINATION_STATUS_EXPORT DestinationStatusComponent {
    * @returns true if the destination got added to the quarantine, false
    * otherwise
    */
-  bool report_connection_result(const mysql_harness::TCPAddress &dest,
+  bool report_connection_result(const mysql_harness::Destination &dest,
                                 bool success);
 
   /**
@@ -120,7 +117,7 @@ class DESTINATION_STATUS_EXPORT DestinationStatusComponent {
    * @param[in] dest Destination candidate address.
    * @returns true if the destination candidate is quarantined, false otherwise.
    */
-  bool is_destination_quarantined(const mysql_harness::TCPAddress &dest);
+  bool is_destination_quarantined(const mysql_harness::Destination &dest);
 
   /**
    * Stop all async operations and clear the quarantine list.

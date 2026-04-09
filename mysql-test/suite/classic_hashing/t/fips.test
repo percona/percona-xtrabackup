@@ -1,0 +1,25 @@
+--source include/have_fips.inc
+# This test requires the ability to turn FIPS mode on/off to test weak ciphers.
+--source include/not_fips_active.inc
+
+--echo #
+--echo # WL#16956: Move SQL functions MD5() and SHA1() in a separate component
+--echo #
+
+--echo # Restart mysqld in FIPs mode.
+--let $restart_parameters = restart: --ssl-fips-mode=STRICT
+--source include/restart_mysqld.inc
+--echo Server fips mode:
+--exec $MYSQL --host=127.0.0.1 -P $MASTER_MYPORT -e "SHOW VARIABLES LIKE 'ssl_fips%';"
+
+INSTALL COMPONENT 'file://component_classic_hashing';
+
+--echo # Tests
+SELECT MD5('hello');
+SELECT SHA1('hello');
+SELECT SHA('hello');
+
+--echo # Cleanup
+UNINSTALL COMPONENT 'file://component_classic_hashing';
+--let $restart_parameters = restart:
+--source include/restart_mysqld.inc

@@ -11,6 +11,8 @@ SET sql_log_bin=0;
 CREATE USER 'user_with_no_priv_s1'@'%';
 GRANT GROUP_REPLICATION_STREAM ON *.* TO 'user_with_no_priv_s1'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET sql_log_bin=1;
 include/start_and_bootstrap_group_replication.inc
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY);

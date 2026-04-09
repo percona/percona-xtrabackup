@@ -1,0 +1,317 @@
+#########################################################################
+# WL#15413 Subscriber row hash filter - NDB Replication Table
+#########################################################################
+# General Tests
+#########################################################################
+# Allow ndb_replication table upgrade.
+CREATE TABLE mysql.ndb_replication (
+db VARBINARY(63),
+table_name VARBINARY(63),
+server_id INT UNSIGNED,
+binlog_type INT UNSIGNED,
+conflict_fn VARBINARY(128),
+PRIMARY KEY USING HASH (db, table_name, server_id)
+) ENGINE=NDB PARTITION BY KEY(db,table_name);
+INSERT INTO mysql.ndb_replication VALUES
+("test", "t1", 1, 1, NULL),
+("test", "t2", 1, 1, NULL),
+("test", "t3", 1, 1, NULL);
+INSERT INTO mysql.ndb_replication VALUES
+("test", "t1", 2, 1, NULL),
+("test", "t2", 2, 1, NULL),
+("test", "t3", 2, 1, NULL);
+INSERT INTO mysql.ndb_replication VALUES
+("test", "t1", 3, 1, NULL),
+("test", "t2", 3, 1, NULL),
+("test", "t3", 3, 1, NULL);
+INSERT INTO mysql.ndb_replication VALUES
+("test", "t1", 4, 1, NULL),
+("test", "t2", 4, 1, NULL),
+("test", "t3", 4, 1, NULL);
+ALTER TABLE mysql.ndb_replication ADD COLUMN binlog_row_slice_count INT UNSIGNED AFTER binlog_type;
+ALTER TABLE mysql.ndb_replication ADD COLUMN binlog_row_slice_id INT UNSIGNED AFTER binlog_type;
+DESCRIBE mysql.ndb_replication;
+Field	Type	Null	Key	Default	Extra
+db	varbinary(63)	NO	PRI	NULL	
+table_name	varbinary(63)	NO	PRI	NULL	
+server_id	int unsigned	NO	PRI	NULL	
+binlog_type	int unsigned	YES		NULL	
+binlog_row_slice_id	int unsigned	YES		NULL	
+binlog_row_slice_count	int unsigned	YES		NULL	
+conflict_fn	varbinary(128)	YES		NULL	
+# Table t1 should have NULL binlog_row_slice parameters
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+SELECT * FROM mysql.ndb_replication WHERE table_name = "t1";
+db	table_name	server_id	binlog_type	binlog_row_slice_id	binlog_row_slice_count	conflict_fn
+test	t1	1	1	NULL	NULL	NULL
+test	t1	2	1	NULL	NULL	NULL
+test	t1	3	1	NULL	NULL	NULL
+test	t1	4	1	NULL	NULL	NULL
+DROP TABLE t1;
+# If toggling binlog_row_slice parameters, the last action must prevail
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+WHERE table_name = "t1" AND server_id = 4;
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+DROP TABLE t1;
+## Using a BLOB column to assess that it must not fail table creation
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = NULL, binlog_row_slice_id = NULL
+WHERE table_name = "t1" AND server_id = 4;
+CREATE TABLE t1 (k INT PRIMARY KEY, b BLOB) ENGINE = NDB;
+DROP TABLE t1;
+# If values are over maximum allowed, schema check and table creation fail
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 257, binlog_row_slice_id = 0
+WHERE table_name = "t1" AND server_id = 4;
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+ERROR HY000: Can't create table 't1' (use SHOW WARNINGS for more info).
+SHOW WARNINGS;
+Level	Code	Message
+Warning	1625	Bad schema for mysql.ndb_replication table. Message: Invalid binlog_row_slice_count value. Range: [1,256].
+Warning	1815	Failed to create event operation
+Error	1005	Can't create table 't1' (use SHOW WARNINGS for more info).
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 256, binlog_row_slice_id = 256
+WHERE table_name = "t1" AND server_id = 4;
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+ERROR HY000: Can't create table 't1' (use SHOW WARNINGS for more info).
+SHOW WARNINGS;
+Level	Code	Message
+Warning	1625	Bad schema for mysql.ndb_replication table. Message: Invalid binlog_row_slice_id value. Range: [0, slice_count).
+Warning	1815	Failed to create event operation
+Error	1005	Can't create table 't1' (use SHOW WARNINGS for more info).
+# If one of the binlog_row_slice parameters isn't set, schema check fails
+# and table creation fails
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = NULL
+WHERE table_name = "t1" AND server_id = 4;
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+ERROR HY000: Can't create table 't1' (use SHOW WARNINGS for more info).
+SHOW WARNINGS;
+Level	Code	Message
+Warning	1625	Bad schema for mysql.ndb_replication table. Message: Invalid binlog_row_slice_id value. Range: [0, slice_count).
+Warning	1815	Failed to create event operation
+Error	1005	Can't create table 't1' (use SHOW WARNINGS for more info).
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = NULL, binlog_row_slice_id = 0
+WHERE table_name = "t1" AND server_id = 4;
+CREATE TABLE t1 (k INT PRIMARY KEY) ENGINE = NDB;
+ERROR HY000: Can't create table 't1' (use SHOW WARNINGS for more info).
+SHOW WARNINGS;
+Level	Code	Message
+Warning	1625	Bad schema for mysql.ndb_replication table. Message: NULL binlog_row_slice_count.
+Warning	1815	Failed to create event operation
+Error	1005	Can't create table 't1' (use SHOW WARNINGS for more info).
+# #######################################################################
+# First scenario:
+#
+# In this test, there are two split groups of binlogged rows: group 0
+# logged by mysqld.1 and mysqld.2, and group 1 logged by mysqld.3 and
+# mysqld.4. (mysqld.1 == mysqld.3 && mysqld.2 == mysqld.4)
+# In the end, the binlogged rows must match what has been written.
+
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 0
+WHERE table_name = "t1" AND server_id = 1;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+WHERE table_name = "t1" AND server_id = 2;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 0
+WHERE table_name = "t1" AND server_id = 3;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+WHERE table_name = "t1" AND server_id = 4;
+SELECT * FROM mysql.ndb_replication WHERE table_name = 't1';
+db	table_name	server_id	binlog_type	binlog_row_slice_id	binlog_row_slice_count	conflict_fn
+test	t1	1	2	0	2	NULL
+test	t1	2	2	1	2	NULL
+test	t1	3	2	0	2	NULL
+test	t1	4	2	1	2	NULL
+CREATE TABLE t1 (k INT PRIMARY KEY, a VARCHAR(128), b VARBINARY(128)) ENGINE = NDB;
+INSERT INTO t1 VALUES (1, 'first', x'6F6464'),
+(2, 'second', x'6576656E'),
+(3, 'third', x'6F6464'),
+(4, 'fourth', x'6576656E'),
+(5, 'fifth', x'6F6464'),
+(6, 'sixth', x'6576656E'),
+(7, 'seventh', x'6F6464'),
+(8, 'eighth', x'6576656E'),
+(9, 'ninth', x'6F6464'),
+(10, 'tenth', x'6576656E'),
+(11, 'eleventh', x'6F6464'),
+(12, 'twelfth', x'6576656E');
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t1;
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 12/2
+SET @data_volume = 12/2;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t1;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must be equal to 12
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+12
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# #######################################################################
+# Second scenario:
+#
+# In this test, there are four split groups of binlogged rows: group 0
+# logged by mysqld.1, group 1 logged by mysqld.2, group 2 logged by
+# mysqld.3 and group 3 logged by mysqld.4.
+# (mysqld.1 != mysqld.2 != mysqld.3 != mysqld.4)
+# In the end, the binlogged rows must match what has been written.
+
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 4, binlog_row_slice_id = 0
+WHERE table_name = "t2" AND server_id = 1;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 4, binlog_row_slice_id = 1
+WHERE table_name = "t2" AND server_id = 2;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 4, binlog_row_slice_id = 2
+WHERE table_name = "t2" AND server_id = 3;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 4, binlog_row_slice_id = 3
+WHERE table_name = "t2" AND server_id = 4;
+SELECT * FROM mysql.ndb_replication WHERE table_name = 't2';
+db	table_name	server_id	binlog_type	binlog_row_slice_id	binlog_row_slice_count	conflict_fn
+test	t2	1	2	0	4	NULL
+test	t2	2	2	1	4	NULL
+test	t2	3	2	2	4	NULL
+test	t2	4	2	3	4	NULL
+CREATE TABLE t2 (k INT PRIMARY KEY, a VARCHAR(1024), b VARBINARY(2048)) ENGINE = NDB;
+INSERT INTO t2 VALUES (1, 'first', x'6F6464'),
+(2, 'second', x'6576656E'),
+(3, 'first', x'6F6464'),
+(4, 'second', x'6576656E'),
+(5, 'first', x'6F6464'),
+(6, 'second', x'6576656E'),
+(7, 'first', x'6F6464'),
+(8, 'second', x'6576656E'),
+(9, 'first', x'6F6464'),
+(10, 'second', x'6576656E'),
+(11, 'first', x'6F6464'),
+(12, 'second', x'6576656E');
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t2;
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 12/4
+SET @data_volume = 12/4;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -2 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 2*(12/4)
+SET @data_volume = 2*(12/4);
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 3*(12/4)
+SET @data_volume = 3*(12/4);
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +2, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be equal to 12
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+12
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# #######################################################################
+# Third scenario:
+#
+# This test follows the same distribution as the first scenario
+# (mysqld.1 == mysqld.3 && mysqld.2 == mysqld.4),
+# but shows that ndb_replication table takes precendence over MySQL Server
+# row-group parameters.
+
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=1
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=2
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=3
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 0
+WHERE table_name = "t3" AND server_id = 1;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+WHERE table_name = "t3" AND server_id = 2;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 0
+WHERE table_name = "t3" AND server_id = 3;
+UPDATE mysql.ndb_replication
+SET binlog_type = 2, binlog_row_slice_count = 2, binlog_row_slice_id = 1
+WHERE table_name = "t3" AND server_id = 4;
+SELECT * FROM mysql.ndb_replication WHERE table_name = 't3';
+db	table_name	server_id	binlog_type	binlog_row_slice_id	binlog_row_slice_count	conflict_fn
+test	t3	1	2	0	2	NULL
+test	t3	2	2	1	2	NULL
+test	t3	3	2	0	2	NULL
+test	t3	4	2	1	2	NULL
+CREATE TABLE t3 (k INT PRIMARY KEY, a VARCHAR(1024), b VARBINARY(2048)) ENGINE = NDB;
+INSERT INTO t3 VALUES (1, 'first', x'6F6464'),
+(2, 'second', x'6576656E'),
+(3, 'first', x'6F6464'),
+(4, 'second', x'6576656E'),
+(5, 'first', x'6F6464'),
+(6, 'second', x'6576656E'),
+(7, 'first', x'6F6464'),
+(8, 'second', x'6576656E'),
+(9, 'first', x'6F6464'),
+(10, 'second', x'6576656E'),
+(11, 'first', x'6F6464'),
+(12, 'second', x'6576656E');
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t3;
+SELECT COUNT(*) FROM t3;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 12/2
+SET @data_volume = 12/2;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t3;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must be equal to 12
+SELECT COUNT(*) FROM t3;
+COUNT(*)
+12
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# Cleanup
+DROP TABLE mysql.ndb_replication;
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+# restart:
+# restart:
+# restart:
+# restart:

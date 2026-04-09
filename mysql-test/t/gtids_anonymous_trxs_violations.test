@@ -18,6 +18,9 @@
 #     of GTID-violation transactions.
 #
 
+# Should be started with gtid_mode set to OFF in the beginning
+--source include/rpl/set_gtid_mode_off.inc
+
 SET @@GLOBAL.GTID_MODE=OFF_PERMISSIVE;
 
 CREATE TABLE t2 (c1 INT);
@@ -74,3 +77,6 @@ SET SESSION GTID_NEXT=DEFAULT;
 --replace_result $old_server_id OLD_SERVER_ID
 --eval SET GLOBAL server_id = $old_server_id
 SET GLOBAL GTID_MODE=OFF;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

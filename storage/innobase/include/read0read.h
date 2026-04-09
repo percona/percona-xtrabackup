@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -63,12 +63,22 @@ class MVCC {
   @param own_mutex      true if caller owns trx_sys_t::mutex */
   void view_close(ReadView *&view, bool own_mutex);
 
-  /** Clones the oldest view and stores it in view. No need to
-  call view_close(). The caller owns the view that is passed in.
-  It will also move the closed views from the m_views list to the
-  m_free list. This function is called by Purge to determine whether it should
-  purge the delete marked record or not.
-  @param view           Preallocated view, owned by the caller */
+  /** Clones the oldest view into the provided view, unless the function
+  determines that the provided view is already a good enough lower bound.
+  The caller owns the view that is passed in, which is interpreted to be a
+  previous lower bound known to the caller.
+  No need to call view_close(view,..).
+
+  Note: This function is called by Purge to determine the purge_sys->view used
+  to distinguish which transactions are considered committed by everybody, and
+  thus their undo logs can be purged.
+  Purge mainly uses purge_sys->view->low_limit_no(), which is a safe
+  lower-bound on what can be purged based on NO, and further limits it to the
+  lowest needed NO reported by GTID Persistor. But other places like ROLLBACK
+  use purge_sys->view->changes_visible(ID,..).
+  @param[in,out] view   Preallocated view, owned by the caller. Can be either
+                        default constructed (m_low_limit_no is 0) or a fully
+                        initialized ReadView object. */
   void clone_oldest_view(ReadView *view);
 
   /**
@@ -105,12 +115,6 @@ class MVCC {
   views from the active list to the freed list.
   @return a view to use */
   inline ReadView *get_view();
-
-  /**
-  Get the oldest view in the system. It will also move the delete
-  marked read views from the views list to the freed list.
-  @return oldest view if found or NULL */
-  inline ReadView *get_oldest_view() const;
 
  private:
   // Prevent copying

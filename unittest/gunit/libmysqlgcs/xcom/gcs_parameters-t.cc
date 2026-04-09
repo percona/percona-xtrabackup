@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -63,7 +63,7 @@ class GcsParametersTest : public GcsBaseTest {
 
   void TearDown() override {
     // fake factory cleanup member function
-    static_cast<Gcs_xcom_interface *>(m_gcs)->cleanup();
+    Gcs_xcom_interface::cleanup();
   }
 
   Gcs_interface *m_gcs;
@@ -114,14 +114,12 @@ TEST_F(GcsParametersTest, ParametersCompression) {
       m_xcs->get_initialization_parameters();
 
   // compression is ON by default
-  ASSERT_TRUE(init_params.get_parameter("compression")->compare("on") == 0);
+  ASSERT_TRUE(*init_params.get_parameter("compression") == "on");
 
   // compression_threshold is set to the default
   std::stringstream ss;
   ss << Gcs_message_stage_lz4::DEFAULT_THRESHOLD;
-  ASSERT_TRUE(
-      init_params.get_parameter("compression_threshold")->compare(ss.str()) ==
-      0);
+  ASSERT_TRUE(*init_params.get_parameter("compression_threshold") == ss.str());
 
   // finalize the interface
   err = m_gcs->finalize();
@@ -131,8 +129,8 @@ TEST_F(GcsParametersTest, ParametersCompression) {
   // --------------------------------------------------------
   // Compression explicit values
   // --------------------------------------------------------
-  std::string compression = "off";
-  std::string compression_threshold = "1";
+  std::string const compression = "off";
+  std::string const compression_threshold = "1";
 
   Gcs_interface_parameters explicit_values;
   explicit_values.add_parameter("group_name", "ola");
@@ -152,12 +150,11 @@ TEST_F(GcsParametersTest, ParametersCompression) {
   ASSERT_EQ(err, GCS_OK);
 
   // compression is ON by default
-  ASSERT_TRUE(init_params2.get_parameter("compression")->compare(compression) ==
-              0);
+  ASSERT_TRUE(*init_params2.get_parameter("compression") == compression);
 
   // compression is set to the value we explicitly configured
-  ASSERT_TRUE(init_params2.get_parameter("compression_threshold")
-                  ->compare(compression_threshold) == 0);
+  ASSERT_TRUE(*init_params2.get_parameter("compression_threshold") ==
+              compression_threshold);
 
   err = m_gcs->finalize();
 
@@ -189,14 +186,13 @@ TEST_F(GcsParametersTest, ParametersFragmentation) {
       m_xcs->get_initialization_parameters();
 
   // fragmentation is ON by default
-  ASSERT_TRUE(init_params.get_parameter("fragmentation")->compare("on") == 0);
+  ASSERT_TRUE(*init_params.get_parameter("fragmentation") == "on");
 
   // fragmentation_threshold is set to the default
   std::stringstream ss;
   ss << Gcs_message_stage_split_v2::DEFAULT_THRESHOLD;
-  ASSERT_TRUE(
-      init_params.get_parameter("fragmentation_threshold")->compare(ss.str()) ==
-      0);
+  ASSERT_TRUE(*init_params.get_parameter("fragmentation_threshold") ==
+              ss.str());
 
   // finalize the interface
   err = m_gcs->finalize();
@@ -206,8 +202,8 @@ TEST_F(GcsParametersTest, ParametersFragmentation) {
   // --------------------------------------------------------
   // Fragmentation explicit values
   // --------------------------------------------------------
-  std::string fragmentation = "off";
-  std::string fragmentation_threshold = "1";
+  std::string const fragmentation = "off";
+  std::string const fragmentation_threshold = "1";
 
   Gcs_interface_parameters explicit_values;
   explicit_values.add_parameter("group_name", "ola");
@@ -228,12 +224,11 @@ TEST_F(GcsParametersTest, ParametersFragmentation) {
   ASSERT_EQ(err, GCS_OK);
 
   // fragmentation is ON by default
-  ASSERT_TRUE(
-      init_params2.get_parameter("fragmentation")->compare(fragmentation) == 0);
+  ASSERT_TRUE(*init_params2.get_parameter("fragmentation") == fragmentation);
 
   // fragmentation is set to the value we explicitly configured
-  ASSERT_TRUE(init_params2.get_parameter("fragmentation_threshold")
-                  ->compare(fragmentation_threshold) == 0);
+  ASSERT_TRUE(*init_params2.get_parameter("fragmentation_threshold") ==
+              fragmentation_threshold);
 
   err = m_gcs->finalize();
 
@@ -297,7 +292,7 @@ TEST_F(GcsParametersTest, AbsentLocalNode) {
 TEST_F(GcsParametersTest, InvalidPeerNodes) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("peer_nodes"));
-  std::string save = *p;
+  std::string const save = *p;
 
   // invalid peer
   *p = "127.0.0.1 24844,127.0.0.1 24845";
@@ -314,7 +309,7 @@ TEST_F(GcsParametersTest, InvalidPeerNodes) {
 TEST_F(GcsParametersTest, InvalidLocalNode) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("local_node"));
-  std::string save = *p;
+  std::string const save = *p;
 
   // invalid peer
   *p = "127.0.0.1 24844";
@@ -325,7 +320,7 @@ TEST_F(GcsParametersTest, InvalidLocalNode) {
 TEST_F(GcsParametersTest, InvalidPollSpinLoops) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("poll_spin_loops"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "Invalid";
   do_check_params();
@@ -335,7 +330,7 @@ TEST_F(GcsParametersTest, InvalidPollSpinLoops) {
 TEST_F(GcsParametersTest, InvalidCompressionThreshold) {
   std::string *p = const_cast<std::string *>(
       m_params.get_parameter("compression_threshold"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "Invalid";
   do_check_params();
@@ -345,7 +340,7 @@ TEST_F(GcsParametersTest, InvalidCompressionThreshold) {
 TEST_F(GcsParametersTest, InvalidFragmentationThreshold) {
   std::string *p = const_cast<std::string *>(
       m_params.get_parameter("fragmentation_threshold"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "Invalid";
   do_check_params();
@@ -355,7 +350,7 @@ TEST_F(GcsParametersTest, InvalidFragmentationThreshold) {
 TEST_F(GcsParametersTest, InvalidLocalNodeAddress) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("local_node"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "127.0";
   do_check_params();
@@ -365,7 +360,7 @@ TEST_F(GcsParametersTest, InvalidLocalNodeAddress) {
 TEST_F(GcsParametersTest, InvalidAllowlistIPMask) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("ip_allowlist"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "192.168.1.1/33";
   do_check_params();
@@ -375,7 +370,7 @@ TEST_F(GcsParametersTest, InvalidAllowlistIPMask) {
 TEST_F(GcsParametersTest, InvalidAllowlistIP) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("ip_allowlist"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "192.168.1.256/24";
   do_check_params();
@@ -385,7 +380,7 @@ TEST_F(GcsParametersTest, InvalidAllowlistIP) {
 TEST_F(GcsParametersTest, InvalidAllowlistIPs) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("ip_allowlist"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "192.168.1.222/24,255.257.256.255";
   do_check_params();
@@ -395,7 +390,7 @@ TEST_F(GcsParametersTest, InvalidAllowlistIPs) {
 TEST_F(GcsParametersTest, HalfBakedIP) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("ip_allowlist"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "192.168.";
   do_check_params();
@@ -405,7 +400,7 @@ TEST_F(GcsParametersTest, HalfBakedIP) {
 TEST_F(GcsParametersTest, InvalidLocalNode_IP_not_found) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("local_node"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "8.8.8.8:24844";
   do_check_params();
@@ -422,7 +417,7 @@ TEST_F(GcsParametersTest, InvalidLocalNode_IP_not_found) {
 TEST_F(GcsParametersTest, InvalidNonMemberExpelTimeout) {
   std::string *p = const_cast<std::string *>(
       m_params.get_parameter("non_member_expel_timeout"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "Invalid";
   do_check_params();
@@ -439,7 +434,7 @@ TEST_F(GcsParametersTest, InvalidNonMemberExpelTimeout) {
 TEST_F(GcsParametersTest, InvalidSuspicionsProcessingPeriod) {
   std::string *p = const_cast<std::string *>(
       m_params.get_parameter("suspicions_processing_period"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "Invalid";
   do_check_params();
@@ -456,7 +451,7 @@ TEST_F(GcsParametersTest, InvalidSuspicionsProcessingPeriod) {
 TEST_F(GcsParametersTest, InvalidMemberExpelTimeout) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("member_expel_timeout"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "Invalid";
   do_check_params();
@@ -473,7 +468,7 @@ TEST_F(GcsParametersTest, InvalidMemberExpelTimeout) {
 TEST_F(GcsParametersTest, InvalidJoinAttempts) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("join_attempts"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "Invalid";
   do_check_params();
@@ -483,7 +478,7 @@ TEST_F(GcsParametersTest, InvalidJoinAttempts) {
 TEST_F(GcsParametersTest, InvalidJoinSleepTime) {
   std::string *p =
       const_cast<std::string *>(m_params.get_parameter("join_sleep_time"));
-  std::string save = *p;
+  std::string const save = *p;
 
   *p = "Invalid";
   do_check_params();

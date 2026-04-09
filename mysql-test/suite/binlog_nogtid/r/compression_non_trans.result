@@ -38,12 +38,12 @@ binlog.000001	#	Previous_gtids	#	#
 binlog.000001	#	Anonymous_Gtid	#	#	SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Query	#	#	COMMIT
 binlog.000001	#	Anonymous_Gtid	#	#	SET @@SESSION.GTID_NEXT= 'ANONYMOUS'
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t2)
-binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 include/assert.inc [Expected event type Query (begin)]
 include/assert.inc [Expected event type Table_map]

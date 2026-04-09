@@ -3,13 +3,17 @@ Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
 [connection master]
+[connection master]
 include/rpl/sync_to_replica.inc
+[connection master]
 #
 # Uninstall semi-sync plugins on source and replica
 #
+[connection slave]
 include/rpl/stop_replica.inc
 UNINSTALL PLUGIN rpl_semi_sync_replica;
 UNINSTALL PLUGIN rpl_semi_sync_source;
+[connection master]
 UNINSTALL PLUGIN rpl_semi_sync_replica;
 UNINSTALL PLUGIN rpl_semi_sync_source;
 include/rpl/reset.inc
@@ -26,7 +30,7 @@ set global rpl_semi_sync_source_enabled = 1;
 show variables like 'rpl_semi_sync_source_enabled';
 Variable_name	Value
 rpl_semi_sync_source_enabled	ON
-[ status of semi-sync on source should be ON even without any semi-sync slaves ]
+[ status of semi-sync on source should be ON even without any semi-sync replicas ]
 show status like 'Rpl_semi_sync_source_clients';
 Variable_name	Value
 Rpl_semi_sync_source_clients	0
@@ -91,7 +95,7 @@ Rpl_semi_sync_source_no_tx	0
 show status like 'Rpl_semi_sync_source_yes_tx';
 Variable_name	Value
 Rpl_semi_sync_source_yes_tx	1
-select CONNECTIONS_NORMAL_SLAVE - CONNECTIONS_NORMAL_SLAVE as 'Should be 0';
+select CONNECTIONS_NORMAL_REPLICA - CONNECTIONS_NORMAL_REPLICA as 'Should be 0';
 Should be 0
 0
 [ insert records to table ]
@@ -128,6 +132,7 @@ max(a)
 SET SESSION AUTOCOMMIT= 0;
 CREATE TABLE t2(c1 INT) ENGINE=innodb;
 include/rpl/sync_to_replica.inc
+[connection master]
 BEGIN;
 
 # Even though it is in a transaction, this statement is binlogged into binlog
@@ -146,6 +151,7 @@ include/rpl/sync_to_replica.inc
 # Test semi-sync source will switch OFF after one transaction
 # timeout waiting for replica reply.
 #
+[connection slave]
 include/rpl/stop_replica.inc
 [connection master]
 include/rpl/stop_dump_threads.inc
@@ -231,6 +237,7 @@ include/rpl/stop_replica.inc
 #
 # Flush status
 #
+[connection master]
 [ Semi-sync source status variables before FLUSH STATUS ]
 SHOW STATUS LIKE 'Rpl_semi_sync_source_no_tx';
 Variable_name	Value
@@ -299,6 +306,7 @@ reset replica;
 reset binary logs and gtids;
 [connection master]
 include/rpl/stop_dump_threads.inc
+[connection slave]
 include/rpl/start_replica.inc
 [connection master]
 create table t1 (a int) engine = ENGINE_TYPE;
@@ -332,11 +340,15 @@ set sql_log_bin=0;
 create user rpl@127.0.0.1 identified by 'rpl';
 grant replication slave on *.* to rpl@127.0.0.1;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 set sql_log_bin=1;
 [connection slave]
 create user rpl@127.0.0.1 identified by 'rpl';
 grant replication slave on *.* to rpl@127.0.0.1;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CHANGE REPLICATION SOURCE to SOURCE_USER='rpl',SOURCE_PASSWORD='rpl', GET_SOURCE_PUBLIC_KEY=1;
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
@@ -433,7 +445,9 @@ include/rpl/sync_to_replica.inc
 show status like 'Rpl_semi_sync_replica_status';
 Variable_name	Value
 Rpl_semi_sync_replica_status	ON
+[connection slave]
 include/rpl/stop_replica.inc
+[connection master]
 [ on source ]
 include/rpl/stop_dump_threads.inc
 SET GLOBAL replication_optimize_for_static_plugin_config = 0;
@@ -455,6 +469,7 @@ Rpl_semi_sync_replica_status	OFF
 #
 # Test non-semi-sync replica connect to semi-sync source
 #
+[connection master]
 INSTALL PLUGIN rpl_semi_sync_source SONAME 'SEMISYNC_SOURCE_PLUGIN';
 SET GLOBAL replication_optimize_for_static_plugin_config = 1;
 set global rpl_semi_sync_source_timeout= 60000;
@@ -489,16 +504,22 @@ Rpl_semi_sync_replica_status	OFF
 #
 # Clean up
 #
+[connection master]
 SET GLOBAL replication_optimize_for_static_plugin_config = 0;
 include/rpl/uninstall_semisync.inc
+[connection slave]
 include/rpl/stop_replica.inc
 CHANGE REPLICATION SOURCE to SOURCE_USER='root',SOURCE_PASSWORD='', GET_SOURCE_PUBLIC_KEY=0;
 Warnings:
 Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
 Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
 include/rpl/start_replica.inc
+[connection master]
 drop table t1;
 include/rpl/sync_to_replica.inc
+[connection master]
 drop user rpl@127.0.0.1;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/deinit.inc

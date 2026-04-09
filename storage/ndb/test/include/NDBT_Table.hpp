@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,13 +36,13 @@ class NDBT_Attribute : public NdbDictionary::Column {
  public:
   NDBT_Attribute(const char *_name, NdbDictionary::Column::Type _type,
                  int _length = 1, bool _pk = false, bool _nullable = false,
-                 CHARSET_INFO *cs = 0,
+                 CHARSET_INFO *cs = nullptr,
                  NdbDictionary::Column::StorageType storage =
                      NdbDictionary::Column::StorageTypeMemory,
-                 bool dynamic = false, const void *defaultVal = NULL,
+                 bool dynamic = false, const void *defaultVal = nullptr,
                  Uint32 defaultValBytes = 0)
       : NdbDictionary::Column(_name) {
-    require(_name != 0);
+    require(_name != nullptr);
 
     setType(_type);
     setLength(_length);
@@ -66,7 +66,7 @@ class NDBT_Table : public NdbDictionary::Table {
   NDBT_Table(const char *name, int noOfAttributes,
              const NdbDictionary::Column attributes[])
       : NdbDictionary::Table(name) {
-    require(name != 0);
+    require(name != nullptr);
 
     // setStoredTable(stored);
     for (int i = 0; i < noOfAttributes; i++) addColumn(attributes[i]);
@@ -81,7 +81,7 @@ class NDBT_Table : public NdbDictionary::Table {
   NDBT_Table(const char *name, int noOfAttributes,
              NdbDictionary::Column *attributePtrs[])
       : NdbDictionary::Table(name) {
-    require(name != 0);
+    require(name != nullptr);
 
     // setStoredTable(stored);
     for (int i = 0; i < noOfAttributes; i++) addColumn(*attributePtrs[i]);

@@ -10,9 +10,13 @@ call mtr.add_suppression("REVOKE/GRANT failed while storing routine level "
 delete from mysql.user where user=_binary'rpl_do_grant';
 delete from mysql.db where user=_binary'rpl_do_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 delete from mysql.user where user=_binary'rpl_ignore_grant';
 delete from mysql.db where user=_binary'rpl_ignore_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user rpl_do_grant@localhost;
 grant select on *.* to rpl_do_grant@localhost;
 grant drop on test.* to rpl_do_grant@localhost;
@@ -26,6 +30,8 @@ authentication_string<>_binary''
 1
 update mysql.user set authentication_string='' where user='rpl_do_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 select authentication_string<>'' from mysql.user where user='rpl_do_grant';
 authentication_string<>''
 0
@@ -38,9 +44,13 @@ authentication_string<>''
 delete from mysql.user where user=_binary'rpl_do_grant';
 delete from mysql.db where user=_binary'rpl_do_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 delete from mysql.user where user=_binary'rpl_do_grant';
 delete from mysql.db where user=_binary'rpl_do_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for rpl_do_grant@localhost;
 ERROR 42000: There is no such grant defined for user 'rpl_do_grant' on host 'localhost'
 show grants for rpl_do_grant@localhost;
@@ -112,6 +122,8 @@ SELECT upgrade_del_func();
 upgrade_del_func()
 INSIDE upgrade_del_func()
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 FLUSH TABLES;
 SELECT * FROM mysql.procs_priv;
 Host	Db	User	Routine_name	Routine_type	Grantor	Proc_priv	Timestamp
@@ -144,6 +156,8 @@ upgrade_del_func()
 INSIDE upgrade_del_func()
 DELETE FROM mysql.procs_priv;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 USE bug42217_db;
 "Can't execute the replicated routine on slave like before after procs privilege is deleted "
 SELECT upgrade_del_func();

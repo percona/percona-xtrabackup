@@ -5,9 +5,9 @@ Note	####	Storing MySQL user name or password information in the connection meta
 [connection server1]
 create user 'foo'@'fakehost';
 create user 'foo'@'fakehost', 'bar'@'fakehost';
-ERROR HY000: Operation CREATE USER failed for 'foo'@'fakehost'
+ERROR HY000: Operation CREATE USER failed for 'foo'@'fakehost' (User account already exists)
 create user 'foo'@'fakehost', 'bar'@'fakehost';
-ERROR HY000: Operation CREATE USER failed for 'foo'@'fakehost'
+ERROR HY000: Operation CREATE USER failed for 'foo'@'fakehost' (User account already exists)
 create user 'foo1'@'fakehost' IDENTIFIED BY 'foo1', 'foo2'@'fakehost'
   IDENTIFIED WITH 'caching_sha2_password' BY 'wrong_password',
 'foo3'@'fakehost';
@@ -33,9 +33,9 @@ fakehost	foofoo
 drop user 'foofoo'@'fakehost';
 drop user 'foo1'@'fakehost', 'foo2'@'fakehost', 'foo3'@'fakehost';
 drop user 'not_exist_user1'@'fakehost', 'barbar'@'fakehost';
-ERROR HY000: Operation DROP USER failed for 'not_exist_user1'@'fakehost','barbar'@'fakehost'
+ERROR HY000: Operation DROP USER failed for 'not_exist_user1'@'fakehost' (User account does not exist),'barbar'@'fakehost' (User account does not exist)
 drop user 'not_exist_user1'@'fakehost', 'not_exist_user2'@'fakehost';
-ERROR HY000: Operation DROP USER failed for 'not_exist_user1'@'fakehost','not_exist_user2'@'fakehost'
+ERROR HY000: Operation DROP USER failed for 'not_exist_user1'@'fakehost' (User account does not exist),'not_exist_user2'@'fakehost' (User account does not exist)
 include/rpl/sync_to_replica.inc
 select Host,User from mysql.user where Host='fakehost';
 Host	User

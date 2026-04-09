@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2,t3;
 create table t1 (a int not null,b int not null, primary key (a)) engine=heap comment="testing heaps" avg_row_length=100 min_rows=1 max_rows=100;
 insert into t1 values(1,1),(2,2),(3,3),(4,4);
@@ -847,3 +848,4 @@ c1
 bar2
 #should show one tuple!
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

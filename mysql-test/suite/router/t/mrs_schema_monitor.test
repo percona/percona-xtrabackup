@@ -1,0 +1,95 @@
+--source include/have_router.inc
+
+# we fiddle with metadata version view here so we want single view name
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/tab1
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab1/1 --wait-until-status 60 --display none
+
+--echo
+--echo I. Verify that the monitoring thread adds the router entry when it is missing in the metadata
+--echo
+DELETE from mysql_rest_service_metadata.router where id = 1;
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+SELECT id from mysql_rest_service_metadata.router where id = 1;
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab1/1 --wait-until-status 60 --display none
+
+--echo
+--echo II. Verify that when the monitoring thread sees incompatible metadata version it stops the service and restores it when it becomes compatible again.
+--echo
+DROP view `mysql_rest_service_metadata`.`msm_schema_version`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY INVOKER
+VIEW `mysql_rest_service_metadata`.`msm_schema_version`(`major`,`minor`,`patch`)
+AS select 1 AS `1`,0 AS `0`,0 AS `0`;
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab1/1 --response-type RAW --expected-status 404 --wait-until-status 60 --display none
+
+DROP view `mysql_rest_service_metadata`.`msm_schema_version`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY INVOKER
+VIEW `mysql_rest_service_metadata`.`msm_schema_version`(`major`,`minor`,`patch`)
+AS select 4 AS `4`,0 AS `0`,0 AS `0`;
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab1/1 --expected-status Ok --wait-until-status 60 --display none
+
+--echo
+--echo III. Verify that when the service_enabled flag is cleared in the metadata the mtr stops the service and restores it when it becomes enabled again.
+--echo
+
+update `mysql_rest_service_metadata`.`config` set service_enabled = 0;
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab1/1 --response-type RAW --expected-status 404 --wait-until-status 60 --display none
+update `mysql_rest_service_metadata`.`config` set service_enabled = 1;
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab1/1 --response-type RAW --expected-status Ok --wait-until-status 60 --display none
+
+--echo
+--echo IV. Verify that when the monitoring thread encounters invalid metadata (missing view) it stops the service and restores once it becomes available again
+--echo
+DROP view `mysql_rest_service_metadata`.`msm_schema_version`;
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab1/1 --response-type RAW --expected-status 404 --wait-until-status 60 --display none
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY INVOKER
+VIEW `mysql_rest_service_metadata`.`msm_schema_version`(`major`,`minor`,`patch`)
+AS select 4 AS `4`,0 AS `0`,0 AS `0`;
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab1/1 --expected-status Ok --wait-until-status 60 --display none
+
+--echo
+--echo V. Verify that when there is a discrepancy in the audit_log table (index) the MRS still notices the changes in the metadata by doing a full refresh
+--echo
+
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/tab3
+--source ../include/mrs/db_object/add.inc
+
+delete from `mysql_rest_service_metadata`.`audit_log`;
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic_schema/tab3/1 --expected-status Ok --wait-until-status 60 --display none
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

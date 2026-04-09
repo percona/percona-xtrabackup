@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,8 +22,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
-#include <stddef.h>
 #include <algorithm>
+#include <cstddef>
 
 #include "my_bitmap.h"
 #include "my_inttypes.h"
@@ -59,14 +59,14 @@ TEST_F(BitmapTest, IntersectTest) {
 TEST_F(BitmapTest, ULLTest) {
   bitmap.set_all();
   bitmap.intersect(0x0123456789ABCDEFULL);
-  ulonglong ull = bitmap.to_ulonglong();
+  ulonglong const ull = bitmap.to_ulonglong();
   EXPECT_TRUE(ull == 0x0123456789ABCDEFULL);
 
   Bitmap<24> bitmap24;
   bitmap24.init();
   bitmap24.set_all();
   bitmap24.intersect(0x47BULL);
-  ulonglong ull24 = bitmap24.to_ulonglong();
+  ulonglong const ull24 = bitmap24.to_ulonglong();
   EXPECT_TRUE(ull24 == 0x47BULL);
 }
 

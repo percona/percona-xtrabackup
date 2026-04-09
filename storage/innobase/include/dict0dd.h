@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -947,11 +947,6 @@ dberr_t dd_table_load_fk_from_dd(dict_table_t *m_table,
                                  const char **col_names,
                                  dict_err_ignore_t ignore_err,
                                  bool dict_locked);
-
-/** Set the AUTO_INCREMENT attribute.
-@param[in,out]  se_private_data dd::Table::se_private_data
-@param[in]      autoinc         the auto-increment value */
-void dd_set_autoinc(dd::Properties &se_private_data, uint64_t autoinc);
 
 /** Scan a new dd system table, like mysql.tables...
 @param[in]      thd             THD

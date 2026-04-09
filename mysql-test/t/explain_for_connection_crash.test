@@ -28,6 +28,8 @@
   --disable_warnings
   let $format=json;
 
+  SET GLOBAL explain_json_format_version = 1;
+  SET SESSION explain_json_format_version = 1;
   connect (ce, localhost, root,,test);
   connect (cq, localhost, root,,test);
   connection cq;
@@ -62,3 +64,6 @@
   --source include/explain_for_connection.inc
   --enable_warnings
 
+--disable_query_log
+SET GLOBAL explain_json_format_version = DEFAULT;
+--enable_query_log

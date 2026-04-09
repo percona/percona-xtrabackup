@@ -31,6 +31,7 @@ XA ROLLBACK 'trx1';
 # Check that changing binlog_checksum if the session owns
 # a GTID is not allowed.
 #
+include/rpl/set_gtid_mode_off.inc
 SET GLOBAL GTID_MODE=OFF_PERMISSIVE;
 SET GLOBAL GTID_MODE=ON_PERMISSIVE;
 SET GLOBAL ENFORCE_GTID_CONSISTENCY=ON;
@@ -39,8 +40,4 @@ SET SESSION GTID_NEXT='11111111-AAAA-2222-BBBB-000000000000:5';
 SET @@global.binlog_checksum = CRC32;
 ERROR HY000: Variable binlog_checksum cannot be changed by a client that owns a GTID. The client owns 11111111-aaaa-2222-bbbb-000000000000:5. Ownership is released on COMMIT or ROLLBACK.
 SET SESSION GTID_NEXT='AUTOMATIC';
-SET GLOBAL GTID_MODE=ON_PERMISSIVE;
-SET GLOBAL GTID_MODE=OFF_PERMISSIVE;
-SET GLOBAL ENFORCE_GTID_CONSISTENCY=OFF;
-SET GLOBAL GTID_MODE=OFF;
 set @@global.binlog_checksum = @save_binlog_checksum;

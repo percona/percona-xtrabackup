@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -22,8 +22,8 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "util/ndb_ndbxfrm1.h"
-#include <stdio.h>
 #include <algorithm>
+#include <cstdio>
 #include "my_byteorder.h"  // WORDS_BIGENDIAN
 #include "my_compiler.h"   // unlikely
 #include "util/require.h"
@@ -77,8 +77,7 @@ int ndb_ndbxfrm1::header::detect_header(const ndbxfrm_input_iterator *in,
   if (memcmp(buf, magic, 8) != 0) return -2;
 
   if (len < sizeof(fixed_header::magic)) return need_more_input;
-  const fixed_header::magic *mh =
-      reinterpret_cast<const fixed_header::magic *>(buf);
+  const auto *mh = reinterpret_cast<const fixed_header::magic *>(buf);
 
   bool toggle_endian = (mh->m_endian != native_endian_marker);
   if (toggle_endian && (mh->m_endian != reverse_endian_marker))
@@ -108,8 +107,7 @@ int ndb_ndbxfrm1::header::read_header(ndbxfrm_input_iterator *in) {
   const byte *p = buf;
 
   if (len < sizeof(fixed_header::magic)) RETURN(-1);
-  const fixed_header::magic *magicp =
-      reinterpret_cast<const fixed_header::magic *>(p);
+  const auto *magicp = reinterpret_cast<const fixed_header::magic *>(p);
 
   bool detect_toggle_endian = (magicp->m_endian == reverse_endian_marker);
   if (!detect_toggle_endian && magicp->m_endian != native_endian_marker) {
@@ -943,9 +941,8 @@ int ndb_ndbxfrm1::trailer::read_trailer(ndbxfrm_input_reverse_iterator *in) {
   const byte *endp = p + len;
 
   if (len < sizeof(fixed_trailer::magic)) RETURN(-1);
-  const fixed_trailer::magic *magicp =
-      reinterpret_cast<const fixed_trailer::magic *>(
-          endp - sizeof(fixed_trailer::magic));
+  const auto *magicp = reinterpret_cast<const fixed_trailer::magic *>(
+      endp - sizeof(fixed_trailer::magic));
 
   bool detect_toggle_endian = (magicp->m_endian != native_endian_marker);
   Uint32 trailer_size = magicp->m_trailer_size;
@@ -957,7 +954,7 @@ int ndb_ndbxfrm1::trailer::read_trailer(ndbxfrm_input_reverse_iterator *in) {
   }
   if (fixed_trailer_size > len) RETURN(-1);
   if (fixed_trailer_size < sizeof(fixed_trailer::magic)) RETURN(-1);
-  const fixed_trailer *trailerp =
+  const auto *trailerp =
       reinterpret_cast<const fixed_trailer *>(endp - fixed_trailer_size);
 
   Uint32 copy_size = fixed_trailer_size - sizeof(fixed_trailer::magic);

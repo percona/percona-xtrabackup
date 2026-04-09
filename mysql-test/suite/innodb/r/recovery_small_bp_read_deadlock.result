@@ -1,0 +1,38 @@
+CREATE TABLE `t1` (
+`id` int NOT NULL,
+`val` int NOT NULL,
+`str` char(8),
+PRIMARY KEY (`id`)
+);
+INSERT INTO t1 VALUES (1,1,repeat('a',2));
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0,str FROM t1;
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+65536
+set global innodb_log_checkpoint_now=1;
+set global innodb_checkpoint_disabled=1;
+UPDATE t1 SET val=val+10 WHERE id MOD 60 = 1;
+DELETE FROM t1 WHERE id MOD 47 = 1;
+DELETE FROM t1 WHERE id MOD 19 = 1;
+DELETE FROM t1 WHERE id MOD 15 = 1;
+DELETE FROM t1 WHERE id MOD 11 = 1;
+DELETE FROM t1 WHERE id MOD 9 = 1;
+DELETE FROM t1 WHERE id MOD 7 = 1;
+# Kill and restart: --innodb_buffer_pool_size=5M --innodb_use_native_aio=0
+DROP TABLE t1;
+# restart:

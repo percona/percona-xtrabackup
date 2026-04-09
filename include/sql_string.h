@@ -1,7 +1,7 @@
 #ifndef SQL_STRING_INCLUDED
 #define SQL_STRING_INCLUDED
 
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -158,9 +158,11 @@ size_t bin_to_hex_str(char *to, size_t to_len, const char *from,
 
 /**
   Using this class is fraught with peril, and you need to be very careful
-  when doing so. In particular, copy construction and assignment does not
+  when doing so. In particular, copy construction does not
   do a deep _nor_ a shallow copy; instead, it makes a _reference_ to the
   original string that will be invalid as soon as that string goes out of scope.
+  Copy assignment has been disabled for this reason, use one of the set()
+  functions instead.
   (Move constructiong and assignment is safe, though.) In general, it is
   probably better not to use this class at all if you can avoid it.
 */
@@ -435,22 +437,7 @@ class String {
     }
   }
   bool is_alloced() const { return m_is_alloced; }
-  String &operator=(const String &s) {
-    if (&s != this) {
-      /*
-        It is forbidden to do assignments like
-        some_string = substring_of_that_string
-       */
-      assert(!s.uses_buffer_owned_by(this));
-      mem_free();
-      m_ptr = s.m_ptr;
-      m_length = s.m_length;
-      m_alloced_length = s.m_alloced_length;
-      m_charset = s.m_charset;
-      m_is_alloced = false;
-    }
-    return *this;
-  }
+  String &operator=(const String &s) = delete;
   String &operator=(String &&s) noexcept {
     if (&s != this) {
       /*

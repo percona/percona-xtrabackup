@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
@@ -23,8 +23,8 @@
 #define LOG_COMPONENT_TAG "test_session_is_connected"
 
 #include <fcntl.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cstdlib>
 
 #include <cstdint>
 
@@ -189,7 +189,7 @@ static int sql_get_string(void *, const char *const, size_t,
 static void sql_handle_ok(void *ctx, uint, uint, ulonglong, ulonglong,
                           const char *const) {
   DBUG_ENTER("sql_handle_ok");
-  Callback_data *cbd = static_cast<Callback_data *>(ctx);
+  auto *cbd = static_cast<Callback_data *>(ctx);
   cbd->handle_ok_calls++;
 
   test_context->log_test_line(" > sql_handle_ok");
@@ -212,7 +212,7 @@ static void sql_shutdown(void *, int shutdown_server) {
 }
 
 static bool sql_connection_alive(void *ctx) {
-  Callback_data *cbd = static_cast<Callback_data *>(ctx);
+  auto *cbd = static_cast<Callback_data *>(ctx);
 
   if (cbd->limit_is_connected) {
     // Patch for bug#34930219 changes the way connection_alive() is called.

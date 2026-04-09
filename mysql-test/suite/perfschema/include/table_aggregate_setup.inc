@@ -95,11 +95,17 @@ drop table if exists test.setup_actors;
 drop table if exists test.setup_objects;
 --enable_warnings
 
+# Performance schema storage engine does not support atomic DDL, so
+# we do not log this CREATE TABLE into binary log to dodge
+# enforce_gtid_consistency=ON.
+
+SET sql_log_bin = 0;
 create table test.setup_actors as
   select * from performance_schema.setup_actors;
 
 create table test.setup_objects as
   select * from performance_schema.setup_objects;
+SET sql_log_bin = 1;
 
 # Only instrument the user connections (by default)
 truncate table performance_schema.setup_actors;

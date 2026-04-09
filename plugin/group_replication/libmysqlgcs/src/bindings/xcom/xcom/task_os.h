@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -162,7 +162,7 @@ static inline int xcom_getpeername(int s, struct sockaddr *name,
 static inline result xcom_close_socket(int *sock) {
   result res = {0, 0};
   if (*sock != -1) {
-    IFDBG(D_FILEOP, FN; STRLIT("closing socket "); NDBG(*sock, d));
+    XCOM_IFDBG(D_FILEOP, FN; STRLIT("closing socket "); NDBG(*sock, d));
     do {
       SET_OS_ERR(0);
       res.val = CLOSESOCKET(*sock);

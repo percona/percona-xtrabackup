@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1071,7 +1071,8 @@ class NdbOperation {
       OO_NOT_QUEUABLE = 0x200,
       OO_DEFERRED_CONSTAINTS = 0x400,
       OO_DISABLE_FK = 0x800,
-      OO_NOWAIT = 0x1000
+      OO_NOWAIT = 0x1000,
+      OO_ROW_SIDE_BUFFER = 0x2000
     };
 
     /* An operation-specific abort option.
@@ -1101,6 +1102,17 @@ class NdbOperation {
 
     /* customData ptr for this operation */
     void *customData;
+
+    /*
+     * For columns that should be returned as MySQL blobs (length + pointer)
+     * in row, see NdbDictionary::RecordSpecification::MysqldLongBlob. The
+     * actual value bytes (without length bytes) are stored in the below
+     * rowSizeBuffer. The buffer need to be big enough to store all values of
+     * such columns for a row, typically the sum of the max length of each
+     * column.
+     */
+    void *rowSideBuffer;
+    Uint32 rowSideBufferSize;
   };
 
   /* getLockHandle
@@ -1248,10 +1260,9 @@ class NdbOperation {
    *
    * @return 0 for success.  NDBAPI to set error otherwise.
    */
-  static int handleOperationOptions(const OperationType type,
+  static int handleOperationOptions(OperationType type,
                                     const OperationOptions *opts,
-                                    const Uint32 sizeOfOptions,
-                                    NdbOperation *op);
+                                    Uint32 sizeOfOptions, NdbOperation *op);
 
   /******************************************************************************
    * The methods below is the execution part of the NdbOperation
@@ -1300,7 +1311,9 @@ class NdbOperation {
   int allocAttrInfo();
   int insertKEYINFO_NdbRecord(const char *value, Uint32 byteSize);
   int insertATTRINFOHdr_NdbRecord(Uint32 attrId, Uint32 attrLen);
-  int insertATTRINFOData_NdbRecord(const char *value, Uint32 size);
+  int insertATTRINFOData_NdbRecord(const char *value, Uint32 byteSize);
+  int insertATTRINFOData_NdbRecord(const char *value1, Uint32 byteSize1,
+                                   const char *value2, Uint32 byteSize2);
 
   int receiveTCKEYREF(const NdbApiSignal *);
 
@@ -1531,7 +1544,7 @@ class NdbOperation {
   const SetValueSpec *m_extraSetValues;
   Uint32 m_numExtraSetValues;
 
-  Uint32 m_any_value;  // Valid if m_use_any_value!=0
+  Uint32 m_any_value;
 
   // Blobs in this operation
   NdbBlob *theBlobList;
@@ -1564,6 +1577,9 @@ class NdbOperation {
   bool m_blob_lock_upgraded; /* Did Blob code upgrade LM_CommittedRead
                               * to LM_Read?
                               */
+
+  char *m_row_side_buffer;
+  Uint32 m_row_side_buffer_size;
 
  private:
   NdbOperation(const NdbOperation &);  // Not impl.

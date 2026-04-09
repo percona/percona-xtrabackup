@@ -2,9 +2,12 @@
 # This test checks dynamically setting the values for
 # group_replication_communication_debug_options variable and checks all possible correct
 # and incorrect values before and after starting the group replication and also
-# setting the incorrect values through cmdline
+# setting the incorrect values through cmdline.
+# This test also checks that the lines in the GCS_DEBUG_TRACE file have correctly
+# populated timestamps.
 #
 # WL10200 : Change GCS/XCOM to have dynamic debugging and tracing
+# WL17008 : Add timestamps to GCS/XCOM trace file entries
 # Test :
 # 0. This test requires 2 servers(1 server for all the correct and incorrect values verification, and
 #    2nd server for cmdline value verification for this gr_communication_debug_options variable)
@@ -34,7 +37,12 @@
 #    gr_communications_debug_options and start the gr and validate
 # 16.Overwrite previous set options with "" dynamically and make sure old value is
 #    overridden by disabling all the previous set options
-# 17.Connect to server1 and cleanup
+# 17.Test the GCS_DEBUG_TRACE file timestamp using the server’s internal timestamp provider
+# 18.Test the GCS_DEBUG_TRACE file timestamp using the GCS timestamp provider
+# 19.Add a debug point to inject the GCS timestamp provider
+# 20.Stop GR and allow it to clean up the test clock provider while the debug point is set
+# 21.Remove the debug point
+# 22.Connect to server1 and cleanup
 #######################################################################################
 --source include/have_debug.inc
 --let $group_replication_group_name= 89ab83b0-9f17-11e3-a5e2-0800200c9a66
@@ -198,6 +206,68 @@ SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="";
 --let $assert_text= Checking the value of gr_communications_debug_opts
 --let $assert_cond= "[SELECT @@GLOBAL.group_replication_communication_debug_options]" = "GCS_DEBUG_NONE"
 --source include/assert.inc
+
+# Test the GCS_DEBUG_TRACE file timestamp using the server’s internal timestamp provider
+--let $rpl_connection_name= server1
+--source include/connection.inc
+--source include/stop_group_replication.inc
+--remove_file $MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE
+
+SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="GCS_DEBUG_ALL";
+--source include/start_and_bootstrap_group_replication.inc
+
+SET SQL_LOG_BIN=0;
+CREATE TABLE t1 (c1 TEXT);
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--eval LOAD DATA INFILE '$MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE' into TABLE t1
+--let $lines_in_trace = `SELECT count(1) FROM t1`
+DROP TABLE t1;
+SET SQL_LOG_BIN=1;
+
+--let $assert_select= ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}([+-]\d{2}:\d{2}|Z) .+
+--let $assert_count= $lines_in_trace
+--let $assert_text= Check that all lines have timestamps in ISO format
+--let $assert_file= $MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE
+--source include/assert_grep.inc
+
+SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="";
+--remove_file $MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE
+
+# Test the GCS_DEBUG_TRACE file timestamp using the GCS timestamp provider
+--let $rpl_connection_name= server1
+--source include/connection.inc
+--source include/stop_group_replication.inc
+
+# Add a debug point to inject the GCS timestamp provider
+--let $debug_point=gcs_debugger_inject_default_clock_timestamp_provider
+--source include/add_debug_point.inc
+
+SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="GCS_DEBUG_ALL";
+--source include/start_and_bootstrap_group_replication.inc
+
+SET SQL_LOG_BIN=0;
+CREATE TABLE t1 (c1 TEXT);
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--eval LOAD DATA INFILE '$MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE' into TABLE t1
+--let $lines_in_trace = `SELECT count(1) FROM t1`
+DROP TABLE t1;
+SET SQL_LOG_BIN=1;
+
+--let $assert_select= ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}([+-]\d{2}:\d{2}|Z) .+
+--let $assert_count= $lines_in_trace
+--let $assert_text= Check that all lines have timestamps in ISO format
+--let $assert_file= $MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE
+--source include/assert_grep.inc
+
+# Stop GR and allow it to clean up the test clock provider while the debug point is set
+--let $rpl_connection_name= server1
+--source include/connection.inc
+--source include/stop_group_replication.inc
+SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="";
+--remove_file $MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE
+
+# Remove the debug point
+--source include/remove_debug_point.inc
 
 # Connect to server1 and cleanup
 --let $rpl_connection_name= server1

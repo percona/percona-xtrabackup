@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2024, Oracle and/or its affiliates.
+  Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -80,18 +80,20 @@ class HTTP_CLIENT_EXPORT Client {
   int error_code() const;
   std::string error_message() const;
   const Statistics &statistics() const;
+  class CallbacksImpl;
+
+  static Client::Endpoint get_endpoint_from(const http::base::Uri &url);
 
  private:
   void start_http_flow();
 
-  class CallbacksPrivateImpl;
   bool is_connected_{false};
   std::error_code error_code_;
   Endpoint connected_endpoint_;
   io_context &io_context_;
   TlsClientContext tls_context_;
   std::unique_ptr<http::base::ConnectionInterface> connection_;
-  std::unique_ptr<CallbacksPrivateImpl> callbacks_;
+  std::unique_ptr<CallbacksImpl> callbacks_;
   Request *fill_request_by_callback_{nullptr};
   Statistics statistics_;
   bool use_http2_{false};

@@ -295,20 +295,20 @@ DROP USER u1@localhost;
 CREATE USER u1@localhost PASSWORD EXPIRE DEFAULT;
 --echo # This should report NULL
 SELECT password_expired,password_lifetime FROM mysql.user where user='u1';
---exec $MYSQL -uu1 -e "EXIT" 2>&1
+--exec $MYSQL -uu1 --commands -e "EXIT" 2>&1
 DROP USER u1@localhost;
 
 CREATE USER u1@localhost PASSWORD EXPIRE INTERVAL 4 DAY;
 --echo # Should report 4
 SELECT password_lifetime FROM mysql.user where user='u1';
---exec $MYSQL -uu1 -e "EXIT" 2>&1
+--exec $MYSQL -uu1 --commands -e "EXIT" 2>&1
 DROP USER u1@localhost;
 
 CREATE USER u1@localhost PASSWORD EXPIRE;
 --echo # This should report Y
 SELECT password_expired FROM mysql.user where user='u1';
 --error 1
---exec $MYSQL -uu1 -e "EXIT" 2>&1
+--exec $MYSQL -uu1 --commands -e "EXIT" 2>&1
 DROP USER u1@localhost;
 
 --echo # CREATE USER with password expire attributes for anonymous user

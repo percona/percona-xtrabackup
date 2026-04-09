@@ -67,4 +67,30 @@ include/start_group_replication.inc
 SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="";
 include/assert.inc [Checking the value of gr_communications_debug_opts]
 [connection server1]
+include/stop_group_replication.inc
+SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="GCS_DEBUG_ALL";
+include/start_and_bootstrap_group_replication.inc
+SET SQL_LOG_BIN=0;
+CREATE TABLE t1 (c1 TEXT);
+LOAD DATA INFILE 'MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE' into TABLE t1;
+DROP TABLE t1;
+SET SQL_LOG_BIN=1;
+include/assert_grep.inc [Check that all lines have timestamps in ISO format]
+SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="";
+[connection server1]
+include/stop_group_replication.inc
+# Adding debug point 'gcs_debugger_inject_default_clock_timestamp_provider' to @@GLOBAL.debug
+SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="GCS_DEBUG_ALL";
+include/start_and_bootstrap_group_replication.inc
+SET SQL_LOG_BIN=0;
+CREATE TABLE t1 (c1 TEXT);
+LOAD DATA INFILE 'MYSQLTEST_VARDIR/mysqld.1/data/GCS_DEBUG_TRACE' into TABLE t1;
+DROP TABLE t1;
+SET SQL_LOG_BIN=1;
+include/assert_grep.inc [Check that all lines have timestamps in ISO format]
+[connection server1]
+include/stop_group_replication.inc
+SET GLOBAL GROUP_REPLICATION_COMMUNICATION_DEBUG_OPTIONS="";
+# Removing debug point 'gcs_debugger_inject_default_clock_timestamp_provider' from @@GLOBAL.debug
+[connection server1]
 include/group_replication_end.inc

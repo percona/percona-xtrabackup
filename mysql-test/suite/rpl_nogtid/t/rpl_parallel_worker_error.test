@@ -2,7 +2,6 @@
 # needs to be generated.
 --source include/force_restart.inc
 --source include/have_binlog_format_row.inc
---source include/have_replica_parallel_workers.inc
 --source include/rpl/init_source_replica.inc
 
 #

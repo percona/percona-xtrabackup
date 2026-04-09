@@ -1,0 +1,21 @@
+--source include/have_log_diagnostic.inc
+#
+# only global
+#
+select @@global.log_diagnostic;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+select @@session.log_diagnostic;
+show global variables like 'log_diagnostic';
+show session variables like 'log_diagnostic';
+--disable_warnings
+select * from performance_schema.global_variables where variable_name='log_diagnostic';
+select * from performance_schema.session_variables where variable_name='log_diagnostic';
+--enable_warnings
+
+#
+# show that it's read-only
+#
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set global log_diagnostic=1;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set session log_diagnostic=1;

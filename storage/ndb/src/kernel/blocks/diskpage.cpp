@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,9 @@
 */
 
 #include "diskpage.hpp"
-#include <time.h>
 #include <version.h>
 #include <NdbOut.hpp>
+#include <ctime>
 #include <signaldata/SignalData.hpp>
 
 #define JAM_FILE_ID 364
@@ -42,8 +42,10 @@ void File_formats::Zero_page_header::init(File_type ft, Uint32 node_id,
   m_time = now;
 }
 
-int File_formats::Zero_page_header::validate(File_type ft, Uint32 node_id,
-                                             Uint32 version, Uint32 now) {
+int File_formats::Zero_page_header::validate(File_type /*ft*/,
+                                             Uint32 /*node_id*/,
+                                             Uint32 /*version*/,
+                                             Uint32 /*now*/) {
   return 0;  // TODO Check header
 }
 
@@ -51,7 +53,8 @@ NdbOut &operator<<(NdbOut &out, const File_formats::Zero_page_header &obj) {
   char buf[256];
   out << "page size:   " << obj.m_page_size << endl;
   out << "ndb version: " << obj.m_ndb_version << ", "
-      << ndbGetVersionString(obj.m_ndb_version, 0, 0, buf, sizeof(buf)) << endl;
+      << ndbGetVersionString(obj.m_ndb_version, 0, nullptr, buf, sizeof(buf))
+      << endl;
   out << "ndb node id: " << obj.m_node_id << endl;
   out << "file type:   " << obj.m_file_type << endl;
 

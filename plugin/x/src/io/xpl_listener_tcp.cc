@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,12 +25,13 @@
 
 #include "plugin/x/src/io/xpl_listener_tcp.h"
 
-#include <errno.h>
+#include <cerrno>
 #ifndef _WIN32
 #include <netdb.h>
 #endif
 
 #include <memory>
+#include <utility>
 
 #include "my_io.h"  // NOLINT(build/include_subdir)
 
@@ -67,11 +68,11 @@ class Tcp_creator {
 
     if (BIND_ALL_ADDRESSES == bind_address) {
       bind_addresses.clear();
-      bind_addresses.push_back(BIND_IPv4_ADDRESS);
+      bind_addresses.emplace_back(BIND_IPv4_ADDRESS);
 
       if (is_ipv6_avaiable()) {
         log_info(ER_XPLUGIN_IPv6_AVAILABLE);
-        bind_addresses.push_back(BIND_IPv6_ADDRESS);
+        bind_addresses.emplace_back(BIND_IPv6_ADDRESS);
       }
     }
 
@@ -84,28 +85,27 @@ class Tcp_creator {
     if (nullptr == result) {
       error_message = "can't resolve `hostname`";
 
-      return std::shared_ptr<addrinfo>();
+      return {};
     }
 
-    return std::shared_ptr<addrinfo>(
-        result, std::bind(&iface::System::freeaddrinfo, m_system_interface,
-                          std::placeholders::_1));
+    return {result, std::bind(&iface::System::freeaddrinfo, m_system_interface,
+                              std::placeholders::_1)};
   }
 
   std::shared_ptr<iface::Socket> create_and_bind_socket(
-      std::shared_ptr<addrinfo> ai, const uint32_t backlog, int &error_code,
-      std::string &error_message) {
+      const std::shared_ptr<addrinfo> &ai, const uint32_t backlog,
+      int &error_code, std::string &error_message) {
     addrinfo *used_ai = nullptr;
     std::string errstr;
 
     std::shared_ptr<iface::Socket> result_socket = create_socket_from_addrinfo(
         ai.get(), KEY_socket_x_tcpip, AF_INET, &used_ai);
 
-    if (nullptr == result_socket.get())
+    if (nullptr == result_socket)
       result_socket = create_socket_from_addrinfo(ai.get(), KEY_socket_x_tcpip,
                                                   AF_INET6, &used_ai);
 
-    if (nullptr == result_socket.get()) {
+    if (nullptr == result_socket) {
       m_system_interface->get_socket_error_and_message(&error_code, &errstr);
 
       error_message = String_formatter()
@@ -116,7 +116,7 @@ class Tcp_creator {
                           .append(")")
                           .get_result();
 
-      return std::shared_ptr<iface::Socket>();
+      return {};
     }
 
 #ifdef IPV6_V6ONLY
@@ -169,7 +169,7 @@ class Tcp_creator {
                               "running with Mysqlx ?")
                           .get_result();
 
-      return std::shared_ptr<iface::Socket>();
+      return {};
     }
 
     if (result_socket->listen(backlog) < 0) {
@@ -184,14 +184,14 @@ class Tcp_creator {
                           .append(")")
                           .get_result();
 
-      return std::shared_ptr<iface::Socket>();
+      return {};
     }
 
     m_used_address.resize(200, '\0');
 
     if (vio_getnameinfo((const struct sockaddr *)used_ai->ai_addr,
-                        &m_used_address[0], m_used_address.length(), nullptr, 0,
-                        NI_NUMERICHOST)) {
+                        m_used_address.data(), m_used_address.length(), nullptr,
+                        0, NI_NUMERICHOST)) {
       m_used_address[0] = '\0';
     }
 
@@ -217,11 +217,11 @@ class Tcp_creator {
       }
     }
 
-    return std::shared_ptr<iface::Socket>();
+    return {};
   }
 
   bool is_ipv6_avaiable() {
-    std::shared_ptr<iface::Socket> socket(m_factory.create_socket(
+    std::shared_ptr<iface::Socket> const socket(m_factory.create_socket(
         KEY_socket_x_diagnostics, AF_INET6, SOCK_STREAM, 0));
     const bool has_ipv6 = INVALID_SOCKET != socket->get_socket_fd();
 
@@ -229,7 +229,7 @@ class Tcp_creator {
   }
 
   struct addrinfo *resolve_addr_info(const std::string &address,
-                                     const std::string service) {
+                                     const std::string &service) {
     struct addrinfo hints;
     struct addrinfo *ai = nullptr;
     memset(&hints, 0, sizeof(hints));
@@ -256,7 +256,7 @@ Listener_tcp::Listener_tcp(Factory_ptr operations_factory,
                            const uint16_t port,
                            const uint32_t port_open_timeout,
                            iface::Socket_events &event, const uint32_t backlog)
-    : m_operations_factory(operations_factory),
+    : m_operations_factory(std::move(operations_factory)),
       m_state(iface::Listener::State::k_initializing,
               KEY_mutex_x_listener_tcp_sync, KEY_cond_x_listener_tcp_sync),
       m_bind_address(bind_address),
@@ -327,7 +327,7 @@ std::shared_ptr<iface::Socket> Listener_tcp::create_socket() {
   int error_code;
 
   std::shared_ptr<iface::Socket> result_socket;
-  std::shared_ptr<iface::System> system_interface(
+  std::shared_ptr<iface::System> const system_interface(
       m_operations_factory->create_system_interface());
 
   log_debug("TCP Sockets address is '%s' and port is %i",
@@ -340,10 +340,10 @@ std::shared_ptr<iface::Socket> Listener_tcp::create_socket() {
     return nullptr;
 #endif
   }
-  std::shared_ptr<addrinfo> ai =
+  std::shared_ptr<addrinfo> const ai =
       creator.resolve_bind_address(m_bind_address, m_port, m_last_error);
 
-  if (nullptr == ai.get()) return std::shared_ptr<iface::Socket>();
+  if (nullptr == ai) return {};
 
   for (uint32_t waited = 0, retry = 1; waited <= m_port_open_timeout; ++retry) {
     result_socket =
@@ -352,7 +352,7 @@ std::shared_ptr<iface::Socket> Listener_tcp::create_socket() {
     // Success, lets break the loop
     // `create_and_bind_socket` in case of invalid socket/failure
     //  returns empty pointer
-    if (nullptr != result_socket.get()) {
+    if (nullptr != result_socket) {
       m_bind_address = creator.get_used_address();
       break;
     }

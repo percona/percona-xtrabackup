@@ -1,0 +1,57 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `sakila` - created 
+# DB `sakila` - filled
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/sakila
+# Registred DB_OBJECT at path: /svc/sakila/city1
+# Registred OBJECT_REF at sakila.country
+# Registred DB_OBJECT at path: /svc/sakila/city2
+# Registred OBJECT_REF at sakila.country
+GET /svc/sakila/city1/1
+{
+    "city": "A Corua (La Corua)",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city1/1"
+        }
+    ],
+    "city_id": 1,
+    "country": "Spain",
+    "country_id": 87,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag": "57448E4D1911A5638AFC799716978AAED1FE746CBADA3E95E682A68F3CA887EE"
+    }
+}
+OK
+GET /svc/sakila/city2/1
+{
+    "city": "A Corua (La Corua)",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city2/1"
+        }
+    ],
+    "city_id": 1,
+    "country": {
+        "country": "Spain",
+        "country_id": 87,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 87,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag": "CD6F179CF6284340928FD4C2A133A621B680425D4CE7D47B2927F1390E40442B"
+    }
+}
+OK
+DROP SCHEMA sakila;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

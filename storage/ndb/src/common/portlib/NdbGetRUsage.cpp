@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,13 +53,13 @@ static Uint64 micros(struct timeval val) {
 }
 #endif
 
-void NdbGetRUsage_Init(void) {
+void NdbGetRUsage_Init() {
 #ifdef HAVE_MAC_OS_X_THREAD_INFO
   our_mach_task = mach_task_self();
 #endif
 }
 
-void NdbGetRUsage_End(void) {
+void NdbGetRUsage_End() {
 #ifdef HAVE_MAC_OS_X_THREAD_INFO
   if (our_mach_task != MACH_PORT_NULL) {
     mach_port_deallocate(our_mach_task, our_mach_task);

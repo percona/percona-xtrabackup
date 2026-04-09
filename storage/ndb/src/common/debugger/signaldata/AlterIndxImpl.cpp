@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@ bool printALTER_INDX_IMPL_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const AlterIndxImplReq *sig = (const AlterIndxImplReq *)theData;
+  const auto *sig = (const AlterIndxImplReq *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, " requestType: %u", sig->requestType);
@@ -52,7 +52,7 @@ bool printALTER_INDX_IMPL_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const AlterIndxImplConf *sig = (const AlterIndxImplConf *)theData;
+  const auto *sig = (const AlterIndxImplConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");
@@ -66,7 +66,7 @@ bool printALTER_INDX_IMPL_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const AlterIndxImplRef *sig = (const AlterIndxImplRef *)theData;
+  const auto *sig = (const AlterIndxImplRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");

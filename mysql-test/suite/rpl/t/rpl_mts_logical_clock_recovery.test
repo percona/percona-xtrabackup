@@ -8,7 +8,6 @@
 --let $option_operator = >
 --let $option_value = 2
 --source include/only_with_option.inc
---source include/have_replica_parallel_type_logical_clock.inc
 -- source include/rpl/init_source_replica.inc
 
 --let $debug_point=set_commit_parent_100

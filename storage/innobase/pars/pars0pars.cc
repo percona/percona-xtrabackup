@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -44,7 +44,6 @@ on 1/27/1998 */
 #include "dict0dict.h"
 #include "dict0mem.h"
 #include "eval0eval.h"
-#include "ha_prototypes.h"
 #include "lock0lock.h"
 #include "pars0grm.h"
 #include "pars0opt.h"
@@ -1047,12 +1046,13 @@ static void pars_process_assign_list(upd_node_t *node) /*!< in: update node */
 
     col_sym = assign_node->col;
 
-    upd_field_set_field_no(upd_field, clust_index->get_col_pos(col_sym->col_no),
+    const dict_col_t *const col = node->table->get_col(col_sym->col_no);
+    upd_field_set_field_no(upd_field, dict_col_get_clust_pos(col, clust_index),
                            clust_index);
     upd_field->exp = assign_node->val;
+    col->copy_type(dfield_get_type(&upd_field->new_val));
 
-    if (!clust_index->get_col(upd_field->field_no)
-             ->get_fixed_size(dict_table_is_comp(node->table))) {
+    if (!col->get_fixed_size(dict_table_is_comp(node->table))) {
       changes_field_size = 0;
     }
 

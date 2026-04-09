@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -43,8 +43,8 @@ bool difference(const dd::Spatial_reference_system *srs, const Geometry *g1,
            (srs && srs->is_geographic() &&
             g1->coordinate_system() == Coordinate_system::kGeographic));
 
-    Difference difference_func(srs ? srs->semi_major_axis() : 0.0,
-                               srs ? srs->semi_minor_axis() : 0.0);
+    Difference const difference_func(srs ? srs->semi_major_axis() : 0.0,
+                                     srs ? srs->semi_minor_axis() : 0.0);
     *result = difference_func(g1, g2);
 
     if (result->get()->type() != Geometry_type::kGeometrycollection &&

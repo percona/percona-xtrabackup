@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -72,11 +72,11 @@ static DRand48Data dRand48Data;
 
 static void localRandom48Init(long int seedval, DRand48Data *buffer) {
   /* The standards say we only have 32 bits.  */
-  if (sizeof(long int) > 4) seedval &= 0xffffffffl;
+  if (sizeof(long int) > 4) seedval &= 0xffffffffL;
 
 #if USHRT_MAX == 0xffffU
   buffer->x[2] = (unsigned short)(seedval >> 16);
-  buffer->x[1] = (unsigned short)(seedval & 0xffffl);
+  buffer->x[1] = (unsigned short)(seedval & 0xffffL);
   buffer->x[0] = 0x330e;
 
   buffer->a[2] = 0x5;
@@ -138,8 +138,8 @@ static void localRandom48(DRand48Data *buffer, long int *result) {
 
     loc_result = X * a + buffer->c;
 
-    buffer->x[0] = (unsigned short)(loc_result >> 16 & 0xffffffffl);
-    buffer->x[1] = (unsigned short)(loc_result << 16 & 0xffff0000l);
+    buffer->x[0] = (unsigned short)(loc_result >> 16 & 0xffffffffL);
+    buffer->x[1] = (unsigned short)(loc_result << 16 & 0xffff0000L);
   }
 
   /*--------------------*/

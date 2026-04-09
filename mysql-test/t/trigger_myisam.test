@@ -38,7 +38,7 @@ select * from t1;
 # Multi-update working on the fly, again it will update only
 # one row even if more matches
 --error ER_BAD_FIELD_ERROR
-update t1, t2 set k = k + 10 where t1.i = t2.i;
+update /*+ JOIN_ORDER(t2,t1) */ t1, t2 set k = k + 10 where t1.i = t2.i;
 select * from t1;
 # The same for multi-update via temp table
 --error ER_BAD_FIELD_ERROR

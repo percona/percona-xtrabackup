@@ -21,9 +21,6 @@
 --eval INSTALL PLUGIN rpl_semi_sync_replica SONAME '$SEMISYNC_REPLICA_PLUGIN';
 
 --replace_regex /\.so|\.dll/.xxx/
---eval INSTALL PLUGIN version_tokens SONAME '$VERSION_TOKEN';
-
---replace_regex /\.so|\.dll/.xxx/
 --eval INSTALL PLUGIN validate_password SONAME '$VALIDATE_PASSWORD';
 
 --replace_regex /\.so|\.dll/.xxx/
@@ -63,8 +60,6 @@ UNINSTALL PLUGIN rewriter;
 UNINSTALL PLUGIN connection_control;
 
 UNINSTALL PLUGIN validate_password;
-
-UNINSTALL PLUGIN version_tokens;
 
 UNINSTALL PLUGIN rpl_semi_sync_source;
 

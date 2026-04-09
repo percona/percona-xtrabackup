@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -179,7 +179,7 @@ class Json_string_handler
                                           Json_string_handler> {
  public:
   bool Key(const char *str, rapidjson::SizeType /*length*/, bool /*copy*/) {
-    return !(m_level == 1 && std::strcmp("_id", str) == 0);
+    return m_level != 1 || std::strcmp("_id", str) != 0;
   }
   bool StartObject() {
     ++m_level;

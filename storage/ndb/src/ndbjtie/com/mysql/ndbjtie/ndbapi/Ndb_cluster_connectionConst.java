@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -37,4 +37,5 @@ public interface Ndb_cluster_connectionConst
     int get_latest_error() /*_const_*/;
     String/*_const char *_*/ get_latest_error_msg() /*_const_*/;
     int get_recv_thread_activation_threshold() /*_const_*/;
+    String get_system_name() /*_const_*/;
 }

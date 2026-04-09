@@ -1,0 +1,25 @@
+#
+# Bug#32860560 NDB_LOG_BIN: INCONSISTENT BEHAVIOUR WHEN SET DYNAMICALLY
+# - it's not possible to change --ndb-log-bin at runtime, make sure it's
+#   there, can be queried and are readonly
+select @@global.ndb_log_bin;
+@@global.ndb_log_bin
+1
+select @@session.ndb_log_bin;
+ERROR HY000: Variable 'ndb_log_bin' is a GLOBAL variable
+show global variables like 'ndb_log_bin';
+Variable_name	Value
+ndb_log_bin	ON
+show session variables like 'ndb_log_bin';
+Variable_name	Value
+ndb_log_bin	ON
+select * from performance_schema.global_variables where variable_name='ndb_log_bin';
+VARIABLE_NAME	VARIABLE_VALUE
+ndb_log_bin	ON
+select * from performance_schema.session_variables where variable_name='ndb_log_bin';
+VARIABLE_NAME	VARIABLE_VALUE
+ndb_log_bin	ON
+set global ndb_log_bin=0;
+ERROR HY000: Variable 'ndb_log_bin' is a read only variable
+set session ndb_log_bin=0;
+ERROR HY000: Variable 'ndb_log_bin' is a read only variable

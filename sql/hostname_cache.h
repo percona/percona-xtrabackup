@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,7 @@
 struct Host_errors {
  public:
   Host_errors();
-  ~Host_errors();
+  ~Host_errors() = default;
 
   void reset();
   void aggregate(const Host_errors *errors);
@@ -89,6 +89,10 @@ struct Host_errors {
   ulong m_init_connect;
   /** Number of errors from the server itself. */
   ulong m_local;
+  /** Number of account locked errors. */
+  ulong m_account_locked;
+  /** Number of temporary account locked errors. */
+  ulong m_temporary_account_locked;
 
   bool has_error() const {
     return (
@@ -99,7 +103,8 @@ struct Host_errors {
         (m_auth_plugin != 0) || (m_handshake != 0) || (m_proxy_user != 0) ||
         (m_proxy_user_acl != 0) || (m_authentication != 0) || (m_ssl != 0) ||
         (m_max_user_connection != 0) || (m_max_user_connection_per_hour != 0) ||
-        (m_default_database != 0) || (m_init_connect != 0) || (m_local != 0));
+        (m_default_database != 0) || (m_init_connect != 0) || (m_local != 0) ||
+        (m_account_locked != 0) || (m_temporary_account_locked != 0));
   }
 
   void sum_connect_errors() {

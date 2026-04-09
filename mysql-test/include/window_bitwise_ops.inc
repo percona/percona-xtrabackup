@@ -62,6 +62,7 @@ SELECT HEX(i), HEX(li), HEX(b), HEX(lb),
 --echo our dummy double d SUM which forces non-optimized mode
 --echo iff windowing_use_high_precision==TRUE
 ANALYZE TABLE t;
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 EXPLAIN FORMAT=JSON
 SELECT HEX(i), HEX(li), HEX(b), HEX(lb),
@@ -70,6 +71,7 @@ SELECT HEX(i), HEX(li), HEX(b), HEX(lb),
        SUM(d) OVER w AS dsum
    FROM t
    WINDOW w AS (ORDER BY i ROWS 2 PRECEDING);
+SET explain_json_format_version = DEFAULT;
 
 
 SELECT HEX(i), HEX(li), HEX(b), HEX(lb),

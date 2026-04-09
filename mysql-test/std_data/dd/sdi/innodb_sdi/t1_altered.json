@@ -84,7 +84,7 @@
                 "generation_expression": "",
                 "generation_expression_utf8": "",
                 "options": "interval_count=0;",
-                "se_private_data": "default_null=1;physical_pos=4;table_id=1063;version_added=1;",
+                "se_private_data": "default_null=1;physical_pos=4;table_id=Y;version_added=1;",
                 "engine_attribute": "",
                 "secondary_engine_attribute": "",
                 "column_key": 1,

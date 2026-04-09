@@ -164,7 +164,11 @@ if ($privilege_checks_user_dont_create_user == 1)
 if ($_privilege_checks_user_create == 1)
 {
 
+  # We create and commit a transaction here so this include can be run with autocommit=OFF
+  BEGIN;
   --let $user_exists =`SELECT EXISTS(SELECT 1 FROM mysql.user WHERE user = $_privilege_checks_user_name)`
+  COMMIT;
+
   if ($user_exists == 0)
   {
     --let $_sql_log_bin_saved= `SELECT @@sql_log_bin`
@@ -198,6 +202,7 @@ if ($_privilege_checks_user_create == 1)
             Event_priv = 'N',
             Trigger_priv = 'N'
           WHERE db = 'test' and user = '';
+        --disable_warnings ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT ONCE
         FLUSH PRIVILEGES;
 
       if ($rpl_privilege_checks_user_grant_all == 1)

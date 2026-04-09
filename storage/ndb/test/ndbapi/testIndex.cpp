@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -3125,6 +3125,7 @@ int runRandomIndexScan(NDBT_Context *ctx, NDBT_Step *step) {
         << " scans using index " << iName << " and batchsize " << scanBatchSize
         << endl;
 
+  Uint32 rows = 0;
   for (Uint32 i = 0; i < iterations; i++) {
     // g_err << "Step " << step << " iteration " << i << endl;
 
@@ -3146,7 +3147,6 @@ int runRandomIndexScan(NDBT_Context *ctx, NDBT_Step *step) {
 
     CHECKRET(trans->execute(ExecType::NoCommit) == 0);
 
-    Uint32 rows = 0;
     int rc = 0;
     while ((rc = pOp->nextResult()) == 0) {
       rows++;
@@ -3158,6 +3158,7 @@ int runRandomIndexScan(NDBT_Context *ctx, NDBT_Step *step) {
 
     // g_err << "Found " << rows << " rows" << endl;
   }
+  g_err << "Found total " << rows << " rows" << endl;
 
   ctx->stopTest();
 

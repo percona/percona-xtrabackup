@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2001, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2001, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 
 #include <mysql_version.h>
 #include <mysqld_error.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #include "client/include/caching_sha2_passwordopt-vars.h"
 #include "client/include/client_priv.h"
@@ -264,7 +264,7 @@ static struct my_option my_long_options[] = {
 
 static const char *load_default_groups[] = {"mysqlcheck", "client", nullptr};
 
-static void usage(void);
+static void usage();
 static int get_options(int *argc, char ***argv, MEM_ROOT *alloc);
 static int dbConnect(char *host, char *user);
 static void dbDisconnect(char *host);
@@ -273,7 +273,7 @@ static void safe_exit(int error);
 
 static int what_to_do = 0;
 
-static void usage(void) {
+static void usage() {
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
   puts(
@@ -421,7 +421,7 @@ static int get_options(int *argc, char ***argv, MEM_ROOT *alloc) {
     else
       default_charset = MYSQL_AUTODETECT_CHARSET_NAME;
   }
-  if (strcmp(default_charset, MYSQL_AUTODETECT_CHARSET_NAME) &&
+  if (strcmp(default_charset, MYSQL_AUTODETECT_CHARSET_NAME) != 0 &&
       !get_charset_by_csname(default_charset, MY_CS_PRIMARY, MYF(MY_WME))) {
     printf("Unsupported character set: %s\n", default_charset);
     return 1;
@@ -533,7 +533,7 @@ int main(int argc, char **argv) {
   // Sun Studio does not work with range constructor from char** to string.
   vector<string> conv;
   conv.reserve(argc);
-  for (int i = 0; i < argc; i++) conv.push_back(argv[i]);
+  for (int i = 0; i < argc; i++) conv.emplace_back(argv[i]);
 
   mysql_check(sock, what_to_do, opt_alldbs, opt_check_only_changed,
               opt_extended, opt_databases, opt_fast, opt_medium_check,

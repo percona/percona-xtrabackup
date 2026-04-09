@@ -4,6 +4,8 @@
   --source include/have_debug_sync.inc
   --source include/not_windows.inc
   --source include/have_grep.inc
+  # This test doesn't support GTID
+  --source include/rpl/set_gtid_mode_off.inc
 
   --disable_query_log
   --disable_result_log
@@ -569,4 +571,5 @@ let $query=SELECT DISTINCT alias2.pk AS field1, alias2.pk AS field2, alias2.pk A
 --enable_warnings
 drop table t1;
 drop table t2;
-
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

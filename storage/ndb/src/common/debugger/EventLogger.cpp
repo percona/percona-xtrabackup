@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -282,7 +282,7 @@ void getTextArbitState(char *m_text, size_t m_text_len, const Uint32 *theData,
   // REPORT arbitrator found or lost.
   //-----------------------------------------------------------------------
   {
-    const ArbitSignalData *sd = (const ArbitSignalData *)theData;
+    const auto *sd = (const ArbitSignalData *)theData;
     char ticketText[ArbitTicket::TextLength + 1];
     char errText[ArbitCode::ErrTextLength + 1];
     const unsigned code = sd->code & 0xFFFF;
@@ -339,7 +339,7 @@ void getTextArbitResult(char *m_text, size_t m_text_len, const Uint32 *theData,
   // REPORT arbitration result (the failures may not reach us).
   //-----------------------------------------------------------------------
   {
-    const ArbitSignalData *sd = (const ArbitSignalData *)theData;
+    const auto *sd = (const ArbitSignalData *)theData;
     char errText[ArbitCode::ErrTextLength + 1];
     const unsigned code = sd->code & 0xFFFF;
     const unsigned state = sd->code >> 16;
@@ -771,7 +771,7 @@ static void convert_unit(unsigned &data, const char *&unit) {
 
 static void convert_unit64(Uint64 &data, const char *&unit) {
   if ((data >> 32) == 0) {
-    Uint32 data_lo = (Uint32)data;
+    auto data_lo = (Uint32)data;
     convert_unit(data_lo, unit);
     data = data_lo;
     return;
@@ -1264,7 +1264,7 @@ void getTextReadLCPComplete(char *m_text, size_t m_text_len,
 
 void getTextRunRedo(char *m_text, size_t m_text_len, const Uint32 *theData,
                     Uint32 /*len*/) {
-  const ndb_logevent_RunRedo *ev = (const ndb_logevent_RunRedo *)(theData + 1);
+  const auto *ev = (const ndb_logevent_RunRedo *)(theData + 1);
   if (ev->currgci == ev->startgci) {
     BaseString::snprintf(m_text, m_text_len,
                          "Log part: %u phase: %u run redo from "

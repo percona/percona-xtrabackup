@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,12 +26,12 @@
 #include "plugin_config.h"
 
 #include <algorithm>  // transform
-#include <array>
 #include <cinttypes>
 #include <initializer_list>
 #include <stdexcept>  // invalid_argument
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
@@ -44,13 +44,13 @@
 
 #include "context.h"
 #include "dest_metadata_cache.h"  // get_server_role_from_uri
+#include "destinations_option_parser.h"
 #include "hostname_validator.h"
 #include "mysql/harness/config_option.h"
 #include "mysql/harness/config_parser.h"
 #include "mysql/harness/dynamic_config.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/section_config_exposer.h"
-#include "mysql/harness/string_utils.h"  // trim
 #include "mysql/harness/utility/string.h"
 #include "mysql_router_thread.h"  // kDefaultStackSizeInKiloByte
 #include "mysqlrouter/routing.h"  // Mode
@@ -59,7 +59,6 @@
 #include "mysqlrouter/supported_routing_options.h"
 #include "mysqlrouter/uri.h"
 #include "mysqlrouter/utils.h"  // is_valid_socket_name
-#include "tcp_address.h"
 
 using namespace std::string_view_literals;
 IMPORT_LOG_FUNCTIONS()
@@ -116,12 +115,11 @@ class RoutingStrategyOption {
   RoutingStrategyOption(bool is_metadata_cache)
       : is_metadata_cache_{is_metadata_cache} {}
 
-  routing::RoutingStrategy operator()(const std::optional<std::string> &value,
-                                      const std::string &option_desc) {
-    if (!value) {
-      throw std::invalid_argument(option_desc + " is required");
-      return routing::RoutingStrategy::kUndefined;
-    } else if (value->empty()) {
+  std::optional<routing::RoutingStrategy> operator()(
+      const std::optional<std::string> &value, const std::string &option_desc) {
+    if (!value) return std::nullopt;
+
+    if (value->empty()) {
       throw std::invalid_argument(option_desc + " needs a value");
     }
 
@@ -129,16 +127,23 @@ class RoutingStrategyOption {
     std::transform(lc_value.begin(), lc_value.end(), lc_value.begin(),
                    ::tolower);
 
-    auto result = routing::get_routing_strategy(lc_value);
-    if (result == routing::RoutingStrategy::kUndefined ||
-        ((result == routing::RoutingStrategy::kRoundRobinWithFallback) &&
-         !is_metadata_cache_)) {
-      const std::string valid =
+    auto strategy_res = routing::get_routing_strategy(lc_value);
+    if (!strategy_res) {
+      const auto &valid =
           routing::get_routing_strategy_names(is_metadata_cache_);
       throw std::invalid_argument(option_desc + " is invalid; valid are " +
                                   valid + " (was '" + value.value() + "')");
     }
-    return result;
+
+    if ((strategy_res.value() ==
+         routing::RoutingStrategy::kRoundRobinWithFallback) &&
+        !is_metadata_cache_) {
+      const auto &valid =
+          routing::get_routing_strategy_names(is_metadata_cache_);
+      throw std::invalid_argument(option_desc + " is invalid; valid are " +
+                                  valid + " (was '" + value.value() + "')");
+    }
+    return strategy_res.value();
   }
 
  private:
@@ -151,53 +156,22 @@ class DestinationsOption {
 
   std::string operator()(const std::string &value,
                          const std::string &option_desc) {
-    try {
-      // disable root-less paths like mailto:foo@example.org to stay
-      // backward compatible with
-      //
-      //   localhost:1234,localhost:1235
-      //
-      // which parse into:
-      //
-      //   scheme: localhost
-      //   path: 1234,localhost:1235
-      auto uri = mysqlrouter::URI(value,  // raises URIError when URI is invalid
-                                  false   // allow_path_rootless
-      );
-      if (uri.scheme == "metadata-cache") {
-        metadata_cache_ = true;
-      } else {
-        throw std::invalid_argument(option_desc +
-                                    " has an invalid URI scheme '" +
-                                    uri.scheme + "' for URI " + value);
+    auto parse_res = DestinationsOptionParser::parse(value);
+    if (!parse_res) {
+      throw std::invalid_argument(option_desc + ": " + value +
+                                  " is invalid: " + parse_res.error());
+    }
+
+    if (std::holds_alternative<mysqlrouter::URI>(*parse_res)) {
+      auto uri = std::get<mysqlrouter::URI>(*parse_res);
+
+      if (uri.scheme != "metadata-cache") {
+        throw std::invalid_argument(option_desc + ":  URI scheme '" +
+                                    uri.scheme + "' is invalid for URI " +
+                                    value);
       }
-      return value;
-    } catch (const mysqlrouter::URIError &) {
-      for (auto part : mysql_harness::split_string(value, ',')) {
-        mysql_harness::trim(part);
-        if (part.empty()) {
-          throw std::invalid_argument(
-              option_desc + ": empty address found in destination list (was '" +
-              value + "')");
-        }
 
-        auto make_res = mysql_harness::make_tcp_address(part);
-
-        if (!make_res) {
-          throw std::invalid_argument(option_desc +
-                                      ": address in destination list '" + part +
-                                      "' is invalid");
-        }
-
-        auto address = make_res->address();
-
-        if (!mysql_harness::is_valid_ip_address(address) &&
-            !mysql_harness::is_valid_hostname(address)) {
-          throw std::invalid_argument(option_desc +
-                                      " has an invalid destination address '" +
-                                      address + "'");
-        }
-      }
+      metadata_cache_ = true;
     }
 
     return value;
@@ -236,21 +210,21 @@ class BindPortOption {
   }
 };
 
-class TCPAddressOption {
+class TcpDestinationOption {
  public:
-  TCPAddressOption(bool require_port, int default_port)
+  TcpDestinationOption(bool require_port, int default_port)
       : require_port_{require_port}, default_port_{default_port} {}
-  mysql_harness::TCPAddress operator()(const std::string &value,
-                                       const std::string &option_desc) {
+  mysql_harness::TcpDestination operator()(
+      const std::string &value, const std::string &option_desc) const {
     if (value.empty()) return {};
 
-    const auto make_res = mysql_harness::make_tcp_address(value);
+    const auto make_res = mysql_harness::make_tcp_destination(value);
     if (!make_res) {
       throw std::invalid_argument(option_desc + ": '" + value +
                                   "' is not a valid endpoint");
     }
 
-    const auto address = make_res->address();
+    const auto address = make_res->hostname();
     uint16_t port = make_res->port();
 
     if (port <= 0) {
@@ -272,8 +246,8 @@ class TCPAddressOption {
   }
 
  private:
-  const bool require_port_;
-  const int default_port_;
+  bool require_port_;
+  int default_port_;
 };
 
 class SslModeOption {
@@ -420,7 +394,7 @@ RoutingPluginConfig::RoutingPluginConfig(
   GET_OPTION_CHECKED(destinations, section, options::kDestinations,
                      DestinationsOption{metadata_cache_});
   GET_OPTION_CHECKED(bind_port, section, options::kBindPort, BindPortOption{});
-  auto bind_address_op = TCPAddressOption{false, bind_port};
+  auto bind_address_op = TcpDestinationOption{false, bind_port};
   GET_OPTION_CHECKED(bind_address, section, options::kBindAddress,
                      bind_address_op);
   GET_OPTION_CHECKED(named_socket, section, options::kSocket,
@@ -492,7 +466,7 @@ RoutingPluginConfig::RoutingPluginConfig(
   GET_OPTION_CHECKED(dest_ssl_curves, section, options::kServerSslCurves,
                      StringOption{});
   auto ssl_session_cache_size_op = IntOption<uint32_t>{1, 0x7fffffff};
-  auto ssl_session_cache_timeout_op = IntOption<uint32_t>{0, 84600};
+  auto ssl_session_cache_timeout_op = IntOption<uint32_t>{0, 86400};
   GET_OPTION_CHECKED(client_ssl_session_cache_mode, section,
                      options::kClientSslSessionCacheMode, BoolOption{});
   GET_OPTION_CHECKED(client_ssl_session_cache_size, section,
@@ -537,6 +511,9 @@ RoutingPluginConfig::RoutingPluginConfig(
       wait_for_my_writes_timeout, section, options::kWaitForMyWritesTimeout,
       mysql_harness::DurationOption<std::chrono::seconds>(0, 3600));
 
+  GET_OPTION_CHECKED(accept_connections, section, options::kAcceptConnections,
+                     BoolOption{});
+
   if (access_mode == routing::AccessMode::kAuto) {
     if (!metadata_cache_) {
       throw std::invalid_argument(
@@ -549,7 +526,7 @@ RoutingPluginConfig::RoutingPluginConfig(
 
     auto server_role = get_server_role_from_uri(uri.query);
     if (server_role !=
-        DestMetadataCacheGroup::ServerRole::PrimaryAndSecondary) {
+        DestMetadataCacheManager::ServerRole::PrimaryAndSecondary) {
       throw std::invalid_argument(
           "'access_mode=auto' requires that "
           "the 'role' in 'destinations=metadata-cache:...?role=...' is "
@@ -581,9 +558,32 @@ RoutingPluginConfig::RoutingPluginConfig(
   }
 
   using namespace std::string_literals;
+  if (!accept_connections) {
+    if (section->has(options::kBindAddress)) {
+      log_warning(
+          "[routing:%s] 'bind_address' configured when "
+          "'accept_external_connections=0', ignoring'",
+          section->key.c_str());
+    }
+
+    if (named_socket) {
+      log_warning(
+          "[routing:%s] 'socket' configured when "
+          "'accept_external_connections=0', ignoring'",
+          section->key.c_str());
+    }
+
+    if (bind_address.port()) {
+      log_warning(
+          "[routing:%s] 'bind_port' configured when "
+          "'accept_external_connections=0', ignoring'",
+          section->key.c_str());
+    }
+  }
 
   // either bind_address or socket needs to be set, or both
-  if (!bind_address.port() && !named_socket.is_set()) {
+  if (accept_connections && bind_address.port() == 0 &&
+      !named_socket.is_set()) {
     throw std::invalid_argument(
         "either bind_address or socket option needs to be supplied, or both");
   }
@@ -792,6 +792,8 @@ std::string RoutingPluginConfig::get_default(std::string_view option) const {
       {options::kWaitForMyWritesTimeout,
        std::to_string(routing::kDefaultWaitForMyWritesTimeout.count())},
       {options::kRouterRequireEnforce, "0"},
+      {options::kAcceptConnections,
+       routing::kDefaultAcceptConnections ? "1" : "0"},
   };
 
   const auto it = defaults.find(option);
@@ -835,7 +837,7 @@ class RoutingConfigExposer : public mysql_harness::SectionConfigExposer {
 
     expose_option(options::kBindPort, plugin_config_.bind_port,
                   routing::get_default_port(section_type), false);
-    expose_option(options::kBindAddress, plugin_config_.bind_address.address(),
+    expose_option(options::kBindAddress, plugin_config_.bind_address.hostname(),
                   std::string(routing::kDefaultBindAddressBootstrap), true);
     expose_option("socket", plugin_config_.named_socket.str(),
                   std::string(routing::kDefaultNamedSocket), true);
@@ -846,11 +848,14 @@ class RoutingConfigExposer : public mysql_harness::SectionConfigExposer {
                   plugin_config_.client_connect_timeout,
                   routing::kDefaultClientConnectTimeout.count(), true);
 
-    expose_option(options::kRoutingStrategy,
-                  get_routing_strategy_name(plugin_config_.routing_strategy),
-                  get_routing_strategy_name(
-                      routing::get_default_routing_strategy(section_type)),
-                  false);
+    auto strategy_maybe = plugin_config_.routing_strategy;
+    if (strategy_maybe) {
+      expose_option(options::kRoutingStrategy,
+                    get_routing_strategy_name(*strategy_maybe),
+                    get_routing_strategy_name(
+                        routing::get_default_routing_strategy(section_type)),
+                    false);
+    }
 
     expose_option(options::kMaxConnections, plugin_config_.max_connections,
                   routing::kDefaultMaxConnections, true);
@@ -934,6 +939,10 @@ class RoutingConfigExposer : public mysql_harness::SectionConfigExposer {
     expose_option(routing::options::kWaitForMyWritesTimeout,
                   plugin_config_.wait_for_my_writes_timeout.count(),
                   routing::kDefaultWaitForMyWritesTimeout.count(), true);
+
+    expose_option(routing::options::kAcceptConnections,
+                  plugin_config_.accept_connections,
+                  routing::kDefaultAcceptConnections, true);
   }
 
  private:

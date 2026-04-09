@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -315,18 +315,17 @@ ename_prepare_insert_row()
 {
   int result = 0;
   Ename_Table_Handle handle;
-  const int array_size= sizeof(ename_array) / sizeof(ename_array[0]);
 
-  for (int i = 0; i < array_size; i++)
+  for (auto & i : ename_array)
   {
-    strncpy(handle.current_row.f_name, ename_array[i].f_name,
-        ename_array[i].f_name_length);
-    handle.current_row.f_name_length = ename_array[i].f_name_length;
-    strncpy(handle.current_row.l_name, ename_array[i].l_name,
-        ename_array[i].l_name_length);
-    handle.current_row.l_name_length = ename_array[i].l_name_length;
-    handle.current_row.e_number = ename_array[i].e_number;
-    handle.current_row.m_exist = ename_array[i].m_exist;
+    strncpy(handle.current_row.f_name, i.f_name,
+        i.f_name_length);
+    handle.current_row.f_name_length = i.f_name_length;
+    strncpy(handle.current_row.l_name, i.l_name,
+        i.l_name_length);
+    handle.current_row.l_name_length = i.l_name_length;
+    handle.current_row.e_number = i.e_number;
+    handle.current_row.m_exist = i.m_exist;
 
     /* Insert a row in the table to be added */
     result = ename_write_row_values((PSI_table_handle *)&handle);
@@ -344,22 +343,21 @@ esalary_prepare_insert_row()
 {
   int result = 0;
   Esalary_Table_Handle handle;
-  const int array_size= sizeof(esalary_array) / sizeof(esalary_array[0]);
 
-  for (int i = 0; i < array_size; i++)
+  for (auto & i : esalary_array)
   {
-    strncpy(handle.current_row.e_dob, esalary_array[i].e_dob,
-        esalary_array[i].e_dob_length);
-    handle.current_row.e_dob_length= esalary_array[i].e_dob_length;
+    strncpy(handle.current_row.e_dob, i.e_dob,
+        i.e_dob_length);
+    handle.current_row.e_dob_length= i.e_dob_length;
 
-    strncpy(handle.current_row.e_tob, esalary_array[i].e_tob,
-        esalary_array[i].e_tob_length);
-    handle.current_row.e_tob_length= esalary_array[i].e_tob_length;
+    strncpy(handle.current_row.e_tob, i.e_tob,
+        i.e_tob_length);
+    handle.current_row.e_tob_length= i.e_tob_length;
 
-    handle.current_row.e_number = esalary_array[i].e_number;
-    handle.current_row.e_salary = esalary_array[i].e_salary;
+    handle.current_row.e_number = i.e_number;
+    handle.current_row.e_salary = i.e_salary;
 
-    handle.current_row.m_exist = esalary_array[i].m_exist;
+    handle.current_row.m_exist = i.m_exist;
 
     /* Insert a row in the table to be added */
     result = esalary_write_row_values((PSI_table_handle *)&handle);
@@ -376,18 +374,17 @@ machine_prepare_insert_row()
 {
   int result = 0;
   Machine_Table_Handle handle;
-  const int array_size= sizeof(machine_array) / sizeof(machine_array[0]);
 
-  for (int i = 0; i < array_size; i++)
+  for (auto & i : machine_array)
   {
-    handle.current_row.machine_number = machine_array[i].machine_number;
-    strncpy(handle.current_row.machine_made, machine_array[i].machine_made,
-      machine_array[i].machine_made_length);
-    handle.current_row.machine_made_length = machine_array[i].machine_made_length;
-    handle.current_row.machine_type = machine_array[i].machine_type;
-    handle.current_row.employee_number = machine_array[i].employee_number;
+    handle.current_row.machine_number = i.machine_number;
+    strncpy(handle.current_row.machine_made, i.machine_made,
+      i.machine_made_length);
+    handle.current_row.machine_made_length = i.machine_made_length;
+    handle.current_row.machine_type = i.machine_type;
+    handle.current_row.employee_number = i.employee_number;
 
-    handle.current_row.m_exist = machine_array[i].m_exist;
+    handle.current_row.m_exist = i.m_exist;
 
     /* Insert a row in the table to be added */
     result = machine_write_row_values((PSI_table_handle *)&handle);

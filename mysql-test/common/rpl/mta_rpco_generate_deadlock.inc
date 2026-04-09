@@ -189,9 +189,6 @@ if ($mts_spco_gd_trx_assigned_worker_3 != '')
 --source include/rpl/start_applier.inc
 --let $client = `SELECT CONNECTION_ID()`
 
---let $assert_text = Replica parallel type is LOGICAL_CLOCK
---let $assert_cond = "[SELECT @@GLOBAL.replica_parallel_type]" = "LOGICAL_CLOCK"
---source include/assert.inc
 --let $worker_count = `SELECT COUNT(*) FROM performance_schema.replication_applier_status_by_worker WHERE channel_name='' AND service_state="ON"`
 --let $assert_text = MTS worker thread count is correct
 --let $assert_cond = "3" = "$worker_count"

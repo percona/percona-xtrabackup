@@ -177,6 +177,8 @@ a	LEFT(b,10)
 CREATE USER encryptnonprivuser@localhost IDENTIFIED BY 'noauth';
 GRANT SELECT ON *.* to encryptnonprivuser@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # In connection 1 - with encryptnonprivuser
 SELECT @@global.innodb_redo_log_encrypt ;
 @@global.innodb_redo_log_encrypt

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -62,17 +62,17 @@ typedef unsigned short xcom_port;
 #endif
 
 #ifndef idx_check_ret
-#define idx_check_ret(x, limit, ret)                                           \
-  if (x < 0 || x >= limit) {                                                   \
-    g_critical("index out of range " #x " < 0  || " #x " >= " #limit " %s:%d", \
-               __FILE__, __LINE__);                                            \
-    return ret;                                                                \
+#define idx_check_ret(x, limit, ret)                                        \
+  if (x < 0 || x >= limit) {                                                \
+    G_FATAL("index out of range " #x " < 0  || " #x " >= " #limit " %s:%d", \
+            __FILE__, __LINE__);                                            \
+    return ret;                                                             \
   } else
-#define idx_check_fail(x, limit)                                               \
-  if (x < 0 || x >= limit) {                                                   \
-    g_critical("index out of range " #x " < 0  || " #x " >= " #limit " %s:%d", \
-               __FILE__, __LINE__);                                            \
-    abort();                                                                   \
+#define idx_check_fail(x, limit)                                            \
+  if (x < 0 || x >= limit) {                                                \
+    G_FATAL("index out of range " #x " < 0  || " #x " >= " #limit " %s:%d", \
+            __FILE__, __LINE__);                                            \
+    abort();                                                                \
   } else
 #endif
 

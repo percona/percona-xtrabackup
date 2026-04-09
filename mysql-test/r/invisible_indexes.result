@@ -34,39 +34,43 @@ DROP TABLE t1;
 CREATE TABLE t1 ( a INT, KEY (a) );
 CREATE TABLE t2 ( a INT, KEY (a) INVISIBLE );
 INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
 INSERT INTO t2 SELECT * FROM t1;
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
-EXPLAIN SELECT a FROM t1;
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	a	5	NULL	5	100.00	Using index
+1	SIMPLE	t1	NULL	range	a	a	5	NULL	X	100.00	Using where; Using index
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` > 3)
 ALTER TABLE t1 ALTER INDEX a INVISIBLE;
-EXPLAIN SELECT a FROM t1;
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	80	33.33	Using where
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` > 3)
 ALTER TABLE t1 ALTER INDEX a VISIBLE;
-EXPLAIN SELECT a FROM t1;
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	a	5	NULL	5	100.00	Using index
+1	SIMPLE	t1	NULL	range	a	a	5	NULL	X	100.00	Using where; Using index
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`
-EXPLAIN SELECT a FROM t2;
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` > 3)
+EXPLAIN SELECT a FROM t2 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	NULL	ALL	NULL	NULL	NULL	NULL	80	33.33	Using where
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2`
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` where (`test`.`t2`.`a` > 3)
 ALTER TABLE t2 ALTER INDEX a VISIBLE;
-EXPLAIN SELECT a FROM t2;
+EXPLAIN SELECT a FROM t2 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	NULL	index	NULL	a	5	NULL	5	100.00	Using index
+1	SIMPLE	t2	NULL	range	a	a	5	NULL	X	100.00	Using where; Using index
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2`
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` where (`test`.`t2`.`a` > 3)
 DROP TABLE t1, t2;
 # Test that renaming an index does not change visibility and vice versa.
 CREATE TABLE t1 (
@@ -341,32 +345,41 @@ DROP TABLE t1;
 # Test of invisible fulltext indexes.
 #
 CREATE TABLE t1 (a VARCHAR(200), b TEXT, FULLTEXT (a,b));
-INSERT INTO t1 VALUES('Some data', 'for full-text search');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and sixty-seven');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and sixty-eight');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and sixty-nine');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and seventy');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and seventy-one');
+INSERT INTO t1 VALUES('Thirty-two thousand', 'seven hundred and seventy-two');
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("collections");
+EXPLAIN SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("sixty");
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	fulltext	a	a	0	const	1	100.00	Using where; Ft_hints: sorted
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (match `test`.`t1`.`a`,`test`.`t1`.`b` against ('collections'))
-EXPLAIN SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("collections" IN BOOLEAN MODE);
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (match `test`.`t1`.`a`,`test`.`t1`.`b` against ('sixty'))
+EXPLAIN SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("sixty" IN BOOLEAN MODE);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	fulltext	a	a	0	const	1	100.00	Using where; Ft_hints: no_ranking
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (match `test`.`t1`.`a`,`test`.`t1`.`b` against ('collections' in boolean mode))
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` where (match `test`.`t1`.`a`,`test`.`t1`.`b` against ('sixty' in boolean mode))
 ALTER TABLE t1 ALTER INDEX a INVISIBLE;
 SHOW INDEXES FROM t1;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
-t1	1	a	1	a	NULL	1	NULL	NULL	YES	FULLTEXT			NO	NULL
-t1	1	a	2	b	NULL	1	NULL	NULL	YES	FULLTEXT			NO	NULL
-EXPLAIN SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("collections");
+t1	1	a	1	a	NULL	96	NULL	NULL	YES	FULLTEXT			NO	NULL
+t1	1	a	2	b	NULL	96	NULL	NULL	YES	FULLTEXT			NO	NULL
+EXPLAIN SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("sixty");
 ERROR HY000: Can't find FULLTEXT index matching the column list
-EXPLAIN SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("collections" IN BOOLEAN MODE);
+EXPLAIN SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("sixty" IN BOOLEAN MODE);
 ERROR HY000: Can't find FULLTEXT index matching the column list
-SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("collections");
+SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("sixty");
 ERROR HY000: Can't find FULLTEXT index matching the column list
-SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("collections" IN BOOLEAN MODE);
+SELECT * FROM t1 WHERE MATCH(a, b) AGAINST ("sixty" IN BOOLEAN MODE);
 ERROR HY000: Can't find FULLTEXT index matching the column list
 DROP TABLE t1;
 #
@@ -374,23 +387,26 @@ DROP TABLE t1;
 #
 CREATE TABLE t1 ( a INT AUTO_INCREMENT, KEY ( a ) );
 INSERT INTO t1 VALUES (), (), ();
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN SELECT a FROM t1;
+EXPLAIN SELECT a FROM t1 WHERE a > 4;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	index	NULL	a	4	NULL	3	100.00	Using index
+1	SIMPLE	t1	NULL	range	a	a	4	NULL	1	100.00	Using where; Using index
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` > 4)
 ALTER TABLE t1 ALTER INDEX a INVISIBLE;
 SHOW INDEXES FROM t1;
 Table	Non_unique	Key_name	Seq_in_index	Column_name	Collation	Cardinality	Sub_part	Packed	Null	Index_type	Comment	Index_comment	Visible	Expression
 t1	1	a	1	a	A	3	NULL	NULL		BTREE			NO	NULL
-EXPLAIN SELECT a FROM t1;
+EXPLAIN SELECT a FROM t1 WHERE a > 4;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	24	33.33	Using where
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` > 4)
 DROP TABLE t1;
 #
 # Bug#24660093: REMOVING AN INVISIBLE INDEX BREAKS EXPLAIN

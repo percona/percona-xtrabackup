@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,7 @@ class GcsNodeAddressTest : public GcsBaseTest {
  protected:
   GcsNodeAddressTest() = default;
 
-  static void SetUpTestCase() {}
+  static void SetUpTestSuite() {}
 };
 
 TEST_F(GcsNodeAddressTest, TestNodeAddress) {
@@ -260,7 +260,7 @@ class GcsUUIDTest : public GcsBaseTest {
  protected:
   GcsUUIDTest() = default;
 
-  static void SetUpTestCase() {}
+  static void SetUpTestSuite() {}
 };
 
 TEST_F(GcsUUIDTest, TestGcsUUID) {
@@ -269,7 +269,7 @@ TEST_F(GcsUUIDTest, TestGcsUUID) {
   */
   uchar *buffer = nullptr;
   u_int size = 0;
-  Gcs_xcom_uuid uuid_1 = Gcs_xcom_uuid::create_uuid();
+  Gcs_xcom_uuid const uuid_1 = Gcs_xcom_uuid::create_uuid();
 
   /*
     Check that we cannot encode the UUID if the buffer is NULL.
@@ -310,18 +310,18 @@ class GcsNodeInformationTest : public GcsBaseTest {
  protected:
   GcsNodeInformationTest() = default;
 
-  static void SetUpTestCase() {}
+  static void SetUpTestSuite() {}
 };
 
 TEST_F(GcsNodeInformationTest, TestGcsNodeInformation) {
-  std::string id_1("localhost:13001");
-  std::string id_2("invalid");
+  std::string const id_1("localhost:13001");
+  std::string const id_2("invalid");
 
   Gcs_xcom_node_information node_1(id_1);
   Gcs_xcom_node_information node_2(id_1, true);
   Gcs_xcom_node_information node_3(id_1, false);
   Gcs_xcom_node_information node_4(id_2, false);
-  Gcs_xcom_uuid uuid_5 = Gcs_xcom_uuid::create_uuid();
+  Gcs_xcom_uuid const uuid_5 = Gcs_xcom_uuid::create_uuid();
   Gcs_xcom_node_information node_5(id_1, uuid_5, 1, false);
 
   /*
@@ -397,7 +397,7 @@ class GcsNodesTest : public GcsBaseTest {
  protected:
   GcsNodesTest() = default;
 
-  static void SetUpTestCase() {}
+  static void SetUpTestSuite() {}
 };
 
 TEST_F(GcsNodesTest, TestGcsNodesBasicProperties) {
@@ -620,12 +620,12 @@ TEST_F(GcsNodesTest, TestGcsNodesEncoding) {
 TEST_F(GcsNodesTest, TestGcsNodesConstructor) {
   const Gcs_xcom_node_information *ret = nullptr;
 
-  Gcs_xcom_uuid uuid_1 = Gcs_xcom_uuid::create_uuid();
+  Gcs_xcom_uuid const uuid_1 = Gcs_xcom_uuid::create_uuid();
   blob blob_1 = {{0, static_cast<char *>(malloc(uuid_1.actual_value.size()))}};
   uuid_1.encode(reinterpret_cast<uchar **>(&blob_1.data.data_val),
                 &blob_1.data.data_len);
 
-  Gcs_xcom_uuid uuid_2 = Gcs_xcom_uuid::create_uuid();
+  Gcs_xcom_uuid const uuid_2 = Gcs_xcom_uuid::create_uuid();
   blob blob_2 = {{0, static_cast<char *>(malloc(uuid_2.actual_value.size()))}};
   uuid_2.encode(reinterpret_cast<uchar **>(&blob_2.data.data_val),
                 &blob_2.data.data_len);
@@ -653,7 +653,7 @@ TEST_F(GcsNodesTest, TestGcsNodesConstructor) {
     Check if Gcs_xcom_nodes(const site_def *site, node_set &nodes) is
     working properly.
   */
-  Gcs_xcom_nodes xcom_nodes(site_config, nodes);
+  Gcs_xcom_nodes const xcom_nodes(site_config, nodes);
 
   ret = xcom_nodes.get_node("127.0.0.1:12345");
   ASSERT_EQ(ret->get_member_id().get_member_id(), "127.0.0.1:12345");

@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -51,7 +51,7 @@ void print_info(const std::string &event) {
 }
 
 void print_result(const std::string &event, bool result) {
-  std::string retval = result ? "Error." : "Success.";
+  std::string const retval = result ? "Error." : "Success.";
   std::cout << "Component: " << event_tracking_producer::component_name
             << ". Event: " << event << ". Consumer returned: " << retval
             << std::endl;
@@ -91,11 +91,11 @@ bool Event_producer::generate_events() {
   */
   std::map<std::string, int> service_names;
   {
-    my_service<SERVICE_TYPE(registry_query)> query("registry_query",
-                                                   mysql_service_registry);
+    my_service<SERVICE_TYPE(registry_query)> const query(
+        "registry_query", mysql_service_registry);
     if (query.is_valid()) {
       my_h_service_iterator iter;
-      std::string service_name{"event_tracking_example"};
+      std::string const service_name{"event_tracking_example"};
       if (!query->create(service_name.c_str(), &iter)) {
         while (!query->is_valid(iter)) {
           const char *implementation_name;
@@ -104,7 +104,7 @@ bool Event_producer::generate_events() {
           if (query->get(iter, &implementation_name)) return true;
 
           if (strncmp(implementation_name, service_name.c_str(),
-                      service_name.length())) {
+                      service_name.length()) != 0) {
             break;
           }
 
@@ -117,7 +117,7 @@ bool Event_producer::generate_events() {
     }
   }
 
-  for (auto element : service_names) {
+  for (const auto &element : service_names) {
     my_service<SERVICE_TYPE(event_tracking_example)> example_service(
         element.first.c_str(), mysql_service_registry);
 
@@ -143,12 +143,11 @@ bool Event_producer::generate_events() {
 
 static mysql_service_status_t init() {
   g_event_producer = new (std::nothrow) Event_producer();
-  if (!g_event_producer || g_event_producer->generate_events()) return true;
-  return false;
+  return !g_event_producer || g_event_producer->generate_events();
 }
 
 static mysql_service_status_t deinit() {
-  if (g_event_producer) delete g_event_producer;
+  delete g_event_producer;
   g_event_producer = nullptr;
   return false;
 }

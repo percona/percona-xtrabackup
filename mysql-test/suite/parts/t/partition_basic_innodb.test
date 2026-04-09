@@ -2,6 +2,8 @@
 --source include/big_test.inc
 # Skiping this test from Valgrind execution as per Bug-14627884
 --source include/not_valgrind.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 ################################################################################
 # t/partition_basic_innodb.test                                                #
@@ -80,3 +82,5 @@ let $MAX_VALUE= (2147483646);
 #------------------------------------------------------------------------------#
 # Cleanup
 --source suite/parts/inc/partition_cleanup.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

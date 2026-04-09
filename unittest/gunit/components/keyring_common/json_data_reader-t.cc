@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -65,9 +65,9 @@ TEST_F(KeyringCommonJsonReader_test, JsonReaderTest) {
       "    }"
       "  ]"
       "}");
-  Json_reader json_reader(data);
+  Json_reader const json_reader(data);
   ASSERT_TRUE(json_reader.valid());
-  string expected_version("1.0");
+  string const expected_version("1.0");
   ASSERT_TRUE(json_reader.version() == expected_version);
   ASSERT_TRUE(json_reader.num_elements() == 3);
 
@@ -81,7 +81,7 @@ TEST_F(KeyringCommonJsonReader_test, JsonReaderTest) {
   ASSERT_TRUE(element.second.data() == "abcdefghijklmnop");
   ASSERT_TRUE(element.second.type() == "AES");
 
-  auto ext = output[0].second.get();
+  auto *ext = output[0].second.get();
   ASSERT_TRUE(ext->version() == "1.0");
 
   element = output[1].first;
@@ -94,7 +94,7 @@ TEST_F(KeyringCommonJsonReader_test, JsonReaderTest) {
   ASSERT_TRUE(ext->version() == "1.0");
 
   element = output[2].first;
-  ASSERT_TRUE(element.first.owner_id() == "");
+  ASSERT_TRUE(element.first.owner_id().empty());
   ASSERT_TRUE(element.first.key_id() == "master_key");
   ASSERT_TRUE(element.second.data() == "yzabcdefghijklmn");
   ASSERT_TRUE(element.second.type() == "AES");

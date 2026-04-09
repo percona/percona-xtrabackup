@@ -1,5 +1,3 @@
---source include/not_mac_os.inc
-
 --echo Resource group hints
 
 CREATE TABLE t1 (

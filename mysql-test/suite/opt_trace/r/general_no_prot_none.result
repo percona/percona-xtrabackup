@@ -195,7 +195,7 @@ SELECT (SELECT 1 FROM t6 WHERE d = c) AS RESULT FROM t5	{
 select (1-length(replace(TRACE, " ", ""))/length(TRACE))*100
 from information_schema.OPTIMIZER_TRACE;
 (1-length(replace(TRACE, " ", ""))/length(TRACE))*100
-53.9297
+53.9300
 set optimizer_trace="one_line=on";
 SELECT (SELECT 1 FROM t6 WHERE d = c) AS RESULT FROM t5 ;
 RESULT
@@ -206,7 +206,7 @@ SELECT (SELECT 1 FROM t6 WHERE d = c) AS RESULT FROM t5	{"steps": [{"join_prepar
 select (1-length(replace(TRACE, " ", ""))/length(TRACE))*100
 from information_schema.OPTIMIZER_TRACE;
 (1-length(replace(TRACE, " ", ""))/length(TRACE))*100
-5.9961
+6.0000
 set end_markers_in_json=on;
 set optimizer_trace="one_line=off";
 EXPLAIN SELECT (SELECT 1 FROM t6 WHERE d = ifnull(c,null)) AS RESULT FROM t5 ;

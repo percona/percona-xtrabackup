@@ -65,6 +65,7 @@ if ($_rpl_change_topology_user_created_index)
       Event_priv = 'Y',
       Trigger_priv = 'Y'
     WHERE db = 'test' and user = '';
+  --disable_warnings ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT ONCE
   FLUSH PRIVILEGES;
 
   --eval DROP USER $_rpl_change_topology_user_created

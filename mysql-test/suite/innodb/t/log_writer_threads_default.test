@@ -1,0 +1,38 @@
+--source include/have_debug_sync.inc
+
+--let $restart_parameters = "restart:--skip-log-bin --debug=+d,innodb_simulate_vcpus_equals_4"
+--source include/restart_mysqld.inc
+
+--echo # Binlog Disabled
+SELECT @@log_bin;
+--echo # Default of innodb_log_writer_threads is OFF when system has 4 or fewer vcpus
+SELECT @@innodb_log_writer_threads;
+
+--let $restart_parameters = "restart:--skip-log-bin --debug=+d,innodb_simulate_vcpus_equals_32"
+--source include/restart_mysqld.inc
+
+--echo # Binlog Disabled
+SELECT @@log_bin;
+--echo # Default of innodb_log_writer_threads is ON when system has more than 4 vcpus
+SELECT @@innodb_log_writer_threads;
+
+--let $restart_parameters = "restart:--log-bin=binlog --debug=+d,innodb_simulate_vcpus_equals_4"
+--source include/restart_mysqld.inc
+
+--echo # Binlog Enabled
+SELECT @@log_bin;
+--echo # Default of innodb_log_writer_threads is OFF when system has fewer than 32 vcpus
+SELECT @@innodb_log_writer_threads;
+
+--let $restart_parameters = "restart:--log-bin=binlog --debug=+d,innodb_simulate_vcpus_equals_32"
+--source include/restart_mysqld.inc
+
+--echo # Binlog Enabled
+SELECT @@log_bin;
+--echo # Default of innodb_log_writer_threads is ON when system has 32 or more vcpus
+SELECT @@innodb_log_writer_threads;
+
+--echo # Cleanup
+--let $restart_parameters = restart
+--source include/restart_mysqld.inc
+

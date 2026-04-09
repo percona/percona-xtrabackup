@@ -61,7 +61,7 @@ static size_t write_response_memory(void *contents, size_t size, size_t nmemb,
                                     void *userp) noexcept {
   size_t realsize = size * nmemb;
   if (size != 0 && realsize / size != nmemb) return 0;  // overflow
-  auto *read_data = static_cast<pfs_secure_ostringstream *>(userp);
+  auto *read_data = static_cast<pfs_ostringstream *>(userp);
   size_t ss_pos = read_data->tellp();
   read_data->seekp(0, std::ios::end);
   size_t number_of_read_bytes = read_data->tellp();
@@ -94,7 +94,7 @@ std::string Keyring_vault_curl::get_error_from_curl(CURLcode curl_code) {
 }
 
 pfs_string Keyring_vault_curl::get_secret_url(const pfs_string &type_of_data) {
-  pfs_secure_ostringstream oss_data;
+  pfs_ostringstream oss_data;
 
   assert(!m_config->vault_url.empty());
   oss_data << m_config->vault_url << "/v1/";
@@ -279,7 +279,7 @@ void Keyring_vault_curl::create_key_signature(
   if (key.valid()) {
     // key_signature =
     // lengthof(key_id)||_||key_id||lengthof(user_id)||_||user_id
-    pfs_secure_ostringstream key_signature_ss;
+    pfs_ostringstream key_signature_ss;
     key_signature_ss << key.key_id().length() << '_';
     key_signature_ss << key.key_id();
     key_signature_ss << key.owner_id().length() << '_';

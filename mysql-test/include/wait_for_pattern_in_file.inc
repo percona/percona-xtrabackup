@@ -12,6 +12,8 @@
 # --let $grep_pattern = PERL_REGEX
 # --let $grep_file = FILENAME
 # [--let $wait_timeout = SECONDS]
+# [--let $skip_log_pattern = 0/1]
+# [--let $skip_first_x_occurences = x]
 # --source include/wait_for_pattern_in_file.inc
 #
 # Parameters:
@@ -27,17 +29,25 @@
 #     to appear in the file. If not instantiated, it will wait
 #     indefinitely.
 #
+#   $skip_first_x_occurences
+#     If set, check will skip first X occurences of the pattern
+#
 --let _WFPIF_GREP_PATTERN = $grep_pattern
 --let _WFPIF_GREP_FILE = $grep_file
 --let _WFPIF_WAIT_TIMEOUT = $wait_timeout
+--let _WFPIF_SKIP_OCCURENCES = $skip_first_x_occurences
 
+if ($skip_log_pattern!=1) {
 --echo include/wait_for_pattern_in_file.inc [$grep_pattern]
+}
 
 --perl
   use strict;
   use IO::File;
   my $file = $ENV{'_WFPIF_GREP_FILE'} or die "grep_file is not set";
   my $pattern = $ENV{'_WFPIF_GREP_PATTERN'} or die "grep_pattern is not set";
+  my $skip_first_x_occurences = $ENV{'_WFPIF_SKIP_OCCURENCES'} || 0;
+  my $occurences_to_skip_found = 0;
   my $wait_timeout = $ENV{'_WFPIF_WAIT_TIMEOUT'};
   my $found = 0;
   my $timeout = $wait_timeout;
@@ -50,9 +60,14 @@
       if (substr($line, length($line) - 1, 1) eq "\n" || substr($line, length($line) - 2, 2) eq "\r\f") {
         if (($line =~ /^CURRENT_TEST: /)) {
           $found = 0;
+          $occurences_to_skip_found = 0;
         }
         if ($found == 0 && $line =~ /$pattern/) {
-          $found = 1;
+          if ($skip_first_x_occurences > $occurences_to_skip_found) {
+            $occurences_to_skip_found += 1;
+          }else {
+            $found = 1;
+          }
         }
         $line = '';
       }

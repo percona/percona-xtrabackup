@@ -1,0 +1,225 @@
+#### R1. Expect no error, but error observed
+# R1.1. Interpolated queries
+# let $query = invalid; eval $query;
+invalid;
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: '$query'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $query = invalid; send_eval $query; reap;
+invalid;
+mysqltest: At line 1: Query failed.
+Query: 'reap'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $query = invalid; let $value = `$query`;
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'let $value = `$query`'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $query = invalid; let $value = query_get_value($query, x, 1);
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'let $value = query_get_value($query, x, 1)'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $query = invalid; if (`$query`) { echo true; }
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'if (`$query`) {'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $query = invalid; while (`$query`) { echo true; }
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'while (`$query`) {'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# R1.2. Interpolating command, but constant query text
+# eval invalid;
+invalid;
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'invalid'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# send_eval invalid; reap;
+invalid;
+mysqltest: At line 1: Query failed.
+Query: 'reap'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $value = `invalid`;
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'let $value = `invalid`'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $value = query_get_value(invalid, x, 1);
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'let $value = query_get_value(invalid, x, 1)'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# if (`invalid`) { echo true; }
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'if (`invalid`) {'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# while (`invalid`) { echo true; }
+mysqltest: At line 1: Query failed.
+Query sent to server: 'invalid'
+Query generated from: 'while (`invalid`) {'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+#### R2. Expected error, but other error observed
+# R2.1. Interpolated queries
+# let $query = invalid; error 4711; eval $query;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query sent to server: 'invalid'
+Query generated from: '$query'
+Expected error(s): 4711
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $query = invalid; error 47,11; eval $query;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query sent to server: 'invalid'
+Query generated from: '$query'
+Expected error(s): 47,11
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $query = invalid; send_eval $query; error 4711; reap;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query: 'reap'
+Expected error(s): 4711
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# let $query = invalid; send_eval $query; error 47,11; reap;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query: 'reap'
+Expected error(s): 47,11
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# R2.2. Interpolating command, but constant query text
+# error 4711; eval invalid;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query sent to server: 'invalid'
+Query generated from: 'invalid'
+Expected error(s): 4711
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# error 47,11; eval invalid;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query sent to server: 'invalid'
+Query generated from: 'invalid'
+Expected error(s): 47,11
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# send_eval invalid; error 4711; reap;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query: 'reap'
+Expected error(s): 4711
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# send_eval invalid; error 47,11; reap;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query: 'reap'
+Expected error(s): 47,11
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+#### R3. Expected error, but no error observed
+# R3.1. Interpolated queries
+# let $query = SELECT 1; error 4711; eval $query;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query sent to server: 'SELECT 1'
+Query generated from: '$query'
+Expected error(s): 4711
+# let $query = SELECT 1; error 47,11; eval $query;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query sent to server: 'SELECT 1'
+Query generated from: '$query'
+Expected error(s): 47,11
+# let $query = SELECT 1; send_eval $query; error 4711; reap;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query: 'reap'
+Expected error(s): 4711
+# let $query = SELECT 1; send_eval $query; error 47,11; reap;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query: 'reap'
+Expected error(s): 47,11
+# R3.2. Interpolating command, but constant query text
+# error 4711; eval SELECT 1;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query sent to server: 'SELECT 1'
+Query generated from: 'SELECT 1'
+Expected error(s): 4711
+# error 47,11; eval SELECT 1;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query sent to server: 'SELECT 1'
+Query generated from: 'SELECT 1'
+Expected error(s): 47,11
+# send_eval SELECT 1; error 4711; reap;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query: 'reap'
+Expected error(s): 4711
+# send_eval SELECT 1; error 47,11; reap;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query: 'reap'
+Expected error(s): 47,11
+#### R4. Non-interpolated queries
+# invalid;
+invalid;
+mysqltest: At line 1: Query failed.
+Query: 'invalid'
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# error 4711; invalid;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query: 'invalid'
+Expected error(s): 4711
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# error 47,11; invalid;
+invalid;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+mysqltest: At line 1: Query failed with an error different from the expected error(s).
+Query: 'invalid'
+Expected error(s): 47,11
+Returned error: ER_PARSE_ERROR(1064) (42000): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'invalid' at line 1
+# error 4711; SELECT 1;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query: 'SELECT 1'
+Expected error(s): 4711
+# error 47,11; SELECT 1;
+SELECT 1;
+1
+1
+mysqltest: At line 1: Query was expected to fail, but succeeded.
+Query: 'SELECT 1'
+Expected error(s): 47,11

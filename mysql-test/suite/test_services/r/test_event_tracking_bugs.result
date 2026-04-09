@@ -1,0 +1,11 @@
+#
+# Bug#38262728: Error when installing component_test_event_tracker_producer_a
+#
+CALL mtr.add_suppression('An event of type .* is missing extra data and cannot be processed by the server.s component plugin bridge');
+# Test: should produce warnings in the error log
+INSTALL COMPONENT "file://component_test_event_tracking_producer_a";
+include/assert_grep.inc [General warning found.]
+include/assert_grep.inc [Authentication warning found.]
+# Cleanup
+UNINSTALL COMPONENT "file://component_test_event_tracking_producer_a";
+# End of 9.5 tests

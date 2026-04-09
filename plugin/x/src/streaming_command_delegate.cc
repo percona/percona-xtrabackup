@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,7 @@
 
 #include "decimal.h"  // NOLINT(build/include_subdir)
 #include "my_dbug.h"  // NOLINT(build/include_subdir)
+#include "sql/debug_sync.h"
 
 #include "plugin/x/protocol/encoders/encoding_xrow.h"
 #include "plugin/x/src/interface/client.h"
@@ -609,6 +610,12 @@ void Streaming_command_delegate::handle_out_param_in_handle_ok(
 bool Streaming_command_delegate::connection_alive() {
   log_debug("%u: connection_alive",
             static_cast<unsigned>(m_session->client().client_id_num()));
+
+  DBUG_EXECUTE_IF("xpl_connection_alive_once", {
+    DBUG_SET("-d,xpl_connection_alive_once");
+    CONDITIONAL_SYNC_POINT("xpl_connection_alive_wait");
+  });
+
   auto connection = m_proto->get_flusher()->get_connection();
 
   auto idle_processing = m_session->client().get_idle_processing();

@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET DEBUG_SYNC= 'RESET';
 drop table if exists t1,t2,t3;
 create table t1 (i int);
@@ -4054,3 +4055,4 @@ test.t2	repair	status	OK
 DROP VIEW v1;
 DROP TABLE t1;
 DROP TABLE t2;
+include/rpl/set_gtid_mode_on.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,7 @@ class Config_reader {
 
     @param [in] config_file_path Full path to configuration file
   */
-  inline explicit Config_reader(const std::string config_file_path);
+  inline explicit Config_reader(std::string config_file_path);
 
   /**
     Get an element value from parent element or top level of JSON document.
@@ -113,6 +113,20 @@ class Config_reader {
   }
 
   /**
+    Check if the object is valid, in particular if there was no parse error.
+
+    @param [out] err  when not valid: cause of invalidity
+
+    @returns validity status
+      @retval false object not valid, an error occured while creation
+      @retval true  object is valid
+  */
+  bool is_valid(std::string &err) const {
+    if (!valid_) err = err_;
+    return valid_;
+  }
+
+  /**
     Check if an element with the provided name exists.
 
     @param [in]  element_name  Name of the element being checked
@@ -145,20 +159,6 @@ class Config_reader {
       @retval true  Element type is not a string or element is not found.
   */
   bool is_string(const std::string &element_name);
-
-  /**
-    Check if the object is valid, in particular if there was no parse error.
-
-    @param [out] err  when not valid: cause of invalidity
-
-    @returns validity status
-      @retval false object not valid, an error occured while creation
-      @retval true  object is valid
-  */
-  bool is_valid(std::string &err) const {
-    if (!valid_) err = err_;
-    return valid_;
-  }
 
  private:
   /** Configuration file path */

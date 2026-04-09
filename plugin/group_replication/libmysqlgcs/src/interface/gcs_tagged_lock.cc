@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,6 @@
 #include "plugin/group_replication/libmysqlgcs/src/interface/gcs_tagged_lock.h"
 
 Gcs_tagged_lock::Gcs_tagged_lock() noexcept : m_lock_word(0) {}
-
-Gcs_tagged_lock::~Gcs_tagged_lock() = default;
 
 std::uint64_t Gcs_tagged_lock::get_lock_word(
     std::memory_order semantics) const {

@@ -4,6 +4,5 @@
 --source include/big_test.inc
 --source include/have_debug.inc
 --source include/have_debug_sync.inc
---source include/have_replica_parallel_type_logical_clock.inc
 --source include/have_replica_preserve_commit_order.inc
 --source common/rpl/rpl_mta_rpco_check_worker_states.test

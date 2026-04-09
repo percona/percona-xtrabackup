@@ -1,7 +1,6 @@
 # Setup semisync master
 # Usage:
 # [--let $semisync_source_enabled = [ON|OFF]]
-# [--let $use_old_semisync_plugin_names = 1]
 # --source include/rpl/install_semisync_source.inc
 #
 # Parameters:
@@ -11,9 +10,6 @@
 #     will enable the plugin by setting rpl_semi_sync_source_enabled =
 #     ON.  If set to OFF or 0, does not enable the plugin.
 #
-#   $use_old_semisync_plugin_names
-#     By default uses the new-named plugin, semisync_source.  If this is
-#     set to 1, uses the old-named plugin, semisync_master.
 
 --let $include_filename= rpl/install_semisync_source.inc
 --source include/begin_include_file.inc
@@ -26,10 +22,6 @@
 
 --let $_iss_source = source
 --let $_iss_library = $SEMISYNC_SOURCE_PLUGIN
-if ($use_old_semisync_plugin_names) {
-  --let $_iss_source = master
-  --let $_iss_library = $SEMISYNC_MASTER_PLUGIN
-}
 
 --let $value = query_get_value(show variables like 'rpl_semi_sync_$_iss_source$_iss_enabled', Value, 1)
 if ($value == No such row)

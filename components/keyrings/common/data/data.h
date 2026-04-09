@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,6 +64,8 @@ struct Sensitive_data {
   std::size_t size() const { return data.size(); }
   std::size_t length() const { return data.size(); }
 
+  void mask() { data.replace(0, data.size(), data.size(), '*'); }
+
   pfs_string decode() const {
     auto ret = data;
     const auto key =
@@ -75,7 +77,7 @@ struct Sensitive_data {
   }
 
   friend bool operator==(Sensitive_data const &a, Sensitive_data const &b) {
-    return a.data == b.data;
+    return a.decode() == b.decode();
   }
 
  private:

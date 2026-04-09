@@ -33,7 +33,7 @@ DROP FUNCTION f1;
 SET DEBUG_SYNC= 'RESET';
 #
 # Field translation items must be cleared in case of back-offs
-# for queries that use Information Schema tables. Otherwise 
+# for queries that use Information Schema tables. Otherwise
 # memory allocated in fix_fields() for views may end up referring
 # to freed memory.
 #
@@ -182,6 +182,26 @@ SET DEBUG_SYNC='now SIGNAL continue';
 connection default;
 connection con1;
 ERROR 42000: PROCEDURE test.mixedcase does not exist
+# Case 6: Test case to verify MDL locking from concurrent SHOW LIBRARY
+#         and DROP LIBRARY operation.
+connection default;
+CREATE LIBRARY test_library_6 LANGUAGE JAVASCRIPT AS $$
+export function f(n) {  return n } $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SET DEBUG_SYNC='after_acquiring_mdl_lock_on_routine SIGNAL locked WAIT_FOR continue';
+DROP LIBRARY test_library_6;;
+# At this point we have a exclusive lock on 'test_library_6'
+connection con1;
+SET DEBUG_SYNC='now WAIT_FOR locked';
+SHOW CREATE LIBRARY test_library_6;
+# This statement request for shared lock and it is blocked till DROP
+# statement releases lock.
+connection con2;
+SET DEBUG_SYNC='now SIGNAL continue';
+connection default;
+connection con1;
+ERROR 42000: LIBRARY test_library_6 does not exist
 connection default;
 SET DEBUG_SYNC='RESET';
 disconnect con1;

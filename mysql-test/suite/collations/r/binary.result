@@ -61,28 +61,73 @@ Abc
 abc
 abc 
 SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t;
-ERROR HY000: Illegal mix of collations for operation 'UNION'
+ERROR HY000: Illegal mix of collations (utf8mb4_bin,IMPLICIT) and (utf8mb4_0900_bin,IMPLICIT) for operation 'UNION'
 SELECT col_0900_bin FROM t UNION SELECT col_bin FROM t;
-ERROR HY000: Illegal mix of collations for operation 'UNION'
+ERROR HY000: Illegal mix of collations (utf8mb4_0900_bin,IMPLICIT) and (utf8mb4_bin,IMPLICIT) for operation 'UNION'
 SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t
 UNION SELECT col_aici FROM t;
-ERROR HY000: Illegal mix of collations for operation 'UNION'
-SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t
-UNION SELECT col_aici COLLATE utf8mb4_0900_ai_ci FROM t;
-col_bin
+ERROR HY000: Illegal mix of collations (utf8mb4_bin,IMPLICIT), (utf8mb4_0900_bin,IMPLICIT), (utf8mb4_0900_ai_ci,IMPLICIT) for operation 'UNION'
+# Add an explicit collation in the first query term.
+# The explicit collation is used.
+SELECT col_aici COLLATE utf8mb4_0900_ai_ci FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin FROM t;
+col_aici COLLATE utf8mb4_0900_ai_ci
 ABC  
 Abc   
 abc
 abc 
-SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t
-UNION SELECT col_aici COLLATE utf8mb4_bin FROM t;
-col_bin
+SELECT col_aici COLLATE utf8mb4_bin FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin FROM t;
+col_aici COLLATE utf8mb4_bin
 ABC
 Abc
 abc
-SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t
-UNION SELECT col_aici COLLATE utf8mb4_0900_bin FROM t;
-col_bin
+SELECT col_aici COLLATE utf8mb4_0900_bin FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin FROM t;
+col_aici COLLATE utf8mb4_0900_bin
+ABC
+ABC  
+Abc
+Abc   
+abc
+abc 
+# Add an explicit collation in the last query term.
+# The explicit collation is used, so same result as
+# above.
+SELECT col_aici FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin COLLATE utf8mb4_0900_ai_ci FROM t;
+col_aici
+ABC  
+Abc   
+abc
+abc 
+SELECT col_aici FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin COLLATE utf8mb4_bin FROM t;
+col_aici
+ABC
+Abc
+abc
+SELECT col_aici FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin COLLATE utf8mb4_0900_bin FROM t;
+col_aici
 ABC
 ABC  
 Abc

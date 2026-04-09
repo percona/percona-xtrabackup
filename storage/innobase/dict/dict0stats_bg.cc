@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -297,7 +297,7 @@ static void dict_stats_process_entry_from_recalc_pool(THD *thd) {
   }
 
   /* Set bg flag. */
-  table->stats_bg_flag = BG_STAT_IN_PROGRESS;
+  table->stats_bg_flag.store(BG_STAT_IN_PROGRESS);
 
   dict_sys_mutex_exit();
 
@@ -321,13 +321,13 @@ static void dict_stats_process_entry_from_recalc_pool(THD *thd) {
 
   } else {
     dict_stats_update_result =
-        dict_stats_update(table, DICT_STATS_RECALC_PERSISTENT);
+        dict_stats_update_retry(table, DICT_STATS_RECALC_PERSISTENT, 30);
   }
 
   dict_sys_mutex_enter();
 
   /* Set back bg flag */
-  table->stats_bg_flag = BG_STAT_NONE;
+  table->stats_bg_flag.store(BG_STAT_NONE);
 
   dict_sys_mutex_exit();
 

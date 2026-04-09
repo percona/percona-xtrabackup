@@ -1,0 +1,47 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `proc_schema` - created
+
+
+## I. Show that db-schema uses global-config directory-index
+#
+## II. Show that db-schema uses service-config directory-index
+#
+## III. Show that db-schema uses content_set-config directory-index
+#
+
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{"directoryIndexDirective":["second.html"]}';
+# Registred SERVICE at path: /svc1
+# Registred DB_SCHEMA at path: /svc1/sch
+# Registred DB_OBJECT at path: /svc1/sch/first.html
+# Registred DB_OBJECT at path: /svc1/sch/second.html
+# Registred SERVICE at path: /svc2
+# Registred DB_SCHEMA at path: /svc2/sch
+# Registred DB_OBJECT at path: /svc2/sch/first.html
+# Registred DB_OBJECT at path: /svc2/sch/second.html
+# Registred SERVICE at path: /svc3
+# Registred DB_SCHEMA at path: /svc3/sch
+# Registred DB_OBJECT at path: /svc3/sch/first.html
+# Registred DB_OBJECT at path: /svc3/sch/second.html
+#
+# I
+GET /svc1/sch/
+{"resultSets":[{"type":"items0","items":[{"second content":"second content"}],"_metadata":{"columns":[{"name":"second content","type":"VARCHAR(14)"}]}}]}
+OK
+#
+# II
+GET /svc2/sch/
+{"resultSets":[{"type":"items0","items":[{"first content":"first content"}],"_metadata":{"columns":[{"name":"first content","type":"VARCHAR(13)"}]}}]}
+OK
+#
+# III
+GET /svc3/sch/
+{"resultSets":[{"type":"items0","items":[{"first content":"first content"}],"_metadata":{"columns":[{"name":"first content","type":"VARCHAR(13)"}]}}]}
+OK
+DROP SCHEMA proc_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

@@ -39,63 +39,117 @@ INSERT INTO `‚s‚W` VALUES ('‚ ‚¢‚¤‚¦‚¨'),('‚ ‚¢‚¤‚¦'),('‚ ‚¢‚¤'),('‚ ‚¢'),('‚ ')
 INSERT INTO `‚s‚X` VALUES ('ƒ\\•\—\\'),('ƒ\\•\—\'),('ƒ\\•\'),('ƒ\\'),('ƒ\'),('');
 
 #InnoDB
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚P`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚Q`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚R`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚R`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚R`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚R`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚R`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚R`;
 
 #MyISAM
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚S`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚S`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚S`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚S`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚S`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚S`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚T`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚T`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚T`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚T`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚T`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚T`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚U`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚U`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚U`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚U`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚U`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚U`;
 
 #MEMORY
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚V`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚V`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚V`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚V`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚V`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚V`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚W`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚W`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚W`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚W`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚W`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚W`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,0) FROM `‚s‚X`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,1) FROM `‚s‚X`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,2) FROM `‚s‚X`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,3) FROM `‚s‚X`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,4) FROM `‚s‚X`;
+--sorted_result
 SELECT `‚b‚P`, RIGHT(`‚b‚P`,5) FROM `‚s‚X`;
 
 DROP TABLE `‚s‚P`;

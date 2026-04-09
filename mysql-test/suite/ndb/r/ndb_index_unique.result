@@ -747,9 +747,9 @@ Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 insert into t1 values (2, repeat(_utf8mb3 0xe288ab6474, 200));
 ERROR 23000: Duplicate entry '∫dt∫dt∫dt∫dt∫dt∫dt∫dt∫dt∫dt∫dt∫dt∫dt∫d' for key 't1.b'
-select a, sha1(b) from t1;
-a	sha1(b)
-1	08f5d02c8b8bc244f275bdfc22c42c5cab0d9d7d
+select a, sha2(b,256) from t1;
+a	sha2(b,256)
+1	4b54c9dcbf97d2ce4f8373f0d5aeaeccc4eef4c8830bca5bb2d15d709f11a8f5
 drop table t1;
 create table t1(id int not null) engine = NDB;
 alter table t1 add constraint uk_test unique (id) using hash;

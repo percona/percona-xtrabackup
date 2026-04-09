@@ -6,7 +6,7 @@
 
 # print SSL session .pem contents to file
 let SESSION_FILE=$MYSQLTEST_VARDIR/tmp/ssldata.pem;
-exec $MYSQL --ssl-mode=required -e "ssl_session_data_print $SESSION_FILE" 2>&1 > /dev/null;
+exec $MYSQL --commands --ssl-mode=required -e "ssl_session_data_print $SESSION_FILE" 2>&1 > /dev/null;
 
 # assert the file has correct access permissions (0600)
 --perl

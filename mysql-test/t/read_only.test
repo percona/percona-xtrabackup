@@ -4,6 +4,11 @@
 # Skipping the test when binlog format is mix/statement due to Bug#22173401
 --source include/have_binlog_format_row.inc
 
+# FLUSH TABLES may block the periodic update of `mysql.gtid_executed` by
+# `Clone_persist_gtid`, to avoid unrelated flush errors `GTID_MODE` is
+# disabled in this test.
+--source include/rpl/set_gtid_mode_off.inc
+
 # Test of the READ_ONLY global variable:
 # check that it blocks updates unless they are only on temporary tables.
 
@@ -618,3 +623,5 @@ DROP USER user1@localhost;
 # Wait till all disconnects are completed
 --source include/wait_until_count_sessions.inc
 --source suite/component_keyring_file/inc/teardown_component.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

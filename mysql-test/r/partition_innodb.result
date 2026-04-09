@@ -1451,6 +1451,7 @@ Handler_external_lock	2
 Handler_read_first	3
 Handler_read_key	3
 Handler_read_next	12
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT * FROM t1 ORDER BY a DESC, b DESC;
 EXPLAIN
 {
@@ -1855,6 +1856,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` FORCE INDEX (PRIMARY) order by `test`.`t1`.`a`,`test`.`t1`.`b` desc
+SET explain_json_format_version = DEFAULT;
 # Test HANDLER statements.
 FLUSH STATUS;
 HANDLER t1 OPEN;

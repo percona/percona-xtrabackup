@@ -4105,3 +4105,16 @@ DROP TRIGGER очень_очень_очень_очень_очень_очень_�
 
 DROP TABLE t1;
 SET NAMES default;
+
+--echo #
+--echo # Bug#37337527 >= 8.0.27 Error 1048 when updating row with empty_sql mode
+--echo #
+CREATE TABLE t1 (c1 INT, c2 INT NOT NULL);
+CREATE TRIGGER t_t1 BEFORE INSERT ON t1 FOR EACH ROW BEGIN END;
+
+SET SESSION sql_mode = '';
+INSERT INTO t1(c1) VALUES (1);
+SELECT * FROM t1;
+UPDATE t1 SET c2=3 WHERE c1=1;
+DROP TABLE t1;
+SET sql_mode=default;

@@ -1,5 +1,5 @@
 -- source include/have_innodb_max_16k.inc
-
+call mtr.add_suppression("Cannot alter the table .* because the record size will exceed the maximum allowed size for a record .*");
 let $file_per_table=`select @@innodb_file_per_table`;
 
 SET GLOBAL innodb_file_per_table=on;

@@ -603,6 +603,7 @@ delete from t2  where a = 2 and b = 'val-2' order by a,b,c,d limit 30;
 ANALYZE TABLE t1, t2;
 --replace_column 10 6
 explain select c from t2 where a = 2 and b = 'val-2' group by c;
+--sorted_result
 select c from t2 where a = 2 and b = 'val-2' group by c;
 drop table t1,t2;
 
@@ -1122,6 +1123,7 @@ FLUSH STATUS;
 --disable_result_log
 --eval $query
 --enable_result_log
+--skip_if_hypergraph  # Different plan.
 SHOW SESSION STATUS LIKE 'Sort_scan%';
 --let $query=SELECT a FROM t1 IGNORE INDEX FOR ORDER BY (PRIMARY,i2) ORDER BY a
 --eval EXPLAIN $query
@@ -1175,9 +1177,9 @@ EXPLAIN SELECT 1 FROM t1 WHERE a IN
 
 CREATE TABLE t2 (a INT, b INT, KEY(a));
 INSERT INTO t2 VALUES (1, 1), (2, 2), (3,3), (4,4);
-EXPLAIN SELECT a, SUM(b) FROM t2 GROUP BY a LIMIT 2; 
-EXPLAIN SELECT a, SUM(b) FROM t2 IGNORE INDEX (a) GROUP BY a LIMIT 2;
 ANALYZE TABLE t2;
+EXPLAIN SELECT a, SUM(b) FROM t2 GROUP BY a LIMIT 2;
+EXPLAIN SELECT a, SUM(b) FROM t2 IGNORE INDEX (a) GROUP BY a LIMIT 2;
 EXPLAIN SELECT 1 FROM t2 WHERE a IN
   (SELECT a FROM t1 USE INDEX (i2) IGNORE INDEX (i2));
 
@@ -1459,7 +1461,6 @@ DROP TABLE t1;
 SET BIG_TABLES=1;
 CREATE TABLE t1(a INT);
 INSERT INTO t1 VALUES (0),(0);
---skip_if_hypergraph  # Does not use MyISAM temp tables, so no such restriction.
 SELECT 1 FROM t1 GROUP BY IF(`a`,'','');
 SELECT 1 FROM t1 GROUP BY TRIM(LEADING RAND() FROM '');
 --skip_if_hypergraph  # Different warnings.
@@ -3539,6 +3540,15 @@ SELECT t1.x, dt.* FROM t1, LATERAL (
 --sorted_result
 --eval $query
 
+# Variant of the above that still gave wrong results with hypergraph
+# after the original fix. Fixed in bug#37057380.
+--sorted_result
+SELECT t1.x, dt.* FROM t1, LATERAL (
+  SELECT SQL_BIG_RESULT t2.y, SUM(t3.x)
+  FROM t2 LEFT JOIN t3 ON t2.x = t3.id AND t2.y + t3.y < t1.y AND t3.x < 100
+  GROUP BY t2.y
+) AS dt;
+
 DROP TABLE t1, t2, t3;
 
 # For extra coverage, also add a simpler reproduction of the problem
@@ -3666,3 +3676,85 @@ SHOW CREATE VIEW v;
 DROP VIEW v;
 
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#37309915 ER_DUP_KEY on temporary table 
+--echo #
+CREATE TABLE t1(pk INTEGER PRIMARY KEY, i INT, c VARCHAR(1));
+CREATE TABLE t2(pk INTEGER PRIMARY KEY, i INT, c VARCHAR(1));
+
+INSERT INTO t1 VALUES (0, 1433358016,'9');
+
+INSERT INTO t2 VALUES (0, -1877116806,'X'),
+                      (1, -1089884900,'䩎');
+
+SELECT  ( SELECT MIN(t1_alias1.i)
+           FROM t1 AS t1_alias1, t1
+           WHERE t1_alias1.i > t1_outer.i ) AS field1,
+        COUNT(t2.i) AS field2,
+        t1_outer.c AS field3,
+        ( SELECT SUM(t2.i)
+          FROM t2 AS t2_a, t2 ) AS field4
+FROM t1 AS t1_outer, t2
+GROUP BY field1, field3, field4;
+
+DROP TABLE t1, t2;
+
+--echo #
+--echo # Bug#37415167 ERROR 1022 (23000): Can't write; duplicate key in
+--echo # table '/tmp/#sqlxxxxxxx'
+--echo #
+
+CREATE TABLE tray (
+  data_cd VARCHAR(30),
+  data_from_ymd VARCHAR(8),
+  data_nm VARCHAR(200),
+  PRIMARY KEY (data_cd, data_from_ymd),
+  KEY (data_from_ymd)
+);
+
+INSERT INTO tray VALUES
+('00014', '20120801', ''),
+('00014', '20130801', ''),
+('00015', '20120801', '/');
+
+
+SELECT (
+    SELECT COUNT(data_from_ymd)
+    FROM (
+        SELECT
+            ROW_NUMBER() OVER (ORDER BY MIN(data_from_ymd) DESC) AS data_from_ymd
+        FROM tray
+        WHERE data_cd = cte.data_cd
+        GROUP BY data_cd, data_nm
+    ) a
+) AS b
+FROM (
+    SELECT *
+    FROM tray
+) AS cte;
+
+DROP TABLE tray;
+
+CREATE TABLE t (
+  x INT,
+  y INT);
+
+INSERT INTO t VALUES
+(1, 1),
+(2, 2),
+(2, 3),
+(3, 2);
+
+SELECT 1
+FROM t AS t1,
+     LATERAL (
+         SELECT ROW_NUMBER() OVER (ORDER BY MIN(y))
+         FROM t
+         WHERE x = t1.x
+         GROUP BY x
+     ) AS t2;
+
+DROP TABLE t;
+
+--echo #

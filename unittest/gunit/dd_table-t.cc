@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,7 @@ class ColumnsTest : public ::testing::Test {
 
   dd::Column *add_column() { return m_table->add_column(); }
 
-  const dd::Column *get_column(dd::String_type name) {
+  const dd::Column *get_column(const dd::String_type &name) {
     return m_table->get_column(name);
   }
 

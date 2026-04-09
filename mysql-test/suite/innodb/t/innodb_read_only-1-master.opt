@@ -1,1 +1,3 @@
 --innodb-directories=$MYSQL_TMP_DIR/alt_dir
+--gtid-mode=off
+--enforce_gtid_consistency=off

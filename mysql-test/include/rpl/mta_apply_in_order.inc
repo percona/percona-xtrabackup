@@ -116,7 +116,6 @@ if (!$rpl_gtid_utils) {
   --die rpl/mta_apply_in_order.inc requires that you use the rpl_gtid_utils=1 option with rpl/init_source_replica.inc (or rpl/init.inc)
 }
 
---source include/have_replica_parallel_type_logical_clock.inc
 --let $option_name = gtid_mode
 --let $option_value = 'ON'
 --source include/only_with_option.inc

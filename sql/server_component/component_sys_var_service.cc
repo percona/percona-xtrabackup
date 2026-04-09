@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -462,15 +462,15 @@ DEFINE_BOOL_METHOD(mysql_component_sys_variable_imp::register_variable,
 
     unique_opt.reset(opt);
     plugin_opt_set_limits(opts, opt);
-
-    if ((flags & PLUGIN_VAR_THDLOCAL) &&
-        register_var(component_name, var_name, flags)) {
-      st_bookmark *var;
-      if ((var = find_bookmark(component_name, var_name, flags))) {
-        *(int *)(opt + 1) = offset = var->offset;
+    if ((flags & PLUGIN_VAR_NOSYSVAR) == 0) {
+      if ((flags & PLUGIN_VAR_THDLOCAL) &&
+          register_var(component_name, var_name, flags)) {
+        st_bookmark *var;
+        if ((var = find_bookmark(component_name, var_name, flags))) {
+          *(int *)(opt + 1) = offset = var->offset;
+        }
       }
     }
-
     if (flags & PLUGIN_VAR_THDLOCAL)
       opts->value = opts->u_max_value =
           (uchar **)(global_system_variables.dynamic_variables_ptr + offset);
@@ -553,27 +553,29 @@ DEFINE_BOOL_METHOD(mysql_component_sys_variable_imp::register_variable,
       }
     }
 
-    com_sys_var_name_copy =
-        my_strdup(key_memory_comp_sys_var, com_sys_var_name, MYF(0));
-    if (com_sys_var_name_copy == nullptr) {
-      LogErr(ERROR_LEVEL, ER_SYS_VAR_COMPONENT_OOM, var_name);
-      goto end;
-    }
-    sysvar = reinterpret_cast<sys_var *>(
-        new sys_var_pluginvar(&chain, com_sys_var_name_copy, opt));
+    if ((flags & PLUGIN_VAR_NOSYSVAR) == 0) {
+      com_sys_var_name_copy =
+          my_strdup(key_memory_comp_sys_var, com_sys_var_name, MYF(0));
+      if (com_sys_var_name_copy == nullptr) {
+        LogErr(ERROR_LEVEL, ER_SYS_VAR_COMPONENT_OOM, var_name);
+        goto end;
+      }
+      sysvar = reinterpret_cast<sys_var *>(
+          new sys_var_pluginvar(&chain, com_sys_var_name_copy, opt));
 
-    if (sysvar == nullptr) {
-      LogErr(ERROR_LEVEL, ER_SYS_VAR_COMPONENT_OOM, var_name);
-      goto end;
-    } else
-      unique_opt.release();
+      if (sysvar == nullptr) {
+        LogErr(ERROR_LEVEL, ER_SYS_VAR_COMPONENT_OOM, var_name);
+        goto end;
+      } else
+        unique_opt.release();
 
-    sysvar->set_arg_source(opts->arg_source);
-    sysvar->set_is_plugin(false);
+      sysvar->set_arg_source(opts->arg_source);
+      sysvar->set_is_plugin(false);
 
-    if (mysql_add_sysvar(chain.first)) {
-      FREE_RECORD(sysvar)
-      goto end;
+      if (mysql_add_sysvar(chain.first)) {
+        FREE_RECORD(sysvar)
+        goto end;
+      }
     }
 
     /*

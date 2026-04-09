@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -72,11 +72,7 @@ NdbInterpretedCode::NdbInterpretedCode(const NdbRecord &record, Uint32 *buffer,
   m_table_impl = record.table;
 }
 
-NdbInterpretedCode::~NdbInterpretedCode() {
-  if (m_internal_buffer != nullptr) {
-    delete[] m_internal_buffer;
-  }
-}
+NdbInterpretedCode::~NdbInterpretedCode() { delete[] m_internal_buffer; }
 
 void NdbInterpretedCode::set_sql_null_semantics(
     UnknownHandling unknown_action) {
@@ -140,7 +136,7 @@ bool NdbInterpretedCode::have_space_for(Uint32 wordsRequired) {
 
     /* Were we able to get enough extra space? */
     if ((newSize - m_buffer_length) >= extraRequired) {
-      Uint32 *newBuf = new Uint32[newSize];
+      auto *newBuf = new Uint32[newSize];
 
       if (newBuf != nullptr) {
         Uint32 metaInfoWords = m_buffer_length - m_last_meta_pos;
@@ -445,7 +441,7 @@ int NdbInterpretedCode::branch_col_val(Uint32 branch_type, Uint32 attrId,
   else
     DBUG_PRINT("info", ("value == NULL"));
 
-  Interpreter::BinaryCondition cond = (Interpreter::BinaryCondition)branch_type;
+  auto cond = (Interpreter::BinaryCondition)branch_type;
 
   if (unlikely(m_table_impl == nullptr))
     /* NdbInterpretedCode instruction requires that table is set */
@@ -527,8 +523,7 @@ int NdbInterpretedCode::branch_col_col(Uint32 branch_type, Uint32 attrId1,
   DBUG_ENTER("NdbInterpretedCode::branch_col_col");
   DBUG_PRINT("enter", ("type: %u  col1:%u  col2:%u  label: %u", branch_type,
                        attrId1, attrId2, label));
-  const Interpreter::BinaryCondition cond =
-      (Interpreter::BinaryCondition)branch_type;
+  const auto cond = (Interpreter::BinaryCondition)branch_type;
   assert(cond != Interpreter::LIKE && cond != Interpreter::NOT_LIKE);
 
   if (unlikely(m_table_impl == nullptr))
@@ -573,8 +568,7 @@ int NdbInterpretedCode::branch_col_param(Uint32 branch_type, Uint32 attrId,
   DBUG_ENTER("NdbInterpretedCode::branch_col_param");
   DBUG_PRINT("enter", ("type: %u  col:%u  param:%u  label: %u", branch_type,
                        attrId, paramId, label));
-  const Interpreter::BinaryCondition cond =
-      (Interpreter::BinaryCondition)branch_type;
+  const auto cond = (Interpreter::BinaryCondition)branch_type;
   assert(cond != Interpreter::LIKE && cond != Interpreter::NOT_LIKE);
 
   if (unlikely(m_table_impl == nullptr))
@@ -902,7 +896,7 @@ int NdbInterpretedCode::getInfo(Uint32 number, CodeMetaInfo &info) const {
 
 /* Update internal NdbError object based on its code */
 static void update(NdbError &error) {
-  ndberror_struct ndberror = (ndberror_struct)error;
+  auto ndberror = (ndberror_struct)error;
   ndberror_update(&ndberror);
   error = NdbError(ndberror);
 }
@@ -1050,7 +1044,7 @@ int NdbInterpretedCode::finalise() {
 
         assert(info.type == Label);
 
-        Uint32 currOffset = Uint32(ip - firstInstruction);
+        auto currOffset = Uint32(ip - firstInstruction);
         Uint32 labelOffset = info.firstInstrPos;
 
         if (labelOffset >= m_instructions_length) {

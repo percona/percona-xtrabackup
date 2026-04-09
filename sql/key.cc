@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,8 +26,8 @@
 
 #include "sql/key.h"  // key_rec_cmp
 
-#include <string.h>
 #include <algorithm>
+#include <cstring>
 
 #include "my_bitmap.h"
 #include "my_byteorder.h"
@@ -140,7 +140,7 @@ void key_copy(uchar *to_key, const uchar *from_record, const KEY *key_info,
   if (key_length == 0) key_length = key_info->key_length;
   for (key_part = key_info->key_part; (int)key_length > 0; key_part++) {
     if (key_part->null_bit) {
-      bool key_is_null =
+      bool const key_is_null =
           from_record[key_part->null_offset] & key_part->null_bit;
       *to_key++ = (key_is_null ? 1 : 0);
       key_length--;
@@ -162,6 +162,349 @@ void key_copy(uchar *to_key, const uchar *from_record, const KEY *key_info,
     to_key += length;
     key_length -= length;
   }
+}
+
+/**
+  Check if any key part in a composite key is NULL in a record.
+
+  Used by foreign key checks implementing MATCH SIMPLE semantics: if any column
+  in the composite key is NULL, the referential check is considered satisfied
+  and no parent/child lookup is performed.
+
+  @param[in] from_record  Record buffer holding the row being inspected.
+  @param[in] key_info_f   KEY descriptor for the (composite) key in from_record.
+
+  @retval true   At least one key part is NULL in from_record.
+  @retval false  No key parts are NULL in from_record.
+*/
+bool is_any_key_fld_value_null(const uchar *from_record,
+                               const KEY *key_info_f) {
+  KEY_PART_INFO *key_part_f = key_info_f->key_part;
+  for (uint i = 0; i < key_info_f->user_defined_key_parts; i++, key_part_f++) {
+    if (from_record[key_part_f->null_offset] & key_part_f->null_bit)
+      return true;
+  }
+  return false;
+}
+
+/**
+  Copy a fixed length source key part into a variable length target buffer.
+
+  This writes a variable length key image (2-byte length + payload), applying
+  collation-specific trimming rules where required to match FK semantics.
+
+  @param[in,out] to_key             Destination pointer in the key buffer
+  @param[in,out] actual_key_length  Number of bytes written so far
+  @param[in]     from_record        Record buffer holding the source row
+  @param[in]     from               Source KEY part (fixed length)
+  @param[in]     to                 Target KEY part (variable length)
+  @param[in]     is_child           True if building key for child-side checks
+
+  @retval false  success
+  @retval true   source cannot fit target representation
+*/
+static inline bool copy_fixed_to_var(uchar *&to_key, uint &actual_key_length,
+                                     const uchar *from_record,
+                                     const KEY_PART_INFO *from,
+                                     const KEY_PART_INFO *to, bool is_child) {
+  if (from->field->charset() != to->field->charset()) return true;
+
+  auto key_type_f = from->field->key_type();
+  uint length = from->length;
+  if (key_type_f == HA_KEYTYPE_TEXT) {
+    const CHARSET_INFO *cs = from->field->charset();
+    if (cs->pad_attribute == NO_PAD) {
+      if (is_child) {
+        // Child Insert/Update FK check: InnoDB matches without trailing spaces
+        length = cs->cset->lengthsp(
+            cs, (const char *)(from_record + from->offset), from->length);
+      } else {
+        // Parent cascade check: InnoDB matches with spaces;
+        // Enforce character-boundary logic to avoid breaking multibyte chars.
+        const char *start_data = (const char *)(from_record + from->offset);
+        size_t num_codepoints =
+            cs->cset->numchars(cs, start_data, start_data + from->length);
+        length = num_codepoints / cs->mbmaxlen;
+      }
+    }
+  }
+  // do not exceed target variable part byte capacity limit
+  if (length > to->length) return true;
+
+  // Write length prefix followed by search key part value
+  int2store(to_key, length);
+  to_key += HA_KEY_BLOB_LENGTH;
+  actual_key_length += HA_KEY_BLOB_LENGTH;
+  memcpy(to_key, from_record + from->offset, length);
+  return false;
+}
+
+/**
+  Copy a variable length source key part into a fixed length target.
+
+  Applies trimming/padding rules depending on key type. For BINARY, shorter
+  source values are not padded and considered mismatches.
+
+  @param[in,out] to_key             Destination pointer in the key buffer
+  @param[in,out] actual_key_length  Number of bytes written so far
+  @param[in]     from_record        Record buffer holding the source row
+  @param[in]     from               Source KEY part (variable length)
+  @param[in]     to                 Target KEY part (fixed length)
+
+  @retval false  success
+  @retval true   source cannot fit target representation
+*/
+static inline bool copy_var_to_fixed(uchar *&to_key, uint &actual_key_length,
+                                     const uchar *from_record,
+                                     const KEY_PART_INFO *from,
+                                     const KEY_PART_INFO *to) {
+  uint length = 0;
+  if (from->field->get_length_bytes() == HA_KEY_BLOB_LENGTH) {
+    length = uint2korr(from_record + from->offset);
+  } else {
+    length = *(from_record + from->offset);
+  }
+  const char *start = (const char *)from_record + from->offset +
+                      from->field->get_length_bytes();
+  const CHARSET_INFO *cs = to->field->charset();
+  auto key_type = to->field->key_type();
+
+  // If destination is TEXT with PAD_SPACE, trim trailing spaces
+  if ((key_type == HA_KEYTYPE_TEXT) && (cs->pad_attribute == PAD_SPACE)) {
+    length = cs->cset->lengthsp(cs, start, length);
+  }
+
+  if (length > to->length) return true;
+  if (length < to->length) {
+    if (key_type == HA_KEYTYPE_BINARY) {
+      // BINARY fixed target must match exactly; no space padding here
+      return true;
+    } else if (key_type == HA_KEYTYPE_TEXT) {
+      uint min_len = to->field->char_length();
+      // With NO PAD collation, FK between char to varchar with varying
+      // length fails in InnoDB FK handling, exhibit similar behavior
+      // for SQL FK handling
+      if (cs->pad_attribute == NO_PAD && length != min_len) return true;
+
+      // For PAD_SPACE or general text, don't exceed target char capacity
+      size_t num_codepoints = cs->cset->numchars(cs, start, start + length);
+      if (num_codepoints > min_len) return true;
+    }
+  }
+
+  memcpy(to_key, start, length);
+  // pad remaining space with pad_char
+  if (length < to->length) {
+    cs->cset->fill(cs, (char *)to_key + length, to->length - length,
+                   cs->pad_char);
+  }
+
+  to_key += to->length;
+  actual_key_length += to->length;
+  return false;
+}
+
+/**
+  Copy a variable length source key part into a variable length target.
+
+  For same-charset, delegates to Field_varstring::get_key_image() to produce a
+  canonical HA key image. For differing charsets on the parent side, returns -2
+  to indicate unsupported conversion in FK context. For differing charsets on
+  the child side, uses the source field's key image (InnoDB-compatible).
+
+  @param[in,out] to_key             Destination pointer in the key buffer
+  @param[in,out] actual_key_length  Accumulated number of bytes written so far
+  @param[in]     from_record        Record buffer holding the source row
+  @param[in]     from               Source KEY part (var-length)
+  @param[in]     to                 Target KEY part (var-length)
+  @param[in]     is_child           True if building key for child-side checks
+
+  @retval copy_status::ok               Success
+  @retval copy_status::validation_error Validation/conversion failure
+  @retval copy_status:charset_mismatch  Parent-side differing charsets not
+  supported
+*/
+static inline copy_status copy_var_to_var(
+    uchar *&to_key, uint &actual_key_length, const uchar *from_record,
+    const KEY_PART_INFO *from, const KEY_PART_INFO *to, bool is_child) {
+  const CHARSET_INFO *from_cs = from->field->charset();
+  const CHARSET_INFO *to_cs = to->field->charset();
+  const char *start = (const char *)from_record + from->offset +
+                      from->field->get_length_bytes();
+
+  // Check that the "from" field value is not too long to ever match
+  // a corresponding "to" field
+  uint actual_field_len = 0;
+  if (from->field->get_length_bytes() == HA_KEY_BLOB_LENGTH)
+    actual_field_len = uint2korr(from_record + from->offset);
+  else
+    actual_field_len = *(from_record + from->offset);
+
+  // Source must be representable within target's character capacity
+  size_t num_codepoints =
+      from_cs->cset->numchars(from_cs, start, start + actual_field_len);
+  if (num_codepoints > to->field->char_length()) {
+    return copy_status::validation_error;
+  }
+  uint length = 0;
+  if (to_cs == from_cs) {
+    length = to->length;
+    int2store(to_key, actual_field_len);
+    to_key += HA_KEY_BLOB_LENGTH;
+    memcpy(to_key, start, length);
+  } else {
+    if (!is_child) {
+      // Parent cascade with charset mismatch: prevent unsafe behavior in
+      // InnoDB FK handling.
+      return copy_status::charset_mismatch;
+    }
+    // Child-side: InnoDB-compatible behavior -  neglect conversion and
+    // use the source field's length
+    length = actual_field_len;
+    int2store(to_key, length);
+    to_key += HA_KEY_BLOB_LENGTH;
+    memcpy(to_key, start, length);
+  }
+  to_key += length;
+  actual_key_length += HA_KEY_BLOB_LENGTH + length;
+  return copy_status::ok;
+}
+
+/**
+  Copy a fixed length source key part into a fixed length target.
+
+  For same-charset, trims/pads to target length as needed. For differing
+  charsets, converts up to the number of code points that fit in the target,
+  then pads remaining bytes.
+
+  @param[in,out] to_key             Destination pointer in the key buffer
+  @param[in]     to_key_len         Length of the destination buffer
+  @param[in,out] actual_key_length  Accumulated number of bytes written so far
+  @param[in]     from_record        Record buffer holding the source row
+  @param[in]     from               Source KEY part (fixed-width)
+  @param[in]     to                 Target KEY part (fixed-width)
+
+  @retval false   success
+  @retval true    validation failure
+*/
+static inline bool copy_fixed_to_fixed(uchar *&to_key, size_t to_key_len,
+                                       uint &actual_key_length,
+                                       const uchar *from_record,
+                                       const KEY_PART_INFO *from,
+                                       const KEY_PART_INFO *to) {
+  const CHARSET_INFO *from_cs = from->field->charset();
+  const CHARSET_INFO *to_cs = to->field->charset();
+  const char *start = (const char *)from_record + from->offset;
+  if (from_cs == to_cs) {
+    uint length = from->length;
+    if (from->length > to->length) {
+      // Trim trailing spaces and enforce character capacity
+      size_t stripped_from_length =
+          from_cs->cset->lengthsp(from_cs, start, from->length);
+      size_t num_codepoints =
+          from_cs->cset->numchars(from_cs, start, start + stripped_from_length);
+      if (num_codepoints > to->field->char_length()) return true;
+      length = stripped_from_length;
+    }
+
+    memcpy(to_key, start, length);
+    // Pad remaining space if necessary
+    int fill_length = to->length - length;
+    if (fill_length > 0) {
+      from_cs->cset->fill(from_cs, (char *)to_key + length, fill_length,
+                          from_cs->pad_char);
+    }
+    to_key += to->length;
+    actual_key_length += to->length;
+    return false;
+  }
+
+  const uint length = to->length;
+  const char *well_formed_error_pos;
+  const char *cannot_convert_error_pos;
+  const char *from_end_pos;
+
+  // Convert the string in the "from" field's character set into a string in
+  // the "to" field's character set and store in to_key
+  size_t num_bytes_in_key = well_formed_copy_nchars(
+      to_cs, (char *)to_key, to_key_len, from_cs, start, from->length,
+      to->field->field_length / to_cs->mbmaxlen, &well_formed_error_pos,
+      &cannot_convert_error_pos, &from_end_pos);
+
+  if (well_formed_error_pos != nullptr || cannot_convert_error_pos != nullptr)
+    return true;
+
+  // Pad remaining bytes to reach target fixed byte length
+  if (num_bytes_in_key < length) {
+    size_t pad_length =
+        min<size_t>(to_key_len - num_bytes_in_key, length - num_bytes_in_key);
+    to_cs->cset->fill(to_cs, (char *)to_key + num_bytes_in_key, pad_length,
+                      to_cs->pad_char);
+  }
+  to_key += length;
+  actual_key_length += length;
+  return false;
+}
+
+copy_status key_copy_fk(uchar *to_key, size_t to_key_len,
+                        const uchar *from_record, const KEY *key_info_f,
+                        const KEY *key_info_t, bool is_child,
+                        int *out_key_len) {
+  uint actual_key_length = 0;
+  uint key_parts = min(key_info_f->user_defined_key_parts,
+                       key_info_t->user_defined_key_parts);
+
+  for (uint i = 0; i < key_parts; i++) {
+    KEY_PART_INFO *key_part_f = &key_info_f->key_part[i];
+    KEY_PART_INFO *key_part_t = &key_info_t->key_part[i];
+
+    // Write NULL marker prefix byte in search key buffer to_key as required
+    // by target based on source nullability.
+    // Rules:
+    //  - If both parts have null_bit: write source NULL state into to_key.
+    //  - If only target is nullable: write 0 (non-NULL) marker to to_key.
+    //  - If only source is nullable: write nothing (target has no null marker).
+
+    if (key_part_f->null_bit && key_part_t->null_bit) {
+      bool key_is_null =
+          from_record[key_part_f->null_offset] & key_part_f->null_bit;
+      *to_key++ = (key_is_null ? 1 : 0);  // 1 means NULL, 0 means NOT NULL
+      actual_key_length++;
+    } else if (!key_part_f->null_bit && key_part_t->null_bit) {
+      // source is not-nullable (e.g., PK), target expects a nullable marker
+      // byte, so write 0 to denote NOT NULL in search key buffer.
+      *to_key++ = 0;
+      actual_key_length++;
+    }
+
+    auto is_var_len = [](const KEY_PART_INFO *key_part) {
+      return (key_part->key_part_flag & HA_BLOB_PART ||
+              key_part->key_part_flag & HA_VAR_LENGTH_PART);
+    };
+    bool is_from_var_len = is_var_len(key_part_f);
+    bool is_to_var_len = is_var_len(key_part_t);
+
+    int res = 0;
+    if (!is_from_var_len && is_to_var_len) {
+      res = copy_fixed_to_var(to_key, actual_key_length, from_record,
+                              key_part_f, key_part_t, is_child);
+    } else if (is_from_var_len && !is_to_var_len) {
+      res = copy_var_to_fixed(to_key, actual_key_length, from_record,
+                              key_part_f, key_part_t);
+    } else if (is_from_var_len) {
+      assert(is_to_var_len);
+      auto copy_status = copy_var_to_var(to_key, actual_key_length, from_record,
+                                         key_part_f, key_part_t, is_child);
+      if (copy_status != copy_status::ok) return copy_status;
+    } else {
+      assert(!is_from_var_len && !is_to_var_len);
+      res = copy_fixed_to_fixed(to_key, to_key_len, actual_key_length,
+                                from_record, key_part_f, key_part_t);
+    }
+    if (res) return copy_status::validation_error;
+  }
+  if (out_key_len) *out_key_len = static_cast<int>(actual_key_length);
+  return copy_status::ok;
 }
 
 /**
@@ -194,7 +537,7 @@ void key_restore(uchar *to_record, const uchar *from_key, const KEY *key_info,
       key_length--;
     }
     if (key_part->type == HA_KEYTYPE_BIT) {
-      Field_bit *field = (Field_bit *)(key_part->field);
+      auto *field = (Field_bit *)(key_part->field);
       if (field->bit_len) {
         const uchar bits =
             *(from_key + key_part->length - field->pack_length_in_rec() - 1);
@@ -215,7 +558,7 @@ void key_restore(uchar *to_record, const uchar *from_key, const KEY *key_info,
         have to ignore GCov compaining.
       */
       const uint blob_length = uint2korr(from_key);
-      Field_blob *field = (Field_blob *)key_part->field;
+      auto *field = (Field_blob *)key_part->field;
       from_key += HA_KEY_BLOB_LENGTH;
       key_length -= HA_KEY_BLOB_LENGTH;
       field->set_ptr_offset(to_record - field->table->record[0],
@@ -293,7 +636,8 @@ bool key_cmp_if_same(const TABLE *table, const uchar *key, uint idx,
           (HA_BLOB_PART | HA_VAR_LENGTH_PART | HA_BIT_PART))) {
       // We can use memcpy.
       const uint length = min((uint)(key_end - key), store_length);
-      if (memcmp(key, table->record[0] + key_part->offset, length)) return true;
+      if (memcmp(key, table->record[0] + key_part->offset, length) != 0)
+        return true;
     } else {
       // Use the regular comparison function.
       if (key_part->field->key_cmp(key, key_part->length)) return true;
@@ -433,6 +777,8 @@ bool is_key_used(TABLE *table, uint idx, const MY_BITMAP *fields) {
   @param key_part		Key part handler
   @param key			Key to compare to value in table->record[0]
   @param key_length		length of 'key'
+  @param[in] is_reverse_multi_valued_index_scan  True in case of reverse
+  multi-valued index scan.
 
   @details
     The function compares given key and key in record buffer, part by part,
@@ -451,7 +797,8 @@ bool is_key_used(TABLE *table, uint idx, const MY_BITMAP *fields) {
   @note: keep this function and key_cmp2() in sync
 */
 
-int key_cmp(KEY_PART_INFO *key_part, const uchar *key, uint key_length) {
+int key_cmp(KEY_PART_INFO *key_part, const uchar *key, uint key_length,
+            bool is_reverse_multi_valued_index_scan) {
   uint store_length;
 
   for (const uchar *end = key + key_length; key < end;
@@ -468,14 +815,18 @@ int key_cmp(KEY_PART_INFO *key_part, const uchar *key, uint key_length) {
         if (!field_is_null) return res;  // Found key is > range
         /* null -- exact match, go to next key part */
         continue;
-      } else if (field_is_null)
-        return -res;  // NULL is less than any value
-      key++;          // Skip null byte
+      }
+      if (field_is_null) return -res;  // NULL is less than any value
+      key++;                           // Skip null byte
       store_length--;
     }
     if ((cmp = key_part->field->key_cmp(key, key_part->length)) < 0)
       return -res;
-    if (cmp > 0) return res;
+    if (cmp > 0) {
+      if (is_reverse_multi_valued_index_scan && key_part->field->is_array())
+        return -res;
+      return res;
+    }
   }
   return 0;  // Keys are equal
 }
@@ -527,16 +878,16 @@ int key_cmp2(KEY_PART_INFO *key_part, const uchar *key1, uint key1_length,
               key2's null flag is '1' (since *key1 != *key2) then return 1;
         */
         return (*key1) ? -res : res;
-      } else {
-        /*
-          If null indicating flag in key1 and key2 are same and
-            > if it is '1' , both are NULLs and both are same, continue with
-              next key in key_part.
-            > if it is '0', then go ahead and compare the content using
-              field->key_cmp.
-        */
-        if (*key1) continue;
       }
+      /*
+      If null indicating flag in key1 and key2 are same and
+        > if it is '1' , both are NULLs and both are same, continue with
+          next key in key_part.
+        > if it is '0', then go ahead and compare the content using
+          field->key_cmp.
+      */
+      if (*key1) continue;
+
       /*
         Increment the key1 and key2 pointers to point them to the actual
         key values

@@ -28,8 +28,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "common.h"
 #include "datasink.h"
 #include "ds_istream.h"
+#include "extra/xxhash/my_xxhash.h"
 #include "msg.h"
-#include "my_xxhash.h"
 #include "thread_pool.h"
 
 #define LZ4F_MAGICNUMBER 0x184d2204U

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -59,7 +59,7 @@ TEST_F(GcsXcomInputQueueTest, FailureToPushToBackend) {
   Gcs_xcom_input_queue_impl<MockGcsMpscQueue> queue;
   bool const pushed = queue.push(new_app_data());
   ASSERT_EQ(pushed, false);
-  Gcs_xcom_input_queue_impl<MockGcsMpscQueue>::future_reply f =
+  Gcs_xcom_input_queue_impl<MockGcsMpscQueue>::future_reply const f =
       queue.push_and_get_reply(new_app_data());
   ASSERT_EQ(f.valid(), false);
 }
@@ -158,7 +158,7 @@ static void test_concurrent_producers_sequential_consumer(
   while (payload != nullptr) {
     app_data_ptr a = ::xcom_input_request_extract_app_data(payload);
     consumed.push_back(a);
-    auto previous_payload = payload;
+    auto *previous_payload = payload;
     payload = ::xcom_input_request_extract_next(previous_payload);
     ::xcom_input_request_reply(previous_payload, nullptr);
     ::xcom_input_request_free(previous_payload);
@@ -206,7 +206,7 @@ static void test_concurrent_producers_concurrent_consumer(
     while (payload != nullptr) {
       app_data_ptr a = ::xcom_input_request_extract_app_data(payload);
       consumed.push_back(a);
-      auto previous_payload = payload;
+      auto *previous_payload = payload;
       payload = ::xcom_input_request_extract_next(previous_payload);
       ::xcom_input_request_reply(previous_payload, nullptr);
       ::xcom_input_request_free(previous_payload);

@@ -529,6 +529,8 @@ create table t1 (id integer auto_increment unique,imagem LONGBLOB not null defau
 Warnings:
 Warning	1101	BLOB, TEXT, GEOMETRY or JSON column 'imagem' can't have a default value
 insert into t1 (id) values (1);
+Warnings:
+Warning	1364	Field 'imagem' doesn't have a default value
 select
 charset(load_file('../../std_data/words.dat')),
 collation(load_file('../../std_data/words.dat')),
@@ -820,6 +822,8 @@ t1	CREATE TABLE `t1` (
   `a` text
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 insert into t1 values (default);
+Warnings:
+Warning	1364	Field 'a' doesn't have a default value
 select * from t1;
 a
 NULL

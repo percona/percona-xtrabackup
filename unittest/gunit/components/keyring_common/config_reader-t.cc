@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,8 +34,8 @@ class KeyringCommonConfigReader_test : public ::testing::Test {};
 using keyring_common::config::Config_reader;
 
 TEST_F(KeyringCommonConfigReader_test, Config_reader_test) {
-  std::string config_file_name("config_file");
-  std::string config_data =
+  std::string const config_file_name("config_file");
+  std::string const config_data =
       "{"
       "\"config_1\": \"This is a string config.\","
       "\"config_2\": false,"

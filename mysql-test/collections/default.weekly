@@ -46,8 +46,9 @@ perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-time
 
 #################SECTION2: RUN SUITES THAT ARE NOT PART OF DEFAULT##########
 # Run the suites that are not part of the default - funcs_2, stress, jp, nist
-# engines
+# engines, component_connection_control
 perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=audit_null-big  --vardir=var-audit_null-big --suite=audit_null --no-skip
+perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=component_connection_control-big  --vardir=var-component_connection_control-big --suite=component_connection_control --no-skip
 perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=funcs1-big  --vardir=var-funcs1-big --suite=funcs_1 --no-skip
 perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=funcs2-big  --vardir=var-funcs2-big --suite=funcs_2 --no-skip
 perl mysql-test-run.pl --debug-server --force --timer --big-test    --comment=stress --vardir=var-stress  --suite=stress --no-skip
@@ -66,15 +67,11 @@ perl mysql-test-run.pl --timer --debug-server --force --parallel=6 --comment=gro
 # Add runs of rpl and binlog test suites with additional
 # MTR or mysqld options in this section
 
-# Additional mode for rpl. Database Multi-Threaded Applier and Single-Threaded Applier
-perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60  --comment=rpl-mta-db --vardir=var-rpl-mta-db  --mysqld=--replica-parallel-workers=4 --mysqld=--replica-parallel-type=database --mysqld=--replica-preserve-commit-order=0 --do-suite=rpl --no-skip
-perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60  --comment=rpl-sta --vardir=var-rpl-sta --mysqld=--replica-parallel-workers=0 --do-suite=rpl --no-skip
+# Additional GTID coverage (rpl suite with gtid_mode=OFF)
+perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60   --comment=rpl-without-gtid --vardir=var-rpl-without-gtid --suite=rpl --mysqld=--enforce-gtid-consistency=off --mysqld=--gtid-mode=off --no-skip
 
-# Additional GTID coverage (rpl suite with gtid_mode=ON)
-perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60   --comment=rpl-gtid --vardir=var-rpl-gtid --suite=rpl --mysqld=--enforce-gtid-consistency --mysqld=--gtid-mode=on --no-skip
-
-# Additional GTID coverage (binlog suite with gtid_mode=ON)
-perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60   --comment=binlog_with_gtid --vardir=var-binlog_gtid --suite=binlog --mysqld=--enforce-gtid-consistency --mysqld=--gtid-mode=on --no-skip
+# Additional GTID coverage (binlog suite with gtid_mode=OFF)
+perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60   --comment=binlog_without_gtid --vardir=var-binlog_without_gtid --suite=binlog --mysqld=--enforce-gtid-consistency=off --mysqld=--gtid-mode=off --no-skip
 
 ################END OF SECTION3(EXTENDED RPL/BINLOG)  ####################
 
@@ -151,11 +148,11 @@ perl mysql-test-run.pl --timer  --force  --comment=innodb_sync_debug --testcase-
 #
 ####SECTION 7 RPL/BINLOG EXTENDED-WEEKLY#############
 #
-# Rpl suite with MTA replica-parallel-type=logical_clock and replica-preserve-commit-order=0
-perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60  --comment=rpl-mta-lc-norpco --vardir=var-rpl-mta-lc-norpco  --mysqld=--replica-parallel-workers=4 --mysqld=--replica-parallel-type=logical_clock --mysqld=--replica-preserve-commit-order=0 --do-suite=rpl --no-skip
+# Rpl suite with MTA and replica-preserve-commit-order=0
+perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60  --comment=rpl-mta-norpco --vardir=var-rpl-mta-norpco  --mysqld=--replica-parallel-workers=4 --mysqld=--replica-preserve-commit-order=0 --do-suite=rpl --no-skip
 
-# RPL suite + MTS + LOGICAL_CLOCK with binlog compression turned ON.
-perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60 --comment=replication_compression_mts_lc_ws --vardir=var-rpl-comp-mts-lc-ws --mysqld=--replica_parallel_type=LOGICAL_CLOCK --mysqld=--replica_parallel_workers=4 --mysqld=--binlog-format=ROW --mysqld=--binlog-transaction-compression=ON --do-suite=rpl --no-skip
+# RPL suite + MTS binlog compression turned ON.
+perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60 --comment=rpl-mta-comp --vardir=var-rpl-mta-comp --mysqld=--replica_parallel_workers=4 --mysqld=--binlog-format=ROW --mysqld=--binlog-transaction-compression=ON --do-suite=rpl --no-skip
 
 # binlog suite with compression turned on
 perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-timeout=60 --comment=binlog_compression --vardir=var-binlog-comp --mysqld=--binlog-transaction-compression=ON --suite=binlog,binlog_nogtid,binlog_gtid,i_binlog --mysqld=--binlog-format=ROW --no-skip
@@ -164,7 +161,7 @@ perl mysql-test-run.pl --debug-server --timer --force --big-test --testcase-time
 perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60 --comment=rpl_priv_checks_user --vardir=var-rpl_priv_checks_user  --do-suite=rpl  --defaults-extra-file=include/rpl_priv_checks_user_no_dynamic_grants.cnf --no-skip
 
 # rpl and rpl_gtid suites with GTID_ONLY=1 and MTA
-perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60 --comment=rpl_gtid_only_mta --vardir=var-rpl_gtid_only_mta  --suite=rpl,rpl_gtid  --defaults-extra-file=include/rpl_gtid_only_on.cnf --mysqld=--binlog-format=ROW  --mysqld=--replica-parallel-workers=4 --mysqld=--enforce-gtid-consistency --mysqld=--gtid-mode=on --no-skip
+perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60 --comment=rpl_gtid_only_mta --vardir=var-rpl_gtid_only_mta  --suite=rpl,rpl_gtid  --defaults-extra-file=include/rpl_gtid_only_on.cnf --mysqld=--binlog-format=ROW  --mysqld=--replica-parallel-workers=4 --no-skip
 
 ###########END OF SECTION 7 RPL/BINLOG EXTENDED-WEEKLY#############
 
@@ -175,14 +172,8 @@ perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-time
 #GR with loose-group_replication_gtid_assignment_block_size=1
 perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_gtid_assignment_block_size_1 --vardir=var-gr_gtid_assignment_block_size_1 --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_gtid_assignment_block_size=1
 
-# GR with single-threaded applier (replica-parallel-workers=0)
-perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_sta --vardir=var-gr_sta --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--replica-parallel-workers=0
-
-#GR with group_replication_ssl_mode = REQUIRED
-perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_ssl_mode_required --vardir=var-gr_ssl_mode_required --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_ssl_mode=REQUIRED
-
-#GR with group_replication_ssl_mode = REQUIRED and MySQL Stack
-perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_ssl_mode_required_mysql --vardir=var-gr_ssl_mode_required_mysql --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_ssl_mode=REQUIRED --mysqld=--loose-group_replication_communication_stack=MySQL
+#GR with MySQL Stack
+perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_mysql --vardir=var-group_replication_mysql --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_communication_stack=MySQL
 
 #GR with MySQL Stack and Single Leader
 perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_mysql_single_leader --vardir=var-gr_mysql_single_leader --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_communication_stack=MySQL --mysqld=--loose-group_replication_paxos_single_leader=ON
@@ -196,10 +187,6 @@ perl mysql-test-run.pl --timer --debug-server --force --parallel=6 --comment=gro
 
 #GR with MySQL Stack on debug build
 perl mysql-test-run.pl --timer --debug-server --force --parallel=6 --comment=group_replication_mysql-debug --vardir=var-group_replication_mysql-debug --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_communication_stack=MySQL
-
-#GR with STA on debug build
-perl mysql-test-run.pl --timer --debug-server --force --parallel=6 --comment=group_replication-debug_sta --vardir=var-gr-debug_sta --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--replica-parallel-workers=0
-perl mysql-test-run.pl --timer --debug-server --force --parallel=6 --comment=group_replication_ssl_mode_required-debug --vardir=var-gr_ssl_mode_required-debug --suite=group_replication  --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--loose-group_replication_ssl_mode=REQUIRED
 
 # GR with binlog compression turned on
 perl mysql-test-run.pl --debug-server --timer --force --parallel=6 --comment=group_replication_compression --vardir=var-gr-binlog-compression --suite=group_replication --big-test --testcase-timeout=60 --suite-timeout=360 --mysqld=--binlog-transaction-compression=ON

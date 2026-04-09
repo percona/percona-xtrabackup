@@ -1,3 +1,4 @@
+RESET BINARY LOGS AND GTIDS;
 CREATE UNDO TABLESPACE undo_003 ADD DATAFILE 'undo_003.ibu';
 CREATE UNDO TABLESPACE undo_004 ADD DATAFILE 'undo_004.ibu';
 SELECT NAME, SPACE_TYPE, STATE
@@ -198,7 +199,7 @@ commit;
 select STATE, ERROR_NO, length(BINLOG_FILE) > 0, length(GTID_EXECUTED) > 0,
 (BINLOG_POSITION > 0) from performance_schema.clone_status;
 STATE	ERROR_NO	length(BINLOG_FILE) > 0	length(GTID_EXECUTED) > 0	(BINLOG_POSITION > 0)
-Completed	0	1	0	1
+Completed	0	1	1	1
 call execute_dml(3, 0, 1, 1, 1, 0);
 call execute_dml(0, 0, 2000, 2000, 10, 0);
 SHOW CREATE TABLE t1;
@@ -309,7 +310,7 @@ ID	STAGE	STATE
 select STATE, ERROR_NO, length(BINLOG_FILE) > 0, length(GTID_EXECUTED) > 0,
 (BINLOG_POSITION > 0) from performance_schema.clone_status;
 STATE	ERROR_NO	length(BINLOG_FILE) > 0	length(GTID_EXECUTED) > 0	(BINLOG_POSITION > 0)
-Completed	0	1	0	1
+Completed	0	1	1	1
 call execute_dml(3, 0, 1, 1, 1, 0);
 call execute_dml(0, 0, 100, 100, 10, 0);
 SHOW CREATE TABLE t1;

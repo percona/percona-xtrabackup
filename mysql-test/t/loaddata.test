@@ -29,6 +29,8 @@ load data infile '../../std_data/loaddata1.dat' count 10 into table t1;
 # Source other than file is not allowed without BULK
 --error ER_WRONG_USAGE
 load data url '../../std_data/loaddata1.dat' into table t1;
+--error ER_WRONG_USAGE
+load data uri '../../std_data/loaddata1.dat' into table t1;
 
 load data infile '../../std_data/loaddata1.dat' ignore into table t1 fields terminated by ',' LINES STARTING BY ',' (b,c,d);
 SELECT * from t1;

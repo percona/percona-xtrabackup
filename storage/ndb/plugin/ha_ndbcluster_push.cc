@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -2491,6 +2491,9 @@ int ndb_pushed_builder_ctx::build_query() {
     NdbQueryOptions options;
     const NdbQueryOperand *op_key[ndb_pushed_join::MAX_KEY_PART + 1];
     if (table->get_index_no() >= 0) {
+      if (unlikely(handler->m_index[table->get_index_no()].type ==
+                   UNDEFINED_INDEX))
+        return fail_index_offline(handler->table, table->get_index_no());
       const int error = build_key(table, op_key, &options);
       if (unlikely(error)) return error;
     }

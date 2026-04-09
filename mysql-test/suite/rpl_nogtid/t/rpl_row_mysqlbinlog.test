@@ -144,7 +144,7 @@ connection master;
 --disable_query_log ONCE
 select "--- Test 1 Load from Dump binlog file --" as "";
 
---exec $MYSQL -e "source $MYSQLTEST_VARDIR/tmp/master.sql"
+--exec $MYSQL --commands -e "source $MYSQLTEST_VARDIR/tmp/master.sql"
 
 --disable_query_log ONCE
 select "--- Test 1 Check Load Results --" as "";
@@ -224,7 +224,7 @@ connection master;
 
 # We should be clean at this point, now we will run in the file from above.
 
---exec $MYSQL -e "source $MYSQLTEST_VARDIR/tmp/remote.sql"
+--exec $MYSQL --commands -e "source $MYSQLTEST_VARDIR/tmp/remote.sql"
 
 # Lets Check the tables on the Master
 

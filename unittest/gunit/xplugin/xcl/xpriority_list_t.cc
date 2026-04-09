@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -32,8 +32,7 @@
 
 #include "plugin/x/client/xpriority_list.h"
 
-namespace xcl {
-namespace test {
+namespace xcl::test {
 
 using ::testing::ContainerEq;
 using ::testing::Test;
@@ -255,5 +254,4 @@ TEST_F(Xcl_xpriority_list_tests, remove_holds_elements_in_sequence) {
   assert_plist_remove_element_and_verify("remove_eight", "c1", {});
 }
 
-}  // namespace test
-}  // namespace xcl
+}  // namespace xcl::test

@@ -1,5 +1,8 @@
 --echo # Bug#29998457 MYSQLDUMP GENERATES INVALID INSERT STATEMENTS WITH VARBINARY COLUMNS
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE = '';
 let $mysqldumpfile = $MYSQLTEST_VARDIR/tmp/bug29998457.sql;
 CREATE DATABASE test_bug29998457;
@@ -42,3 +45,5 @@ SELECT * FROM test_bug29998457.t1;
 --remove_file $mysqldumpfile
 DROP DATABASE test_bug29998457;
 SET SQL_MODE = @OLD_SQL_MODE;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

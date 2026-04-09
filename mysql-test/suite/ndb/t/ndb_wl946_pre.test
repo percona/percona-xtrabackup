@@ -77,6 +77,9 @@ drop table t1;
 # table metadata is not supported
 --disable_query_log
 call mtr.add_suppression("Table upgrade required");
+call mtr.add_suppression("Incorrect information in file: .*t1.frm");
+call mtr.add_suppression("Error in reading file .*t1.frm");
+call mtr.add_suppression("Error in creating TABLE_SHARE from t1.frm file");
 --enable_query_log
 --error ER_NO_SUCH_TABLE
 select count(*), sum(crc32(concat(a,b,c,d,e,f))) from t1;

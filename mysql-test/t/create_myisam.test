@@ -1,6 +1,9 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 #
 # Bug #14155: Maximum value of MAX_ROWS handled incorrectly on 64-bit
 # platforms
@@ -36,3 +39,5 @@ ALTER TABLE t3 ADD INDEX(c1);
 
 SET sql_mode = '';
 DROP TABLE t3;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

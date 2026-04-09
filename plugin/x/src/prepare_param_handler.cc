@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -147,8 +147,9 @@ ngs::Error_code Prepare_param_handler::prepare_parameters(
                         "' and of type '%s' is not supported for binding"
                         " to prepared statement",
                         ph.m_id,
-                        arg.has_scalar() ? arg.scalar().GetTypeName().c_str()
-                                         : arg.GetTypeName().c_str());
+                        arg.has_scalar()
+                            ? std::string(arg.scalar().GetTypeName()).c_str()
+                            : std::string(arg.GetTypeName()).c_str());
     }
   }
   return ngs::Success();

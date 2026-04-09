@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,10 +23,10 @@
 
 #include "my_config.h"
 
-#include <errno.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <stddef.h>
+#include <cerrno>
+#include <cstddef>
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
@@ -80,7 +80,7 @@ class MysysMyPWriteTest : public ::testing::Test {
 // Test of normal case: write OK
 TEST_F(MysysMyPWriteTest, MyPWriteOK) {
   uchar buf[4096];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockwrite(_, _, 4096, _))
       .Times(1)
       .WillOnce(Return(4096));
@@ -92,7 +92,7 @@ TEST_F(MysysMyPWriteTest, MyPWriteOK) {
 // Test of normal case: write OK with MY_NABP
 TEST_F(MysysMyPWriteTest, MyPWriteOKNABP) {
   uchar buf[4096];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockwrite(_, _, 4096, _))
       .Times(1)
       .WillOnce(Return(4096));
@@ -104,7 +104,7 @@ TEST_F(MysysMyPWriteTest, MyPWriteOKNABP) {
 // Test of disk full: write not OK
 TEST_F(MysysMyPWriteTest, MyPWriteFail) {
   uchar buf[4096];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockwrite(_, _, 4096, _))
       .Times(1)
       .WillOnce(SetErrnoAndReturn(ENOSPC, -1));
@@ -116,7 +116,7 @@ TEST_F(MysysMyPWriteTest, MyPWriteFail) {
 // Test of disk full: write not OK, with MY_NABP
 TEST_F(MysysMyPWriteTest, MyPWriteFailNABP) {
   uchar buf[4096];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockwrite(_, _, 4096, _))
       .Times(1)
       .WillOnce(SetErrnoAndReturn(ENOSPC, -1));
@@ -128,7 +128,7 @@ TEST_F(MysysMyPWriteTest, MyPWriteFailNABP) {
 // Test of disk full after partial write.
 TEST_F(MysysMyPWriteTest, MyPWrite8192) {
   uchar buf[8192];
-  InSequence s;
+  InSequence const s;
   // Expect call to write 8192 bytes, return 4096.
   EXPECT_CALL(*mockfs, mockwrite(_, _, 8192, _))
       .Times(1)
@@ -145,7 +145,7 @@ TEST_F(MysysMyPWriteTest, MyPWrite8192) {
 // Test of disk full after partial write.
 TEST_F(MysysMyPWriteTest, MyPWrite8192NABP) {
   uchar buf[8192];
-  InSequence s;
+  InSequence const s;
   // Expect call to write 8192 bytes, return 4096.
   EXPECT_CALL(*mockfs, mockwrite(_, _, 8192, _))
       .Times(1)
@@ -162,7 +162,7 @@ TEST_F(MysysMyPWriteTest, MyPWrite8192NABP) {
 // Test of partial write, followed by interrupt, followed by successful write.
 TEST_F(MysysMyPWriteTest, MyPWrite8192Interrupt) {
   uchar buf[8192];
-  InSequence s;
+  InSequence const s;
   // Expect call to write 8192 bytes, return 4096.
   EXPECT_CALL(*mockfs, mockwrite(_, _, 8192, _))
       .Times(1)
@@ -183,7 +183,7 @@ TEST_F(MysysMyPWriteTest, MyPWrite8192Interrupt) {
 // Test of partial write, followed by interrupt, followed by successful write.
 TEST_F(MysysMyPWriteTest, MyPWrite8192InterruptNABP) {
   uchar buf[8192];
-  InSequence s;
+  InSequence const s;
   // Expect call to write 8192 bytes, return 4096.
   EXPECT_CALL(*mockfs, mockwrite(_, _, 8192, _))
       .Times(1)
@@ -204,7 +204,7 @@ TEST_F(MysysMyPWriteTest, MyPWrite8192InterruptNABP) {
 // Test of partial write, followed successful write.
 TEST_F(MysysMyPWriteTest, MyPWrite400) {
   uchar buf[400];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockwrite(_, _, 400, _)).Times(1).WillOnce(Return(200));
   EXPECT_CALL(*mockfs, mockwrite(_, _, 200, _)).Times(1).WillOnce(Return(200));
 
@@ -215,7 +215,7 @@ TEST_F(MysysMyPWriteTest, MyPWrite400) {
 // Test of partial write, followed successful write.
 TEST_F(MysysMyPWriteTest, MyPWrite400NABP) {
   uchar buf[400];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockwrite(_, _, 400, _)).Times(1).WillOnce(Return(200));
   EXPECT_CALL(*mockfs, mockwrite(_, _, 200, _)).Times(1).WillOnce(Return(200));
 
@@ -226,7 +226,7 @@ TEST_F(MysysMyPWriteTest, MyPWrite400NABP) {
 // Test of partial write, followed by failure, followed successful write.
 TEST_F(MysysMyPWriteTest, MyPWrite300) {
   uchar buf[300];
-  InSequence s;
+  InSequence const s;
   EXPECT_CALL(*mockfs, mockwrite(_, _, 300, _)).Times(1).WillOnce(Return(100));
   EXPECT_CALL(*mockfs, mockwrite(_, _, 200, _))
       .Times(1)

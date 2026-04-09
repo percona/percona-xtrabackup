@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -82,39 +82,39 @@ static void do_insert(Ndb &ndb) {
   const NdbDictionary::Dictionary *dict = ndb.getDictionary();
   const NdbDictionary::Table *table = dict->getTable("api_array_using_adapter");
 
-  if (table == NULL) {
+  if (table == nullptr) {
     APIERROR(dict->getNdbError());
   }
 
   // Get a column object for each CHAR/VARCHAR/BINARY/VARBINARY column
   // to insert into.
   const NdbDictionary::Column *column2 = table->getColumn("ATTR2");
-  if (column2 == NULL) {
+  if (column2 == nullptr) {
     APIERROR(dict->getNdbError());
   }
 
   const NdbDictionary::Column *column3 = table->getColumn("ATTR3");
-  if (column3 == NULL) {
+  if (column3 == nullptr) {
     APIERROR(dict->getNdbError());
   }
 
   const NdbDictionary::Column *column4 = table->getColumn("ATTR4");
-  if (column4 == NULL) {
+  if (column4 == nullptr) {
     APIERROR(dict->getNdbError());
   }
 
   const NdbDictionary::Column *column5 = table->getColumn("ATTR5");
-  if (column5 == NULL) {
+  if (column5 == nullptr) {
     APIERROR(dict->getNdbError());
   }
 
   const NdbDictionary::Column *column6 = table->getColumn("ATTR6");
-  if (column6 == NULL) {
+  if (column6 == nullptr) {
     APIERROR(dict->getNdbError());
   }
 
   const NdbDictionary::Column *column7 = table->getColumn("ATTR7");
-  if (column7 == NULL) {
+  if (column7 == nullptr) {
     APIERROR(dict->getNdbError());
   }
 
@@ -130,14 +130,14 @@ static void do_insert(Ndb &ndb) {
   }
 
   NdbTransaction *transaction = ndb.startTransaction();
-  if (transaction == NULL) APIERROR(ndb.getNdbError());
+  if (transaction == nullptr) APIERROR(ndb.getNdbError());
 
   // Create 21 operations and put a reference to them in a vector to
   // be able to find failing operations.
   vector<NdbOperation *> operations;
   for (int i = 0; i <= 20; i++) {
     NdbOperation *operation = transaction->getNdbOperation(table);
-    if (operation == NULL) APIERROR(transaction->getNdbError());
+    if (operation == nullptr) APIERROR(transaction->getNdbError());
     operation->insertTuple();
 
     operation->equal("ATTR1", i);
@@ -214,13 +214,13 @@ static void do_read(Ndb &ndb) {
   const NdbDictionary::Dictionary *dict = ndb.getDictionary();
   const NdbDictionary::Table *table = dict->getTable("api_array_using_adapter");
 
-  if (table == NULL) APIERROR(dict->getNdbError());
+  if (table == nullptr) APIERROR(dict->getNdbError());
 
   NdbTransaction *transaction = ndb.startTransaction();
-  if (transaction == NULL) APIERROR(ndb.getNdbError());
+  if (transaction == nullptr) APIERROR(ndb.getNdbError());
 
   NdbOperation *operation = transaction->getNdbOperation(table);
-  if (operation == NULL) APIERROR(transaction->getNdbError());
+  if (operation == nullptr) APIERROR(transaction->getNdbError());
 
   operation->readTuple(NdbOperation::LM_Read);
   operation->equal("ATTR1", 17);
@@ -230,8 +230,8 @@ static void do_read(Ndb &ndb) {
   attr.reserve(column_count);
   attr.push_back(nullptr);
   for (int i = 1; i < column_count; i++) {
-    attr.push_back(operation->getValue(i, NULL));
-    if (attr[i] == NULL) APIERROR(transaction->getNdbError());
+    attr.push_back(operation->getValue(i, nullptr));
+    if (attr[i] == nullptr) APIERROR(transaction->getNdbError());
   }
 
   if (transaction->execute(NdbTransaction::Commit) == -1)
@@ -244,7 +244,7 @@ static void do_read(Ndb &ndb) {
   /* print the fetched data */
   cout << "Row ID : 17\n";
   for (int i = 1; i < column_count; i++) {
-    if (attr[i] != NULL) {
+    if (attr[i] != nullptr) {
       NdbDictionary::Column::Type column_type = attr[i]->getType();
       cout << "Column id: " << i
            << ", name: " << attr[i]->getColumn()->getName()

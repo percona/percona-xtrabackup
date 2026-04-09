@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,7 @@
 */
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #include "mysql/service_thd_alloc.h"
@@ -32,7 +33,6 @@
 #include "sql/sql_list.h"
 
 #include "debugger/Ndbinfo.hpp"
-#include "util/BaseString.hpp"
 
 static constexpr const char *opt_table_prefix{"ndb$"};
 
@@ -751,7 +751,9 @@ static struct lookup {
         "single_user_mode enum('locked','read_only','read_write') NOT NULL, "
         "force_var_part INT UNSIGNED NOT NULL, "
         "GCI_bits INT UNSIGNED NOT NULL, "
-        "author_bits INT UNSIGNED NOT NULL",
+        "author_bits INT UNSIGNED NOT NULL, "
+        "extra_metadata_version enum('FRM', 'SDI'), "
+        "extra_metadata LONGBLOB",
     },
     {"ndbinfo", "events",
      "event_id INT UNSIGNED NOT NULL PRIMARY KEY, "
@@ -863,39 +865,45 @@ static struct obsolete_object obsolete_tables[] = {
 
 static Plugin_table *ndbinfo_define_table(const Ndbinfo::Table &table) {
   THD *thd = current_thd;  // For string allocation
-  BaseString table_name, table_sql, table_options;
+
+  const std::string table_name = std::string(opt_table_prefix) + table.m.name;
+
+  std::string table_sql;
   const char *separator = "";
-
-  table_name.assfmt("%s%s", opt_table_prefix, table.m.name);
-
   for (int j = 0; j < table.m.ncols; j++) {
     const Ndbinfo::Column &col = table.col[j];
 
-    table_sql.appfmt("%s", separator);
+    table_sql += separator;
     separator = ",";
 
-    table_sql.appfmt("`%s` ", col.name);
+    table_sql += "`";
+    table_sql += col.name;
+    table_sql += "` ";
 
     switch (col.coltype) {
       case Ndbinfo::Number:
-        table_sql.appfmt("INT UNSIGNED");
+        table_sql += "INT UNSIGNED";
         break;
       case Ndbinfo::Number64:
-        table_sql.appfmt("BIGINT UNSIGNED");
+        table_sql += "BIGINT UNSIGNED";
         break;
       case Ndbinfo::String:
-        table_sql.appfmt("VARCHAR(512)");
+        table_sql += "VARCHAR(512)";
         break;
       default:
         abort();
     }
 
-    if (col.comment[0] != '\0')
-      table_sql.appfmt(" COMMENT \"%s\"", col.comment);
+    if (col.comment[0] != '\0') {
+      table_sql += " COMMENT \"";
+      table_sql += col.comment;
+      table_sql += "\"";
+    }
   }
 
-  table_options.appfmt(" COMMENT=\"%s\" ENGINE=NDBINFO CHARACTER SET latin1",
-                       table.m.comment);
+  const std::string table_options = " COMMENT=\"" +
+                                    std::string(table.m.comment) +
+                                    "\" ENGINE=NDBINFO CHARACTER SET latin1";
 
   return new Plugin_table("ndbinfo", thd_strdup(thd, table_name.c_str()),
                           thd_strdup(thd, table_sql.c_str()),
@@ -927,7 +935,7 @@ bool ndbinfo_define_dd_tables(List<const Plugin_table> *plugin_tables) {
                 return (strcmp(x->m.name, y->m.name) < 0);
               });
 
-    for (auto *table : tables) {
+    for (const auto *table : tables) {
       plugin_tables->push_back(ndbinfo_define_table(*table));
     }
   }

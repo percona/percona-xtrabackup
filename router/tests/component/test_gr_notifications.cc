@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -229,6 +229,7 @@ class GrNotificationsTest : public RouterComponentTest {
   void send_globals(const uint16_t http_port) {
     JsonAllocator allocator;
     JsonValue json_doc(rapidjson::kObjectType);
+    json_doc.AddMember("gr_node_host", "127.0.0.1", allocator);
     if (gr_id_) {
       json_doc.AddMember("gr_id", *gr_id_, allocator);
     }
@@ -686,13 +687,11 @@ TEST_P(GrNotificationMysqlxWaitTimeoutUnsupportedTest,
   int md_queries_count = wait_for_md_queries(2, cluster_http_port);
   ASSERT_GT(md_queries_count, 1);
 
-  // there should be no WARNINGs nor ERRORs in the log file
+  // there should be no ERRORs in the log file
   const std::string log_content = router.get_logfile_content();
 
   EXPECT_THAT(log_content,
-              ::testing::Not(::testing::AnyOf(
-                  ::testing::HasSubstr(" metadata_cache ERROR "),
-                  ::testing::HasSubstr(" metadata_cache WARNING "))));
+              ::testing::Not(::testing::HasSubstr(" metadata_cache ERROR ")));
 }
 
 INSTANTIATE_TEST_SUITE_P(GrNotificationMysqlxWaitTimeoutUnsupported,

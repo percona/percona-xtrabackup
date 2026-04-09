@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -61,6 +61,12 @@ struct Error_handler {
 DEFINE_BOOL_METHOD(mysql_command_services_imp::init, (MYSQL_H * mysql_h)) {
   bool ret = false;
   try {
+    THD *thd = current_thd;
+    /* Not supposed to work recursively */
+    if (thd != nullptr && thd->is_a_srv_session()) {
+      my_error(ER_CANT_RUN_COMMAND_SERVICES_RECURSIVELY, MYF(0));
+      return true;
+    }
     Mysql_handle *mysql_handle = (Mysql_handle *)my_malloc(
         key_memory_query_service, sizeof(Mysql_handle),
         MYF(MY_WME | MY_ZEROFILL));
@@ -161,81 +167,6 @@ DEFINE_BOOL_METHOD(mysql_command_services_imp::reset, (MYSQL_H mysql_h)) {
 }
 
 /**
-  Release services.
-
-  @param[in] consumer_refs A valid mysql_command_consumer_refs object.
-  @param[in] mcs_ext       A valid mysql_command_service_extn object.
-  @param[in] srv_registry  Registry service pointer.
-*/
-static void release_services(mysql_command_consumer_refs *consumer_refs,
-                             mysql_command_service_extn *mcs_ext,
-                             mysql_service_registry_t *srv_registry) {
-  if (consumer_refs) {
-    if (consumer_refs->factory_srv) {
-      /* This service call is used to free the memory, the allocation
-         was happened through factory_srv->start() service api. */
-      consumer_refs->factory_srv->end(
-          reinterpret_cast<SRV_CTX_H>(mcs_ext->consumer_srv_data));
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(mysql_text_consumer_factory_v1) *>(
-              consumer_refs->factory_srv)));
-    }
-    if (consumer_refs->metadata_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(mysql_text_consumer_metadata_v1) *>(
-              consumer_refs->metadata_srv)));
-    if (consumer_refs->row_factory_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(
-              mysql_text_consumer_row_factory_v1) *>(
-              consumer_refs->row_factory_srv)));
-    if (consumer_refs->error_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(mysql_text_consumer_error_v1) *>(
-              consumer_refs->error_srv)));
-    if (consumer_refs->get_null_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(mysql_text_consumer_get_null_v1) *>(
-              consumer_refs->get_null_srv)));
-    if (consumer_refs->get_integer_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(
-              mysql_text_consumer_get_integer_v1) *>(
-              consumer_refs->get_integer_srv)));
-    if (consumer_refs->get_longlong_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(
-              mysql_text_consumer_get_longlong_v1) *>(
-              consumer_refs->get_longlong_srv)));
-    if (consumer_refs->get_decimal_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(
-              mysql_text_consumer_get_decimal_v1) *>(
-              consumer_refs->get_decimal_srv)));
-    if (consumer_refs->get_double_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(
-              mysql_text_consumer_get_double_v1) *>(
-              consumer_refs->get_double_srv)));
-    if (consumer_refs->get_date_time_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(
-              mysql_text_consumer_get_date_time_v1) *>(
-              consumer_refs->get_date_time_srv)));
-    if (consumer_refs->get_string_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(
-              mysql_text_consumer_get_string_v1) *>(
-              consumer_refs->get_string_srv)));
-    if (consumer_refs->client_capabilities_srv)
-      srv_registry->release(reinterpret_cast<my_h_service>(
-          const_cast<SERVICE_TYPE_NO_CONST(
-              mysql_text_consumer_client_capabilities_v1) *>(
-              consumer_refs->client_capabilities_srv)));
-  }
-}
-
-/**
   Calls mysql_close api to closes a server connection.
 
   @param[in] mysql_h A valid mysql object.
@@ -248,28 +179,6 @@ DEFINE_BOOL_METHOD(mysql_command_services_imp::close, (MYSQL_H mysql_h)) {
     Mysql_handle *m_handle = reinterpret_cast<Mysql_handle *>(mysql_h);
     if (m_handle != nullptr) {
       MYSQL *mysql = m_handle->mysql;
-      auto mcs_ext = MYSQL_COMMAND_SERVICE_EXTN(mysql);
-      mysql_command_consumer_refs *consumer_refs =
-          (mysql_command_consumer_refs *)(mcs_ext->command_consumer_services);
-      bool no_lock_registry = false;
-      if (get(mysql_h, MYSQL_NO_LOCK_REGISTRY, &no_lock_registry)) return true;
-      no_lock_registry
-          ? release_services(consumer_refs, mcs_ext, srv_registry_no_lock)
-          : release_services(consumer_refs, mcs_ext, srv_registry);
-      delete consumer_refs;
-      consumer_refs = nullptr;
-
-      if (mcs_ext->is_thd_associated)
-        delete (mcs_ext->session_svc);
-      else {
-        srv_session_detach(mcs_ext->session_svc);
-        srv_session_close(mcs_ext->session_svc);
-      }
-      if (mysql->field_alloc) {
-        mysql->field_alloc->Clear();
-        my_free(mysql->field_alloc);
-        mysql->field_alloc = nullptr;
-      }
       mysql_close(mysql);
       my_free(mysql_h);
     }
@@ -1098,9 +1007,18 @@ DEFINE_BOOL_METHOD(mysql_command_services_imp::field_count,
 DEFINE_BOOL_METHOD(mysql_command_services_imp::sql_errno,
                    (MYSQL_H mysql_h, unsigned int *err_no)) {
   try {
-    Mysql_handle *m_handle = reinterpret_cast<Mysql_handle *>(mysql_h);
-    if (m_handle == nullptr) return true;
-    *err_no = mysql_errno(m_handle->mysql);
+    auto *m_handle = reinterpret_cast<Mysql_handle *>(mysql_h);
+    if (m_handle == nullptr || err_no == nullptr) return true;
+
+    auto *mcs_ext = MYSQL_COMMAND_SERVICE_EXTN(m_handle->mysql);
+    if (mcs_ext != nullptr && mcs_ext->consumer_srv_data != nullptr) {
+      auto *dom_ctx = reinterpret_cast<Dom_ctx *>(mcs_ext->consumer_srv_data);
+      *err_no = static_cast<unsigned int>(dom_ctx->m_sql_errno);
+    } else {
+      // If Dom_ctx is null or not populated (i.e. not using Command Services)
+      // fallback to mysql_errno()
+      *err_no = mysql_errno(m_handle->mysql);
+    }
   } catch (...) {
     mysql_components_handle_std_exception(__func__);
     return true;

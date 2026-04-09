@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -130,6 +130,23 @@ class Configuration {
 #ifdef ERROR_INSERT
   Uint32 getMixologyLevel() const;
   void setMixologyLevel(Uint32);
+
+  enum {
+    SHF_NONE = 0,
+    /* Delays during crash handling */
+    /* Extra specifies delay in seconds */
+    SHF_DELAY_AFTER_WRITING_ERRORLOG = 1,
+    SHF_DELAY_WHILE_WRITING_ERRORLOG = 2,
+
+    /* Unix signal during crash handling */
+    /* Extra specifies signal number */
+    SHF_UNIX_SIGNAL = 10
+  } ShutdownHandlingFaults;
+
+  Uint32 getShutdownHandlingFault() const;
+  Uint32 getShutdownHandlingFaultExtra() const;
+
+  void setShutdownHandlingFault(Uint32 v, Uint32 extra = 0);
 #endif
 
   // Cluster configuration
@@ -143,7 +160,6 @@ class Configuration {
   ConfigRetriever *get_config_retriever() { return m_config_retriever; }
   NdbMgmHandle *get_mgm_handle_ptr();
 
-  class LogLevel *m_logLevel;
   ndb_mgm_configuration_iterator *getClusterConfigIterator() const;
 
   ndb_mgm_configuration *getClusterConfig() const {
@@ -171,6 +187,8 @@ class Configuration {
   Uint32 _timeBetweenWatchDogCheckInitial;
 #ifdef ERROR_INSERT
   Uint32 _mixologyLevel;
+  Uint32 _shutdownHandlingFault;
+  Uint32 _shutdownHandlingFaultExtra;
 #endif
 
   Vector<struct ThreadInfo> threadInfo;

@@ -32,6 +32,10 @@ disabled_storage_engines
 disabled_storage_engines
 explain_format
 explain_format
+external_table_secondary_storage_engine
+external_table_secondary_storage_engine
+external_table_storage_engine
+external_table_storage_engine
 generated_random_password_length
 generated_random_password_length
 group_replication_consistency
@@ -48,6 +52,8 @@ innodb_log_spin_cpu_pct_hwm
 innodb_log_spin_cpu_pct_hwm
 innodb_log_wait_for_flush_spin_hwm
 innodb_log_wait_for_flush_spin_hwm
+innodb_native_foreign_keys
+innodb_native_foreign_keys
 keyring_operations
 keyring_operations
 log_replica_updates
@@ -91,8 +97,6 @@ replica_max_allowed_packet
 replica_max_allowed_packet
 replica_net_timeout
 replica_net_timeout
-replica_parallel_type
-replica_parallel_type
 replica_parallel_workers
 replica_parallel_workers
 replica_pending_jobs_size_max
@@ -144,8 +148,6 @@ slave_max_allowed_packet
 slave_max_allowed_packet
 slave_net_timeout
 slave_net_timeout
-slave_parallel_type
-slave_parallel_type
 slave_parallel_workers
 slave_parallel_workers
 slave_pending_jobs_size_max
@@ -169,8 +171,6 @@ sync_master_info
 sync_master_info
 temptable_max_mmap
 temptable_max_mmap
-temptable_use_mmap
-temptable_use_mmap
 terminology_use_previous
 terminology_use_previous
 tls_certificates_enforced_validation

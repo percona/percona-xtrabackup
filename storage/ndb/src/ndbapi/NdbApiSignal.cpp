@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -89,7 +89,9 @@ NdbApiSignal::NdbApiSignal(Ndb *ndb) {
 /**
  * Copy constructor
  */
-NdbApiSignal::NdbApiSignal(const NdbApiSignal &src) { copyFrom(&src); }
+NdbApiSignal::NdbApiSignal(const NdbApiSignal &src) : SignalHeader(src) {
+  copyFrom(&src);
+}
 /******************************************************************************
 ~NdbApiSignal();
 
@@ -253,6 +255,7 @@ void NdbApiSignal::copyFrom(const NdbApiSignal *src) {
   theReceiversBlockNumber = src->theReceiversBlockNumber;
   theSendersBlockRef = src->theSendersBlockRef;
   theLength = src->theLength;
+  theSendersSignalId = src->theSendersSignalId;
   theTrace = src->theTrace;
   m_noOfSections = src->m_noOfSections;
   m_fragmentInfo = src->m_fragmentInfo;

@@ -14,7 +14,7 @@ include/rpl/assert_binlog_events.inc
 include/rpl/save_binlog_file_position.inc
 # Case 2 : Execute DROP ROLE for non-existing users
 DROP ROLE roleZ, roleX;
-ERROR HY000: Operation DROP ROLE failed for 'roleX'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'roleX'@'%' (User account does not exist)
 # Must show entry for roleZ
 SELECT user FROM mysql.user WHERE user LIKE 'role%';
 user

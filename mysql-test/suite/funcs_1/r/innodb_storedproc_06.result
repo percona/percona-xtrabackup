@@ -89,6 +89,8 @@ create user 'user_1'@'localhost';
 grant all on db_storedproc_1.* to 'user_1'@'localhost';
 revoke create routine on db_storedproc_1.* from 'user_1'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP PROCEDURE IF EXISTS sp1;
 	
 user_1@localhost	db_storedproc_1
@@ -139,6 +141,8 @@ Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Pl
 create user 'user_1'@'localhost';
 grant create routine on db_storedproc_1.* to 'user_1'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP PROCEDURE IF EXISTS db_storedproc_1.sp3;
 DROP FUNCTION IF EXISTS db_storedproc_1.fn1;
 	
@@ -173,6 +177,8 @@ CREATE USER 'user_1'@'localhost';
 grant update on db_storedproc_1.t6 to 'user_1'@'localhost';
 grant execute on db_storedproc_1.* to 'user_1'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 USE db_storedproc_1;
 DROP PROCEDURE IF EXISTS sp4;
 CREATE PROCEDURE sp4(v1 char(20))
@@ -224,6 +230,8 @@ grant create routine on db_storedproc_1.* to 'user_1'@'localhost';
 grant SELECT on db_storedproc_1.* to 'user_2'@'localhost';
 grant execute on db_storedproc_1.* to 'user_2'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_1@localhost	db_storedproc_1
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
@@ -255,6 +263,8 @@ CALL sp5_sel();
 ERROR 42000: SELECT command denied to user 'user_1'@'localhost' for table 't3165'
 grant insert on db_storedproc_1.* to 'user_1'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_2@localhost	db_storedproc_1
 CALL sp5_s_i();
@@ -268,6 +278,8 @@ CALL sp5_sel();
 ERROR 42000: SELECT command denied to user 'user_1'@'localhost' for table 't3165'
 grant SELECT on db_storedproc_1.* to 'user_1'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_2@localhost	db_storedproc_1
 CALL sp5_s_i();
@@ -285,6 +297,8 @@ inserted	from sp5_ins	2000-10-00
 root@localhost	db_storedproc_1
 REVOKE INSERT on db_storedproc_1.* from 'user_1'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_2@localhost	db_storedproc_1
 CALL sp5_s_i();
@@ -306,6 +320,8 @@ inserted	from sp5_ins	2000-10-00
 root@localhost	db_storedproc_1
 REVOKE SELECT on db_storedproc_1.* from 'user_1'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_2@localhost	db_storedproc_1
 CALL sp5_s_i();
@@ -342,6 +358,8 @@ GRANT CREATE ROUTINE ON db_storedproc_1.* TO 'user_1'@'localhost';
 GRANT SELECT  ON db_storedproc_1.* TO 'user_2'@'localhost';
 GRANT EXECUTE ON db_storedproc_1.* TO 'user_2'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_1@localhost	db_storedproc_1
 CREATE PROCEDURE sp3166_s_i () SQL SECURITY INVOKER
@@ -375,6 +393,8 @@ c1
 inserted outside SP
 GRANT INSERT  ON db_storedproc_1.* TO 'user_2'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_2@localhost	db_storedproc_1
 CALL sp3166_s_i();
@@ -395,6 +415,8 @@ inserted from sp3166_s_i
 inserted from sp3166_ins
 REVOKE SELECT ON db_storedproc_1.* FROM 'user_2'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_2@localhost	db_storedproc_1
 CALL sp3166_s_i();
@@ -412,6 +434,8 @@ inserted from sp3166_ins
 root@localhost	db_storedproc_1
 REVOKE EXECUTE on db_storedproc_1.* FROM 'user_2'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 	
 user_2@localhost	db_storedproc_1
 CALL sp3166_s_i();

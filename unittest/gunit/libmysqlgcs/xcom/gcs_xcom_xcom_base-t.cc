@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,12 +49,12 @@ class XcomBase : public GcsBaseTest {
     auto xcom_network_provider = std::make_shared<Xcom_network_provider>();
     net_manager.add_network_provider(xcom_network_provider);
   }
-  ~XcomBase() { ::deinit_cache(); }
+  ~XcomBase() override { ::deinit_cache(); }
 };
 
 TEST_F(XcomBase, XcomSendClientAppDataUpgradeScenario) {
   app_data a;
-  std::string address("127.0.0.1:12345");
+  std::string const address("127.0.0.1:12345");
 
   char const *names[]{address.c_str()};
   node_address *na = new_node_address(1, names);
@@ -72,7 +72,7 @@ TEST_F(XcomBase, XcomSendClientAppDataUpgradeScenario) {
 
 TEST_F(XcomBase, XcomSendClientAppDataUpgradeScenarioV6) {
   app_data a;
-  std::string address("[::1]:12345");
+  std::string const address("[::1]:12345");
 
   char const *names[]{address.c_str()};
   node_address *na = new_node_address(1, names);
@@ -91,7 +91,7 @@ TEST_F(XcomBase, XcomSendClientAppDataUpgradeScenarioV6) {
 
 TEST_F(XcomBase, XcomSendClientAppDataUpgradeScenarioMalformed) {
   app_data a;
-  std::string address("::1]:12345");
+  std::string const address("::1]:12345");
 
   char const *names[]{address.c_str()};
   node_address *na = new_node_address(1, names);
@@ -109,7 +109,7 @@ TEST_F(XcomBase, XcomSendClientAppDataUpgradeScenarioMalformed) {
 }
 
 TEST_F(XcomBase, XcomNewClientEligibleDowngradeScenario) {
-  std::string address("127.0.0.1:12345");
+  std::string const address("127.0.0.1:12345");
 
   char const *names[]{address.c_str()};
   node_address *na = new_node_address(1, names);
@@ -117,8 +117,8 @@ TEST_F(XcomBase, XcomNewClientEligibleDowngradeScenario) {
   site_def *sd = new_site_def();
   init_site_def(1, na, sd);
 
-  xcom_proto incoming = x_1_4;
-  int result = is_new_node_eligible_for_ipv6(incoming, sd);
+  xcom_proto const incoming = x_1_4;
+  int const result = is_new_node_eligible_for_ipv6(incoming, sd);
 
   ASSERT_EQ(result, 0);
 
@@ -127,7 +127,7 @@ TEST_F(XcomBase, XcomNewClientEligibleDowngradeScenario) {
 }
 
 TEST_F(XcomBase, XcomNewClientEligibleDowngradeScenarioFail) {
-  std::string address("[::1]:12345");
+  std::string const address("[::1]:12345");
 
   char const *names[]{address.c_str()};
   node_address *na = new_node_address(1, names);
@@ -135,8 +135,8 @@ TEST_F(XcomBase, XcomNewClientEligibleDowngradeScenarioFail) {
   site_def *sd = new_site_def();
   init_site_def(1, na, sd);
 
-  xcom_proto incoming = x_1_4;
-  int result = is_new_node_eligible_for_ipv6(incoming, sd);
+  xcom_proto const incoming = x_1_4;
+  int const result = is_new_node_eligible_for_ipv6(incoming, sd);
 
   ASSERT_EQ(result, 1);
 
@@ -145,15 +145,15 @@ TEST_F(XcomBase, XcomNewClientEligibleDowngradeScenarioFail) {
 }
 
 TEST_F(XcomBase, XcomNewClientEligibleDowngradeScenarioNullSiteDef) {
-  xcom_proto incoming = x_1_4;
-  int result = is_new_node_eligible_for_ipv6(incoming, nullptr);
+  xcom_proto const incoming = x_1_4;
+  int const result = is_new_node_eligible_for_ipv6(incoming, nullptr);
 
   ASSERT_EQ(result, 0);
 }
 
 TEST_F(XcomBase, XcomNewClientEligibleDowngradeScenarioVersionSame) {
-  xcom_proto incoming = my_xcom_version;
-  int result = is_new_node_eligible_for_ipv6(incoming, nullptr);
+  xcom_proto const incoming = my_xcom_version;
+  int const result = is_new_node_eligible_for_ipv6(incoming, nullptr);
 
   ASSERT_EQ(result, 0);
 }
@@ -580,7 +580,7 @@ TEST_F(XcomBase, PaxosLearnSameValue) {
       handle_simple_ack_prepare(s1_config, s1_paxos, s0_ack_prepare_noop_s1));
 
   pax_msg *s1_ack_prepare_noop_s1 = clone_pax_msg(s1_ack_prepare_noop);
-  bool can_send_accept =
+  bool const can_send_accept =
       handle_simple_ack_prepare(s1_config, s1_paxos, s1_ack_prepare_noop_s1);
   ASSERT_TRUE(can_send_accept);
   pax_msg *s1_accept_noop = s1_paxos->proposer.msg;

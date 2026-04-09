@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,12 +32,12 @@
 #include <utility>
 #include <vector>
 
+#include "extra/xxhash/my_xxhash.h"  // IWYU pragma: keep
 #include "lex_string.h"
 #include "my_base.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_murmur3.h"  // murmur3_32
-#include "my_xxhash.h"   // IWYU pragma: keep
 #include "mysql/strings/m_ctype.h"
 #include "mysql_com.h"
 #include "sql-common/json_binary.h"
@@ -657,6 +657,60 @@ static void debug_check_for_write_sets(
              (hash_list[0] == 16097759999475440183ULL &&
               hash_list[1] == 1438169577983365775ULL &&
               hash_list[2] == 312264863968578629ULL)););
+
+  DBUG_EXECUTE_IF(
+      "PKE_assert_single_primary_key_generated_update_fk_sql",
+      assert(key_list_to_hash.size() == 1);
+      assert(key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t2" HASH_STRING_SEPARATOR "250" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t2" HASH_STRING_SEPARATOR "220" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t22" HASH_STRING_SEPARATOR "350" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t22" HASH_STRING_SEPARATOR "320" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t3" HASH_STRING_SEPARATOR "220" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t1" HASH_STRING_SEPARATOR "250" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t1" HASH_STRING_SEPARATOR "220" HASH_STRING_SEPARATOR "2");
+      assert(hash_list.size() == 1);
+      assert(hash_list[0] == 6418948306172450623ULL ||
+             hash_list[0] == 4095169591811485578ULL ||
+             hash_list[0] == 4162043869166089739ULL ||
+             hash_list[0] == 16194266566032125930ULL ||
+             hash_list[0] == 16847741612804908486ULL ||
+             hash_list[0] == 10028646423122624262ULL ||
+             hash_list[0] == 12873958579142614636ULL););
+
+  DBUG_EXECUTE_IF(
+      "PKE_assert_single_primary_key_generated_delete_fk_sql",
+      assert(key_list_to_hash.size() == 1);
+      assert(key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t2" HASH_STRING_SEPARATOR "210" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t22" HASH_STRING_SEPARATOR "310" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t3" HASH_STRING_SEPARATOR "210" HASH_STRING_SEPARATOR "2" ||
+             key_list_to_hash[0] ==
+                 "PRIMARY" HASH_STRING_SEPARATOR "test" HASH_STRING_SEPARATOR
+                 "4t1" HASH_STRING_SEPARATOR "210" HASH_STRING_SEPARATOR "2");
+      assert(hash_list.size() == 1);
+      assert(hash_list[0] == 16338251575733756774ULL ||
+             hash_list[0] == 15162848905666604246ULL ||
+             hash_list[0] == 14748473017617591124ULL ||
+             hash_list[0] == 14338920484889756510ULL););
 }
 #endif
 
@@ -1037,7 +1091,7 @@ bool add_pke(TABLE *table, THD *thd, const uchar *record) {
             if (field->is_null(ptrdiff)) continue;
 
             if (!my_strcasecmp(system_charset_info, field->field_name,
-                               fk[fk_number].column_name[c].str)) {
+                               fk[fk_number].referencing_column_names[c].str)) {
               /*
                 Update the field offset, since we may be operating on
                 table->record[0] or table->record[1] and both have

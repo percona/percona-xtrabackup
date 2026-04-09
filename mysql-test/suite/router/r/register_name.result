@@ -1,0 +1,32 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+
+
+## I. Check how router_name is registered in the metadata
+#
+# 1. verify that default router_name is set to <hostname>:<http_port>
+# 2. verify that name gets updated when custom name is used
+#
+#
+# Registred SERVICE at path: /svc1
+# Registred DB_SCHEMA at path: /svc1/basic_schema
+# Registred DB_OBJECT at path: /svc1/basic_schema/obj
+
+#
+# I.1
+select router_name from mysql_rest_service_metadata.router;
+router_name
+"Name found"
+
+#
+# I.2
+# restart: %PARAMETERS%extra_router_config.cnf
+select router_name from mysql_rest_service_metadata.router;
+router_name
+custom_name
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

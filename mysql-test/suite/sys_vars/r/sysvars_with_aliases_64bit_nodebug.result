@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #### Initialize ####
 #### Run ####
 sysvar:
@@ -5104,3 +5105,4 @@ Warnings:
 Warning	1287	'@@sync_master_info' is deprecated and will be removed in a future release. Please use sync_source_info instead.
 include/assert.inc [Variable sync_master_info should exist in performance_schema.session_variables]
 #### Clean up ####
+include/rpl/set_gtid_mode_on.inc

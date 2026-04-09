@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,7 @@ NdbInfo::NdbInfo(class Ndb_cluster_connection *connection, const char *prefix)
                         m_full_prefix.lastIndexOf(DIR_SEPARATOR[0]) + 1);
 }
 
-bool NdbInfo::init(void) {
+bool NdbInfo::init() {
   if (native_mutex_init(&m_mutex, MY_MUTEX_INIT_FAST)) return false;
   if (!load_hardcoded_tables()) return false;
   if (!NdbInfoScanVirtual::create_virtual_tables(m_virtual_tables))
@@ -53,7 +53,7 @@ bool NdbInfo::init(void) {
   return true;
 }
 
-NdbInfo::~NdbInfo(void) {
+NdbInfo::~NdbInfo() {
   NdbInfoScanVirtual::delete_virtual_tables(m_virtual_tables);
   native_mutex_destroy(&m_mutex);
 }
@@ -69,7 +69,7 @@ BaseString NdbInfo::mysql_table_name(const Table &table) const {
   DBUG_RETURN(mysql_name);
 }
 
-bool NdbInfo::load_hardcoded_tables(void) {
+bool NdbInfo::load_hardcoded_tables() {
   {
     Table tabs("tables", (Uint32)0, 0, true);
     if (!tabs.addColumn(Column("table_id", 0, Column::Number)) ||
@@ -100,7 +100,7 @@ bool NdbInfo::load_hardcoded_tables(void) {
   return true;
 }
 
-bool NdbInfo::addColumn(Uint32 tableId, Column aCol) {
+bool NdbInfo::addColumn(Uint32 tableId, const Column &aCol) {
   // Find the table with correct id
   Table *table = nullptr;
   for (auto &key_and_value : m_tables) {
@@ -113,7 +113,7 @@ bool NdbInfo::addColumn(Uint32 tableId, Column aCol) {
   return true;
 }
 
-bool NdbInfo::load_ndbinfo_tables(void) {
+bool NdbInfo::load_ndbinfo_tables() {
   DBUG_ENTER("load_ndbinfo_tables");
   assert(m_tables_table && m_columns_table);
 
@@ -223,6 +223,9 @@ bool NdbInfo::load_ndbinfo_tables(void) {
             case 3:
               type = Column::Number64;
               break;
+            case 4:
+              type = Column::Blob;
+              break;
             default: {
               DBUG_PRINT("error", ("Unknown columntype: %d", columnType));
               releaseScanOperation(scanOp);
@@ -305,7 +308,7 @@ int NdbInfo::createScanOperation(const Table *table,
     // instead it returns hardcoded values or dynamic information about the
     // cluster which it retrieves using NdbApi functions. Use the special
     // NdbInfoScanVirtual implementation
-    NdbInfoScanVirtual *virtual_scan =
+    auto *virtual_scan =
         new NdbInfoScanVirtual(m_connection, table, table->m_virt);
     if (!virtual_scan) return ERR_OutOfMemory;
 
@@ -325,7 +328,7 @@ int NdbInfo::createScanOperation(const Table *table,
     max_nodes = 1;
   }
 
-  NdbInfoScanNodes *scan_op =
+  auto *scan_op =
       new NdbInfoScanNodes(m_connection, table, max_rows, max_bytes, max_nodes);
   if (!scan_op) return ERR_OutOfMemory;
   // Global id counter, not critical if you get same id on two instances
@@ -349,7 +352,7 @@ void NdbInfo::flush_tables() {
   // Delete all but the hardcoded tables
   for (auto it = m_tables.begin(); it != m_tables.end();) {
     Table *tab = it->second.get();
-    if (!(tab == m_tables_table || tab == m_columns_table))
+    if (tab != m_tables_table && tab != m_columns_table)
       it = m_tables.erase(it);
     else
       ++it;
@@ -484,8 +487,8 @@ const char *NdbInfo::Table::getName() const { return m_name.c_str(); }
 
 Uint32 NdbInfo::Table::getTableId() const { return m_table_id; }
 
-bool NdbInfo::Table::addColumn(const NdbInfo::Column aCol) {
-  NdbInfo::Column *col = new NdbInfo::Column(aCol);
+bool NdbInfo::Table::addColumn(const NdbInfo::Column &aCol) {
+  auto *col = new NdbInfo::Column(aCol);
   if (col == nullptr) {
     errno = ENOMEM;
     return false;
@@ -498,7 +501,7 @@ bool NdbInfo::Table::addColumn(const NdbInfo::Column aCol) {
   return true;
 }
 
-unsigned NdbInfo::Table::columns(void) const { return m_columns.size(); }
+unsigned NdbInfo::Table::columns() const { return m_columns.size(); }
 
 const NdbInfo::Column *NdbInfo::Table::getColumn(
     const unsigned attributeId) const {
@@ -521,7 +524,7 @@ const NdbInfo::Column *NdbInfo::Table::getColumn(const char *name) const {
 
 const VirtualTable *NdbInfo::Table::getVirtualTable() const { return m_virt; }
 
-bool NdbInfo::load_virtual_tables(void) {
+bool NdbInfo::load_virtual_tables() {
   // The virtual tables should already have been created
   assert(m_virtual_tables.size() > 0);
 

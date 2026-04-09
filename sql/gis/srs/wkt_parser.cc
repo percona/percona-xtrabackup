@@ -1,4 +1,4 @@
-// Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "sql/gis/srs/wkt_parser.h"
 
-#include <assert.h>
+#include <cassert>
 #include <cctype>
 
 #include <boost/concept/usage.hpp>
@@ -118,9 +118,7 @@ BOOST_FUSION_ADAPT_STRUCT(
                                  axes)(gis::srs::wkt_parser::Authority,
                                        authority))
 
-namespace gis {
-namespace srs {
-namespace wkt_parser {
+namespace gis::srs::wkt_parser {
 
 /// @cond DOXYGEN_DOESNT_UNDERSTAND_THIS_LINE
 namespace qi = boost::spirit::qi;
@@ -234,9 +232,7 @@ struct Grammar : qi::grammar<Iterator, Coordinate_system(), Skipper> {
   qi::rule<Iterator, Coordinate_system(), Skipper> start;
 };
 
-}  // namespace wkt_parser
-}  // namespace srs
-}  // namespace gis
+}  // namespace gis::srs::wkt_parser
 
 bool gis::srs::wkt_parser::parse_wkt(
     srid_t srid, const char *begin, const char *end,
@@ -253,7 +249,7 @@ bool gis::srs::wkt_parser::parse_wkt(
   delimiter--;
   while (delimiter > begin && std::isspace(*delimiter)) delimiter--;
 
-  wp::Grammar<decltype(delimiter), boost::spirit::ascii::space_type> g(
+  wp::Grammar<decltype(delimiter), boost::spirit::ascii::space_type> const g(
       *delimiter);
 
   try {

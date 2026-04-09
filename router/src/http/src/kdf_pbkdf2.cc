@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -54,7 +54,7 @@ std::vector<uint8_t> Pbkdf2::salt() {
 }
 
 Pbkdf2McfAdaptor Pbkdf2McfAdaptor::from_mcf(const std::string &crypt_data) {
-  if (crypt_data.size() == 0 || crypt_data.at(0) != '$') {
+  if (crypt_data.empty() || crypt_data.at(0) != '$') {
     throw std::invalid_argument("no $ at the start");
   }
   auto algo_begin = crypt_data.begin() + 1;

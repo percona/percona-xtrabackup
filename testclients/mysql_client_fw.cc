@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -676,7 +676,7 @@ static void verify_col_data(const char *table, const char *col,
     fprintf(stdout, "\n *** ERROR: FAILED TO GET THE RESULT ***");
     exit(1);
   }
-  if (strcmp(row[field], exp_data)) {
+  if (strcmp(row[field], exp_data) != 0) {
     fprintf(stdout, "\n obtained: `%s` (expected: `%s`)", row[field], exp_data);
     DIE_UNLESS(false);
   }

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -656,7 +656,6 @@ void buf_read_ibuf_merge_pages(bool sync, const space_id_t *space_ids,
 
 void buf_read_recv_pages(space_id_t space_id, const page_no_t *page_nos,
                          ulint n_stored) {
-  ulint count;
   fil_space_t *space = fil_space_get(space_id);
 
   if (space == nullptr) {
@@ -694,32 +693,9 @@ void buf_read_recv_pages(space_id_t space_id, const page_no_t *page_nos,
   const page_size_t page_size(space->flags);
 
   for (ulint i = 0; i < n_stored; i++) {
-    buf_pool_t *buf_pool;
-    const page_id_t cur_page_id(space_id, page_nos[i]);
-
-    count = 0;
-
-    buf_pool = buf_pool_get(cur_page_id);
-    os_rmb;
-
-    while (buf_pool->n_pend_reads >=
-           recv_n_frames_for_pages_per_pool_instance / 2) {
-      os_aio_simulated_wake_handler_threads();
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-      count++;
-
-      if (!(count % 1000)) {
-        ib::error(ER_IB_MSG_145)
-            << "Waited for " << count / 100 << " seconds for "
-            << buf_pool->n_pend_reads << " pending reads";
-      }
-    }
-
     dberr_t err;
-
     buf_read_page_low(&err, false, IORequest::DO_NOT_WAKE, BUF_READ_ANY_PAGE,
-                      cur_page_id, page_size, true);
+                      {space_id, page_nos[i]}, page_size, true);
   }
 
   os_aio_simulated_wake_handler_threads();

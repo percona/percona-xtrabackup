@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -141,9 +141,6 @@ struct PFS_global_param {
   bool m_consumer_global_instrumentation_enabled;
   bool m_consumer_thread_instrumentation_enabled;
   bool m_consumer_statement_digest_enabled;
-
-  /** True if SHOW PROCESSLIST is enabeld in the performance schema. */
-  bool m_processlist_enabled;
 
   /** Default instrument configuration option. */
   char *m_pfs_instrument;

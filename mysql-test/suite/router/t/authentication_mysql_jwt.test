@@ -1,0 +1,14 @@
+# Verify authentication support per service where user session is identified
+# by JWT token using POST data authentication where credentials are stored
+# in authenitcation header basic.
+#
+# The test assigns "authentication application", to a service and
+# checks if default permissions allow to access all object under
+# the service that require authentication.
+
+--let $test_authentication_method=BASIC
+--let $test_authentication_failure_status=Unauthorized
+--let $test_authentication_failure_extra_ops=--expected-header=WWW-Authenticate=basic
+--let $test_type=jwt
+--let $test_is_get_request=1
+--source ../include/test_authentication_mysql_jwt.inc

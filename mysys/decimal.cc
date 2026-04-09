@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -112,14 +112,17 @@
 
 #include "decimal.h"
 
+#include "my_config.h"
+
 #ifdef HAVE_ALLOCA_H
 #include <alloca.h>
 #endif
-#include <limits.h>
-#include <math.h>
-#include <stdint.h>
-#include <string.h>
 #include <algorithm>
+#include <cassert>
+#include <climits>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <type_traits>
 #include <utility>
 
@@ -367,7 +370,7 @@ static inline int count_leading_zeroes(int i, dec1 val) {
  */
 static inline int count_trailing_zeroes(int i, dec1 val) {
   assert(val >= 0);
-  uint32_t uval = val;
+  uint32_t const uval = val;
 
   int ret = 0;
   switch (i) {
@@ -436,13 +439,13 @@ void max_decimal(int precision, int frac, decimal_t *to) {
 
   to->sign = false;
   if ((intpart = to->intg = (precision - frac))) {
-    int firstdigits = intpart % DIG_PER_DEC1;
+    int const firstdigits = intpart % DIG_PER_DEC1;
     if (firstdigits) *buf++ = powers10[firstdigits] - 1; /* get 9 99 999 ... */
     for (intpart /= DIG_PER_DEC1; intpart; intpart--) *buf++ = DIG_MAX;
   }
 
   if ((to->frac = frac)) {
-    int lastdigits = frac % DIG_PER_DEC1;
+    int const lastdigits = frac % DIG_PER_DEC1;
     for (frac /= DIG_PER_DEC1; frac; frac--) *buf++ = DIG_MAX;
     if (lastdigits) *buf = frac_max[lastdigits - 1];
   }
@@ -702,7 +705,7 @@ static void digits_bounds(const decimal_t *from, int *start_result,
 static void do_mini_left_shift(decimal_t *dec, int shift, int beg, int last) {
   dec1 *from = dec->buf + ROUND_UP(beg + 1) - 1;
   dec1 *end = dec->buf + ROUND_UP(last) - 1;
-  int c_shift = DIG_PER_DEC1 - shift;
+  int const c_shift = DIG_PER_DEC1 - shift;
   assert(from >= dec->buf);
   assert(end < dec->buf + dec->len);
   if (beg % DIG_PER_DEC1 < shift) *(from - 1) = (*from) / powers10[c_shift];
@@ -729,7 +732,7 @@ static void do_mini_left_shift(decimal_t *dec, int shift, int beg, int last) {
 static void do_mini_right_shift(decimal_t *dec, int shift, int beg, int last) {
   dec1 *from = dec->buf + ROUND_UP(last) - 1;
   dec1 *end = dec->buf + ROUND_UP(beg + 1) - 1;
-  int c_shift = DIG_PER_DEC1 - shift;
+  int const c_shift = DIG_PER_DEC1 - shift;
   assert(from < dec->buf + dec->len);
   assert(end >= dec->buf);
   if (DIG_PER_DEC1 - ((last - 1) % DIG_PER_DEC1 + 1) < shift)
@@ -763,7 +766,7 @@ int decimal_shift(decimal_t *dec, int shift) {
   /* index of position after last decimal digit */
   int end;
   /* index of digit position just after point */
-  int point = ROUND_UP(dec->intg) * DIG_PER_DEC1;
+  int const point = ROUND_UP(dec->intg) * DIG_PER_DEC1;
   /* new point position */
   int new_point = point + shift;
   /* length of result and new fraction in big digits*/
@@ -782,12 +785,12 @@ int decimal_shift(decimal_t *dec, int shift) {
   }
 
   /* number of digits in result */
-  int digits_int = std::max(new_point - beg, 0);
+  int const digits_int = std::max(new_point - beg, 0);
   int digits_frac = std::max(end - new_point, 0);
 
   if ((new_len = ROUND_UP(digits_int) +
                  (new_frac_len = ROUND_UP(digits_frac))) > dec->len) {
-    int lack = new_len - dec->len;
+    int const lack = new_len - dec->len;
     int diff;
 
     if (new_frac_len < lack)
@@ -1007,7 +1010,8 @@ int string2decimal(const char *from, decimal_t *to, const char **end) {
   /* Handle exponent */
   if (endp + 1 < end_of_string && (*endp == 'e' || *endp == 'E')) {
     int str_error;
-    longlong exponent = my_strtoll10(endp + 1, &end_of_string, &str_error);
+    longlong const exponent =
+        my_strtoll10(endp + 1, &end_of_string, &str_error);
 
     if (end_of_string != endp + 1) /* If at least one digit */
     {
@@ -1050,7 +1054,7 @@ void widen_fraction(int new_frac, decimal_t *d) {
   const int intg = d->intg;
   const int frac1 = ROUND_UP(frac);
   const int intg1 = ROUND_UP(intg);
-  int new_frac1 = ROUND_UP(new_frac);
+  int const new_frac1 = ROUND_UP(new_frac);
 
   if (new_frac < frac || intg1 + new_frac1 > d->len) {
     assert(false);
@@ -1129,7 +1133,7 @@ static int ull2dec(ulonglong from, decimal_t *to) {
   to->intg = intg1 * DIG_PER_DEC1;
 
   for (buf = to->buf + intg1; intg1; intg1--) {
-    ulonglong y = x / DIG_BASE;
+    ulonglong const y = x / DIG_BASE;
     *--buf = (dec1)(x - y * DIG_BASE);
     x = y;
   }
@@ -1159,7 +1163,7 @@ int decimal2ulonglong(const decimal_t *from, ulonglong *to) {
   }
 
   for (intg = from->intg; intg > 0; intg -= DIG_PER_DEC1) {
-    ulonglong y = x;
+    ulonglong const y = x;
     x = x * DIG_BASE + *buf++;
     if (unlikely(y > ((ulonglong)ULLONG_MAX / DIG_BASE) || x < y)) {
       *to = ULLONG_MAX;
@@ -1220,8 +1224,8 @@ int decimal2longlong(const decimal_t *from, longlong *to) {
 #define LLDIV_MAX 1000000000000000000LL
 
 int decimal2lldiv_t(const decimal_t *from, lldiv_t *to) {
-  int int_part = ROUND_UP(from->intg);
-  int frac_part = ROUND_UP(from->frac);
+  int const int_part = ROUND_UP(from->intg);
+  int const frac_part = ROUND_UP(from->frac);
   if (int_part > 2) {
     to->rem = 0;
     to->quot = from->sign ? LLDIV_MIN : LLDIV_MAX;
@@ -1246,7 +1250,8 @@ int double2lldiv_t(double nr, lldiv_t *lld) {
     lld->quot = LLDIV_MAX;
     lld->rem = 0;
     return E_DEC_OVERFLOW;
-  } else if (nr < LLDIV_MIN) {
+  }
+  if (nr < LLDIV_MIN) {
     lld->quot = LLDIV_MIN;
     lld->rem = 0;
     return E_DEC_OVERFLOW;
@@ -1398,8 +1403,8 @@ int decimal2bin(const decimal_t *from, uchar *to, int precision, int frac) {
 
   /* intg1x part */
   if (intg1x) {
-    int i = dig2bytes[intg1x];
-    dec1 x = mod_by_pow10(*buf1++, intg1x) ^ mask;
+    int const i = dig2bytes[intg1x];
+    dec1 const x = mod_by_pow10(*buf1++, intg1x) ^ mask;
     switch (i) {
       case 1:
         mi_int1store(to, x);
@@ -1421,7 +1426,7 @@ int decimal2bin(const decimal_t *from, uchar *to, int precision, int frac) {
 
   /* intg1+frac1 part */
   for (stop1 = buf1 + intg1 + frac1; buf1 < stop1; to += sizeof(dec1)) {
-    dec1 x = *buf1++ ^ mask;
+    dec1 const x = *buf1++ ^ mask;
     assert(sizeof(dec1) == 4);
     mi_int4store(to, x);
   }
@@ -1491,10 +1496,10 @@ int bin2decimal(const uchar *from, decimal_t *to, int precision, int scale,
       frac1 = frac0 + (frac0x > 0);
   dec1 *buf = to->buf, mask = (*from & 0x80) ? 0 : -1;
   const uchar *stop = nullptr;
-  int bin_size = decimal_bin_size_inline(precision, scale);
+  int const bin_size = decimal_bin_size_inline(precision, scale);
 
   sanity(to);
-  uchar *d_copy = static_cast<uchar *>(alloca(bin_size));
+  auto *d_copy = static_cast<uchar *>(alloca(bin_size));
   memcpy(d_copy, from, bin_size);
   d_copy[0] ^= 0x80;
   from = d_copy;
@@ -1516,7 +1521,7 @@ int bin2decimal(const uchar *from, decimal_t *to, int precision, int scale,
   to->frac = frac0 * DIG_PER_DEC1 + frac0x;
 
   if (intg0x) {
-    int i = dig2bytes[intg0x];
+    int const i = dig2bytes[intg0x];
     dec1 x = 0;
     switch (i) {
       case 1:
@@ -1559,7 +1564,7 @@ int bin2decimal(const uchar *from, decimal_t *to, int precision, int scale,
     buf++;
   }
   if (frac0x) {
-    int i = dig2bytes[frac0x];
+    int const i = dig2bytes[frac0x];
     dec1 x = 0;
     switch (i) {
       case 1:
@@ -1756,7 +1761,7 @@ int decimal_round(const decimal_t *from, decimal_t *to, int scale,
     }
   } else {
     /* TODO - fix this code as it won't work for CEILING mode */
-    int pos = frac0 * DIG_PER_DEC1 - scale - 1;
+    int const pos = frac0 * DIG_PER_DEC1 - scale - 1;
     assert(frac0 + intg0 > 0);
     x = *buf1 / powers10[pos];
     y = x % 10;
@@ -2144,7 +2149,7 @@ int decimal_mul(const decimal_t *from_1, const decimal_t *from_2,
     carry = 0;
     for (buf0 = start0, buf2 = start2; buf2 >= stop2; buf2--, buf0--) {
       dec1 hi, lo;
-      dec2 p = ((dec2)*buf1) * ((dec2)*buf2);
+      dec2 const p = ((dec2)*buf1) * ((dec2)*buf2);
       hi = (dec1)(p / DIG_BASE);
       lo = (dec1)(p - ((dec2)hi) * DIG_BASE);
       ADD2(*buf0, *buf0, lo, carry);

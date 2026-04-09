@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Bug#24807594 SDI FILE LOSTS AFTER ALTERING DATABASE
 # Verify that .sdi files are cleaned up correctly
@@ -190,3 +191,4 @@ DROP DATABASE mysqltest;
 connection con1;
 disconnect con1;
 connection default;
+include/rpl/set_gtid_mode_on.inc

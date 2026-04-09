@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -187,6 +187,9 @@ static const char *get_action(char *buf, Uint32 IPValue) {
       break;
     case 21:
       action = "Initial value in mt_job_thread_main";
+      break;
+    case 22:
+      action = "Handling node stop";
       break;
     default:
       action = NULL;
@@ -382,7 +385,14 @@ void WatchDog::run() {
           }
         }
         if ((elapsed[i] > 3 * theInterval) || killer) {
-          if (oldCounterValue[i] == 9) {
+          if (oldCounterValue[i] == 4 ||   // Print Job Buffers at crash
+              oldCounterValue[i] == 22) {  // Handling node stop
+            /* Immediate exit without attempting to trace
+             * to avoid I/O stalls leaving process hanging
+             */
+            NdbShutdown(NDBD_EXIT_WATCHDOG_TERMINATE, NST_Watchdog);
+          }
+          if (oldCounterValue[i] == 9) {  // Allocating memory
             dump_memory_info();
           }
           shutdownSystem(last_stuck_action);

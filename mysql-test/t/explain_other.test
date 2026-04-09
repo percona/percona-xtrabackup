@@ -10,6 +10,11 @@
 --source include/have_debug.inc
 --source include/have_debug_sync.inc
 
+--disable_query_log
+SET GLOBAL explain_json_format_version = 1;
+SET SESSION explain_json_format_version = 1;
+--enable_query_log
+
 CREATE DATABASE mysqltest1;
 USE mysqltest1;
 CREATE TABLE t1 (f1 int);
@@ -571,6 +576,10 @@ SET DEBUG_SYNC= 'RESET';
 USE test;
 DROP DATABASE mysqltest1;
 --echo # End of test
+
+--disable_query_log
+SET GLOBAL explain_json_format_version = DEFAULT;
+--enable_query_log
 
 disconnect cq;
 disconnect ce;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,9 +26,9 @@
 #endif
 #include "xcom/xcom_cache.h"
 
-#include <assert.h>
 #include <rpc/rpc.h>
-#include <stdlib.h>
+#include <cassert>
+#include <cstdlib>
 
 #include "xcom/app_data.h"
 #include "xcom/bitset.h"
@@ -127,7 +127,7 @@ static void do_increment_step();
 
 static pax_machine *hash_in(pax_machine *pm) {
   synode_no synode = pm->synode;
-  IFDBG(D_NONE, FN; PTREXP(pm); SYCEXP(synode););
+  XCOM_IFDBG(D_NONE, FN; PTREXP(pm); SYCEXP(synode););
 
   if (highest_msgno < synode.msgno) highest_msgno = synode.msgno;
 
@@ -148,7 +148,7 @@ static pax_machine *hash_in(pax_machine *pm) {
 }
 
 static pax_machine *hash_out(pax_machine *p) {
-  IFDBG(D_NONE, FN; PTREXP(p); SYCEXP(p->synode););
+  XCOM_IFDBG(D_NONE, FN; PTREXP(p); SYCEXP(p->synode););
   if (!link_empty(&p->hash_link)) {
     occupation--;
     p->stack_link->occupation--;
@@ -296,34 +296,35 @@ void deinit_cache() {
 
 pax_machine *get_cache_no_touch(synode_no synode, bool_t force) {
   pax_machine *retval = hash_get(synode);
-  /* IFDBG(D_NONE, FN; SYCEXP(synode); STREXP(task_name())); */
-  IFDBG(D_NONE, FN; SYCEXP(synode); PTREXP(retval));
+  /* XCOM_IFDBG(D_NONE, FN; SYCEXP(synode); STREXP(task_name())); */
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(synode); PTREXP(retval));
   if (!retval) {
     lru_machine *l =
         lru_get(force); /* Need to know when it is safe to re-use... */
     if (!l) return nullptr;
-    IFDBG(D_NONE, FN; PTREXP(l); COPY_AND_FREE_GOUT(dbg_pax_machine(&l->pax)););
+    XCOM_IFDBG(D_NONE, FN; PTREXP(l);
+               COPY_AND_FREE_GOUT(dbg_pax_machine(&l->pax)););
     /* assert(l->pax.synode > log_tail); */
 
     retval = hash_out(&l->pax);          /* Remove from hash table */
     init_pax_machine(retval, l, synode); /* Initialize */
     hash_in(retval);                     /* Insert in hash table again */
   }
-  IFDBG(D_NONE, FN; SYCEXP(synode); PTREXP(retval));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(synode); PTREXP(retval));
   return retval;
 }
 
 pax_machine *force_get_cache(synode_no synode) {
   pax_machine *retval = get_cache_no_touch(synode, TRUE);
   lru_touch_hit(retval); /* Insert in protected_lru */
-  IFDBG(D_NONE, FN; SYCEXP(synode); PTREXP(retval));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(synode); PTREXP(retval));
   return retval;
 }
 
 pax_machine *get_cache(synode_no synode) {
   pax_machine *retval = get_cache_no_touch(synode, FALSE);
   if (retval) lru_touch_hit(retval); /* Insert in protected_lru */
-  IFDBG(D_NONE, FN; SYCEXP(synode); PTREXP(retval));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(synode); PTREXP(retval));
   return retval;
 }
 
@@ -645,7 +646,7 @@ int cache_manager_task(task_arg arg [[maybe_unused]]) {
     TASK_DELAY(0.1);
   }
   FINALLY
-  IFDBG(D_BUG, FN; STRLIT(" shutdown "));
+  XCOM_IFDBG(D_BUG, FN; STRLIT(" shutdown "));
   TASK_END;
 }
 
@@ -678,5 +679,5 @@ void set_min_length_threshold(float threshold) {
 
 void paxos_timeout(pax_machine *p) {
   (void)p;
-  IFDBG(D_BUG, FN; SYCEXP(p->synode));
+  XCOM_IFDBG(D_BUG, FN; SYCEXP(p->synode));
 }

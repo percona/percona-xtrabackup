@@ -176,7 +176,7 @@ b IN (SELECT /*+ NO_INDEX(t1 i_ab,i_b) */ a FROM t1 WHERE a > 3)
 ORDER BY a;
 SHOW CREATE VIEW v1;
 View	Create View	character_set_client	collation_connection
-v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select /*+ NO_INDEX(`t1`@`select#1` `i_a`, `i_b`) NO_INDEX(`t1`@`select#2` `i_ab`, `i_b`) */ `t1`.`a` AS `a` from `t1` where `t1`.`b` in (select `t1`.`a` from `t1` where (`t1`.`a` > 3)) order by `t1`.`a`	utf8mb4	utf8mb4_0900_ai_ci
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select /*+ NO_INDEX(`t1`@`select#2` `i_ab`, `i_b`) NO_INDEX(`t1`@`select#1` `i_a`, `i_b`) */ `t1`.`a` AS `a` from `t1` where `t1`.`b` in (select `t1`.`a` from `t1` where (`t1`.`a` > 3)) order by `t1`.`a`	utf8mb4	utf8mb4_0900_ai_ci
 EXPLAIN SELECT a FROM v1;
 EXPLAIN
 -> Sort: a

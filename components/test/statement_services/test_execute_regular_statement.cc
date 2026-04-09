@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -21,11 +21,11 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <inttypes.h>
-#include <stdio.h>
-#include <string.h>
 #include <algorithm>
+#include <cinttypes>
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -35,7 +35,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "mysql/components/services/defs/mysql_string_defs.h"
 
 #include "field_types.h"
-#include "mysql_com.h"
 #include "scope_guard.h"
 
 #include "utils.h"
@@ -91,12 +90,12 @@ static auto test_execute_regular_statement(UDF_INIT *, UDF_ARGS *arguments,
                                            unsigned char *error) -> char * {
   *error = 1;
 
-  auto statement = my_h_statement{nullptr};
+  auto *statement = my_h_statement{nullptr};
   auto query =
       mysql_cstring_with_length{arguments->args[0], strlen(arguments->args[0])};
   if (SERVICE_PLACEHOLDER(mysql_stmt_factory)->init(&statement) != 0) return {};
 
-  Scope_guard free_statement_guard(
+  Scope_guard const free_statement_guard(
       [&] { SERVICE_PLACEHOLDER(mysql_stmt_factory)->close(statement); });
 
   if (SERVICE_PLACEHOLDER(mysql_stmt_execute_direct)
@@ -188,8 +187,8 @@ auto test_execute_regular_statement_init(UDF_INIT *udf_init, UDF_ARGS *, char *)
     -> bool {
   if (SERVICE_PLACEHOLDER(mysql_udf_metadata)
           ->result_set(udf_init, "charset", const_cast<char *>("utf8mb4")))
-    return 1;
-  return 0;
+    return true;
+  return false;
 }
 
 static auto init() -> mysql_service_status_t {

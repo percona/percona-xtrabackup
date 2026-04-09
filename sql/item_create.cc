@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -151,8 +151,8 @@ class Instantiator {
   static const uint Min_argcount = Min_argc;
   static const uint Max_argcount = Max_argc;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Function_class(POS(), args);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Function_class(pos, args);
   }
 };
 
@@ -167,8 +167,8 @@ class Instantiator<Function_class, 0> {
  public:
   static const uint Min_argcount = 0;
   static const uint Max_argcount = 0;
-  Item *instantiate(THD *thd, PT_item_list *) {
-    return new (thd->mem_root) Function_class(POS());
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *) {
+    return new (thd->mem_root) Function_class(pos);
   }
 };
 
@@ -178,8 +178,8 @@ class Instantiator_with_thd {
   static const uint Min_argcount = Min_argc;
   static const uint Max_argcount = Max_argc;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Function_class(thd, POS(), args);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Function_class(thd, pos, args);
   }
 };
 
@@ -190,8 +190,8 @@ class Instantiator_with_functype {
   static const uint Min_argcount = Min_argc;
   static const uint Max_argcount = Max_argc;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Function_class(thd, POS(), args, Functype);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Function_class(thd, pos, args, Functype);
   }
 };
 
@@ -201,8 +201,8 @@ class Instantiator_with_functype<Function_class, Function_type, 1, 1> {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 1;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Function_class(POS(), (*args)[0], Function_type);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Function_class(pos, (*args)[0], Function_type);
   }
 };
 
@@ -212,9 +212,9 @@ class Instantiator_with_functype<Function_class, Function_type, 2, 2> {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     return new (thd->mem_root)
-        Function_class(POS(), (*args)[0], (*args)[1], Function_type);
+        Function_class(pos, (*args)[0], (*args)[1], Function_type);
   }
 };
 
@@ -224,8 +224,8 @@ class List_instantiator {
   static const uint Min_argcount = Min_argc;
   static const uint Max_argcount = Max_argc;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Function_class(POS(), args);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Function_class(pos, args);
   }
 };
 
@@ -235,8 +235,8 @@ class List_instantiator_with_thd {
   static const uint Min_argcount = Min_argc;
   static const uint Max_argcount = Max_argc;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Function_class(thd, POS(), args);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Function_class(thd, pos, args);
   }
 };
 
@@ -252,8 +252,8 @@ class Instantiator<Function_class, 1> {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 1;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Function_class(POS(), (*args)[0]);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Function_class(pos, (*args)[0]);
   }
 };
 
@@ -269,8 +269,8 @@ class Instantiator<Function_class, 2> {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Function_class(POS(), (*args)[0], (*args)[1]);
+  Item *instantiate(THD *thd, const POS &pos, const PT_item_list *args) {
+    return new (thd->mem_root) Function_class(pos, (*args)[0], (*args)[1]);
   }
 };
 
@@ -286,9 +286,9 @@ class Instantiator<Function_class, 3> {
   static const uint Min_argcount = 3;
   static const uint Max_argcount = 3;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     return new (thd->mem_root)
-        Function_class(POS(), (*args)[0], (*args)[1], (*args)[2]);
+        Function_class(pos, (*args)[0], (*args)[1], (*args)[2]);
   }
 };
 
@@ -304,9 +304,9 @@ class Instantiator<Function_class, 4> {
   static const uint Min_argcount = 4;
   static const uint Max_argcount = 4;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     return new (thd->mem_root)
-        Function_class(POS(), (*args)[0], (*args)[1], (*args)[2], (*args)[3]);
+        Function_class(pos, (*args)[0], (*args)[1], (*args)[2], (*args)[3]);
   }
 };
 
@@ -322,9 +322,9 @@ class Instantiator<Function_class, 5> {
   static const uint Min_argcount = 5;
   static const uint Max_argcount = 5;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     return new (thd->mem_root) Function_class(
-        POS(), (*args)[0], (*args)[1], (*args)[2], (*args)[3], (*args)[4]);
+        pos, (*args)[0], (*args)[1], (*args)[2], (*args)[3], (*args)[4]);
   }
 };
 
@@ -340,13 +340,13 @@ class Instantiator<Function_class, 0, 1> {
   static const uint Min_argcount = 0;
   static const uint Max_argcount = 1;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     uint argcount = args == nullptr ? 0 : args->elements();
     switch (argcount) {
       case 0:
-        return new (thd->mem_root) Function_class(POS());
+        return new (thd->mem_root) Function_class(pos);
       case 1:
-        return new (thd->mem_root) Function_class(POS(), (*args)[0]);
+        return new (thd->mem_root) Function_class(pos, (*args)[0]);
       default:
         assert(false);
         return nullptr;
@@ -366,13 +366,12 @@ class Instantiator<Function_class, 1, 2> {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root) Function_class(POS(), (*args)[0]);
+        return new (thd->mem_root) Function_class(pos, (*args)[0]);
       case 2:
-        return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1]);
+        return new (thd->mem_root) Function_class(pos, (*args)[0], (*args)[1]);
       default:
         assert(false);
         return nullptr;
@@ -392,16 +391,15 @@ class Instantiator<Function_class, 1, 3> {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 3;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root) Function_class(POS(), (*args)[0]);
+        return new (thd->mem_root) Function_class(pos, (*args)[0]);
       case 2:
-        return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1]);
+        return new (thd->mem_root) Function_class(pos, (*args)[0], (*args)[1]);
       case 3:
         return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1], (*args)[2]);
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2]);
       default:
         assert(false);
         return nullptr;
@@ -421,16 +419,16 @@ class Instantiator_with_thd<Function_class, 1, 3> {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 3;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root) Function_class(thd, POS(), (*args)[0]);
+        return new (thd->mem_root) Function_class(thd, pos, (*args)[0]);
       case 2:
         return new (thd->mem_root)
-            Function_class(thd, POS(), (*args)[0], (*args)[1]);
+            Function_class(thd, pos, (*args)[0], (*args)[1]);
       case 3:
         return new (thd->mem_root)
-            Function_class(thd, POS(), (*args)[0], (*args)[1], (*args)[2]);
+            Function_class(thd, pos, (*args)[0], (*args)[1], (*args)[2]);
       default:
         assert(false);
         return nullptr;
@@ -450,13 +448,13 @@ class Instantiator_with_thd<Function_class, 1, 2> {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root) Function_class(thd, POS(), (*args)[0]);
+        return new (thd->mem_root) Function_class(thd, pos, (*args)[0]);
       case 2:
         return new (thd->mem_root)
-            Function_class(thd, POS(), (*args)[0], (*args)[1]);
+            Function_class(thd, pos, (*args)[0], (*args)[1]);
       default:
         assert(false);
         return nullptr;
@@ -476,14 +474,13 @@ class Instantiator<Function_class, 2, 3> {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 3;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 2:
-        return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1]);
+        return new (thd->mem_root) Function_class(pos, (*args)[0], (*args)[1]);
       case 3:
         return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1], (*args)[2]);
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2]);
       default:
         assert(false);
         return nullptr;
@@ -503,17 +500,16 @@ class Instantiator<Function_class, 2, 4> {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 4;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 2:
-        return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1]);
+        return new (thd->mem_root) Function_class(pos, (*args)[0], (*args)[1]);
       case 3:
         return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1], (*args)[2]);
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2]);
       case 4:
-        return new (thd->mem_root) Function_class(POS(), (*args)[0], (*args)[1],
-                                                  (*args)[2], (*args)[3]);
+        return new (thd->mem_root)
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2], (*args)[3]);
       default:
         assert(false);
         return nullptr;
@@ -533,24 +529,23 @@ class Instantiator<Function_class, 2, 6> {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 6;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 2:
-        return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1]);
+        return new (thd->mem_root) Function_class(pos, (*args)[0], (*args)[1]);
       case 3:
         return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1], (*args)[2]);
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2]);
       case 4:
-        return new (thd->mem_root) Function_class(POS(), (*args)[0], (*args)[1],
-                                                  (*args)[2], (*args)[3]);
+        return new (thd->mem_root)
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2], (*args)[3]);
       case 5:
         return new (thd->mem_root) Function_class(
-            POS(), (*args)[0], (*args)[1], (*args)[2], (*args)[3], (*args)[4]);
+            pos, (*args)[0], (*args)[1], (*args)[2], (*args)[3], (*args)[4]);
       case 6:
         return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1], (*args)[2],
-                           (*args)[3], (*args)[4], (*args)[5]);
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2], (*args)[3],
+                           (*args)[4], (*args)[5]);
       default:
         assert(false);
         return nullptr;
@@ -570,17 +565,17 @@ class Instantiator<Function_class, 3, 5> {
   static const uint Min_argcount = 3;
   static const uint Max_argcount = 5;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 3:
         return new (thd->mem_root)
-            Function_class(POS(), (*args)[0], (*args)[1], (*args)[2]);
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2]);
       case 4:
-        return new (thd->mem_root) Function_class(POS(), (*args)[0], (*args)[1],
-                                                  (*args)[2], (*args)[3]);
+        return new (thd->mem_root)
+            Function_class(pos, (*args)[0], (*args)[1], (*args)[2], (*args)[3]);
       case 5:
         return new (thd->mem_root) Function_class(
-            POS(), (*args)[0], (*args)[1], (*args)[2], (*args)[3], (*args)[4]);
+            pos, (*args)[0], (*args)[1], (*args)[2], (*args)[3], (*args)[4]);
       default:
         assert(false);
         return nullptr;
@@ -618,16 +613,16 @@ class Geometry_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 3;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root) Geometry_class(POS(), (*args)[0], Functype);
+        return new (thd->mem_root) Geometry_class(pos, (*args)[0], Functype);
       case 2:
         return new (thd->mem_root)
-            Geometry_class(POS(), (*args)[0], (*args)[1], Functype);
+            Geometry_class(pos, (*args)[0], (*args)[1], Functype);
       case 3:
         return new (thd->mem_root)
-            Geometry_class(POS(), (*args)[0], (*args)[1], (*args)[2], Functype);
+            Geometry_class(pos, (*args)[0], (*args)[1], (*args)[2], Functype);
       default:
         assert(false);
         return nullptr;
@@ -687,8 +682,7 @@ class Bin_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 1;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    POS pos;
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     Item *i10 = new (thd->mem_root) Item_int(pos, 10, 2);
     Item *i2 = new (thd->mem_root) Item_int(pos, 2, 1);
     return new (thd->mem_root) Item_func_conv(pos, (*args)[0], i10, i2);
@@ -700,10 +694,10 @@ class Oct_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 1;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    Item *i10 = new (thd->mem_root) Item_int(POS(), 10, 2);
-    Item *i8 = new (thd->mem_root) Item_int(POS(), 8, 1);
-    return new (thd->mem_root) Item_func_conv(POS(), (*args)[0], i10, i8);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    Item *i10 = new (thd->mem_root) Item_int(pos, 10, 2);
+    Item *i8 = new (thd->mem_root) Item_int(pos, 8, 1);
+    return new (thd->mem_root) Item_func_conv(pos, (*args)[0], i10, i8);
   }
 };
 
@@ -712,8 +706,8 @@ class Weekday_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 1;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Item_func_weekday(POS(), (*args)[0], false);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Item_func_weekday(pos, (*args)[0], false);
   }
 };
 
@@ -722,9 +716,9 @@ class Weekofyear_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 1;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    Item *i1 = new (thd->mem_root) Item_int(POS(), NAME_STRING("0"), 3, 1);
-    return new (thd->mem_root) Item_func_week(POS(), (*args)[0], i1);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    Item *i1 = new (thd->mem_root) Item_int(pos, NAME_STRING("0"), 3, 1);
+    return new (thd->mem_root) Item_func_week(pos, (*args)[0], i1);
   }
 };
 
@@ -733,11 +727,11 @@ class Datediff_instantiator {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    Item *i1 = new (thd->mem_root) Item_func_to_days(POS(), (*args)[0]);
-    Item *i2 = new (thd->mem_root) Item_func_to_days(POS(), (*args)[1]);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    Item *i1 = new (thd->mem_root) Item_func_to_days(pos, (*args)[0]);
+    Item *i2 = new (thd->mem_root) Item_func_to_days(pos, (*args)[1]);
 
-    return new (thd->mem_root) Item_func_minus(POS(), i1, i2);
+    return new (thd->mem_root) Item_func_minus(pos, i1, i2);
   }
 };
 
@@ -746,9 +740,9 @@ class Subtime_instantiator {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     return new (thd->mem_root)
-        Item_func_add_time(POS(), (*args)[0], (*args)[1], false, true);
+        Item_func_add_time(pos, (*args)[0], (*args)[1], false, true);
   }
 };
 
@@ -757,9 +751,9 @@ class Time_format_instantiator {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     return new (thd->mem_root)
-        Item_func_date_format(POS(), (*args)[0], (*args)[1], true);
+        Item_func_date_format(pos, (*args)[0], (*args)[1], true);
   }
 };
 
@@ -768,8 +762,8 @@ class Dayofweek_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 1;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Item_func_weekday(POS(), (*args)[0], true);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Item_func_weekday(pos, (*args)[0], true);
   }
 };
 
@@ -778,15 +772,14 @@ class From_unixtime_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root) Item_func_from_unixtime(POS(), (*args)[0]);
+        return new (thd->mem_root) Item_func_from_unixtime(pos, (*args)[0]);
       case 2: {
-        Item *ut =
-            new (thd->mem_root) Item_func_from_unixtime(POS(), (*args)[0]);
+        Item *ut = new (thd->mem_root) Item_func_from_unixtime(pos, (*args)[0]);
         return new (thd->mem_root)
-            Item_func_date_format(POS(), ut, (*args)[1], false);
+            Item_func_date_format(pos, ut, (*args)[1], false);
       }
       default:
         assert(false);
@@ -800,16 +793,15 @@ class Round_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1: {
-        Item *i0 = new (thd->mem_root) Item_int_0(POS());
-        return new (thd->mem_root)
-            Item_func_round(POS(), (*args)[0], i0, false);
+        Item *i0 = new (thd->mem_root) Item_int_0(pos);
+        return new (thd->mem_root) Item_func_round(pos, (*args)[0], i0, false);
       }
       case 2:
         return new (thd->mem_root)
-            Item_func_round(POS(), (*args)[0], (*args)[1], false);
+            Item_func_round(pos, (*args)[0], (*args)[1], false);
       default:
         assert(false);
         return nullptr;
@@ -822,16 +814,16 @@ class Locate_instantiator {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = 3;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 2:
         /* Yes, parameters in that order : 2, 1 */
         return new (thd->mem_root)
-            Item_func_locate(POS(), (*args)[1], (*args)[0]);
+            Item_func_locate(pos, (*args)[1], (*args)[0]);
       case 3:
         /* Yes, parameters in that order : 2, 1, 3 */
         return new (thd->mem_root)
-            Item_func_locate(POS(), (*args)[1], (*args)[0], (*args)[2]);
+            Item_func_locate(pos, (*args)[1], (*args)[0], (*args)[2]);
       default:
         assert(false);
         return nullptr;
@@ -844,14 +836,13 @@ class Srid_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root)
-            Item_func_st_srid_observer(POS(), (*args)[0]);
+        return new (thd->mem_root) Item_func_st_srid_observer(pos, (*args)[0]);
       case 2:
         return new (thd->mem_root)
-            Item_func_st_srid_mutator(POS(), (*args)[0], (*args)[1]);
+            Item_func_st_srid_mutator(pos, (*args)[0], (*args)[1]);
       default:
         assert(false);
         return nullptr;
@@ -864,14 +855,14 @@ class Latitude_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
         return new (thd->mem_root)
-            Item_func_st_latitude_observer(POS(), (*args)[0]);
+            Item_func_st_latitude_observer(pos, (*args)[0]);
       case 2:
         return new (thd->mem_root)
-            Item_func_st_latitude_mutator(POS(), (*args)[0], (*args)[1]);
+            Item_func_st_latitude_mutator(pos, (*args)[0], (*args)[1]);
       default:
         /* purecov: begin deadcode */
         assert(false);
@@ -886,14 +877,14 @@ class Longitude_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
         return new (thd->mem_root)
-            Item_func_st_longitude_observer(POS(), (*args)[0]);
+            Item_func_st_longitude_observer(pos, (*args)[0]);
       case 2:
         return new (thd->mem_root)
-            Item_func_st_longitude_mutator(POS(), (*args)[0], (*args)[1]);
+            Item_func_st_longitude_mutator(pos, (*args)[0], (*args)[1]);
       default:
         /* purecov: begin deadcode */
         assert(false);
@@ -908,13 +899,13 @@ class X_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root) Item_func_st_x_observer(POS(), (*args)[0]);
+        return new (thd->mem_root) Item_func_st_x_observer(pos, (*args)[0]);
       case 2:
         return new (thd->mem_root)
-            Item_func_st_x_mutator(POS(), (*args)[0], (*args)[1]);
+            Item_func_st_x_mutator(pos, (*args)[0], (*args)[1]);
       default:
         assert(false);
         return nullptr;
@@ -927,13 +918,13 @@ class Y_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1:
-        return new (thd->mem_root) Item_func_st_y_observer(POS(), (*args)[0]);
+        return new (thd->mem_root) Item_func_st_y_observer(pos, (*args)[0]);
       case 2:
         return new (thd->mem_root)
-            Item_func_st_y_mutator(POS(), (*args)[0], (*args)[1]);
+            Item_func_st_y_mutator(pos, (*args)[0], (*args)[1]);
       default:
         assert(false);
         return nullptr;
@@ -946,15 +937,15 @@ class Yearweek_instantiator {
   static const uint Min_argcount = 1;
   static const uint Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     switch (args->elements()) {
       case 1: {
-        Item *i0 = new (thd->mem_root) Item_int_0(POS());
-        return new (thd->mem_root) Item_func_yearweek(POS(), (*args)[0], i0);
+        Item *i0 = new (thd->mem_root) Item_int_0(pos);
+        return new (thd->mem_root) Item_func_yearweek(pos, (*args)[0], i0);
       }
       case 2:
         return new (thd->mem_root)
-            Item_func_yearweek(POS(), (*args)[0], (*args)[1]);
+            Item_func_yearweek(pos, (*args)[0], (*args)[1]);
       default:
         assert(false);
         return nullptr;
@@ -967,8 +958,8 @@ class Make_set_instantiator {
   static const uint Min_argcount = 2;
   static const uint Max_argcount = MAX_ARGLIST_SIZE;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
-    return new (thd->mem_root) Item_func_make_set(POS(), args);
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
+    return new (thd->mem_root) Item_func_make_set(pos, args);
   }
 };
 
@@ -980,15 +971,15 @@ class Json_length_instantiator {
   static constexpr int Min_argcount = 1;
   static constexpr int Max_argcount = 2;
 
-  Item *instantiate(THD *thd, PT_item_list *args) {
+  Item *instantiate(THD *thd, const POS &pos, PT_item_list *args) {
     if (args->elements() == 1) {
-      return new (thd->mem_root) Item_func_json_length(POS(), (*args)[0]);
+      return new (thd->mem_root) Item_func_json_length(pos, (*args)[0]);
     } else {
       assert(args->elements() == 2);
       auto arg = new (thd->mem_root)
-          Item_func_json_extract(thd, POS(), (*args)[0], (*args)[1]);
+          Item_func_json_extract(thd, pos, (*args)[0], (*args)[1]);
       if (arg == nullptr) return nullptr;
-      return new (thd->mem_root) Item_func_json_length(POS(), arg);
+      return new (thd->mem_root) Item_func_json_length(pos, arg);
     }
   }
 };
@@ -1033,13 +1024,13 @@ class Function_factory : public Create_func {
  public:
   static Function_factory<Instantiator_fn> s_singleton;
 
-  Item *create_func(THD *thd, LEX_STRING function_name,
+  Item *create_func(THD *thd, const POS &pos, LEX_STRING function_name,
                     PT_item_list *item_list) override {
     if (check_argcount_bounds(thd, function_name, item_list,
                               m_instantiator.Min_argcount,
                               m_instantiator.Max_argcount))
       return nullptr;
-    return m_instantiator.instantiate(thd, item_list);
+    return m_instantiator.instantiate(thd, pos, item_list);
   }
 
  private:
@@ -1056,7 +1047,7 @@ class Odd_argcount_function_factory : public Create_func {
  public:
   static Odd_argcount_function_factory<Instantiator_fn> s_singleton;
 
-  Item *create_func(THD *thd, LEX_STRING function_name,
+  Item *create_func(THD *thd, const POS &pos, LEX_STRING function_name,
                     PT_item_list *item_list) override {
     if (check_argcount_bounds(thd, function_name, item_list,
                               m_instantiator.Min_argcount,
@@ -1066,7 +1057,7 @@ class Odd_argcount_function_factory : public Create_func {
       my_error(ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT, MYF(0), function_name.str);
       return nullptr;
     }
-    return m_instantiator.instantiate(thd, item_list);
+    return m_instantiator.instantiate(thd, pos, item_list);
   }
 
  private:
@@ -1083,7 +1074,7 @@ class Even_argcount_function_factory : public Create_func {
  public:
   static Even_argcount_function_factory<Instantiator_fn> s_singleton;
 
-  Item *create_func(THD *thd, LEX_STRING function_name,
+  Item *create_func(THD *thd, const POS &pos, LEX_STRING function_name,
                     PT_item_list *item_list) override {
     if (check_argcount_bounds(thd, function_name, item_list,
                               m_instantiator.Min_argcount,
@@ -1093,7 +1084,7 @@ class Even_argcount_function_factory : public Create_func {
       my_error(ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT, MYF(0), function_name.str);
       return nullptr;
     }
-    return m_instantiator.instantiate(thd, item_list);
+    return m_instantiator.instantiate(thd, pos, item_list);
   }
 
  private:
@@ -1116,7 +1107,7 @@ class Internal_function_factory : public Create_func {
  public:
   static Internal_function_factory<Instantiator_fn> s_singleton;
 
-  Item *create_func(THD *thd, LEX_STRING function_name,
+  Item *create_func(THD *thd, const POS &pos, LEX_STRING function_name,
                     PT_item_list *item_list) override {
     if (!thd->parsing_system_view && !thd->is_dd_system_thread() &&
         DBUG_EVALUATE_IF("skip_dd_table_access_check", false, true)) {
@@ -1128,7 +1119,7 @@ class Internal_function_factory : public Create_func {
                               m_instantiator.Min_argcount,
                               m_instantiator.Max_argcount))
       return nullptr;
-    return m_instantiator.instantiate(thd, item_list);
+    return m_instantiator.instantiate(thd, pos, item_list);
   }
 
  private:
@@ -1147,8 +1138,8 @@ Internal_function_factory<Instantiator_fn>
 */
 class Create_sp_func : public Create_qfunc {
  public:
-  Item *create(THD *thd, LEX_STRING db, LEX_STRING name, bool use_explicit_name,
-               PT_item_list *item_list) override;
+  Item *create(THD *thd, const POS &pos, LEX_STRING db, LEX_STRING name,
+               bool use_explicit_name, PT_item_list *item_list) override;
 
   static Create_sp_func s_singleton;
 
@@ -1159,28 +1150,27 @@ class Create_sp_func : public Create_qfunc {
   ~Create_sp_func() override = default;
 };
 
-Item *Create_qfunc::create_func(THD *thd, LEX_STRING name,
+Item *Create_qfunc::create_func(THD *thd, const POS &pos, LEX_STRING name,
                                 PT_item_list *item_list) {
-  return create(thd, NULL_STR, name, false, item_list);
+  return create(thd, pos, NULL_STR, name, false, item_list);
 }
 
 Create_udf_func Create_udf_func::s_singleton;
 
-Item *Create_udf_func::create_func(THD *thd, LEX_STRING name,
+Item *Create_udf_func::create_func(THD *thd, const POS &pos, LEX_STRING name,
                                    PT_item_list *item_list) {
   udf_func *udf = find_udf(name.str, name.length);
   assert(udf);
-  return create(thd, udf, item_list);
+  return create(thd, pos, udf, item_list);
 }
 
-Item *Create_udf_func::create(THD *thd, udf_func *udf,
+Item *Create_udf_func::create(THD *thd, const POS &pos, udf_func *udf,
                               PT_item_list *item_list) {
   DBUG_TRACE;
 
   assert((udf->type == UDFTYPE_FUNCTION) || (udf->type == UDFTYPE_AGGREGATE));
 
   Item *func = nullptr;
-  const POS pos{};
 
   switch (udf->returns) {
     case STRING_RESULT:
@@ -1215,10 +1205,11 @@ Item *Create_udf_func::create(THD *thd, udf_func *udf,
 
 Create_sp_func Create_sp_func::s_singleton;
 
-Item *Create_sp_func::create(THD *thd, LEX_STRING db, LEX_STRING name,
-                             bool use_explicit_name, PT_item_list *item_list) {
+Item *Create_sp_func::create(THD *thd, const POS &pos, LEX_STRING db,
+                             LEX_STRING name, bool use_explicit_name,
+                             PT_item_list *item_list) {
   return new (thd->mem_root)
-      Item_func_sp(POS(), db, name, use_explicit_name, item_list);
+      Item_func_sp(pos, db, name, use_explicit_name, item_list);
 }
 
 /**
@@ -1408,6 +1399,7 @@ static const std::pair<const char *, Create_func *> func_array[] = {
     {"DAYOFYEAR", SQL_FN(Item_func_dayofyear, 1)},
     {"DEGREES", SQL_FN(Item_func_degrees, 1)},
     {"ELT", SQL_FN_V(Item_func_elt, 2, MAX_ARGLIST_SIZE)},
+    {"ETAG", SQL_FN_V(Item_func_etag, 1, MAX_ARGLIST_SIZE)},
     {"EXP", SQL_FN(Item_func_exp, 1)},
     {"EXPORT_SET", SQL_FN_V(Item_func_export_set, 3, 5)},
     {"EXTRACTVALUE", SQL_FN(Item_func_xml_extractvalue, 2)},
@@ -1508,7 +1500,6 @@ static const std::pair<const char *, Create_func *> func_array[] = {
     {"MBROVERLAPS", SQL_FN(Item_func_mbroverlaps, 2)},
     {"MBRTOUCHES", SQL_FN(Item_func_mbrtouches, 2)},
     {"MBRWITHIN", SQL_FN(Item_func_mbrwithin, 2)},
-    {"MD5", SQL_FN(Item_func_md5, 1)},
     {"MONTHNAME", SQL_FN(Item_func_monthname, 1)},
     {"NAME_CONST", SQL_FN(Item_name_const, 2)},
     {"NULLIF", SQL_FN(Item_func_nullif, 2)},
@@ -1538,8 +1529,6 @@ static const std::pair<const char *, Create_func *> func_array[] = {
     {"RPAD", SQL_FN(Item_func_rpad, 3)},
     {"RTRIM", SQL_FN(Item_func_rtrim, 1)},
     {"SEC_TO_TIME", SQL_FN(Item_func_sec_to_time, 1)},
-    {"SHA", SQL_FN(Item_func_sha, 1)},
-    {"SHA1", SQL_FN(Item_func_sha, 1)},
     {"SHA2", SQL_FN(Item_func_sha2, 2)},
     {"SIGN", SQL_FN(Item_func_sign, 1)},
     {"SIN", SQL_FN(Item_func_sin, 1)},
@@ -1773,6 +1762,8 @@ static const std::pair<const char *, Create_func *> func_array[] = {
      SQL_FN_INTERNAL(Item_func_internal_tablespace_extra, 4)},
     {"GET_DD_PROPERTY_KEY_VALUE",
      SQL_FN_INTERNAL(Item_func_get_dd_property_key_value, 2)},
+    {"GET_JDV_PROPERTY_KEY_VALUE",
+     SQL_FN_INTERNAL(Item_func_get_jdv_property_key_value, 4)},
     {"REMOVE_DD_PROPERTY_KEY",
      SQL_FN_INTERNAL(Item_func_remove_dd_property_key, 2)},
     {"CONVERT_INTERVAL_TO_USER_INTERVAL",
@@ -2185,7 +2176,7 @@ Item *create_temporal_literal(THD *thd, const char *str, size_t length,
                               const CHARSET_INFO *cs, enum_field_types type,
                               bool send_error) {
   MYSQL_TIME_STATUS status;
-  MYSQL_TIME ltime;
+  Datetime_val dt;
   Item *item = nullptr;
   my_time_flags_t flags = TIME_FUZZY_DATE;
   if (thd->variables.sql_mode & MODE_NO_ZERO_IN_DATE)
@@ -2199,39 +2190,40 @@ Item *create_temporal_literal(THD *thd, const char *str, size_t length,
     case MYSQL_TYPE_NEWDATE:
       if (!propagate_datetime_overflow(
               thd, &status.warnings,
-              str_to_datetime(cs, str, length, &ltime, flags, &status)) &&
-          ltime.time_type == MYSQL_TIMESTAMP_DATE && !status.warnings) {
+              str_to_datetime(cs, str, length, &dt, flags, &status)) &&
+          dt.time_type == MYSQL_TIMESTAMP_DATE && status.warnings == 0) {
         check_deprecated_datetime_format(thd, cs, status);
-        item = new (thd->mem_root) Item_date_literal(&ltime);
+        item = new (thd->mem_root) Item_date_literal(&dt);
       }
       break;
     case MYSQL_TYPE_DATETIME:
       if (!propagate_datetime_overflow(
               thd, &status.warnings,
-              str_to_datetime(cs, str, length, &ltime, flags, &status)) &&
-          (ltime.time_type == MYSQL_TIMESTAMP_DATETIME ||
-           ltime.time_type == MYSQL_TIMESTAMP_DATETIME_TZ) &&
+              str_to_datetime(cs, str, length, &dt, flags, &status)) &&
+          (dt.time_type == MYSQL_TIMESTAMP_DATETIME ||
+           dt.time_type == MYSQL_TIMESTAMP_DATETIME_TZ) &&
           !status.warnings) {
         check_deprecated_datetime_format(thd, cs, status);
-        if (convert_time_zone_displacement(thd->time_zone(), &ltime))
+        if (convert_time_zone_displacement(thd->time_zone(), &dt))
           return nullptr;
         item = new (thd->mem_root) Item_datetime_literal(
-            &ltime, status.fractional_digits, thd->time_zone());
+            &dt, status.fractional_digits, thd->time_zone());
       }
       break;
     case MYSQL_TYPE_TIME:
-      if (!str_to_time(cs, str, length, &ltime, 0, &status) &&
-          ltime.time_type == MYSQL_TIMESTAMP_TIME && !status.warnings) {
+      if (!str_to_time(cs, str, length, &dt, 0, &status) &&
+          dt.time_type == MYSQL_TIMESTAMP_TIME && status.warnings == 0) {
         check_deprecated_datetime_format(thd, cs, status);
+        Time_val time = Time_val(dt);
         item = new (thd->mem_root)
-            Item_time_literal(&ltime, status.fractional_digits);
+            Item_time_literal(&time, status.fractional_digits);
       }
       break;
     default:
       assert(0);
   }
 
-  if (item) return item;
+  if (item != nullptr) return item;
 
   if (send_error) {
     const char *typestr = (type == MYSQL_TYPE_DATE)   ? "DATE"

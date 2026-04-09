@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +42,8 @@ import com.mysql.ndbjtie.mysql.CharsetMapConst;
  * conversions, decimal utils for string-binary conversions.
  */
 public class MySqlUtilsTest extends JTieTestBase {
+
+    private final String tmpdir = System.getProperty("java.io.tmpdir");
 
     public void testDbugUtils() {
         out.println("--> MySqlUtilsTest.testDbugUtils()");
@@ -88,7 +90,7 @@ public class MySqlUtilsTest extends JTieTestBase {
         s = Utils.dbugExplain(bb, len);
         assert (s == null || s.equals(s1));
 
-        final String s2 = "d,somename:o,/tmp/somepath";
+        final String s2 = "d,somename:o," + tmpdir + "somepath";
         Utils.dbugPush(s2);
         s = Utils.dbugExplain(bb, len);
         assert (s == null || s.equals(s2));

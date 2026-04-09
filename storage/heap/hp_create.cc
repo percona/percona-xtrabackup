@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,9 +21,9 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <errno.h>
 #include <sys/types.h>
-#include <time.h>
+#include <cerrno>
+#include <ctime>
 
 #include <algorithm>
 
@@ -47,9 +47,9 @@ int heap_create(const char *name, HP_CREATE_INFO *create_info, HP_SHARE **res,
   HA_KEYSEG *keyseg;
   HP_KEYDEF *keydef = create_info->keydef;
   uint reclength = create_info->reclength;
-  uint keys = create_info->keys;
-  ulong min_records = create_info->min_records;
-  ulong max_records = create_info->max_records;
+  uint const keys = create_info->keys;
+  ulong const min_records = create_info->min_records;
+  ulong const max_records = create_info->max_records;
   DBUG_TRACE;
 
   if (!create_info->single_instance) {
@@ -242,9 +242,9 @@ err:
 
 static int keys_compare(const void *a, const void *b, const void *c) {
   uint not_used[2];
-  const heap_rb_param *param = pointer_cast<const heap_rb_param *>(a);
-  const uchar *key1 = pointer_cast<const uchar *>(b);
-  const uchar *key2 = pointer_cast<const uchar *>(c);
+  const auto *param = pointer_cast<const heap_rb_param *>(a);
+  const auto *key1 = pointer_cast<const uchar *>(b);
+  const auto *key2 = pointer_cast<const uchar *>(c);
   return ha_key_cmp(param->keyseg, key1, key2, param->key_length,
                     param->search_flag, not_used);
 }
@@ -310,12 +310,11 @@ void heap_drop_table(HP_INFO *info) {
 }
 
 void hp_free(HP_SHARE *share) {
-  bool not_internal_table = (share->open_list.data != nullptr);
+  bool const not_internal_table = (share->open_list.data != nullptr);
   if (not_internal_table) /* If not internal table */
     heap_share_list = list_delete(heap_share_list, &share->open_list);
   hp_clear(share); /* Remove blocks from memory */
   if (not_internal_table) thr_lock_delete(&share->lock);
   my_free(share->name);
   my_free(share);
-  return;
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #ifndef _WIN32
 #include <dlfcn.h>
 #endif
-#include <string.h>
+#include <cstring>
 #include <map>
 #include <string>
 #include <unordered_set>
@@ -52,7 +52,7 @@ static PSI_rwlock_info all_dynamic_loader_scheme_file_rwlocks[] = {
      "LOCK_dynamic_loader_scheme_file", PSI_FLAG_SINGLETON, 0,
      PSI_DOCUMENT_ME}};
 
-static void init_dynamic_loader_scheme_file_psi_keys(void) {
+static void init_dynamic_loader_scheme_file_psi_keys() {
   const char *category = "components";
   int count;
 
@@ -102,10 +102,10 @@ DEFINE_BOOL_METHOD(mysql_dynamic_loader_scheme_file_imp::load,
       return true;
     }
 
-    std::string urn_string = urn;
+    std::string const urn_string = urn;
 
     /* Check if library is not already loaded, by comparing URNs. */
-    minimal_chassis::rwlock_scoped_lock lock(
+    minimal_chassis::rwlock_scoped_lock const lock(
         &mysql_dynamic_loader_scheme_file_imp::LOCK_dynamic_loader_scheme_file,
         true, __FILE__, __LINE__);
 
@@ -128,17 +128,18 @@ DEFINE_BOOL_METHOD(mysql_dynamic_loader_scheme_file_imp::load,
 #endif
 
     /* Open library. */
-#if defined(HAVE_ASAN) || defined(HAVE_LSAN)
+#if defined(HAVE_ASAN) || defined(HAVE_LSAN) || defined(HAVE_TSAN)
     // Do not unload the shared object during dlclose().
     // LeakSanitizer needs this in order to provide call stacks,
     // and to match entries in lsan.supp.
+    // Ditto for ThreadSanitizer and tsan.supp.
     void *handle = dlopen(file_name.c_str(), RTLD_NOW | RTLD_NODELETE);
 #else
     void *handle = dlopen(file_name.c_str(), RTLD_NOW);
 #endif
     if (handle == nullptr) {
       const char *errmsg;
-      int error_number = dlopen_errno;
+      int const error_number = dlopen_errno;
       DLERROR_GENERATE(errmsg, error_number);
       mysql_error_service_printf(ER_CANT_OPEN_LIBRARY, MYF(0),
                                  file_name.c_str(), error_number, errmsg);
@@ -150,7 +151,7 @@ DEFINE_BOOL_METHOD(mysql_dynamic_loader_scheme_file_imp::load,
     });
 
     /* Look for "list_components" function. */
-    list_components_func list_func = reinterpret_cast<list_components_func>(
+    auto list_func = reinterpret_cast<list_components_func>(
         dlsym(handle, COMPONENT_ENTRY_FUNC));
     if (list_func == nullptr) {
       return true;
@@ -158,7 +159,7 @@ DEFINE_BOOL_METHOD(mysql_dynamic_loader_scheme_file_imp::load,
 
     /* Check if library is not already loaded, by comparing "list_components"
       function address. */
-    if (library_entry_set.insert(list_func).second == false) {
+    if (!library_entry_set.insert(list_func).second) {
       return true;
     }
 
@@ -175,7 +176,7 @@ DEFINE_BOOL_METHOD(mysql_dynamic_loader_scheme_file_imp::load,
 
     /* Add library and it's handle to list of loaded libraries. */
 
-    if (object_files_list.emplace(urn_string, handle).second == false) {
+    if (!object_files_list.emplace(urn_string, handle).second) {
       return true;
     }
 
@@ -204,20 +205,20 @@ DEFINE_BOOL_METHOD(mysql_dynamic_loader_scheme_file_imp::unload,
                    (const char *urn)) {
   try {
     /* Find library matching URN specified. */
-    minimal_chassis::rwlock_scoped_lock lock(
+    minimal_chassis::rwlock_scoped_lock const lock(
         &mysql_dynamic_loader_scheme_file_imp::LOCK_dynamic_loader_scheme_file,
         true, __FILE__, __LINE__);
 
     /* This will happen when load() is not called for a component */
-    if (object_files_list.size() == 0) return false;
+    if (object_files_list.empty()) return false;
 
-    my_registry::iterator it = object_files_list.find(std::string(urn));
+    auto it = object_files_list.find(std::string(urn));
     if (it == object_files_list.end()) {
       return true;
     }
 
     /* Delete entry from library entry points list. */
-    list_components_func list_func = reinterpret_cast<list_components_func>(
+    auto list_func = reinterpret_cast<list_components_func>(
         dlsym(it->second, "list_components"));
     library_entry_set.erase(list_func);
 

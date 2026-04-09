@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,10 +23,10 @@
 
 /* open a MyISAM MERGE table */
 
-#include <errno.h>
 #include <fcntl.h>
-#include <stddef.h>
 #include <sys/types.h>
+#include <cerrno>
+#include <cstddef>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -86,7 +86,8 @@ MYRG_INFO *myrg_open(const char *name, int mode, int handle_locking) {
     if (!buff[0]) continue; /* Skip empty lines */
     if (buff[0] == '#') {
       if (!strncmp(buff + 1, "INSERT_METHOD=", 14)) { /* Lookup insert method */
-        int tmp = find_type(buff + 15, &merge_insert_method, FIND_TYPE_BASIC);
+        int const tmp =
+            find_type(buff + 15, &merge_insert_method, FIND_TYPE_BASIC);
         found_merge_insert_method = (uint)(tmp >= 0 ? tmp : 0);
       }
       continue; /* Skip comments */

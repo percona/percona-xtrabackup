@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -120,7 +120,7 @@ void Cost_constant_cache::close() {
 
 void Cost_constant_cache::reload() {
   DBUG_TRACE;
-  assert(m_inited = true);
+  assert(m_inited);
 
   // Original optimizer costs.
 

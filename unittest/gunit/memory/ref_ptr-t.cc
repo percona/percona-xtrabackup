@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,19 +31,18 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-namespace memory {
-namespace unittests {
+namespace memory::unittests {
 
 class Ref_ptr_test : public ::testing::Test {
  protected:
   Ref_ptr_test() = default;
-  virtual void SetUp() {}
-  virtual void TearDown() {}
+  void SetUp() override {}
+  void TearDown() override {}
 };
 
 TEST_F(Ref_ptr_test, Class_template_test) {
   std::string str{"012345678"};
-  memory::Ref_ptr<std::string> ptr{str};
+  memory::Ref_ptr<std::string> const ptr{str};
   EXPECT_EQ(ptr->length(), 9);
   EXPECT_EQ(*ptr, "012345678");
 
@@ -52,7 +51,7 @@ TEST_F(Ref_ptr_test, Class_template_test) {
   EXPECT_EQ(equal, true);
 
   std::string str2{"012345678"};
-  memory::Ref_ptr<std::string> ptr3{str2};
+  memory::Ref_ptr<std::string> const ptr3{str2};
   equal = (ptr2 == ptr3);
   EXPECT_EQ(equal, false);
 
@@ -61,5 +60,4 @@ TEST_F(Ref_ptr_test, Class_template_test) {
   EXPECT_EQ(equal, true);
 }
 
-}  // namespace unittests
-}  // namespace memory
+}  // namespace memory::unittests

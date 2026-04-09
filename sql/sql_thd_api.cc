@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,7 +50,6 @@
 #include "sql/mysqld_thd_manager.h"  // Global_THD_manager
 #include "sql/protocol_classic.h"
 #include "sql/query_options.h"
-#include "sql/resourcegroups/platform/thread_attrs_api.h"  // num_vcpus
 #include "sql/rpl_replica_commit_order_manager.h"  // check_and_report_deadlock
 #include "sql/rpl_rli.h"                           // is_mts_worker
 #include "sql/sql_alter.h"
@@ -256,6 +255,7 @@ uint thd_get_net_read_write(THD *thd) {
 
 void thd_set_net_read_write(THD *thd, uint val) {
   thd->get_protocol_classic()->get_net()->reading_or_writing = val;
+  thd->store_cached_properties(THD::cached_properties::RW_STATUS);
 }
 
 /**
@@ -727,10 +727,6 @@ void remove_ssl_err_thread_state() {
 #if !defined(HAVE_OPENSSL11)
   ERR_remove_thread_state(nullptr);
 #endif
-}
-
-unsigned int thd_get_num_vcpus() {
-  return resourcegroups::platform::num_vcpus();
 }
 
 bool thd_check_connection_admin_privilege(MYSQL_THD thd) {

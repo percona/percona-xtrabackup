@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,13 +25,13 @@
 
 #include "my_rapidjson_size_t.h"  // IWYU pragma: keep
 
-#include <assert.h>
 #include <rapidjson/document.h>
 #include <rapidjson/error/error.h>
 #include <rapidjson/memorystream.h>
 #include <rapidjson/reader.h>
 #include <rapidjson/schema.h>
 #include <rapidjson/stringbuffer.h>
+#include <cassert>
 #include <string>
 #include <utility>
 
@@ -230,7 +230,8 @@ bool Json_schema_validator_impl::is_valid_json_schema(
   // Wrap this in a try-catch since rapidjson calls std::regex_search
   // (which isn't noexcept).
   try {
-    rapidjson::ParseResult parse_success = reader.Parse(stream, validator);
+    rapidjson::ParseResult const parse_success =
+        reader.Parse(stream, validator);
     // We may end up in a few different error scenarios here:
     // 1) The document is valid JSON, but invalid according to schema.
     //   - parse_success will indicate error, and validator.IsValid() is false.
@@ -248,7 +249,8 @@ bool Json_schema_validator_impl::is_valid_json_schema(
 
     if (!parse_success && validator.IsValid()) {
       // Couldn't parse the JSON document.
-      std::pair<std::string, size_t> error = get_error_from_reader(reader);
+      std::pair<std::string, size_t> const error =
+          get_error_from_reader(reader);
       error_handler.InvalidJsonText(2, error.first.c_str(), error.second);
       return true;
     }

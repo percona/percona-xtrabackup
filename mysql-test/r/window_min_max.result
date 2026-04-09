@@ -95,6 +95,7 @@ i	j	min
 1	4	2
 1	2	2
 1	4	2
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON SELECT i, j, MIN(i+j) OVER (ROWS UNBOUNDED PRECEDING) min FROM t ORDER BY NULL DESC;
 EXPLAIN
 {
@@ -137,6 +138,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`i` AS `i`,`test`.`t`.`j` AS `j`,min((`test`.`t`.`i` + `test`.`t`.`j`)) OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)  AS `min` from `test`.`t` order by NULL desc
+SET explain_json_format_version = DEFAULT;
 With LIMIT
 SELECT i, j, MIN(i+j) OVER (ROWS UNBOUNDED PRECEDING) min FROM t ORDER BY j DESC LIMIT 3;
 i	j	min
@@ -1223,7 +1225,7 @@ NULL	NULL	NULL
 Warnings:
 Warning	1235	This version of MySQL doesn't yet support 'sorting of non-scalar JSON values'
 SELECT j, JSON_TYPE(j), JSON_TYPE(MIN(j) OVER (ORDER BY j RANGE 3 PRECEDING)) FROM tj;
-ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one ORDER BY expression, of numeric or temporal type
+ERROR HY000: Window '<unnamed window>' with RANGE N PRECEDING/FOLLOWING frame requires exactly one deterministic ORDER BY expression, of numeric or temporal type
 INSERT INTO tj(j) VALUES ('3.14');
 SELECT j, JSON_TYPE(j), JSON_TYPE(MAX(j) OVER (ORDER BY j ROWS 3 PRECEDING)) FROM tj;
 j	JSON_TYPE(j)	JSON_TYPE(MAX(j) OVER (ORDER BY j ROWS 3 PRECEDING))
@@ -1605,3 +1607,14 @@ MIN(TIMESTAMP'2000-01-01 12:00:00') OVER () =
 TIMESTAMP'2000-01-01 12:00:00' AS c7;
 c1	c2	c3	c4	c5	c6	c7
 2000-01-01	12:00:00	2000-01-01 12:00:00	[123]	1	1	1
+#
+# Bug#36182490 MIN, as window function, returns wrong NULL result
+#
+CREATE TABLE t(a INT);
+INSERT INTO t VALUES (null), (1), (2);
+SELECT a, MIN(a) OVER (ORDER BY a ROWS UNBOUNDED PRECEDING) FROM t;
+a	MIN(a) OVER (ORDER BY a ROWS UNBOUNDED PRECEDING)
+NULL	NULL
+1	1
+2	1
+DROP TABLE t;

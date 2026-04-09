@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -170,8 +170,8 @@ static Uint32 max_pages = 0;
 static int already_inserted_count = 0;
 static int ignored_rows = 0;
 static Uint32 all_rows_count = 0;
-static RowEntry **row_entries = NULL;
-static RowEntry **row_all_entries = NULL;
+static RowEntry **row_entries = nullptr;
+static RowEntry **row_all_entries = nullptr;
 
 #define IGNORE_PART 1
 #define ALL_PART 2
@@ -255,8 +255,8 @@ RowEntry *find_row(Uint32 page_id, Uint32 page_idx, bool is_all) {
   else
     loc_entries = row_entries;
 
-  if (page_id >= max_pages) return NULL;
-  if (loc_entries[page_id] == NULL) return NULL;
+  if (page_id >= max_pages) return nullptr;
+  if (loc_entries[page_id] == nullptr) return nullptr;
   RowEntry *current = loc_entries[page_id];
   do {
     if (current->page_id != page_id) {
@@ -265,8 +265,8 @@ RowEntry *find_row(Uint32 page_id, Uint32 page_idx, bool is_all) {
     }
     if (current->page_idx == page_idx) return current;
     current = current->next_ptr;
-  } while (current != NULL);
-  return NULL;
+  } while (current != nullptr);
+  return nullptr;
 }
 
 void insert_row(Uint32 page_id, Uint32 page_idx, bool is_insert, bool is_all) {
@@ -276,7 +276,7 @@ void insert_row(Uint32 page_id, Uint32 page_idx, bool is_insert, bool is_all) {
     return;
   }
   RowEntry *found_row_entry = find_row(page_id, page_idx, is_all);
-  if (found_row_entry != NULL) {
+  if (found_row_entry != nullptr) {
     if (is_insert && !is_all) {
       /* Entry already existed */
       ndbout_c("row(%u,%u) already existed", page_id, page_idx);
@@ -284,14 +284,14 @@ void insert_row(Uint32 page_id, Uint32 page_idx, bool is_insert, bool is_all) {
     }
     return;
   }
-  RowEntry *new_row_entry = (RowEntry *)malloc(sizeof(struct RowEntry));
-  if (new_row_entry == NULL) {
+  auto *new_row_entry = (RowEntry *)malloc(sizeof(struct RowEntry));
+  if (new_row_entry == nullptr) {
     ndbout_c("Malloc failure in insert_row");
     ndb_end_and_exit(1);
   }
   new_row_entry->page_id = page_id;
   new_row_entry->page_idx = page_idx;
-  new_row_entry->prev_ptr = NULL;
+  new_row_entry->prev_ptr = nullptr;
 
   RowEntry **loc_entries;
   if (is_all)
@@ -300,7 +300,7 @@ void insert_row(Uint32 page_id, Uint32 page_idx, bool is_insert, bool is_all) {
     loc_entries = row_entries;
 
   new_row_entry->next_ptr = loc_entries[page_id];
-  if (loc_entries[page_id] != NULL) {
+  if (loc_entries[page_id] != nullptr) {
     loc_entries[page_id]->prev_ptr = new_row_entry;
   }
   loc_entries[page_id] = new_row_entry;
@@ -316,17 +316,17 @@ void delete_row(Uint32 page_id, Uint32 page_idx) {
     return;
   }
   RowEntry *found_row_entry = find_row(page_id, page_idx, false);
-  if (found_row_entry == NULL) {
+  if (found_row_entry == nullptr) {
     ndbout_c("Trying to delete row(%u,%u) NOT FOUND", page_id, page_idx);
     return;
   }
-  if (found_row_entry->prev_ptr == NULL) {
+  if (found_row_entry->prev_ptr == nullptr) {
     /* First entry in linked list */
     row_entries[page_id] = found_row_entry->next_ptr;
   } else {
     found_row_entry->prev_ptr->next_ptr = found_row_entry->next_ptr;
   }
-  if (found_row_entry->next_ptr != NULL) {
+  if (found_row_entry->next_ptr != nullptr) {
     found_row_entry->next_ptr->prev_ptr = found_row_entry->prev_ptr;
   }
   free(found_row_entry);
@@ -338,22 +338,22 @@ void delete_page(Uint32 page_id) {
              max_pages);
     return;
   }
-  if (row_entries[page_id] == NULL) return;
+  if (row_entries[page_id] == nullptr) return;
   RowEntry *current = row_entries[page_id];
-  row_entries[page_id] = NULL;
+  row_entries[page_id] = nullptr;
   do {
     RowEntry *free_row = current;
     current = current->next_ptr;
     free(free_row);
-  } while (current != NULL);
+  } while (current != nullptr);
 }
 
 void check_data(const char *file_input) {
   FILE *file = fopen(file_input, "r");
-  if (file != NULL) {
+  if (file != nullptr) {
     char line[100];
     while (fgets(line, sizeof(line), file) !=
-           NULL) /* read a line from a file */
+           nullptr) /* read a line from a file */
     {
       Uint32 page_id, page_idx;
       int ret = sscanf(line, "%d %d", &page_id, &page_idx);
@@ -364,7 +364,7 @@ void check_data(const char *file_input) {
         ndb_end_and_exit(1);
       }
       RowEntry *found_entry = find_row(page_id, page_idx, false);
-      if (found_entry != NULL) {
+      if (found_entry != nullptr) {
         ndbout_c("Found deleted row in hash: row_id(%u,%u)",
                  found_entry->page_id, found_entry->page_idx);
       }
@@ -379,7 +379,7 @@ void print_rows() {
   Uint32 row_count = 0;
   for (Uint32 page_id = 0; page_id < max_pages; page_id++) {
     Uint32 rows_page = 0;
-    if (row_entries[page_id] != NULL) {
+    if (row_entries[page_id] != nullptr) {
       RowEntry *current = row_entries[page_id];
       do {
         if (opt_print_rows_flag)
@@ -387,7 +387,7 @@ void print_rows() {
         current = current->next_ptr;
         row_count++;
         rows_page++;
-      } while (current != NULL);
+      } while (current != nullptr);
       if (opt_print_rows_per_page && rows_page != 3) {
         ndbout_c("Rows on page: %u is %u", page_id, rows_page);
       }
@@ -403,7 +403,7 @@ void print_rows() {
 void print_ignored_rows() {
   ndbout_c("Printing ignored rows");
   for (Uint32 page_id = 0; page_id < max_pages; page_id++) {
-    if (row_all_entries[page_id] != NULL) {
+    if (row_all_entries[page_id] != nullptr) {
       RowEntry *current = row_all_entries[page_id];
       do {
         if (!find_row(current->page_id, current->page_idx, false)) {
@@ -411,7 +411,7 @@ void print_ignored_rows() {
                    current->page_idx);
         }
         current = current->next_ptr;
-      } while (current != NULL);
+      } while (current != nullptr);
     }
   }
 }
@@ -469,14 +469,14 @@ void handle_print_restored_rows() {
    */
   max_pages = lcpCtlFilePtr.MaxPageCount;
   row_entries = (RowEntry **)malloc(sizeof(RowEntry *) * max_pages);
-  if (row_entries == NULL) {
+  if (row_entries == nullptr) {
     ndbout << "Malloc failure" << endl;
     ndb_end_and_exit(1);
   }
   std::memset(row_entries, 0, sizeof(RowEntry *) * max_pages);
 
   row_all_entries = (RowEntry **)malloc(sizeof(RowEntry *) * max_pages);
-  if (row_all_entries == NULL) {
+  if (row_all_entries == nullptr) {
     ndbout << "Malloc failure" << endl;
     ndb_end_and_exit(1);
   }
@@ -563,7 +563,8 @@ void handle_print_restored_rows() {
           ignored_rows++;
         }
         continue;
-      } else if (parts_array[part_id] == ALL_PART) {
+      }
+      if (parts_array[part_id] == ALL_PART) {
         if (header_type != BackupFormat::INSERT_TYPE) {
           ndbout_c("NOT INSERT_TYPE when expected");
           ndb_end_and_exit(1);
@@ -771,7 +772,7 @@ int main(int argc, char *argv[]) {
       Uint32 *data;
       while ((dataLen = readLogEntry(f, &data, fileHeader.FileType,
                                      log_entry_version)) > 0) {
-        LogEntry *logEntry = (LogEntry *)data;
+        auto *logEntry = (LogEntry *)data;
         /**
          * Log Entry
          */
@@ -788,7 +789,7 @@ int main(int argc, char *argv[]) {
         if (opt_verbose_level > 0) {
           Int32 pos = 0;
           while (pos < dataLen) {
-            AttributeHeader *ah = (AttributeHeader *)&logEntry->Data[pos];
+            auto *ah = (AttributeHeader *)&logEntry->Data[pos];
             ndbout_c(" Attribut: %d Size: %d", ah->getAttributeId(),
                      ah->getDataSize());
             pos += ah->getDataSize() + 1;
@@ -1220,8 +1221,7 @@ Uint32 decompress_part_pairs(struct BackupFormat::LCPCtlFile *lcpCtlFilePtr,
                              Uint32 num_parts) {
   static unsigned char c_part_array[BackupFormat::NDB_MAX_LCP_PARTS * 4];
   Uint32 total_parts = 0;
-  unsigned char *part_array =
-      (unsigned char *)&lcpCtlFilePtr->partPairs[0].startPart;
+  auto *part_array = (unsigned char *)&lcpCtlFilePtr->partPairs[0].startPart;
   memcpy(c_part_array, part_array, 3 * num_parts);
   Uint32 j = 0;
   for (Uint32 part = 0; part < num_parts; part++) {

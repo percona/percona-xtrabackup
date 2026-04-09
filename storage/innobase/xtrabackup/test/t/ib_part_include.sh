@@ -26,7 +26,7 @@ xtrabackup --backup --tables='^(mysql.*|performance_schema.*|test.test)$' --targ
 xtrabackup --prepare --target-dir=$topdir/backup
 vlog "Backup taken"
 
-mysql -e 'SELECT * FROM INFORMATION_SCHEMA.TABLES\G'
+mysql --commands -e 'SELECT * FROM INFORMATION_SCHEMA.TABLES\G'
 
 stop_server
 

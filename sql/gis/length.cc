@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -90,8 +90,8 @@ bool length(const dd::Spatial_reference_system *srs, const Geometry *g1,
       return false;
     }
 
-    Length len(srs ? srs->semi_major_axis() : 0.0,
-               srs ? srs->semi_minor_axis() : 0.0);
+    Length const len(srs ? srs->semi_major_axis() : 0.0,
+                     srs ? srs->semi_minor_axis() : 0.0);
     *length = len(*g1);
   } catch (...) {
     handle_gis_exception("st_length");

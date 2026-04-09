@@ -243,8 +243,6 @@ while ($c)
   ROLLBACK;
   dec $c;
 }
-# Incomplete index c2e should exist until the DDL thread notices the overflow.
-# (The output below strips TEMP_INDEX_PREFIX from the name.)
 eval $innodb_metrics_select;
 SET GLOBAL innodb_monitor_reset = module_ddl;
 SELECT sf.name, sf.pos FROM INFORMATION_SCHEMA.INNODB_INDEXES si

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2014, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -78,7 +78,7 @@ bool Command_line_options::check_arg_with_value(char **argv, int &argi,
   if (larg && strncmp(argv[argi], larg, strlen(larg)) == 0 &&
       strlen(argv[argi]) > strlen(larg)) {  // -ovalue
     value = argv[argi] + strlen(larg);
-    std::size_t length = strlen(value);
+    std::size_t const length = strlen(value);
 
     if (length > 0 && should_remove_qoutes(value[0], value[length - 1])) {
       value[length - 1] = 0;
@@ -92,7 +92,7 @@ bool Command_line_options::check_arg_with_value(char **argv, int &argi,
       argv[argi][strlen(arg)] == '=') {  // --option=value
     // value must be after =
     value = argv[argi] + strlen(arg) + 1;
-    std::size_t length = strlen(value);
+    std::size_t const length = strlen(value);
 
     if (length > 0 && should_remove_qoutes(value[0], value[length - 1])) {
       value[length - 1] = 0;

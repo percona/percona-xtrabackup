@@ -15,6 +15,12 @@
 # This test takes long time, so only run it with the --big-test mtr-flag.
 --source include/big_test.inc
 
+let $messages =
+Failed to compress the gtid_executed table
+;
+--let $suppress_on_current_connection = 1
+--source include/suppress_messages.inc
+
 let MYSQLD_DATADIR =`SELECT @@datadir`;
 let $innodb_file_per_table = `SELECT @@innodb_file_per_table`;
 let $innodb_flush_log_at_trx_commit_orig =`select @@innodb_flush_log_at_trx_commit`;

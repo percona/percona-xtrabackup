@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET SESSION DEFAULT_STORAGE_ENGINE = MyISAM;
 drop table if exists t1,t3,t4,t5;
 create table t1 (a int, b char(10), key a(a), key b(a,b));
@@ -2078,4 +2079,5 @@ Table	Op	Msg_type	Msg_text
 test.t1	preload_keys	status	OK
 HANDLER t1 READ FIRST;
 ERROR 42S02: Unknown table 't1' in HANDLER
+include/rpl/set_gtid_mode_on.inc
 End of 5.1 tests

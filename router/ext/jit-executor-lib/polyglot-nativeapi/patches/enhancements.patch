@@ -1,0 +1,2618 @@
+diff --git a/src/main/java/org/graalvm/polyglot/nativeapi/PolyglotNativeAPI.java b/src/main/java/org/graalvm/polyglot/nativeapi/PolyglotNativeAPI.java
+index 1ed21c307..7006dbd44 100644
+--- a/src/main/java/org/graalvm/polyglot/nativeapi/PolyglotNativeAPI.java
++++ b/src/main/java/org/graalvm/polyglot/nativeapi/PolyglotNativeAPI.java
+@@ -28,23 +28,60 @@ import static org.graalvm.polyglot.nativeapi.types.PolyglotNativeAPITypes.Polygl
+ import static org.graalvm.polyglot.nativeapi.types.PolyglotNativeAPITypes.PolyglotStatus.poly_ok;
+ import static org.graalvm.polyglot.nativeapi.types.PolyglotNativeAPITypes.PolyglotStatus.poly_pending_exception;
+
++import java.io.File;
+ import java.io.IOException;
+ import java.io.OutputStream;
+ import java.io.PrintWriter;
+ import java.io.StringWriter;
++import java.lang.invoke.VarHandle;
++import java.lang.ref.Cleaner;
++import java.net.URI;
+ import java.nio.ByteBuffer;
++import java.nio.channels.AsynchronousCloseException;
++import java.nio.channels.ByteChannel;
++import java.nio.channels.ClosedByInterruptException;
++import java.nio.channels.ClosedChannelException;
++import java.nio.channels.NonReadableChannelException;
++import java.nio.channels.NonWritableChannelException;
++import java.nio.channels.ReadableByteChannel;
++import java.nio.channels.SeekableByteChannel;
++import java.nio.channels.WritableByteChannel;
+ import java.nio.charset.Charset;
+ import java.nio.charset.StandardCharsets;
++import java.nio.file.AtomicMoveNotSupportedException;
++import java.nio.file.CopyOption;
++import java.nio.file.DirectoryNotEmptyException;
++import java.nio.file.DirectoryStream;
++import java.nio.file.FileAlreadyExistsException;
++import java.nio.file.LinkOption;
++import java.nio.file.NoSuchFileException;
++import java.nio.file.NotDirectoryException;
++import java.nio.file.NotLinkException;
++import java.nio.file.OpenOption;
++import java.nio.file.Path;
++import java.nio.file.Paths;
++import java.nio.file.AccessMode;
++import java.nio.file.StandardCopyOption;
++import java.nio.file.StandardOpenOption;
++import java.nio.file.attribute.FileAttribute;
++import java.nio.file.attribute.FileAttributeView;
++import java.nio.file.spi.FileSystemProvider;
++import java.time.Duration;
+ import java.time.ZoneId;
++import java.util.Collection;
+ import java.util.Comparator;
+ import java.util.HashMap;
+ import java.util.LinkedList;
+ import java.util.List;
++import java.util.Map;
+ import java.util.Map.Entry;
++import java.util.NoSuchElementException;
+ import java.util.Objects;
+ import java.util.concurrent.TimeUnit;
++import java.util.concurrent.TimeoutException;
+ import java.util.concurrent.atomic.AtomicReference;
+ import java.util.stream.Collectors;
++import java.util.Set;
+
+ import org.graalvm.nativeimage.CurrentIsolate;
+ import org.graalvm.nativeimage.ImageSingletons;
+@@ -77,7 +114,9 @@ import org.graalvm.polyglot.PolyglotException;
+ import org.graalvm.polyglot.SandboxPolicy;
+ import org.graalvm.polyglot.Source;
+ import org.graalvm.polyglot.Value;
++import org.graalvm.polyglot.HostAccess;
+ import org.graalvm.polyglot.io.IOAccess;
++import org.graalvm.polyglot.io.FileSystem;
+ import org.graalvm.polyglot.nativeapi.types.CBoolPointer;
+ import org.graalvm.polyglot.nativeapi.types.CInt16Pointer;
+ import org.graalvm.polyglot.nativeapi.types.CInt32Pointer;
+@@ -114,6 +153,8 @@ import org.graalvm.polyglot.nativeapi.types.PolyglotNativeAPITypes.SizeTPointer;
+ import org.graalvm.polyglot.proxy.ProxyArray;
+ import org.graalvm.polyglot.proxy.ProxyExecutable;
+ import org.graalvm.polyglot.proxy.ProxyObject;
++import org.graalvm.polyglot.proxy.ProxyIterator;
++import org.graalvm.polyglot.proxy.ProxyIterable;
+ import org.graalvm.word.PointerBase;
+ import org.graalvm.word.UnsignedWord;
+ import org.graalvm.word.WordFactory;
+@@ -186,6 +227,37 @@ public final class PolyglotNativeAPI {
+         ObjectHandle recurringCallbackInfoHandle = WordFactory.nullPointer();
+     }
+
++    /**
++     * Handles a callback exception whether it is an IOException or descendant
++     * @param ce The exception to be handled.
++     */
++    private static void handleIOException(CallbackException ce) throws IOException{
++        if (ce != null) {
++            try {
++                CallbackCustomException cce = (CallbackCustomException) ce;
++                IOException ioe = (IOException) cce.throwException();
++                throw ioe;
++            } catch(ClassCastException err) {
++                // NO-OP
++            }
++        }
++    }
++
++    /**
++     * Handles a callback exception whether it is an exception object or a single error
++     * @param ce The exception to be handled.
++     */
++    private static void handleCallbackException(CallbackException ce) {
++        if (ce != null) {
++            try {
++                CallbackObjectException poe = (CallbackObjectException) ce;
++                throw poe.throwException();
++            } catch(ClassCastException err) {
++                throw ce;
++            }
++        }
++    }
++
+     private static void nullCheck(PointerBase ptr, String fieldName) {
+         if (ptr.isNull()) {
+             throw new NullPointerException(fieldName + " must be not be null");
+@@ -628,6 +700,24 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_context_builder_allow_buffer_access_constrained_policy", exceptionHandler = ExceptionHandler.class, documentation = {
++                    "Allows or disallows access to buffer for a <code>poly_context_builder</code>.",
++                    "",
++                    "@param context_builder that is modified.",
++                    "@param allow_buffer_access bool value that is passed to the builder.",
++                    "@return poly_ok if all works, poly_generic_error if there is a failure.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.Builder.html#allowPolyglotAccess-org.graalvm.polyglot.PolyglotAccess-",
++                    "@since 19.0",
++    })
++    public static PolyglotStatus poly_context_builder_allow_buffer_access_constrained_policy(PolyglotIsolateThread thread, PolyglotContextBuilder context_builder, boolean allow_buffer_access) {
++        resetErrorState();
++        nullCheck(context_builder, "context_builder");
++        Context.Builder contextBuilder = fetchHandle(context_builder);
++        contextBuilder.allowHostAccess(HostAccess.newBuilder(HostAccess.CONSTRAINED).allowBufferAccess(allow_buffer_access).build());
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_context_builder_allow_create_thread", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Allows or disallows thread creation for a <code>poly_context_builder</code>.",
+                     "",
+@@ -681,6 +771,43 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_context_builder_set_current_working_directory", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Sets the current working directory used by the guest application to resolve relative paths.",
++        "",
++        "@param context_builder that is modified.",
++        "@param path to be set as current working directory.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++        "",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.Builder.html#currentWorkingDirectory(java.nio.file.Path)",
++    })
++    public static PolyglotStatus poly_context_builder_set_current_working_directory(PolyglotIsolateThread thread, PolyglotContextBuilder context_builder, @CConst CCharPointer path) {
++        resetErrorState();
++        nullCheck(context_builder, "context_builder");
++        nullCheck(path, "path");
++        Context.Builder contextBuilder = fetchHandle(context_builder);
++        contextBuilder.currentWorkingDirectory(Path.of(CTypeConversion.utf8ToJavaString(path)));
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_context_builder_set_file_system", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Sets the FileSystem to be used on the contexts built by this builder.",
++        "",
++        "@param context_builder that is modified.",
++        "@param FileSystem to be used.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++        "",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.Builder.html#fileSystem(org.graalvm.polyglot.io.FileSystem)",
++    })
++    public static PolyglotStatus poly_context_builder_set_file_system(PolyglotIsolateThread thread, PolyglotContextBuilder context_builder, PolyglotValue file_system) {
++        resetErrorState();
++        nullCheck(context_builder, "context_builder");
++        nullCheck(file_system, "file_system");
++        Context.Builder contextBuilder = fetchHandle(context_builder);
++        PolyglotProxyFileSystem fs = fetchHandle(file_system);
++        contextBuilder.allowIO(IOAccess.newBuilder().fileSystem(fs).build());
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_context_builder_build", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Builds a <code>context</code> from a <code>context_builder</code>. The same builder can be used to ",
+                     "produce multiple <code>poly_context</code> instances.",
+@@ -808,6 +935,138 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_context_eval_source", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Evaluate a source of guest languages inside a context.",
++        "",
++        "@param context in which we evaluate source code.",
++        "@param source source object to be evaluated.",
++        "@param result <code>poly_value</code> that is the result of the evaluation. You can pass <code>NULL</code> if you just want to evaluate the source and you can ignore the result.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++    })
++    public static PolyglotStatus poly_context_eval_source(PolyglotIsolateThread thread, PolyglotContext context, PolyglotValue source, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(source, "source");
++        Context c = fetchHandle(context);
++        Source s = fetchHandle(source);
++
++        Value evalResult = c.eval(s);
++        if (result.isNonNull()) {
++            result.write(createHandle(evalResult));
++        }
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_create_source_builder", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates a Source object.",
++        "",
++        "@param language_id_utf8 0 terminated and UTF-8 encoded language identifier.",
++        "@param name_utf8 0 terminated and UTF-8 encoded name given to the evaluate source code.",
++        "@param source_utf8 0 terminated and UTF-8 encoded source code to be evaluated.",
++        "@param result <code>poly_value</code> that is the Source Builder object.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++    })
++    public static PolyglotStatus poly_create_source_builder(PolyglotIsolateThread thread, @CConst CCharPointer language_id_utf8, @CConst CCharPointer name_utf8,
++            @CConst CCharPointer source_utf8, PolyglotValuePointer result) throws Exception {
++        resetErrorState();
++        nullCheck(language_id_utf8, "language_id_utf8");
++        nullCheck(name_utf8, "name_utf8");
++        nullCheck(source_utf8, "source_utf8");
++        String languageName = CTypeConversion.utf8ToJavaString(language_id_utf8);
++        String jName = CTypeConversion.utf8ToJavaString(name_utf8);
++        String jCode = CTypeConversion.utf8ToJavaString(source_utf8);
++
++        Source.Builder builder = Source.newBuilder(languageName, jCode, jName);
++        result.write(createHandle(builder));
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_source_builder_set_mime_type", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates a Source object.",
++        "",
++        "@param context in which we evaluate source code.",
++        "@param language_id_utf8 0 terminated and UTF-8 encoded language identifier.",
++        "@param name_utf8 0 terminated and UTF-8 encoded name given to the evaluate source code.",
++        "@param source_utf8 0 terminated and UTF-8 encoded source code to be evaluated.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++    })
++    public static PolyglotStatus poly_source_builder_set_mime_type(PolyglotIsolateThread thread, PolyglotValue sourceBuilder, @CConst CCharPointer mimeType) {
++        resetErrorState();
++        nullCheck(sourceBuilder, "source");
++        nullCheck(mimeType, "mimeType");
++        Source.Builder builder = fetchHandle(sourceBuilder);
++        String strMimeType = CTypeConversion.utf8ToJavaString(mimeType);
++        builder.mimeType(strMimeType);
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_source_builder_build", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates a Source object.",
++        "",
++        "@param context in which we evaluate source code.",
++        "@param result <code>poly_value</code> that is the Source object.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++    })
++    public static PolyglotStatus poly_source_builder_build(PolyglotIsolateThread thread, PolyglotValue sourceBuilder, PolyglotValuePointer result) throws IOException {
++        resetErrorState();
++        nullCheck(sourceBuilder, "source");
++        Source.Builder builder = fetchHandle(sourceBuilder);
++        Source source = builder.build();
++        result.write(createHandle(source));
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_context_parse", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Parses a source of guest languages inside a context.",
++        "",
++        "@param context in which we evaluate source code.",
++        "@param language_id_utf8 0 terminated and UTF-8 encoded language identifier.",
++        "@param name_utf8 0 terminated and UTF-8 encoded name given to the evaluate source code.",
++        "@param source_utf8 0 terminated and UTF-8 encoded source code to be evaluated.",
++        "@param result <code>poly_value</code> that is the result of the evaluation. You can pass <code>NULL</code> if you just want to evaluate the source and you can ignore the result.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++        "",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Source.html#newBuilder-java.lang.String-java.lang.CharSequence-java.lang.String-",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#eval-org.graalvm.polyglot.Source-",
++        "@since 19.0",
++    })
++    public static PolyglotStatus poly_context_parse(PolyglotIsolateThread thread, PolyglotContext context, @CConst CCharPointer language_id_utf8, @CConst CCharPointer name_utf8,
++            @CConst CCharPointer source_utf8, PolyglotValuePointer result) throws Exception {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(language_id_utf8, "language_id_utf8");
++        nullCheck(name_utf8, "name_utf8");
++        nullCheck(source_utf8, "source_utf8");
++        Context c = fetchHandle(context);
++        String languageName = CTypeConversion.utf8ToJavaString(language_id_utf8);
++        String jName = CTypeConversion.utf8ToJavaString(name_utf8);
++        String jCode = CTypeConversion.utf8ToJavaString(source_utf8);
++
++        Source sourceCode = Source.newBuilder(languageName, jCode, jName).build();
++        Value parseResult = c.parse(sourceCode);
++        if (result.isNonNull()) {
++            result.write(createHandle(parseResult));
++        }
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_context_interrupt", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Use this method to interrupt this context. The interruption is non-destructive meaning the",
++        "context is still usable after this method finishes. Please note that guest finally blocks are",
++        "executed during interrupt. A context thread may not be interruptiple if it uses",
++        "non-interruptible waiting or executes non-interruptible host code.",
++        "",
++        "@param context in which we evaluate source code.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++    })
++    public static PolyglotStatus poly_context_interrupt(PolyglotIsolateThread thread, PolyglotContext context) throws Exception {
++        resetErrorState();
++        nullCheck(context, "context");
++        Context c = fetchHandle(context);
++        c.interrupt(Duration.ZERO);
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_context_get_engine", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Returns the engine this context belongs to.",
+                     "",
+@@ -954,6 +1213,36 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_value_get_member_keys", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Returns the list of members.",
++        "",
++        "@return poly_ok if all works, poly_generic_failure if the value has no members, the given identifier exists ",
++        "        but is not readable, if a guest language error occurred during execution.",
++    })
++    public static PolyglotStatus poly_value_get_member_keys(PolyglotIsolateThread thread, PolyglotContext context, PolyglotValue value, SizeTPointer size, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(value, "value");
++        nullCheck(size, "size");
++        Value jObject = fetchHandle(value);
++
++        Set<String> keys = jObject.getMemberKeys();
++        size.write(WordFactory.unsigned(keys.size()));
++
++        // If result is null, only the updated size is returned
++        if (result.isNonNull()) {
++            nullCheck(result, "result");
++            Context ctx = fetchHandle(context);
++
++            int index = 0;
++            for (String member: jObject.getMemberKeys()) {
++                result.write(index, createHandle(ctx.asValue(member)));
++                index++;
++            }
++        }
++
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_value_put_member", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Sets the value of a member with the `identifier_utf8`.",
+                     "",
+@@ -975,6 +1264,25 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_value_remove_member", exceptionHandler = ExceptionHandler.class, documentation = {
++                    "Removes a member with the `identifier_utf8`.",
++                    "",
++                    "@param identifier_utf8 0 terminated and UTF-8 encoded member identifier.",
++                    "@return poly_ok if all works, poly_generic_failure if the context is already closed, if the value does ",
++                    "         not have any members, the key does not exist and new members cannot be added, or the existing ",
++                    "         member is not modifiable.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Value.html#putMember-java.lang.String-java.lang.Object-",
++                    "@since 19.0",
++    })
++    public static PolyglotStatus poly_value_remove_member(PolyglotIsolateThread thread, PolyglotValue value, @CConst CCharPointer identifier_utf8, CBoolPointer result) {
++        resetErrorState();
++        nullCheck(identifier_utf8, "identifier_utf8");
++        Value jObject = fetchHandle(value);
++        result.write(CTypeConversion.toCBoolean(jObject.removeMember(CTypeConversion.utf8ToJavaString(identifier_utf8))));
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_value_has_member", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Returns `true` if such a member exists for the given `identifier_utf8`. If the value has no members ",
+                     "then it returns `false`.",
+@@ -1174,86 +1482,1769 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
+-    @CEntryPoint(name = "poly_create_character", exceptionHandler = ExceptionHandler.class, documentation = {
+-                    "Creates a polyglot character from C `char`.",
+-                    "",
+-                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
+-                    "",
+-                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
+-                    "@since 19.0",
++    @CEntryPoint(name = "poly_create_character", exceptionHandler = ExceptionHandler.class, documentation = {
++                    "Creates a polyglot character from C `char`.",
++                    "",
++                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
++                    "@since 19.0",
++    })
++    public static PolyglotStatus poly_create_character(PolyglotIsolateThread thread, PolyglotContext context, char character, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(result, "result");
++        Context ctx = fetchHandle(context);
++        result.write(createHandle(ctx.asValue(character)));
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_create_string_utf8", exceptionHandler = ExceptionHandler.class, documentation = {
++                    "Creates a polyglot string from an UTF-8 encoded string. ",
++                    "If `POLY_AUTO_LENGTH` is passed as the `length` argument, then `string_utf8` is decoded until a 0 terminator is found.",
++                    "Otherwise, `length` bytes from `string_uft8` are encoded as a polyglot string value.",
++                    "",
++                    "@param string_utf8 UTF-8 encoded C string, which may or may not be 0 terminated.",
++                    "@param length POLY_AUTO_LENGTH if the string is 0 terminated, or otherwise the length of C string.",
++                    "@return the polyglot string value.",
++                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
++                    "@since 19.0",
++    })
++    public static PolyglotStatus poly_create_string_utf8(PolyglotIsolateThread thread, PolyglotContext context, @CConst CCharPointer string_utf8, UnsignedWord length, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(string_utf8, "string_utf8");
++        nullCheck(result, "result");
++        Context ctx = fetchHandle(context);
++        if (length.equal(POLY_AUTO_LENGTH)) {
++            result.write(createHandle(ctx.asValue(CTypeConversion.utf8ToJavaString(string_utf8))));
++        } else {
++            result.write(createHandle(ctx.asValue(CTypeConversion.toJavaString(string_utf8, length, UTF8_CHARSET))));
++        }
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_create_byte_buffer", exceptionHandler = ExceptionHandler.class, documentation = {
++                    "Creates a polyglot buffer from binary data. ",
++                    "`length` bytes from `data` are represented as a polyglot buffer.",
++                    "",
++                    "@param data Pointer to the binary data",
++                    "@param length the length of binary data ",
++                    "@return the handle to polyglot byte buffer.",
++                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
++                    "@since 19.0",
++    })
++    public static PolyglotStatus poly_create_byte_buffer(PolyglotIsolateThread thread, PolyglotContext context, @CConst VoidPointer data, UnsignedWord length, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(data, "data");
++        nullCheck(result, "result");
++        Context ctx = fetchHandle(context);
++        int intLength = UnsignedUtils.safeToInt(length);
++        ByteBuffer byteBuffer = CTypeConversion.asByteBuffer(data, intLength);
++
++        // NOTE: The above implementation used in the server, requires the original data source
++        // to remain available while the created value is in use. Since in the shell that is not
++        // possible, we require to create a buffer that contains the data, not that only
++        // references it, so it is done in these lines
++        ByteBuffer finalByteBuffer = ByteBuffer.allocate(byteBuffer.capacity());
++        finalByteBuffer.order(byteBuffer.order());
++        finalByteBuffer.put(byteBuffer);
++
++        result.write(createHandle(ctx.asValue(finalByteBuffer)));
++
++        return poly_ok;
++    }
++
++
++    @CEntryPoint(name = "poly_write_to_byte_buffer", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates a polyglot buffer from binary data. ",
++        "`length` bytes from `data` are represented as a polyglot buffer.",
++        "",
++        "@param data Pointer to the binary data",
++        "@param length the length of binary data ",
++        "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++        "",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
++        "@since 19.0",
++        })
++        public static PolyglotStatus poly_write_to_byte_buffer(PolyglotIsolateThread thread, PolyglotContext context, PolyglotValue byte_buffer, @CConst VoidPointer data, UnsignedWord length) {
++            resetErrorState();
++            nullCheck(context, "context");
++            nullCheck(data, "data");
++            nullCheck(byte_buffer, "byte_buffer");
++            Context ctx = fetchHandle(context);
++            Value vbyte_buffer = fetchHandle(byte_buffer);
++            ByteBuffer target = vbyte_buffer.asHostObject();
++            int intLength = UnsignedUtils.safeToInt(length);
++            ByteBuffer byteBuffer = CTypeConversion.asByteBuffer(data, intLength);
++
++            target.put(byteBuffer);
++
++            return poly_ok;
++        }
++
++        @CEntryPoint(name = "poly_read_from_byte_buffer", exceptionHandler = ExceptionHandler.class, documentation = {
++            "Creates a polyglot buffer from binary data. ",
++            "`length` bytes from `data` are represented as a polyglot buffer.",
++            "",
++            "@param data Pointer to the binary data",
++            "@param length the length of binary data ",
++            "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++            "",
++            "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
++            "@since 19.0",
++            })
++            public static PolyglotStatus poly_read_from_byte_buffer(PolyglotIsolateThread thread, PolyglotContext context, PolyglotValue byte_buffer, @CConst VoidPointer data, UnsignedWord length) {
++                resetErrorState();
++                nullCheck(context, "context");
++                nullCheck(data, "data");
++                nullCheck(byte_buffer, "byte_buffer");
++                Context ctx = fetchHandle(context);
++                Value vbyte_buffer = fetchHandle(byte_buffer);
++                ByteBuffer source = vbyte_buffer.asHostObject();
++
++                int intLength = UnsignedUtils.safeToInt(length);
++                ByteBuffer byteBuffer = CTypeConversion.asByteBuffer(data, intLength);
++                byteBuffer.put(source);
++
++                return poly_ok;
++            }
++
++    @CEntryPoint(name = "poly_create_null", exceptionHandler = ExceptionHandler.class, documentation = {
++                    "Creates the polyglot `null` value.",
++                    "",
++                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
++                    "@since 19.0",
++    })
++    public static PolyglotStatus poly_create_null(PolyglotIsolateThread thread, PolyglotContext context, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(result, "result");
++        Context ctx = fetchHandle(context);
++        result.write(createHandle(ctx.asValue(null)));
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_create_object", exceptionHandler = ExceptionHandler.class, documentation = {
++                    "Creates a polyglot object with no members.",
++                    "",
++                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/proxy/ProxyObject.html#fromMap-java.util.Map-",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
++                    "@since 19.0",
++    })
++    public static PolyglotStatus poly_create_object(PolyglotIsolateThread thread, PolyglotContext context, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(result, "result");
++        Context c = fetchHandle(context);
++        ProxyObject proxy = ProxyObject.fromMap(new HashMap<>());
++        result.write(createHandle(c.asValue(proxy)));
++        return poly_ok;
++    }
++
++    /**
++     * Interface to be implemented by objects holding native data
++     */
++    private static class NativeDataHolder implements AutoCloseable {
++        private static Cleaner cleaner = Cleaner.create();
++
++        private final Cleaner.Cleanable cleanable;
++        private final Destructor destructor;
++
++        public VoidPointer getData() {
++            return destructor.getData();
++        }
++
++        public NativeDataHolder(VoidPointer d, PolyglotCallback destroy_cb) {
++            destructor = new Destructor(d, destroy_cb);
++            cleanable = cleaner.register(this, destructor);
++        }
++
++        static class Destructor implements Runnable {
++            private final VoidPointer data;
++            private PolyglotCallback destroy_callback;
++
++            public Destructor(VoidPointer d, PolyglotCallback destroy_cb) {
++                data = d;
++                destroy_callback = destroy_cb;
++            }
++
++            public VoidPointer getData() {
++                return data;
++            }
++
++            @Override
++            public void run() {
++                if (!destroy_callback.isNull()){
++                    int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                    try {
++                        ObjectHandle[] handleArgs = {};
++                        PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                        PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                        destroy_callback.invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                        // Handles any exception generated in the C/C++ callback
++                        handleCallbackException(threadLocals.get().callbackException);
++                    } finally {
++                        threadLocals.get().callbackException = null;
++                        PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                    }
++                }
++
++            }
++        }
++
++        @Override
++        public void close() throws Exception {
++            cleanable.clean();
++        }
++    }
++
++    public static class PolyglotProxySeekableByteChannel extends NativeDataHolder implements SeekableByteChannel
++    {
++        private final PolyglotContext context;
++        private final PolyglotCallback is_open_callback;
++        private final PolyglotCallback close_callback;
++        private final PolyglotCallback read_callback;
++        private final PolyglotCallback write_callback;
++        private final PolyglotCallback position_callback;
++        private final PolyglotCallback set_position_callback;
++        private final PolyglotCallback size_callback;
++        private final PolyglotCallback truncate_callback;
++
++        public PolyglotProxySeekableByteChannel(PolyglotContext c,
++            VoidPointer d,
++            PolyglotCallback is_open_cb,
++            PolyglotCallback close_cb,
++            PolyglotCallback read_cb,
++            PolyglotCallback write_cb,
++            PolyglotCallback position_cb,
++            PolyglotCallback set_position_cb,
++            PolyglotCallback size_cb,
++            PolyglotCallback truncate_cb,
++            PolyglotCallback release_cb) {
++            super(d, release_cb);
++            context = c;
++            is_open_callback = is_open_cb;
++            close_callback = close_cb;
++            read_callback = read_cb;
++            write_callback = write_cb;
++            position_callback = position_cb;
++            set_position_callback = set_position_cb;
++            size_callback = size_cb;
++            truncate_callback = truncate_cb;
++        }
++
++        public PolyglotContext getContext() {
++            return context;
++        }
++
++        /**
++         * Tells whether or not this channel is open.
++         *
++         * @return {@code true} if, and only if, this channel is open
++         */
++        @Override
++        public boolean isOpen() {
++            if (is_open_callback.isNull()) {
++                throw new UnsupportedOperationException("isOpen() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = is_open_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asBoolean();
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Closes this channel.
++         *
++         * <p> After a channel is closed, any further attempt to invoke I/O
++         * operations upon it will cause a {@link ClosedChannelException} to be
++         * thrown.
++         *
++         * <p> If this channel is already closed then invoking this method has no
++         * effect.
++         *
++         * <p> This method may be invoked at any time.  If some other thread has
++         * already invoked it, however, then another invocation will block until
++         * the first invocation is complete, after which it will return without
++         * effect. </p>
++         *
++         * @throws  IOException  If an I/O error occurs
++         */
++        @Override
++        public void close() throws IOException {
++            if (close_callback.isNull()) {
++                throw new UnsupportedOperationException("close() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = close_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Reads a sequence of bytes from this channel into the given buffer.
++         *
++         * <p> Bytes are read starting at this channel's current position, and
++         * then the position is updated with the number of bytes actually read.
++         * Otherwise this method behaves exactly as specified in the {@link
++         * ReadableByteChannel} interface.
++         *
++         * @throws  ClosedChannelException      {@inheritDoc}
++         * @throws  AsynchronousCloseException  {@inheritDoc}
++         * @throws  ClosedByInterruptException  {@inheritDoc}
++         * @throws  NonReadableChannelException {@inheritDoc}
++         */
++        @Override
++        public int read(ByteBuffer dst) throws IOException {
++            if (read_callback.isNull()){
++                throw new UnsupportedOperationException("read() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[2];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(dst));
++                    handleArgs[1] = PolyglotNativeAPI.createHandle(c.asValue(dst.remaining()));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = read_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asInt();
++
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Writes a sequence of bytes to this channel from the given buffer.
++         *
++         * <p> Bytes are written starting at this channel's current position, unless
++         * the channel is connected to an entity such as a file that is opened with
++         * the {@link java.nio.file.StandardOpenOption#APPEND APPEND} option, in
++         * which case the position is first advanced to the end. The entity to which
++         * the channel is connected is grown, if necessary, to accommodate the
++         * written bytes, and then the position is updated with the number of bytes
++         * actually written. Otherwise this method behaves exactly as specified by
++         * the {@link WritableByteChannel} interface.
++         *
++         * @throws  ClosedChannelException      {@inheritDoc}
++         * @throws  AsynchronousCloseException  {@inheritDoc}
++         * @throws  ClosedByInterruptException  {@inheritDoc}
++         * @throws  NonWritableChannelException {@inheritDoc}
++         */
++        @Override
++        public int write(ByteBuffer src) throws IOException {
++            if (write_callback.isNull()){
++                throw new UnsupportedOperationException("write() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(src));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = write_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asInt();
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns this channel's position.
++         *
++         * @return  This channel's position,
++         *          a non-negative integer counting the number of bytes
++         *          from the beginning of the entity to the current position
++         *
++         * @throws  ClosedChannelException
++         *          If this channel is closed
++         * @throws  IOException
++         *          If some other I/O error occurs
++         */
++        @Override
++        public long position() throws IOException {
++            if (position_callback.isNull()) {
++                throw new UnsupportedOperationException("position() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = position_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asInt();
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Sets this channel's position.
++         *
++         * <p> Setting the position to a value that is greater than the current size
++         * is legal but does not change the size of the entity.  A later attempt to
++         * read bytes at such a position will immediately return an end-of-file
++         * indication.  A later attempt to write bytes at such a position will cause
++         * the entity to grow to accommodate the new bytes; the values of any bytes
++         * between the previous end-of-file and the newly-written bytes are
++         * unspecified.
++         *
++         * <p> Setting the channel's position is not recommended when connected to
++         * an entity, typically a file, that is opened with the {@link
++         * java.nio.file.StandardOpenOption#APPEND APPEND} option. When opened for
++         * append, the position is first advanced to the end before writing.
++         *
++         * @param  newPosition
++         *         The new position, a non-negative integer counting
++         *         the number of bytes from the beginning of the entity
++         *
++         * @return  This channel
++         *
++         * @throws  ClosedChannelException
++         *          If this channel is closed
++         * @throws  IllegalArgumentException
++         *          If the new position is negative
++         * @throws  IOException
++         *          If some other I/O error occurs
++         */
++        @Override
++        public SeekableByteChannel position(long newPosition) throws IOException {
++            if (set_position_callback.isNull()) {
++                throw new UnsupportedOperationException("position(newPosition) not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(newPosition));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = set_position_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    return PolyglotNativeAPI.fetchHandle(result);
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns the current size of entity to which this channel is connected.
++         *
++         * @return  The current size, measured in bytes
++         *
++         * @throws  ClosedChannelException
++         *          If this channel is closed
++         * @throws  IOException
++         *          If some other I/O error occurs
++         */
++        @Override
++        public long size() throws IOException {
++            if (size_callback.isNull()) {
++                throw new UnsupportedOperationException("size() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = size_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asInt();
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Truncates the entity, to which this channel is connected, to the given
++         * size.
++         *
++         * <p> If the given size is less than the current size then the entity is
++         * truncated, discarding any bytes beyond the new end. If the given size is
++         * greater than or equal to the current size then the entity is not modified.
++         * In either case, if the current position is greater than the given size
++         * then it is set to that size.
++         *
++         * <p> An implementation of this interface may prohibit truncation when
++         * connected to an entity, typically a file, opened with the {@link
++         * java.nio.file.StandardOpenOption#APPEND APPEND} option.
++         *
++         * @param  size
++         *         The new size, a non-negative byte count
++         *
++         * @return  This channel
++         *
++         * @throws  NonWritableChannelException
++         *          If this channel was not opened for writing
++         * @throws  ClosedChannelException
++         *          If this channel is closed
++         * @throws  IllegalArgumentException
++         *          If the new size is negative
++         * @throws  IOException
++         *          If some other I/O error occurs
++         */
++        @Override
++        public SeekableByteChannel truncate(long size) throws IOException {
++            if (truncate_callback.isNull()) {
++                throw new UnsupportedOperationException("position() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(size));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = truncate_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    return fetchHandle(result);
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++    }
++
++    @CEntryPoint(name = "poly_create_proxy_seekable_byte_channel", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates a polyglot SeekableByteChannel object implemented in C/C++.",
++        "",
++        "@param data Pointer to the binary data",
++        "@param is_open_callback Callback to retrieve member keys",
++        "@param close_callback Callback to verify if member exists",
++        "@param read_callback Callback to add a member ",
++        "@param delete_callback Callback to remove a member",
++        "@param write_callback Callback to remove a member",
++        "@param position_callback Callback to remove a member",
++        "@param size_callback Callback to remove a member",
++        "@param truncate_callback Callback to remove a member",
++        "@param result A pointer to store the created proxy object ",
++        "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++    })
++    public static PolyglotStatus poly_create_proxy_seekable_byte_channel(PolyglotIsolateThread thread, PolyglotContext context,
++            VoidPointer data, PolyglotCallback is_open_callback,  PolyglotCallback close_callback, PolyglotCallback read_callback,
++            PolyglotCallback write_callback, PolyglotCallback position_callback, PolyglotCallback set_position_callback, PolyglotCallback size_callback,
++            PolyglotCallback truncate_callback, PolyglotCallback release_callback, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(result, "result");
++        Context c = fetchHandle(context);
++        PolyglotProxySeekableByteChannel proxy = new PolyglotProxySeekableByteChannel(context, data, is_open_callback, close_callback, read_callback, write_callback, position_callback, set_position_callback, size_callback, truncate_callback, release_callback);
++        result.write(createHandle(c.asValue(proxy)));
++        return poly_ok;
++    }
++
++    /**
++     * Wrapper for a native object implemented in C/C++
++     */
++    private static class PolyglotProxyFileSystem extends NativeDataHolder implements FileSystem {
++        private final PolyglotCallback parse_path_uri_callback;
++        private final PolyglotCallback parse_path_string_callback;
++        private final PolyglotCallback check_access_callback;
++        private final PolyglotCallback create_directory_callback;
++        private final PolyglotCallback delete_callback;
++        private final PolyglotCallback new_byte_channel_callback;
++        private final PolyglotCallback new_directory_stream_callback;
++        private final PolyglotCallback to_absolute_path_callback;
++        private final PolyglotCallback to_real_path_callback;
++        private final PolyglotCallback read_attributes_callback;
++        private PolyglotContext context;
++
++        public PolyglotProxyFileSystem(VoidPointer d, PolyglotCallback parse_path_uri_cb, PolyglotCallback parse_path_string_cb, PolyglotCallback check_access_cb, PolyglotCallback create_directory_cb, PolyglotCallback delete_cb, PolyglotCallback new_byte_channel_cb, PolyglotCallback new_directory_stream_cb, PolyglotCallback to_absolute_path_cb, PolyglotCallback to_real_path_cb, PolyglotCallback read_attributes_cb, PolyglotCallback close_cb) {
++            super(d, close_cb);
++            parse_path_uri_callback = parse_path_uri_cb;
++            parse_path_string_callback = parse_path_string_cb;
++            check_access_callback = check_access_cb;
++            create_directory_callback = create_directory_cb;
++            delete_callback = delete_cb;
++            new_byte_channel_callback = new_byte_channel_cb;
++            new_directory_stream_callback = new_directory_stream_cb;
++            to_absolute_path_callback = to_absolute_path_cb;
++            to_real_path_callback = to_real_path_cb;
++            read_attributes_callback = read_attributes_cb;
++        }
++
++        public void setContext(PolyglotContext ctx) {
++            context = ctx;
++
++        }
++
++        public PolyglotContext getContext() {
++            return context;
++        }
++
++        /**
++         * Parses a path from an {@link URI}.
++         *
++         * @param uri the {@link URI} to be converted to {@link Path}
++         * @return the {@link Path} representing given {@link URI}
++         * @throws UnsupportedOperationException when {@link URI} scheme is not supported
++         * @throws IllegalArgumentException if preconditions on the {@code uri} do not hold. The format
++         *             of the URI is {@link FileSystem} specific.
++         * @since 19.0
++         */
++        @Override
++        public Path parsePath(URI uri) {
++            if (parse_path_uri_callback.isNull()){
++                throw new UnsupportedOperationException("parsePath() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(uri.toString()));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = parse_path_uri_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return Paths.get(jValue.asString());
++
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Parses a path from a {@link String}. This method is called only on the {@link FileSystem}
++         * with {@code file} scheme.
++         *
++         * @param path the string path to be converted to {@link Path}
++         * @return the {@link Path}
++         * @throws UnsupportedOperationException when the {@link FileSystem} supports only {@link URI}
++         * @throws IllegalArgumentException if the {@code path} string cannot be converted to a
++         *             {@link Path}
++         * @since 19.0
++         */
++        @Override
++        public Path parsePath(String path){
++            if (parse_path_string_callback.isNull()){
++                throw new UnsupportedOperationException("parsePath() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(path));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = parse_path_string_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return Paths.get(jValue.asString());
++
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Checks existence and accessibility of a file.
++         *
++         * @param path the path to the file to check
++         * @param modes the access modes to check, possibly empty to check existence only.
++         * @param linkOptions options determining how the symbolic links should be handled
++         * @throws NoSuchFileException if the file denoted by the path does not exist
++         * @throws IOException in case of IO error
++         * @throws SecurityException if this {@link FileSystem} denied the operation
++         * @since 19.0
++         */
++        @Override
++        public void checkAccess(Path path, Set<? extends AccessMode> modes, LinkOption... linkOptions) throws IOException {
++            int access_mode = 0;
++            if (modes.contains(AccessMode.READ)){
++                access_mode |= 4;
++            }
++            if (modes.contains(AccessMode.WRITE)){
++                access_mode |= 2;
++            }
++            if (modes.contains(AccessMode.EXECUTE)){
++                access_mode |= 1;
++            }
++
++            if (check_access_callback.isNull()){
++                throw new UnsupportedOperationException("checkAccess() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[2];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(path.toString()));
++                    handleArgs[1] = PolyglotNativeAPI.createHandle(c.asValue(access_mode));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    check_access_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleIOException(threadLocals.get().callbackException);
++                    handleCallbackException(threadLocals.get().callbackException);
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Creates a directory.
++         *
++         * @param dir the directory to create
++         * @param attrs the optional attributes to set atomically when creating the directory
++         * @throws FileAlreadyExistsException if a file on given path already exists
++         * @throws IOException in case of IO error
++         * @throws UnsupportedOperationException if the attributes contain an attribute which cannot be
++         *             set atomically
++         * @throws SecurityException if this {@link FileSystem} denied the operation
++         * @since 19.0
++         */
++        @Override
++        public void createDirectory(Path dir, FileAttribute<?>... attrs) throws IOException {
++            throw new UnsupportedOperationException("Creating a directory is not supported");
++        }
++
++        /**
++         * Deletes a file.
++         *
++         * @param path the path to the file to delete
++         * @throws NoSuchFileException if a file on given path does not exist
++         * @throws DirectoryNotEmptyException if the path denotes a non empty directory
++         * @throws IOException in case of IO error
++         * @throws SecurityException if this {@link FileSystem} denied the operation
++         * @since 19.0
++         */
++        @Override
++        public void delete(Path path) throws IOException {
++            throw new UnsupportedOperationException("Deleting a path is not supported");
++        }
++
++        /**
++         * Opens or creates a file returning a {@link SeekableByteChannel} to access the file content.
++         *
++         * @param path the path to the file to open
++         * @param options the options specifying how the file should be opened
++         * @param attrs the optional attributes to set atomically when creating the new file
++         * @return the created {@link SeekableByteChannel}
++         * @throws FileAlreadyExistsException if {@link StandardOpenOption#CREATE_NEW} option is set and
++         *             a file already exists on given path
++         * @throws IOException in case of IO error
++         * @throws UnsupportedOperationException if the attributes contain an attribute which cannot be
++         *             set atomically
++         * @throws IllegalArgumentException in case of invalid options combination
++         * @throws SecurityException if this {@link FileSystem} denied the operation
++         * @since 19.0
++         */
++        @Override
++        public SeekableByteChannel newByteChannel(Path path, Set<? extends OpenOption> options, FileAttribute<?>... attrs) throws IOException {
++            if (new_byte_channel_callback.isNull()){
++                throw new UnsupportedOperationException("newByteChannel() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(path.toString()));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = new_byte_channel_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleIOException(threadLocals.get().callbackException);
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++
++                    PolyglotProxySeekableByteChannel channel = jValue.asHostObject();
++
++                    return channel;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns directory entries.
++         *
++         * @param dir the path to the directory to iterate entries for
++         * @param filter the filter
++         * @return the new {@link DirectoryStream}
++         * @throws NotDirectoryException when given path does not denote a directory
++         * @throws IOException in case of IO error
++         * @throws SecurityException if this {@link FileSystem} denied the operation
++         * @since 19.0
++         */
++        @Override
++        public DirectoryStream<Path> newDirectoryStream(Path dir, DirectoryStream.Filter<? super Path> filter) throws IOException {
++            if (new_directory_stream_callback.isNull()){
++                throw new UnsupportedOperationException("newDirectoryStream() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(dir.toString()));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = new_byte_channel_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    DirectoryStream<Path> stream = PolyglotNativeAPI.fetchHandle(result);
++                    return stream;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Resolves given path to an absolute path.
++         *
++         * @param path the path to resolve, may be a non normalized path
++         * @return an absolute {@link Path}
++         * @throws SecurityException if this {@link FileSystem} denied the operation
++         * @since 19.0
++         */
++        @Override
++        public Path toAbsolutePath(Path path) {
++            if (to_absolute_path_callback.isNull()){
++                throw new UnsupportedOperationException("toAbsolutePath() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(path.toString()));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = to_absolute_path_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value abs_path = PolyglotNativeAPI.fetchHandle(result);
++                    return Paths.get(abs_path.asString());
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns the real (canonical) path of an existing file.
++         *
++         * @param path the path to resolve, may be a non normalized path
++         * @param linkOptions options determining how the symbolic links should be handled
++         * @return an absolute canonical path
++         * @throws IOException in case of IO error
++         * @throws SecurityException if this {@link FileSystem} denied the operation
++         * @since 19.0
++         */
++        @Override
++        public Path toRealPath(Path path, LinkOption... linkOptions) throws IOException {
++            if (to_real_path_callback.isNull()) {
++                throw new UnsupportedOperationException("toRealPath() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(path.toString()));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = to_real_path_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value real_path = PolyglotNativeAPI.fetchHandle(result);
++                    return Paths.get(real_path.asString());
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Reads a file's attributes as a bulk operation.
++         *
++         * @param path the path to file to read attributes for
++         * @param attributes the attributes to read. The {@code attributes} parameter has the form:
++         *            {@code [view-name:]attribute-list}. The optional {@code view-name} corresponds to
++         *            {@link FileAttributeView#name()} and determines the set of attributes, the default
++         *            value is {@code "basic"}. The {@code attribute-list} is a comma separated list of
++         *            attributes. If the {@code attribute-list} contains {@code '*'} then all the
++         *            attributes from given view are read.
++         * @param options the options determining how the symbolic links should be handled
++         * @return the {@link Map} containing the file attributes. The map's keys are attribute names,
++         *         map's values are the attribute values. The map may contain a subset of required
++         *         attributes in case when the {@code FileSystem} does not support some of the required
++         *         attributes.
++         * @throws UnsupportedOperationException if the attribute view is not supported. At least the
++         *             {@code "basic"} attribute view has to be supported by the file system.
++         * @throws IllegalArgumentException is the {@code attribute-list} is empty or contains an
++         *             unknown attribute
++         * @throws IOException in case of IO error
++         * @throws SecurityException if this {@link FileSystem} denied the operation
++         * @since 19.0
++         */
++        @Override
++        public Map<String, Object> readAttributes(Path path, String attributes, LinkOption... options) throws IOException {
++            if (read_attributes_callback.isNull()) {
++                throw new UnsupportedOperationException("readAttributes() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(path.toString()));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++
++                    PolyglotValue result = read_attributes_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Map<String, Object> read_atts = PolyglotNativeAPI.fetchHandle(result);
++                    return read_atts;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++    }
++
++    @CEntryPoint(name = "poly_create_proxy_file_system", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates a polyglot FileSystem object implemented in C/C++.",
++        "",
++        "@param data Pointer to the binary data",
++        "@param parse_path_callback Callback to retrieve member keys",
++        "@param check_access_callback Callback to verify if member exists",
++        "@param create_directory_callback Callback to add a member ",
++        "@param delete_callback Callback to remove a member",
++        "@param new_byte_channel_callback Callback to remove a member",
++        "@param new_directory_stream_callback Callback to remove a member",
++        "@param to_absolute_path_callback Callback to remove a member",
++        "@param to_real_path_callback Callback to remove a member",
++        "@param read_attributes_callback Callback to remove a member",
++        "@param result A pointer to store the created proxy object ",
++        "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++        "",
++        "@since 19.0",
++    })
++    public static PolyglotStatus poly_create_proxy_file_system(PolyglotIsolateThread thread, VoidPointer data,
++            PolyglotCallback parse_path_uri_callback,
++            PolyglotCallback parse_path_string_callback,
++            PolyglotCallback check_access_callback,
++            PolyglotCallback create_directory_callback,
++            PolyglotCallback delete_callback,
++            PolyglotCallback new_byte_channel_callback,
++            PolyglotCallback new_directory_stream_callback,
++            PolyglotCallback to_absolute_path_callback,
++            PolyglotCallback to_real_path_callback,
++            PolyglotCallback read_attributes_callback,
++            PolyglotCallback close_callback,
++            PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(result, "result");
++        PolyglotProxyFileSystem proxy = new PolyglotProxyFileSystem(data, parse_path_uri_callback, parse_path_string_callback, check_access_callback, create_directory_callback, delete_callback, new_byte_channel_callback, new_directory_stream_callback, to_absolute_path_callback, to_real_path_callback, read_attributes_callback, close_callback);
++        result.write(createHandle(proxy));
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_file_system_set_context", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Sets the target context to a FileSystem object",
++        "",
++        "@param context Pointer to the binary data",
++        "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++        "",
++        "@since 19.0",
++    })
++    public static PolyglotStatus poly_file_system_set_context(PolyglotIsolateThread thread, PolyglotValue file_system, PolyglotContext context) {
++        resetErrorState();
++        nullCheck(file_system, "file_system");
++        nullCheck(context, "context");
++        PolyglotProxyFileSystem fs = fetchHandle(file_system);
++        fs.setContext(context);
++        return poly_ok;
++    }
++    /**
++     * Wrapper for a native object implemented in C/C++
++     */
++    private static class PolyglotProxyObject extends NativeDataHolder implements ProxyObject {
++        private final PolyglotContext context;
++        private final PolyglotCallback put_member_callback;
++        private final PolyglotCallback has_member_callback;
++        private final PolyglotCallback get_member_callback;
++        private final PolyglotCallback get_member_keys_callback;
++        private final PolyglotCallback remove_member_callback;
++
++        public PolyglotProxyObject(PolyglotContext c, VoidPointer d, PolyglotCallback get_member_keys_cb, PolyglotCallback has_member_cb, PolyglotCallback put_member_cb, PolyglotCallback get_member_cb, PolyglotCallback remove_member_cb, PolyglotCallback close_cb) {
++            super(d, close_cb);
++            context = c;
++            get_member_keys_callback = get_member_keys_cb;
++            has_member_callback = has_member_cb;
++            put_member_callback = put_member_cb;
++            get_member_callback = get_member_cb;
++            remove_member_callback = remove_member_cb;
++        }
++
++        public PolyglotContext getContext() {
++            return context;
++        }
++
++        /**
++         * Sets the value associated with a member. If the member does not {@link #hasMember(String)
++         * exist} then a new member is defined. If the definition of new members is not supported then
++         * an {@link UnsupportedOperationException} is thrown.
++         *
++         * @throws UnsupportedOperationException if no callback is defined for this operation.
++         */
++        @Override
++        public void putMember(String key, Value value) {
++            if (put_member_callback.isNull()){
++                throw new UnsupportedOperationException("putMember() not supported.");
++            }else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[2];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(key));
++                    handleArgs[1] = PolyglotNativeAPI.createHandle(value);
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    put_member_callback.invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(),
++                            cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns <code>true</code> if the target C/C++ object contains a member with the given key, or else
++         * <code>false</code>. While not required ever member key which returns <code>true</code> for
++         * {@link #hasMember(String)} should be returned by {@link #getMemberKeys()} to allow guest
++         * members to list member keys.
++         *
++         * @throws UnsupportedOperationException if the no callback is defined for the operation
++         */
++        @Override
++        public boolean hasMember(String key) {
++            if (has_member_callback.isNull()){
++                throw new UnsupportedOperationException("hasMember() not supported.");
++            }else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(key));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = has_member_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asBoolean();
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns an array of member keys. If one of the return
++         * values of the array is not a {@link String} then a {@link ClassCastException} is thrown.
++         * Examples for valid return values are:
++         * <ul>
++         * <li><code>null</code> for no member keys
++         * <li>{@link ProxyArray} that returns {@link String} values for each array element
++         * <li>{@link List } with exclusively String elements ({@link HostAccess} must allowListAccess)
++         * <li>{@link String String[]} ({@link HostAccess} must allowArrayAccess)
++         * </ul>
++         * Every member key returned by the {@link #getMemberKeys()} method must return
++         * <code>true</code> for {@link #hasMember(String)}.
++         *
++         * @throws UnsupportedOperationException if the no callback is defined for the operation
++         */
++        @Override
++        public Object getMemberKeys() {
++            if (get_member_keys_callback.isNull()) {
++                throw new UnsupportedOperationException("getMemberKeys() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = get_member_keys_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns the value of the member.
++         *
++         * @throws UnsupportedOperationException if no callback is defined for this operation.
++         */
++        @Override
++        public Object getMember(String key) {
++            if (get_member_callback.isNull()){
++                throw new UnsupportedOperationException("getMember() not supported.");
++            }else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(key));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = get_member_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Removes a member key and its value. If the removal of existing members is not supported then
++         * an {@link UnsupportedOperationException} is thrown.
++         *
++         * @return <code>true</code> when the member was removed, <code>false</code> when the member
++         *         didn't exist.
++         * @throws UnsupportedOperationException if the no callback is defined for the operation
++         */
++        @Override
++        public boolean removeMember(String key) {
++            if (remove_member_callback.isNull()){
++                throw new UnsupportedOperationException("removeMember() not supported.");
++            }else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(getContext());
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(key));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = remove_member_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asBoolean();
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++    }
++
++    /**
++     * Wrapper for a native iterable implemented in C/C++
++     *
++     * @see Proxy
++     * @see ProxyIterator
++     */
++    private static class PolyglotProxyIterableObject extends PolyglotProxyObject implements ProxyIterable {
++        private final PolyglotCallback get_iterator_callback;
++
++        public PolyglotProxyIterableObject(PolyglotContext c, VoidPointer d, PolyglotCallback get_member_keys_cb,
++                PolyglotCallback has_member_cb, PolyglotCallback put_member_cb, PolyglotCallback get_member_cb,
++                PolyglotCallback remove_member_cb, PolyglotCallback get_iterator_cb, PolyglotCallback close_cb) {
++            super(c, d, get_member_keys_cb, has_member_cb, put_member_cb, get_member_cb, remove_member_cb, close_cb);
++
++            get_iterator_callback = get_iterator_cb;
++        }
++
++        /**
++         * Returns an iterator implemented in C/C++.
++         * thrown. Examples for valid return values are:
++         *
++         * @see ProxyIterator
++         */
++        @Override
++        public Object getIterator() {
++            if (get_iterator_callback.isNull()) {
++                throw new UnsupportedOperationException("getIterator() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = get_iterator_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++    }
++
++    @CEntryPoint(name = "poly_create_proxy_object", exceptionHandler = ExceptionHandler.class, documentation = {
++            "Creates a polyglot object implemented in C/C++.",
++            "",
++            "@param data Pointer to the binary data",
++            "@param get_member_keys_callback Callback to retrieve member keys",
++            "@param has_member_callback Callback to verify if member exists",
++            "@param put_member_callback Callback to add a member ",
++            "@param get_member_callback Callback to get a member",
++            "@param remove_member_callback Callback to remove a member",
++                        "@param result A pointer to store the created proxy object ",
++            "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++            "",
++            "@since 19.0",
++    })
++
++    public static PolyglotStatus poly_create_proxy_object(PolyglotIsolateThread thread, PolyglotContext context,
++            VoidPointer data, PolyglotCallback get_member_keys_callback,  PolyglotCallback has_member_callback, PolyglotCallback put_member_callback,
++            PolyglotCallback get_member_callback, PolyglotCallback remove_member_callback, PolyglotCallback close_callback, PolyglotValuePointer result) {
++        resetErrorState();
++        nullCheck(context, "context");
++        nullCheck(result, "result");
++        Context c = fetchHandle(context);
++        PolyglotProxyObject proxy = new PolyglotProxyObject(context, data, get_member_keys_callback, has_member_callback, put_member_callback, get_member_callback, remove_member_callback, close_callback);
++        result.write(createHandle(c.asValue(proxy)));
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_create_proxy_iterable_object", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates an iterable polyglot object implemented in C/C++.",
++        "",
++        "@param data Pointer to the binary data",
++        "@param get_member_keys_callback Callback to retrieve member keys",
++        "@param has_member_callback Callback to verify if member exists",
++        "@param put_member_callback Callback to add a member ",
++        "@param get_member_callback Callback to get a member",
++        "@param remove_member_callback Callback to remove a member",
++        "@param get_iterator_callback Callback to get an iterator for the array",
++        "@param result A pointer to store the created proxy object ",
++        "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++        "",
++        "@since 19.0",
+     })
+-    public static PolyglotStatus poly_create_character(PolyglotIsolateThread thread, PolyglotContext context, char character, PolyglotValuePointer result) {
++    public static PolyglotStatus poly_create_proxy_iterable_object(PolyglotIsolateThread thread,
++            PolyglotContext context,
++            VoidPointer data, PolyglotCallback get_member_keys_callback, PolyglotCallback has_member_callback,
++            PolyglotCallback put_member_callback,
++            PolyglotCallback get_member_callback, PolyglotCallback remove_member_callback,
++            PolyglotCallback get_iterator_callback, PolyglotCallback close_callback, PolyglotValuePointer result) {
+         resetErrorState();
+         nullCheck(context, "context");
+         nullCheck(result, "result");
+-        Context ctx = fetchHandle(context);
+-        result.write(createHandle(ctx.asValue(character)));
++        Context c = fetchHandle(context);
++        PolyglotProxyObject proxy = new PolyglotProxyIterableObject(context, data, get_member_keys_callback,
++                has_member_callback, put_member_callback, get_member_callback, remove_member_callback,
++                get_iterator_callback, close_callback);
++        result.write(createHandle(c.asValue(proxy)));
+         return poly_ok;
+     }
+
+-    @CEntryPoint(name = "poly_create_string_utf8", exceptionHandler = ExceptionHandler.class, documentation = {
+-                    "Creates a polyglot string from an UTF-8 encoded string. ",
+-                    "If `POLY_AUTO_LENGTH` is passed as the `length` argument, then `string_utf8` is decoded until a 0 terminator is found.",
+-                    "Otherwise, `length` bytes from `string_uft8` are encoded as a polyglot string value.",
+-                    "",
+-                    "@param string_utf8 UTF-8 encoded C string, which may or may not be 0 terminated.",
+-                    "@param length POLY_AUTO_LENGTH if the string is 0 terminated, or otherwise the length of C string.",
+-                    "@return the polyglot string value.",
+-                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
+-                    "",
+-                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
+-                    "@since 19.0",
++    @CEntryPoint(name = "poly_value_get_native_data", exceptionHandler = ExceptionHandler.class, documentation = {
++            "Returns the data pointer associated to a polyglot object implemented in C/C++.",
++            "",
++            "@return poly_ok if the operation completed successfully, otherwise an error occurred.",
++            "",
++            "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Value.html#isNull--",
++            "@since 19.0"
+     })
+-    public static PolyglotStatus poly_create_string_utf8(PolyglotIsolateThread thread, PolyglotContext context, @CConst CCharPointer string_utf8, UnsignedWord length, PolyglotValuePointer result) {
++    public static PolyglotStatus poly_value_get_native_data(PolyglotIsolateThread thread, PolyglotValue value,
++            WordPointer result) {
+         resetErrorState();
+-        nullCheck(context, "context");
+-        nullCheck(string_utf8, "string_utf8");
++        nullCheck(value, "value");
+         nullCheck(result, "result");
+-        Context ctx = fetchHandle(context);
+-        if (length.equal(POLY_AUTO_LENGTH)) {
+-            result.write(createHandle(ctx.asValue(CTypeConversion.utf8ToJavaString(string_utf8))));
+-        } else {
+-            result.write(createHandle(ctx.asValue(CTypeConversion.toJavaString(string_utf8, length, UTF8_CHARSET))));
+-        }
++        Value jValue = fetchHandle(value);
++        NativeDataHolder object = jValue.asProxyObject();
++        result.write(object.getData());
+         return poly_ok;
+     }
+
+-    @CEntryPoint(name = "poly_create_null", exceptionHandler = ExceptionHandler.class, documentation = {
+-                    "Creates the polyglot `null` value.",
+-                    "",
+-                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
+-                    "",
+-                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
+-                    "@since 19.0",
++    /**
++     * Wrapper for a native iterator object implemented in C/C++
++     */
++    private static class PolyglotProxyIterator extends NativeDataHolder implements ProxyIterator {
++        private final PolyglotContext context;
++        private final PolyglotCallback has_next_callback;
++        private final PolyglotCallback get_next_callback;
++
++        public PolyglotProxyIterator(PolyglotContext c, VoidPointer d, PolyglotCallback has_next_cb, PolyglotCallback get_next_cb, PolyglotCallback destroy_cb) {
++            super(d, destroy_cb);
++            context = c;
++            has_next_callback = has_next_cb;
++            get_next_callback = get_next_cb;
++        }
++
++        /**
++         * Returns <code>true</code> if the iterator has more elements, else <code>false</code>.
++         */
++        @Override
++        public boolean hasNext() {
++            if (has_next_callback.isNull()){
++                throw new UnsupportedOperationException("hasNext() not supported.");
++            }else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = has_next_callback.invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(),
++                            cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asBoolean();
++
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns the next element in the iteration. When the underlying data structure is modified the
++         * {@link #getNext()} may throw the {@link NoSuchElementException} even when the
++         * {@link #hasNext()} returned {@code true}.
++         *
++         * @throws NoSuchElementException if the iteration has no more elements, the {@link #hasNext()}
++         *             returns <code>false</code>.
++         * @throws UnsupportedOperationException when the underlying iterator element exists but is not
++         *             readable.
++         */
++        @Override
++        public Object getNext() {
++            if (get_next_callback.isNull()){
++                throw new UnsupportedOperationException("getNext() not supported.");
++            }else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = get_next_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++    }
++
++    @CEntryPoint(name = "poly_create_proxy_iterator", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates an iterator wrapper for a native object.",
++        "",
++        "@param data Pointer to the binary data",
++        "@param has_next_callback Callback to identify if there are more items",
++        "@param get_next_callback Callback to get the next item",
++        "@param result A pointer to store the created proxy iterator",
++        "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++        "",
++        "@since 19.0",
+     })
+-    public static PolyglotStatus poly_create_null(PolyglotIsolateThread thread, PolyglotContext context, PolyglotValuePointer result) {
++
++    public static PolyglotStatus poly_create_proxy_iterator(PolyglotIsolateThread thread, PolyglotContext context,
++            VoidPointer data, PolyglotCallback has_next_callback,  PolyglotCallback get_next_callback, PolyglotCallback destroy_callback, PolyglotValuePointer result) {
+         resetErrorState();
+         nullCheck(context, "context");
+         nullCheck(result, "result");
+-        Context ctx = fetchHandle(context);
+-        result.write(createHandle(ctx.asValue(null)));
++        Context c = fetchHandle(context);
++        PolyglotProxyIterator proxy = new PolyglotProxyIterator(context, data, has_next_callback, get_next_callback, destroy_callback);
++        result.write(createHandle(c.asValue(proxy)));
+         return poly_ok;
+     }
+
+-    @CEntryPoint(name = "poly_create_object", exceptionHandler = ExceptionHandler.class, documentation = {
+-                    "Creates a polyglot object with no members.",
+-                    "",
+-                    "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
+-                    "",
+-                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/proxy/ProxyObject.html#fromMap-java.util.Map-",
+-                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Context.html#asValue-java.lang.Object-",
+-                    "@since 19.0",
++    /**
++     * Wraper for a native array like object implemented in C/C++
++`     */
++    private static class PolyglotProxyArray extends NativeDataHolder implements ProxyArray {
++        private final PolyglotContext context;
++        private final PolyglotCallback get_callback;
++        private final PolyglotCallback set_callback;
++        private final PolyglotCallback remove_callback;
++        private final PolyglotCallback get_size_callback;
++        private final PolyglotCallback get_iterator_callback;
++
++        public PolyglotProxyArray(PolyglotContext c, VoidPointer d, PolyglotCallback get_cb, PolyglotCallback set_cb, PolyglotCallback remove_cb, PolyglotCallback get_size_cb, PolyglotCallback get_iterator_cb, PolyglotCallback destroy_cb) {
++            super(d, destroy_cb);
++            context = c;
++            get_callback = get_cb;
++            set_callback = set_cb;
++            remove_callback = remove_cb;
++            get_size_callback = get_size_cb;
++            get_iterator_callback = get_iterator_cb;
++        }
++
++        /**
++         * Returns the element at the given index.
++         *
++         * @throws ArrayIndexOutOfBoundsException if the index is out of bounds
++         * @throws UnsupportedOperationException if the operation is not supported
++         */
++        @Override
++        public Object get(long index) {
++            if (get_callback.isNull()) {
++                throw new UnsupportedOperationException("get() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(context);
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(index));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = get_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Sets the element at the given index.
++         *
++         * @throws ArrayIndexOutOfBoundsException if the index is out of bounds
++         * @throws UnsupportedOperationException if the operation is not supported
++         */
++        @Override
++        public void set(long index, Value value) {
++            if (set_callback.isNull()){
++                throw new UnsupportedOperationException("set() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[2];
++                    Context c = PolyglotNativeAPI.fetchHandle(context);
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(index));
++                    handleArgs[1] = PolyglotNativeAPI.createHandle(value);
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    set_callback.invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(),
++                            cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Removes the element at the given index.
++         *
++         * @return <code>true</code> when the element was removed, <code>false</code> when the element
++         *         didn't exist.
++         * @throws ArrayIndexOutOfBoundsException if the index is out of bounds
++         * @throws UnsupportedOperationException if the operation is not supported
++         */
++        @Override
++        public boolean remove(long index) {
++            if (remove_callback.isNull()) {
++                throw new UnsupportedOperationException("remove() not supported.");
++            } else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = new ObjectHandle[1];
++                    Context c = PolyglotNativeAPI.fetchHandle(context);
++                    handleArgs[0] = PolyglotNativeAPI.createHandle(c.asValue(index));
++
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = remove_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asBoolean();
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns the reported size of the array.
++         */
++        @Override
++        public long getSize() {
++            if (get_size_callback.isNull()) {
++                throw new UnsupportedOperationException("getSize() not supported.");
++            }else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = get_size_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue.asLong();
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++
++        /**
++         * Returns an iterator. The returned object must be interpreted as an iterator using the
++         * semantics of {@link Context#asValue(Object)} otherwise an {@link IllegalStateException} is
++         * thrown. Examples for valid return values are:
++         * <ul>
++         * <li>{@link ProxyIterator}
++         * <li>{@link Iterator}, requires {@link Builder#allowIteratorAccess(boolean) host iterable
++         * access}
++         * <li>A guest language object representing an iterator
++         * </ul>
++         */
++        @Override
++        public Object getIterator(){
++            if (get_iterator_callback.isNull()) {
++                throw new UnsupportedOperationException("getIterator() not supported.");
++            }else {
++                int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++                try {
++                    ObjectHandle[] handleArgs = {};
++                    PolyglotCallbackInfoInternal internal = new PolyglotCallbackInfoInternal(handleArgs, getData());
++                    PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(internal);
++                    PolyglotValue result = get_iterator_callback
++                            .invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    Value jValue = PolyglotNativeAPI.fetchHandle(result);
++                    return jValue;
++                } finally {
++                    threadLocals.get().callbackException = null;
++                    PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++                }
++            }
++        }
++    }
++
++    @CEntryPoint(name = "poly_create_proxy_array", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates an array wrapper for a native array.",
++        "",
++        "@param data Pointer to the binary data",
++        "@param get_callback Callback to get an item from the array",
++        "@param set_callback Callback set an item on the array",
++        "@param remove_callback Callback to remove an item from the array",
++        "@param get_size_callback Callback to get the array size",
++        "@param get_iterator_callback Callback to get an iterator for the array",
++        "@param result A pointer to store the created proxy array",
++        "@return poly_ok if all works, poly_generic_failure if context is null, if the underlying context was closed.",
++        "",
++        "@since 19.0",
+     })
+-    public static PolyglotStatus poly_create_object(PolyglotIsolateThread thread, PolyglotContext context, PolyglotValuePointer result) {
++
++    public static PolyglotStatus poly_create_proxy_array(PolyglotIsolateThread thread, PolyglotContext context,
++            VoidPointer data, PolyglotCallback get_callback,  PolyglotCallback set_callback, PolyglotCallback remove_callback,
++            PolyglotCallback get_size_callback, PolyglotCallback get_iterator_callback, PolyglotCallback destroy_callback, PolyglotValuePointer result) {
+         resetErrorState();
+         nullCheck(context, "context");
+         nullCheck(result, "result");
+         Context c = fetchHandle(context);
+-        ProxyObject proxy = ProxyObject.fromMap(new HashMap<>());
++        PolyglotProxyArray proxy = new PolyglotProxyArray(context, data, get_callback, set_callback, remove_callback, get_size_callback, get_iterator_callback, destroy_callback);
+         result.write(createHandle(c.asValue(proxy)));
+         return poly_ok;
+     }
+
++
+     @CEntryPoint(name = "poly_create_array", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Creates a polyglot array from the C array of polyglot values.",
+                     "",
+@@ -1396,6 +3387,60 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_value_is_exception", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Returns `true` if this value is an exception",
++        "",
++        "@return poly_ok if the operation completed successfully, otherwise an error occurred.",
++        "",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Value.html#isNull--",
++        "@since 19.0"
++    })
++    public static PolyglotStatus poly_value_is_exception(PolyglotIsolateThread thread, PolyglotValue value, CBoolPointer result) {
++        nullCheck(value, "exception");
++        nullCheck(result, "result");
++        Value e = fetchHandle(value);
++        result.write(CTypeConversion.toCBoolean(e.isException()));
++        return poly_ok;
++    }
++
++    @CEntryPoint(name = "poly_value_throw_exception", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Throws the given value, assiming it is an exeption (see poly_value_is_exception).",
++        "",
++        "@return poly_ok if the operation completed successfully, otherwise an error occurred.",
++        "",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Value.html#isNull--",
++        "@since 19.0"
++    })
++    public static PolyglotStatus poly_value_throw_exception(PolyglotIsolateThread thread, PolyglotValue value) {
++        nullCheck(value, "exception");
++        Value e = fetchHandle(value);
++        throw e.throwException();
++    }
++
++    @CEntryPoint(name = "poly_value_get_exception_message", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Gets the error message as a 0 terminated and UTF-8 encoded string.",
++        "",
++        "@param exception Handle to the exception object.",
++        "@param buffer Where to write the UTF-8 string representing the error message. Can be NULL.",
++        "@param buffer_size Size of the user-supplied buffer.",
++        "@param result If buffer is NULL, this will contain the byte size of the error message string, otherwise, it will contain the number of bytes written. Note in either case this length does not contain the 0 terminator written to the end of the buffer",
++        "@return poly_ok if everything went ok, otherwise an error occurred.",
++        "",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/PolyglotException.html#getMessage--",
++        "@since 22.3",
++    })
++    public static PolyglotStatus poly_value_get_exception_message(PolyglotIsolateThread thread, PolyglotValue exception, CCharPointer buffer, UnsignedWord buffer_size,
++            SizeTPointer result) {
++        resetErrorState();
++        nullCheck(exception, "exception");
++        nullCheck(result, "result");
++        Value v = fetchHandle(exception);
++        Exception e = v.asHostObject();
++
++        writeUTF8String(e.getMessage(), buffer, buffer_size, result);
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_value_is_null", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Returns `true` if this value is `null` like.",
+                     "",
+@@ -1668,6 +3713,71 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_value_as_byte_buffer", exceptionHandler = ExceptionHandler.class, documentation = {
++                    "Writes the Polyglot value's contents as bytes",
++                    "",
++                    "@param buffer Where to write the byte buffer contents representing the polyglot value. Can be NULL.",
++                    "@param buffer_size Size of the user-supplied buffer.",
++                    "@return poly_ok if the operation completed successfully, otherwise an error occurred.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Value.html#readBufferByte--", "@since 19.0",
++
++    })
++    public static PolyglotStatus poly_value_as_byte_buffer(PolyglotIsolateThread thread, PolyglotValue value, CCharPointer buffer, UnsignedWord buffer_size, SizeTPointer result) {
++        resetErrorState();
++        nullCheck(value, "value");
++        Value jValue = fetchHandle(value);
++        assert jValue.hasBufferElements();
++
++        long passedBufferSize = buffer_size.rawValue();
++        long valueBufferSize = jValue.getBufferSize();
++
++        if (buffer.isNull()) {
++            if (passedBufferSize != 0) {
++                throw new IllegalArgumentException("Non zero buffer size passed along with nullptr");
++            }
++            result.write(WordFactory.unsigned(valueBufferSize));
++            return poly_ok;
++
++        } else if (passedBufferSize < valueBufferSize) {
++            throw new IllegalArgumentException("Provided buffer is too small to hold the data.");
++        }
++
++        // limitation is max size of the byte array can be the max range of Integer.
++        byte[] byteArray = new byte[(int)valueBufferSize];
++        for (int i = 0; i < (int)valueBufferSize; i++) {
++            byteArray[i] = jValue.readBufferByte(i);
++        }
++        ByteBuffer byte_buffer = CTypeConversion.asByteBuffer(buffer, UnsignedUtils.safeToInt(buffer_size));
++        byte_buffer.put(byteArray);
++        result.write(WordFactory.unsigned(byteArray.length));
++        return poly_ok;
++    }
++
++
++    @CEntryPoint(name = "poly_value_is_buffer", exceptionHandler = ExceptionHandler.class, documentation = {
++                "Check whether a polyglot value has buffer elements. ",
++                    "",
++                    "If yes, the buffer size can be queried using {@link poly_value_get_buffer_size}, ",
++                    "and the buffer can be accessed using {@link poly_value_as_byte_buffer}.",
++                    "",
++                    "@param value value that we are checking.",
++                    "@return true if the value has buffer elements.",
++                    "@return poly_ok if all works, poly_generic_failure if the underlying context was closed, if guest language error occurred ",
++                    "        during execution.",
++                    "",
++                    "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/Value.html#hasBufferElements--",
++                    "@since 19.0",
++    })
++    public static PolyglotStatus poly_value_is_buffer(PolyglotIsolateThread thread, PolyglotValue value, CBoolPointer result) {
++        resetErrorState();
++        nullCheck(value, "value");
++        nullCheck(result, "result");
++        Value jValue = fetchHandle(value);
++        result.write(CTypeConversion.toCBoolean(jValue.hasBufferElements()));
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_value_to_string_utf8", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Writes a <code>toString</code> representation of a <code>poly_value</code> as a 0 terminated and UTF-8 encoded string.",
+                     "",
+@@ -1985,14 +4095,14 @@ public final class PolyglotNativeAPI {
+                     for (int i = 0; i < arguments.length; i++) {
+                         handleArgs[i] = createHandle(arguments[i]);
+                     }
++
+                     PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) createHandle(new PolyglotCallbackInfoInternal(handleArgs, data));
+                     PolyglotValue result = callback.invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
+-                    CallbackException ce = threadLocals.get().callbackException;
+-                    if (ce != null) {
+-                        throw ce;
+-                    } else {
+-                        return PolyglotNativeAPI.fetchHandle(result);
+-                    }
++
++                    // Handles any exception generated in the C/C++ callback
++                    handleCallbackException(threadLocals.get().callbackException);
++
++                    return PolyglotNativeAPI.fetchHandle(result);
+                 } finally {
+                     threadLocals.get().callbackException = null;
+                     getHandles().popFramesIncluding(frame);
+@@ -2003,6 +4113,81 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    /**
++     * Wrapper for a native function implemented in C/C++
++     */
++    private static class PolyglotProxyFunction extends NativeDataHolder implements ProxyExecutable {
++        private final PolyglotContext context;
++        private final PolyglotCallback callback;
++
++        public PolyglotProxyFunction(PolyglotContext ctx, PolyglotCallback cb, PolyglotCallback destroy_cb, VoidPointer d) {
++            super(d, destroy_cb);
++            context = ctx;
++            callback = cb;
++        }
++
++        /**
++         * Executes the function with the given arguments and returns its result.
++         *
++         * @throws UnsupportedOperationException if the proxy cannot be executed with the given
++         *             arguments.
++         */
++        @Override
++        public Object execute(Value... arguments) {
++          int frame = PolyglotNativeAPI.getHandles().pushFrame(PolyglotNativeAPI.DEFAULT_FRAME_CAPACITY);
++          try {
++                ObjectHandle[] handleArgs = new ObjectHandle[arguments.length];
++                for (int i = 0; i < arguments.length; i++) {
++                    handleArgs[i] = PolyglotNativeAPI.createHandle(arguments[i]);
++                }
++                PolyglotCallbackInfo cbInfo = (PolyglotCallbackInfo) PolyglotNativeAPI.createHandle(new PolyglotCallbackInfoInternal(handleArgs, getData()));
++                PolyglotValue result = callback.invoke((PolyglotIsolateThread) CurrentIsolate.getCurrentThread(), cbInfo);
++
++                // Handles any exception generated in the C/C++ callback
++                handleCallbackException(threadLocals.get().callbackException);
++
++                return PolyglotNativeAPI.fetchHandle(result);
++          } finally {
++              threadLocals.get().callbackException = null;
++              PolyglotNativeAPI.getHandles().popFramesIncluding(frame);
++          }
++        }
++    }
++
++    @CEntryPoint(name = "poly_create_proxy_function", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Creates a polyglot function that calls back into native code.",
++        "",
++        "@param data user defined data to be passed into the function.",
++        "@param callback function that is called from the polyglot engine.",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++        "",
++        "@since 19.0",
++      })
++      public static PolyglotStatus poly_create_proxy_function(PolyglotIsolateThread thread, PolyglotContext context, PolyglotCallback callback, PolyglotCallback destroy_cb, VoidPointer data,
++              PolyglotValuePointer value) {
++          ensureLocalsInitialized();
++          resetErrorState();
++          nullCheck(context, "context");
++          nullCheck(callback, "callback");
++          nullCheck(value, "value");
++          Context c = fetchHandle(context);
++          PolyglotProxyFunction executable = new PolyglotProxyFunction(context, callback, destroy_cb, data);
++          value.write(createHandle(c.asValue(executable)));
++          return poly_ok;
++      }
++
++      @CEntryPoint(name = "poly_system_gc", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Calls System.gc() to trigger garbage collection.",
++        "",
++        "@return poly_ok if all works, poly_generic_error if there is a failure.",
++        "",
++      })
++      public static PolyglotStatus poly_system_gc(PolyglotIsolateThread thread) {
++        System.gc();
++        return poly_ok;
++      }
++
++
+     @CEntryPoint(name = "poly_get_callback_info", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Retrieves details about the call within a callback (e.g., the arguments from a given callback info).",
+                     "",
+@@ -2020,20 +4205,43 @@ public final class PolyglotNativeAPI {
+         nullCheck(data, "data");
+         PolyglotCallbackInfoInternal callbackInfo = fetchHandle(callback_info);
+         UnsignedWord numberOfArguments = WordFactory.unsigned(callbackInfo.arguments.length);
+-        UnsignedWord bufferSize = argc.read();
+-        UnsignedWord size = bufferSize.belowThan(numberOfArguments) ? bufferSize : numberOfArguments;
+-        argc.write(size);
+-        if (size.aboveThan(0)) {
+-            nullCheck(argv, "argv");
+-        }
+-        for (int index = 0; size.aboveThan(index); index++) {
+-            ObjectHandle argument = callbackInfo.arguments[index];
+-            argv.write(index, argument);
++        if (argv.isNull()) {
++            argc.write(numberOfArguments);
++        } else {
++            UnsignedWord bufferSize = argc.read();
++            UnsignedWord size = bufferSize.belowThan(numberOfArguments) ? bufferSize : numberOfArguments;
++            argc.write(size);
++            if (size.aboveThan(0)) {
++                nullCheck(argv, "argv");
++            }
++            for (int index = 0; size.aboveThan(index); index++) {
++                ObjectHandle argument = callbackInfo.arguments[index];
++                argv.write(index, argument);
++            }
+         }
++
+         data.write(callbackInfo.data);
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_throw_exception_object", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Raises an exception in a C callback.",
++        "",
++        "Invocation of this method does not interrupt control-flow so it is necessary to return from a function after ",
++        "the exception has been raised. If this method is called multiple times only the last exception will be thrown in",
++        "in the guest language.",
++        "",
++        "@param message_utf8 0 terminated and UTF-8 encoded error message.",
++        "",
++        "@since 19.0",
++    })
++    public static PolyglotStatus poly_throw_exception_object(PolyglotIsolateThread thread, PolyglotValue exc_obj) {
++        resetErrorState();
++        nullCheck(exc_obj, "exc_obj");
++        threadLocals.get().callbackException = new CallbackObjectException(PolyglotNativeAPI.fetchHandle(exc_obj));
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_throw_exception", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Raises an exception in a C callback.",
+                     "",
+@@ -2052,6 +4260,25 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_throw_custom_exception", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Raises an exception in a C callback.",
++        "",
++        "Invocation of this method does not interrupt control-flow so it is necessary to return from a function after ",
++        "the exception has been raised. If this method is called multiple times only the last exception will be thrown in",
++        "in the guest language.",
++        "",
++        "@param message_utf8 0 terminated and UTF-8 encoded error message.",
++        "",
++        "@since 19.0",
++    })
++    public static PolyglotStatus poly_throw_custom_exception(PolyglotIsolateThread thread, @CConst CCharPointer identifier, @CConst CCharPointer message_utf8) {
++        resetErrorState();
++        nullCheck(identifier, "identifier");
++        nullCheck(message_utf8, "message_utf8");
++        threadLocals.get().callbackException = new CallbackCustomException(CTypeConversion.utf8ToJavaString(identifier), CTypeConversion.utf8ToJavaString(message_utf8));
++        return poly_ok;
++    }
++
+     @CEntryPoint(name = "poly_delete_reference", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Deletes a poly_reference. After this point, the reference must not be used anymore.",
+                     "",
+@@ -2171,6 +4398,26 @@ public final class PolyglotNativeAPI {
+         return poly_ok;
+     }
+
++    @CEntryPoint(name = "poly_exception_is_interrupted", exceptionHandler = ExceptionHandler.class, documentation = {
++        "Checks if execution has been interrupted.",
++        "",
++        "@param exception Handle to the exception object.",
++        "@param result The result of the check.",
++        "@return poly_ok if everything went ok, otherwise an error occurred.",
++        "",
++        "@see https://www.graalvm.org/sdk/javadoc/org/graalvm/polyglot/PolyglotException.html#isCancelled--",
++        "@since 19.0",
++    })
++    public static PolyglotStatus poly_exception_is_interrupted(PolyglotIsolateThread thread, PolyglotExceptionHandle exception, CBoolPointer result) {
++        resetErrorState();
++        nullCheck(exception, "exception");
++        nullCheck(result, "result");
++        PolyglotException e = fetchHandle(exception);
++        result.write(CTypeConversion.toCBoolean(e.isInterrupted()));
++        return poly_ok;
++    }
++
++
+     @CEntryPoint(name = "poly_exception_is_internal_error", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Checks if this exception was caused by an internal implementation error.",
+                     "",
+@@ -2649,6 +4896,61 @@ public final class PolyglotNativeAPI {
+         }
+     }
+
++    /**
++     * Class to enable throwing a callback exception based on an object that
++     * represents an error in the guest language.
++     *
++     * The provided object is assumed to return true for Value.isException()
++     */
++    private static class CallbackObjectException extends CallbackException {
++        private final Value m_exception_object;
++
++        CallbackObjectException(Value object) {
++            super("");
++            m_exception_object = object;
++        }
++
++        public RuntimeException throwException() {
++            return m_exception_object.throwException();
++        }
++    }
++
++    /**
++     * Class to enable throwing a custom exception
++     */
++    private static class CallbackCustomException extends CallbackException {
++        private final Exception m_custom_exception;
++
++        CallbackCustomException(String identifier, String message) {
++            super(message);
++            if (identifier.compareTo("IllegalArgumentException") == 0) {
++                m_custom_exception = new IllegalArgumentException(message);
++            } else if (identifier.compareTo("NoSuchFileException") == 0) {
++                m_custom_exception = new NoSuchFileException(message);
++            } else if (identifier.compareTo("IOException") == 0) {
++                m_custom_exception = new IOException(message);
++            } else if (identifier.compareTo("SecurityException") == 0) {
++                m_custom_exception = new SecurityException(message);
++            } else if (identifier.compareTo("FileAlreadyExistsException") == 0) {
++                m_custom_exception = new FileAlreadyExistsException(message);
++            } else if (identifier.compareTo("DirectoryNotEmptyException") == 0) {
++                m_custom_exception = new DirectoryNotEmptyException(message);
++            } else if (identifier.compareTo("NotDirectoryException") == 0) {
++                m_custom_exception = new NotDirectoryException(message);
++            } else if (identifier.compareTo("UnsupportedOperationException") == 0) {
++                m_custom_exception = new UnsupportedOperationException(message);
++            } else {
++                m_custom_exception = new RuntimeException(message);
++            }
++        }
++
++        public Exception throwException() {
++            return m_custom_exception;
++        }
++    }
++
++
++
+     @CEntryPoint(name = "poly_context_builder_timezone", exceptionHandler = ExceptionHandler.class, documentation = {
+                     "Sets timezone for a <code>poly_context_builder</code>.",
+                     "",

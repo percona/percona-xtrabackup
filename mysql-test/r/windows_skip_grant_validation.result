@@ -1,0 +1,3 @@
+# Stop DB server which was created by MTR default
+Pattern "TCP/IP, --shared-memory, or --named-pipe should be configured on NT OS" found
+# restart

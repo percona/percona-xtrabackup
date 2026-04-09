@@ -112,7 +112,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Table_map: `test`.`tab1` mapped to number #
 # has_generated_invisible_primary_key=0
 # at #
-# # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
+# # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 ### INSERT INTO `test`.`tab1`
 ### SET
 ###   @1='{"key": "value", "key2": [1, 2, 3]}'
@@ -137,7 +137,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Table_map: `test`.`tab1` mapped to number #
 # has_generated_invisible_primary_key=0
 # at #
-# # server id #  end_log_pos # CRC32 # 	Update_rows: table id # flags: STMT_END_F
+# # server id #  end_log_pos # CRC32 # 	Update_rows: table id # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 ### UPDATE `test`.`tab1`
 ### WHERE
 ###   @1='{"key": "value", "key2": [1, 2, 3]}'
@@ -164,7 +164,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Table_map: `test`.`tab1` mapped to number #
 # has_generated_invisible_primary_key=0
 # at #
-# # server id #  end_log_pos # CRC32 # 	Update_rows: table id # flags: STMT_END_F
+# # server id #  end_log_pos # CRC32 # 	Update_rows: table id # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 ### UPDATE `test`.`tab1`
 ### WHERE
 ###   @1='{"key": "value", "key2": [1, 2, 3], "key3": "abc"}'
@@ -191,7 +191,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Table_map: `test`.`tab1` mapped to number #
 # has_generated_invisible_primary_key=0
 # at #
-# # server id #  end_log_pos # CRC32 # 	Update_rows: table id # flags: STMT_END_F
+# # server id #  end_log_pos # CRC32 # 	Update_rows: table id # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 ### UPDATE `test`.`tab1`
 ### WHERE
 ###   @1=NULL
@@ -218,7 +218,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Table_map: `test`.`tab1` mapped to number #
 # has_generated_invisible_primary_key=0
 # at #
-# # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F
+# # server id #  end_log_pos # CRC32 # 	Write_rows: table id # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 ### INSERT INTO `test`.`tab1`
 ### SET
 ###   @1=NULL
@@ -243,7 +243,7 @@ BEGIN
 # # server id #  end_log_pos # CRC32 # 	Table_map: `test`.`tab1` mapped to number #
 # has_generated_invisible_primary_key=0
 # at #
-# # server id #  end_log_pos # CRC32 # 	Delete_rows: table id # flags: STMT_END_F
+# # server id #  end_log_pos # CRC32 # 	Delete_rows: table id # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 ### DELETE FROM `test`.`tab1`
 ### WHERE
 ###   @1='[1, {"k": "v"}]'

@@ -1,0 +1,231 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE USER user1@'%' IDENTIFIED BY 'secret1';
+CREATE USER user2@'%' IDENTIFIED BY 'secret2';
+CREATE USER user3@'%' IDENTIFIED BY 'secret3';
+
+
+## I. Create service that has 3 users
+# 1. verify all users default username and emails
+# 2. modify email of user 1, verify all users from different sessions
+# 3. modify email of user 2, verify all users from different sessions
+# 4. set name for user3, observer failure
+# 5. set invalid email for user3, observer failure
+# 6. set null email for user3, observer failure
+# Registred SERVICE at path: /a
+# Registred AUTH APP at path: /a
+# Registred DB_SCHEMA at path: /a/sch
+# Registred DB_OBJECT at path: /a/sch/t
+# Registred MRS USER: "user1"
+# Registred MRS USER: "user2"
+# Registred MRS USER: "user3"
+
+#
+# I.1
+GET /a/authentication/login
+
+OK
+GET /a/authentication/login
+
+OK
+GET /a/authentication/login
+
+OK
+GET /a/authentication/user
+{
+    "name": "user1",
+    "email": "user1@hub"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "user2@hub"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user3",
+    "email": "user3@hub"
+}
+OK
+
+#
+# I.2
+PUT /a/authentication/user (payload-size:16)
+{}
+OK
+# Use the same session
+GET /a/authentication/user
+{
+    "name": "user1",
+    "email": "x@x1"
+}
+OK
+# Use the different session
+GET /a/authentication/user
+{
+    "name": "user1",
+    "email": "x@x1"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "user2@hub"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user3",
+    "email": "user3@hub"
+}
+OK
+
+#
+# I.3
+PUT /a/authentication/user (payload-size:16)
+{}
+OK
+# Use the same session
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "x@x2"
+}
+OK
+# Use the different session
+GET /a/authentication/user
+{
+    "name": "user1",
+    "email": "x@x1"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "x@x2"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user3",
+    "email": "user3@hub"
+}
+OK
+
+#
+# I.4
+PUT /a/authentication/user (payload-size:19)
+{
+    "message": "Not supported member: name",
+    "status": 400
+}
+OK
+# Use the same session
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "x@x2"
+}
+OK
+# Use the different session
+GET /a/authentication/user
+{
+    "name": "user1",
+    "email": "x@x1"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "x@x2"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user3",
+    "email": "user3@hub"
+}
+OK
+
+#
+# I.5
+PUT /a/authentication/user (payload-size:25)
+{
+    "message": "Invalid value for 'email' field.",
+    "status": 400
+}
+OK
+# Use the same session
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "x@x2"
+}
+OK
+# Use the different session
+GET /a/authentication/user
+{
+    "name": "user1",
+    "email": "x@x1"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "x@x2"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user3",
+    "email": "user3@hub"
+}
+OK
+
+#
+# I.6
+PUT /a/authentication/user (payload-size:14)
+{
+    "message": "Invalid value for 'email' field.",
+    "status": 400
+}
+OK
+# Use the same session
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "x@x2"
+}
+OK
+# Use the different session
+GET /a/authentication/user
+{
+    "name": "user1",
+    "email": "x@x1"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user2",
+    "email": "x@x2"
+}
+OK
+GET /a/authentication/user
+{
+    "name": "user3",
+    "email": "user3@hub"
+}
+OK
+DROP USER user1@'%';
+DROP USER user2@'%';
+DROP USER user3@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -30,12 +30,8 @@
 
 #include <atomic>
 #include <chrono>
-#include <exception>
-#include <list>
-#include <map>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 #include "my_rapidjson_size_t.h"
 
@@ -48,7 +44,7 @@
 #include "mysqlrouter/metadata.h"
 #include "mysqlrouter/metadata_cache_datatypes.h"
 #include "mysqlrouter/mysql_session.h"
-#include "tcp_address.h"
+#include "routing_guidelines/routing_guidelines.h"
 
 namespace metadata_cache {
 constexpr const uint16_t kDefaultMetadataPort{32275};
@@ -89,13 +85,11 @@ class METADATA_CACHE_EXPORT ClusterStateListenerInterface {
    * @brief Callback function that is called when state of cluster is
    * changed.
    *
-   * @param cluster_topology current cluster topology
    * @param md_servers_reachable true if metadata changed, false if metadata
    * unavailable
    * @param view_id current metadata view_id in case of ReplicaSet cluster
    */
-  virtual void notify_instances_changed(const ClusterTopology &cluster_topology,
-                                        const bool md_servers_reachable,
+  virtual void notify_instances_changed(const bool md_servers_reachable,
                                         const uint64_t view_id) = 0;
 
   ClusterStateListenerInterface() = default;
@@ -117,11 +111,8 @@ class METADATA_CACHE_EXPORT AcceptorUpdateHandlerInterface {
   /**
    * @brief Callback function that is called when the state of the sockets
    * acceptors is handled during the metadata refresh.
-   *
-   * @param instances list of the current cluster nodes
    */
-  virtual bool update_socket_acceptor_state(
-      const metadata_cache::cluster_nodes_list_t &instances) = 0;
+  virtual bool update_socket_acceptor_state() = 0;
 
   AcceptorUpdateHandlerInterface() = default;
 
@@ -159,13 +150,12 @@ class METADATA_CACHE_EXPORT MetadataRefreshListenerInterface {
    *
    * @param[in] instances_changed Informs if the cluster topology has changed
    * since last md refresh.
-   * @param[in] cluster_topology current cluster topology
    */
-  virtual void on_md_refresh(const bool instances_changed,
-                             const ClusterTopology &cluster_topology) = 0;
+  virtual void on_md_refresh(const bool instances_changed) = 0;
 
   virtual ~MetadataRefreshListenerInterface() = default;
 };
+
 /**
  * @brief Abstract class that provides interface for adding and removing
  *        observers on cluster status changes.
@@ -261,6 +251,8 @@ class METADATA_CACHE_EXPORT MetadataCacheAPIBase
    *                                  (only available for GR cluster type)
    * @param view_id last known view_id of the cluster metadata (only relevant
    *                for ReplicaSet cluster)
+   * @param close_connection_after_refresh if the connection should be closed
+   * after a refresh.
    *
    */
   virtual void cache_init(
@@ -273,15 +265,13 @@ class METADATA_CACHE_EXPORT MetadataCacheAPIBase
       const MetadataCacheMySQLSessionConfig &session_config,
       const RouterAttributes &router_attributes,
       size_t thread_stack_size = mysql_harness::kDefaultStackSizeInKiloBytes,
-      bool use_cluster_notifications = false, const uint64_t view_id = 0) = 0;
+      bool use_cluster_notifications = false, const uint64_t view_id = 0,
+      bool close_connection_after_refresh = false) = 0;
 
   virtual void instance_name(const std::string &inst_name) = 0;
   virtual std::string instance_name() const = 0;
 
   virtual bool is_initialized() noexcept = 0;
-
-  virtual bool fetch_whole_topology() const = 0;
-  virtual void fetch_whole_topology(bool val) = 0;
 
   virtual mysqlrouter::ClusterType cluster_type() const = 0;
 
@@ -414,6 +404,39 @@ class METADATA_CACHE_EXPORT MetadataCacheAPIBase
    */
   virtual void handle_sockets_acceptors_on_md_refresh() = 0;
 
+  /**
+   * Callback which is going to update the routing guidelines used by the
+   * routing guidelines engine.
+   */
+  using update_routing_guidelines_callback_t =
+      std::function<routing_guidelines::Routing_guidelines_engine::RouteChanges(
+          const std::string &)>;
+
+  /**
+   * Callback used to verify existing connections according to the new routing
+   * guidelines.
+   */
+  using on_routing_guidelines_change_callback_t = std::function<void(
+      const routing_guidelines::Routing_guidelines_engine::RouteChanges &)>;
+
+  virtual void add_routing_guidelines_update_callbacks(
+      update_routing_guidelines_callback_t,
+      on_routing_guidelines_change_callback_t) = 0;
+
+  virtual void clear_routing_guidelines_update_callbacks() = 0;
+
+  /**
+   * Callback used to update the router information used by the routing
+   * guidelines engine.
+   */
+  using update_router_info_callback_t =
+      std::function<void(const routing_guidelines::Router_info &)>;
+
+  virtual void add_router_info_update_callback(
+      update_router_info_callback_t clb) = 0;
+
+  virtual void clear_router_info_update_callback() = 0;
+
   MetadataCacheAPIBase() = default;
   // disable copy as it isn't needed right now. Feel free to enable
   // must be explicitly defined though.
@@ -469,7 +492,8 @@ class METADATA_CACHE_EXPORT MetadataCacheAPI : public MetadataCacheAPIBase {
                   const MetadataCacheMySQLSessionConfig &session_config,
                   const RouterAttributes &router_attributes,
                   size_t thread_stack_size, bool use_cluster_notifications,
-                  const uint64_t view_id) override;
+                  const uint64_t view_id,
+                  bool close_connection_after_refresh) override;
 
   mysqlrouter::ClusterType cluster_type() const override;
 
@@ -517,12 +541,20 @@ class METADATA_CACHE_EXPORT MetadataCacheAPI : public MetadataCacheAPIBase {
 
   void handle_sockets_acceptors_on_md_refresh() override;
 
+  void add_routing_guidelines_update_callbacks(
+      update_routing_guidelines_callback_t,
+      on_routing_guidelines_change_callback_t) override;
+
+  void clear_routing_guidelines_update_callbacks() override;
+
+  void add_router_info_update_callback(
+      update_router_info_callback_t clb) override;
+
+  void clear_router_info_update_callback() override;
+
   void set_instance_factory(metadata_factory_t cb) override {
     instance_factory_ = std::move(cb);
   }
-
-  bool fetch_whole_topology() const override;
-  void fetch_whole_topology(bool val) override;
 
  private:
   metadata_factory_t instance_factory_{&metadata_factory_get_instance};

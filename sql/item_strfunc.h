@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,6 +50,8 @@
 #include "sql/sql_const.h"
 #include "sql_string.h"
 #include "template_utils.h"  // pointer_cast
+
+#include <openssl/evp.h>
 
 class MY_LOCALE;
 class PT_item_list;
@@ -115,11 +117,12 @@ class Item_str_func : public Item_func {
   longlong val_int() override { return val_int_from_string(); }
   double val_real() override { return val_real_from_string(); }
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_string(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_string(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override {
-    return get_time_from_string(ltime);
+  bool val_time(Time_val *time) override { return get_time_from_string(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_string(dt, flags);
   }
   enum Item_result result_type() const override { return STRING_RESULT; }
   void left_right_max_length(THD *thd);
@@ -182,24 +185,6 @@ class Item_str_ascii_func : public Item_str_func {
   String *val_str_ascii(String *) override = 0;
 };
 
-class Item_func_md5 final : public Item_str_ascii_func {
-  String tmp_value;
-
- public:
-  Item_func_md5(const POS &pos, Item *a) : Item_str_ascii_func(pos, a) {}
-  String *val_str_ascii(String *) override;
-  bool resolve_type(THD *thd) override;
-  const char *func_name() const override { return "md5"; }
-};
-
-class Item_func_sha : public Item_str_ascii_func {
- public:
-  Item_func_sha(const POS &pos, Item *a) : Item_str_ascii_func(pos, a) {}
-  String *val_str_ascii(String *) override;
-  bool resolve_type(THD *thd) override;
-  const char *func_name() const override { return "sha"; }
-};
-
 class Item_func_sha2 : public Item_str_ascii_func {
  public:
   Item_func_sha2(const POS &pos, Item *a, Item *b)
@@ -214,6 +199,7 @@ class Item_func_to_base64 final : public Item_str_ascii_func {
 
  public:
   Item_func_to_base64(const POS &pos, Item *a) : Item_str_ascii_func(pos, a) {}
+  explicit Item_func_to_base64(Item *a) : Item_str_ascii_func(a) {}
   String *val_str_ascii(String *) override;
   bool resolve_type(THD *) override;
   const char *func_name() const override { return "to_base64"; }
@@ -267,7 +253,7 @@ class Item_func_statement_digest_text final : public Item_str_func {
   uchar *m_token_buffer{nullptr};
 };
 
-class Item_func_from_base64 final : public Item_str_func {
+class Item_func_from_base64 : public Item_str_func {
   String tmp_value;
 
  public:
@@ -280,20 +266,38 @@ class Item_func_from_base64 final : public Item_str_func {
 class Item_func_aes_encrypt final : public Item_str_func {
   String tmp_value;
   typedef Item_str_func super;
+  EVP_CIPHER_CTX *ctx{nullptr};
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  EVP_CIPHER_CTX stack_ctx;
+#endif
 
  public:
   Item_func_aes_encrypt(const POS &pos, Item *a, Item *b)
-      : Item_str_func(pos, a, b) {}
+      : Item_str_func(pos, a, b) {
+    create_op_context();
+  }
   Item_func_aes_encrypt(const POS &pos, Item *a, Item *b, Item *c)
-      : Item_str_func(pos, a, b, c) {}
+      : Item_str_func(pos, a, b, c) {
+    create_op_context();
+  }
   Item_func_aes_encrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d)
-      : Item_str_func(pos, a, b, c, d) {}
+      : Item_str_func(pos, a, b, c, d) {
+    create_op_context();
+  }
   Item_func_aes_encrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d,
                         Item *e)
-      : Item_str_func(pos, a, b, c, d, e) {}
+      : Item_str_func(pos, a, b, c, d, e) {
+    create_op_context();
+  }
   Item_func_aes_encrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d,
                         Item *e, Item *f)
-      : Item_str_func(pos, a, b, c, d, e, f) {}
+      : Item_str_func(pos, a, b, c, d, e, f) {
+    create_op_context();
+  }
+  ~Item_func_aes_encrypt() override { destroy_op_context(); }
+
+  void create_op_context();
+  void destroy_op_context();
   bool do_itemize(Parse_context *pc, Item **res) override;
   String *val_str(String *) override;
   bool resolve_type(THD *) override;
@@ -302,20 +306,38 @@ class Item_func_aes_encrypt final : public Item_str_func {
 
 class Item_func_aes_decrypt : public Item_str_func {
   typedef Item_str_func super;
+  EVP_CIPHER_CTX *ctx{nullptr};
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  EVP_CIPHER_CTX stack_ctx;
+#endif
 
  public:
   Item_func_aes_decrypt(const POS &pos, Item *a, Item *b)
-      : Item_str_func(pos, a, b) {}
+      : Item_str_func(pos, a, b) {
+    create_op_context();
+  }
   Item_func_aes_decrypt(const POS &pos, Item *a, Item *b, Item *c)
-      : Item_str_func(pos, a, b, c) {}
+      : Item_str_func(pos, a, b, c) {
+    create_op_context();
+  }
   Item_func_aes_decrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d)
-      : Item_str_func(pos, a, b, c, d) {}
+      : Item_str_func(pos, a, b, c, d) {
+    create_op_context();
+  }
   Item_func_aes_decrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d,
                         Item *e)
-      : Item_str_func(pos, a, b, c, d, e) {}
+      : Item_str_func(pos, a, b, c, d, e) {
+    create_op_context();
+  }
   Item_func_aes_decrypt(const POS &pos, Item *a, Item *b, Item *c, Item *d,
                         Item *e, Item *f)
-      : Item_str_func(pos, a, b, c, d, e, f) {}
+      : Item_str_func(pos, a, b, c, d, e, f) {
+    create_op_context();
+  }
+  ~Item_func_aes_decrypt() override { destroy_op_context(); }
+
+  void create_op_context();
+  void destroy_op_context();
   bool do_itemize(Parse_context *pc, Item **res) override;
   String *val_str(String *) override;
   bool resolve_type(THD *thd) override;
@@ -369,6 +391,31 @@ class Item_func_concat_ws : public Item_str_func {
   String *val_str(String *) override;
   bool resolve_type(THD *thd) override;
   const char *func_name() const override { return "concat_ws"; }
+};
+
+/**
+  This class represents the function ETAG which is used to traverse the input
+  arguments and compute a 128 bits hash value.
+ */
+class Item_func_etag : public Item_str_func {
+  String m_tmp_value{"", 0, collation.collation};
+
+ public:
+  Item_func_etag(const POS &pos, PT_item_list *opt_list)
+      : Item_str_func(pos, opt_list) {}
+  Item_func_etag(Item *a, Item *b) : Item_str_func(a, b) {}
+
+  String *val_str(String *) override;
+  bool resolve_type(THD *thd) override;
+  const char *func_name() const override { return "etag"; }
+  bool check_function_as_value_generator(uchar *checker_args) override {
+    Check_function_as_value_generator_parameters *func_arg =
+        pointer_cast<Check_function_as_value_generator_parameters *>(
+            checker_args);
+    func_arg->banned_function_name = func_name();
+    return ((func_arg->source == VGS_GENERATED_COLUMN) ||
+            (func_arg->source == VGS_CHECK_CONSTRAINT));
+  }
 };
 
 class Item_func_reverse : public Item_str_func {
@@ -1108,17 +1155,17 @@ class Item_func_conv_charset final : public Item_charset_conversion {
 class Item_func_set_collation final : public Item_str_func {
   typedef Item_str_func super;
 
-  LEX_STRING collation_string;
+  LEX_CSTRING collation_string;
 
  public:
   Item_func_set_collation(const POS &pos, Item *a,
-                          const LEX_STRING &collation_string_arg)
+                          const LEX_CSTRING &collation_string_arg)
       : super(pos, a, nullptr), collation_string(collation_string_arg) {}
 
   bool do_itemize(Parse_context *pc, Item **res) override;
   String *val_str(String *) override;
   bool resolve_type(THD *) override;
-  bool eq_specific(const Item *item) const override;
+  bool eq(const Item *item) const override;
   const char *func_name() const override { return "collate"; }
   enum Functype functype() const override { return COLLATE_FUNC; }
   void print(const THD *thd, String *str,
@@ -1247,19 +1294,19 @@ class Item_func_to_vector final : public Item_str_func {
   String *val_str(String *str) override;
 };
 
-class Item_func_from_vector final : public Item_str_func {
+class Item_func_from_vector final : public Item_str_ascii_func {
   static const uint32 per_value_chars = 16;
   static const uint32 max_output_bytes =
       (Field_vector::max_dimensions * Item_func_from_vector::per_value_chars);
   String buffer;
 
  public:
-  Item_func_from_vector(const POS &pos, Item *a) : Item_str_func(pos, a) {
-    collation.set(&my_charset_utf8mb4_0900_bin);
-  }
+  explicit Item_func_from_vector(Item *a) : Item_str_ascii_func(a) {}
+  Item_func_from_vector(const POS &pos, Item *a)
+      : Item_str_ascii_func(pos, a) {}
   bool resolve_type(THD *thd) override;
   const char *func_name() const override { return "from_vector"; }
-  String *val_str(String *str) override;
+  String *val_str_ascii(String *str) override;
 };
 
 class Item_func_uncompress final : public Item_str_func {
@@ -1679,6 +1726,28 @@ class Item_func_get_dd_property_key_value final : public Item_str_func {
   String *val_str(String *) override;
 };
 
+class Item_func_get_jdv_property_key_value final : public Item_str_func {
+ public:
+  Item_func_get_jdv_property_key_value(const POS &pos, Item *a, Item *b,
+                                       Item *c, Item *d)
+      : Item_str_func(pos, a, b, c, d) {}
+
+  enum Functype functype() const override { return DD_INTERNAL_FUNC; }
+  bool resolve_type(THD *) override {
+    set_data_type_string(MAX_BLOB_WIDTH, system_charset_info);
+    set_nullable(true);
+    null_on_null = false;
+
+    return false;
+  }
+
+  const char *func_name() const override {
+    return "get_jdv_property_key_value";
+  }
+
+  String *val_str(String *) override;
+};
+
 class Item_func_remove_dd_property_key final : public Item_str_func {
  public:
   Item_func_remove_dd_property_key(const POS &pos, Item *a, Item *b)
@@ -1823,5 +1892,13 @@ class Item_func_internal_get_dd_column_extra final : public Item_str_func {
 
   String *val_str(String *) override;
 };
+
+inline void tohex(char *to, uint64_t from, uint len) {
+  to += len;
+  while (len--) {
+    *--to = dig_vec_lower[from & 15];
+    from >>= 4;
+  }
+}
 
 #endif /* ITEM_STRFUNC_INCLUDED */

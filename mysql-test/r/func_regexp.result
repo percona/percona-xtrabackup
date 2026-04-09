@@ -248,3 +248,36 @@ SELECT r_substr('Find pattern');
 r_substr('Find pattern')
 pattern
 DROP FUNCTION r_substr;
+#
+# Bug#36326728: Performance degredation using REGEXP in statement
+#               with parameters vs query
+#
+CREATE TABLE t1(f1 INT, f2 VARCHAR(512), PRIMARY KEY (f1));
+INSERT INTO t1 (f1, f2) VALUES (1, 'abcdef'), (2, 'abcdefghi'), (3, 'pqrstuv'), (4, 4), (5, 5), (6, 'pqrstuvwx');
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SET @q:="SELECT COUNT(*) FROM t1 WHERE f2 REGEXP ? ;";
+PREPARE stm1 FROM @q;
+SET @a:='^abcdef$';
+EXECUTE stm1 USING @a;
+COUNT(*)
+1
+SET @a:='psrabcd$';
+EXECUTE stm1 USING @a;
+COUNT(*)
+0
+SET @a:='tuv';
+EXECUTE stm1 USING @a;
+COUNT(*)
+2
+SELECT REGEXP_LIKE(f1, f2) FROM t1;
+REGEXP_LIKE(f1, f2)
+0
+0
+0
+1
+1
+0
+DEALLOCATE PREPARE stm1;
+DROP TABLE t1;

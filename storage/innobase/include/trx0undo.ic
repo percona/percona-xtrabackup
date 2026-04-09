@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -44,33 +44,30 @@ this program; if not, write to the Free Software Foundation, Inc.,
 @return roll pointer */
 inline roll_ptr_t trx_undo_build_roll_ptr(bool is_insert, space_id_t space_id,
                                           page_no_t page_no, ulint offset) {
-  roll_ptr_t roll_ptr;
-  ulint id;
-
   ut_ad(offset < 65536);
 
-  id = (fsp_is_undo_tablespace(space_id) ? undo::id2num(space_id) : 0);
+  ulint id = (fsp_is_undo_tablespace(space_id) ? undo::id2num(space_id) : 0);
 
-  roll_ptr = (roll_ptr_t)is_insert << 55 | (roll_ptr_t)id << 48 |
-             (roll_ptr_t)page_no << 16 | offset;
+  roll_ptr_t roll_ptr = (roll_ptr_t)is_insert << 55 | (roll_ptr_t)id << 48 |
+                        (roll_ptr_t)page_no << 16 | offset;
   return (roll_ptr);
 }
 
-/** Decodes a roll pointer. */
-inline void trx_undo_decode_roll_ptr(
-    roll_ptr_t roll_ptr, /*!< in: roll pointer */
-    bool *is_insert,     /*!< out: true if insert undo log */
-    ulint *rseg_id,      /*!< out: rollback segment id */
-    page_no_t *page_no,  /*!< out: page number */
-    ulint *offset)       /*!< out: offset of the undo
-                         entry within page */
-{
+/** Decodes a roll pointer.
+param[in]  roll_ptr   roll pointer
+param[out] is_insert  true if insert undo log
+param[out] undo_num   undo number
+param[out] page_no    page number
+param[out] offset     offset of the undo entry within page */
+inline void trx_undo_decode_roll_ptr(roll_ptr_t roll_ptr, bool *is_insert,
+                                     ulint *undo_num, page_no_t *page_no,
+                                     ulint *offset) {
   ut_ad(roll_ptr < (1ULL << 56));
   *offset = (ulint)roll_ptr & 0xFFFF;
   roll_ptr >>= 16;
   *page_no = (ulint)roll_ptr & 0xFFFFFFFF;
   roll_ptr >>= 32;
-  *rseg_id = (ulint)roll_ptr & 0x7F;
+  *undo_num = (ulint)roll_ptr & 0x7F;
   roll_ptr >>= 7;
   *is_insert = roll_ptr; /* true==1 */
 }

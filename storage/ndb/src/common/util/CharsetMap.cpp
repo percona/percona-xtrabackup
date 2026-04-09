@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -98,8 +98,8 @@ CharsetMap::RecodeStatus CharsetMap::recode(Int32 *lengths, int From, int To,
   Int32 &total_written = lengths[1];  // IN/OUT
   my_wc_t wide;
   my_wc_t mystery_char = '?';  // used in place of unmappable characters
-  const unsigned char *src = (const unsigned char *)void_src;
-  unsigned char *dest = (unsigned char *)void_dest;
+  const auto *src = (const unsigned char *)void_src;
+  auto *dest = (unsigned char *)void_dest;
   CHARSET_INFO *csFrom = get_charset(From, MYF(0));
   CHARSET_INFO *csTo = get_charset(To, MYF(0));
 

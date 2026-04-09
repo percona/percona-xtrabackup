@@ -70,15 +70,9 @@ include/rpl/sync_to_replica.inc
 [connection master]
 DROP TABLE gtable;
 include/rpl/sync_to_replica.inc
-SET @replica_parallel_type_saved= @@GLOBAL.REPLICA_PARALLEL_TYPE;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET @replica_parallel_workers_saved= @@GLOBAL.REPLICA_PARALLEL_WORKERS;
 SET @slave_preserver_commit_order_saved= @@GLOBAL.REPLICA_PRESERVE_COMMIT_ORDER;
 include/rpl/stop_replica.inc
-SET GLOBAL replica_parallel_type= 'LOGICAL_CLOCK';
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET GLOBAL replica_parallel_workers= 4;
 SET GLOBAL replica_preserve_commit_order= ON;
 include/rpl/start_replica.inc
@@ -101,9 +95,6 @@ include/diff_tables.inc [master:gtable, slave:gtable]
 DROP TABLE gtable;
 include/rpl/sync_to_replica.inc
 include/rpl/stop_replica.inc
-SET @@GLOBAL.REPLICA_PARALLEL_TYPE= @replica_parallel_type_saved;
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 SET @@GLOBAL.REPLICA_PARALLEL_WORKERS= @replica_parallel_workers_saved;
 SET @@GLOBAL.REPLICA_PRESERVE_COMMIT_ORDER= @slave_preserver_commit_order_saved;
 include/rpl/start_replica.inc

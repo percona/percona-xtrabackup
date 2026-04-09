@@ -60,10 +60,6 @@ EOF
 
 ## Verify the default values of some of the GLOBAL variables whose values are independent of the MTR enviroment
 
---let $assert_text= group_replication_allow_local_lower_version_join is OFF
---let $assert_cond= "[SELECT @@GLOBAL.group_replication_allow_local_lower_version_join]" = "0"
---source include/assert.inc
-
 --let $assert_text= group_replication_auto_increment_increment is 7
 --let $assert_cond= "[SELECT @@GLOBAL.group_replication_auto_increment_increment]" = "7"
 --source include/assert.inc
@@ -120,7 +116,6 @@ EOF
 
 --source include/stop_group_replication.inc
 
-SET @group_replication_allow_local_lower_version_join_save= @@GLOBAL.group_replication_allow_local_lower_version_join;
 SET @group_replication_auto_increment_increment_save= @@GLOBAL.group_replication_auto_increment_increment;
 SET @group_replication_components_stop_timeout_save= @@GLOBAL.group_replication_components_stop_timeout;
 SET @group_replication_compression_threshold_save= @@GLOBAL.group_replication_compression_threshold;
@@ -153,7 +148,6 @@ SET @group_replication_recovery_get_public_key_save= @@GLOBAL.group_replication_
 ## Set the GR Variables
 
 --write_file $MYSQL_TMP_DIR/set_variables.tmp
-SET GLOBAL group_replication_allow_local_lower_version_join= ON;
 SET GLOBAL group_replication_auto_increment_increment= 5;
 SET GLOBAL group_replication_bootstrap_group= 1;
 SET GLOBAL group_replication_components_stop_timeout= 10;
@@ -197,10 +191,6 @@ EOF
 ## it resets the Group name set above.
 
 --source include/start_group_replication_command.inc
-
---let $assert_text= group_replication_allow_local_lower_version_join is ON
---let $assert_cond= "[SELECT @@GLOBAL.group_replication_allow_local_lower_version_join]" = "1"
---source include/assert.inc
 
 --let $assert_text= group_replication_auto_increment_increment is 5
 --let $assert_cond= "[SELECT @@GLOBAL.group_replication_auto_increment_increment]" = "5"
@@ -335,7 +325,6 @@ EOF
 
 ## Modify the GLOBAL variables to its original value
 
-SET GLOBAL group_replication_allow_local_lower_version_join= @group_replication_allow_local_lower_version_join_save;
 SET GLOBAL group_replication_auto_increment_increment= @group_replication_auto_increment_increment_save;
 SET GLOBAL group_replication_components_stop_timeout= @group_replication_components_stop_timeout_save;
 SET GLOBAL group_replication_compression_threshold= @group_replication_compression_threshold_save;

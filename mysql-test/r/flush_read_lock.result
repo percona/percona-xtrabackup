@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 include/only_with_option.inc [GLOBAL.xa_detach_on_prepare = 1]
 # FTWRL takes two global metadata locks -- a global shared
 # metadata lock and the commit blocker lock.
@@ -1698,3 +1699,4 @@ drop database `#mysql50#mysqltest-2`;
 drop database mysqltest1;
 drop temporary tables t1_temp, t2_temp;
 drop tables t1_base, t2_base, t3_trans;
+include/rpl/set_gtid_mode_on.inc

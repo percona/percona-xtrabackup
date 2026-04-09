@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,13 +26,13 @@
 #include "kernel/signaldata/TrpKeepAlive.hpp"
 #include "ndb_types.h"
 
-#include <stdio.h>
+#include <cstdio>
 
 #define JAM_FILE_ID 542
 
 bool printTRP_KEEP_ALIVE(FILE *output, const Uint32 *theData, Uint32 len,
                          Uint16 /* receiverBlockNo */) {
-  const TrpKeepAlive *sig = reinterpret_cast<const TrpKeepAlive *>(theData);
+  const auto *sig = reinterpret_cast<const TrpKeepAlive *>(theData);
   if (len >= 1) {
     fprintf(output, " senderRef: %x\n", sig->senderRef);
   }

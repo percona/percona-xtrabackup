@@ -68,6 +68,7 @@ if (!$success)
   if ($show_rpl_debug_info)
   {
     --source include/rpl/debug/show_debug_info.inc
-    --die Timeout in wait_condition.inc for $wait_condition
+    --echo wait_condition: <$wait_condition>
+    --die Timeout in wait_condition.inc
   }
 }

@@ -1,0 +1,81 @@
+# Verify that authentication endpoints are created and avaiable
+# despite the number of authentication application assgined to
+# service.
+#
+--source include/have_router.inc
+
+CREATE USER account1@'%' IDENTIFIED BY 'pwd1';
+CREATE USER account2@'%' IDENTIFIED BY 'pwd2';
+
+
+--let $mrs_user_meta=account1@'%'
+--let $mrs_user_data=account2@'%'
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Create service and MySQL authentication application,
+--echo ##    that is not locked just to existing accounts:
+--echo #
+--echo # 1. verify that MySQL internal auth-app is configured,
+--echo # 2. verify that Router "meta-data" MySQL account can't be used with may be used with the auth-app,
+--echo # 3. verify that Router "user-data" MySQL account can't be used with may be used with the auth-app.
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--let $mrs_add_schema_auth=TRUE
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+
+--let $mrs_add_auth_app=default authentication1
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+--echo
+--echo #
+--echo # I.1
+
+--let $mrs_client_arg_path='/svc/authentication/authApps'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+exec $MRS_CLIENT_ARGS
+  -a basic_json
+  --path /svc/authentication/login
+  --expected-status Unauthorized
+  -u account1 -p pwd1;
+  
+--echo
+--echo #
+--echo # I.3
+exec $MRS_CLIENT_ARGS
+  -a basic_json
+  --path /svc/authentication/login
+  --expected-status Unauthorized
+  -u account2 -p pwd2;
+
+# Cleanup
+--source ../include/mrs/cleanup.inc
+DROP USER account1@'%';
+DROP USER account2@'%';

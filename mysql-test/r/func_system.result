@@ -113,7 +113,7 @@ left(concat(a,version()),1)
 a
 drop table t1;
 # Bug#25669590: regression: assertion failed: collation.collation == ...
-prepare s from "DO SHA1(DATABASE());";
+prepare s from "DO SHA2(DATABASE(),256);";
 execute s;
 #
 # Bug#36871927: database() results truncated at 34 bytes due to union

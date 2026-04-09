@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -204,7 +204,8 @@ BEGIN_SERVICE_DEFINITION(component_sys_variable_register)
 
   @warning: Make sure to unregister the system variable when you no longer
   intend to have it or when your component deinitializes. Failure to do so will
-  lead to resource leaks and crashes.
+  lead to resource leaks and crashes. This doesn't apply to @ref
+  PLUGIN_VAR_NOSYSVAR variables! No need to unregister these.
 
   Typical use
   @code

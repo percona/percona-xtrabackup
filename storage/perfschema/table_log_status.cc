@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -227,7 +227,8 @@ int table_log_status::make_row() {
   */
   {
     Log_resource *res;
-    res = Log_resource_factory::get_wrapper(gtid_state, &json_local);
+    res = Log_resource_factory::get_wrapper(gtid_state, &json_local,
+                                            &mysql_bin_log);
     error = DBUG_EVALUATE_IF("log_status_oom_gtid", 1, !res);
     if (error) {
       my_error(ER_UNABLE_TO_COLLECT_LOG_STATUS, MYF(0), "LOCAL",

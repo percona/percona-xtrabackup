@@ -291,7 +291,7 @@
                 "description_utf8": "200",
                 "engine": "InnoDB",
                 "comment": "",
-                "options": "",
+                "options": "secondary_load=0;",
                 "se_private_data": "",
                 "values": [
                     {
@@ -312,7 +312,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [
@@ -333,7 +333,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [
@@ -354,7 +354,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [
@@ -377,7 +377,7 @@
                 "description_utf8": "600",
                 "engine": "InnoDB",
                 "comment": "",
-                "options": "",
+                "options": "secondary_load=0;",
                 "se_private_data": "",
                 "values": [
                     {
@@ -398,7 +398,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [
@@ -419,7 +419,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [
@@ -440,7 +440,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [
@@ -463,7 +463,7 @@
                 "description_utf8": "1800",
                 "engine": "InnoDB",
                 "comment": "",
-                "options": "",
+                "options": "secondary_load=0;",
                 "se_private_data": "",
                 "values": [
                     {
@@ -484,7 +484,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [
@@ -505,7 +505,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [
@@ -526,7 +526,7 @@
                         "description_utf8": "",
                         "engine": "InnoDB",
                         "comment": "",
-                        "options": "",
+                        "options": "secondary_load=0;",
                         "se_private_data": "",
                         "values": [],
                         "indexes": [

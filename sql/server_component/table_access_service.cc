@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -38,6 +38,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "sql/sql_class.h"
 #include "sql/sql_lex.h"
 #include "sql/table.h"
+#include "sql/table_trigger_dispatcher.h"
 #include "sql/transaction.h"
 #include "thr_lock.h"
 
@@ -692,6 +693,11 @@ TA_field_type field_type_to_api(enum enum_field_types impl_field_type,
       break;
     case MYSQL_TYPE_JSON:
       result = TA_TYPE_JSON;
+      break;
+    case MYSQL_TYPE_STRING:
+    case MYSQL_TYPE_BLOB:
+      result = TA_TYPE_TEXT;
+      break;
     default:
       break;
   };
@@ -748,6 +754,38 @@ size_t Table_access_impl::add_table(const char *schema_name,
   return m_current_count++;
 }
 
+/**
+  @brief Checks if access to the specified tables is supported
+
+  Check if the table access service supports the requested operation
+  for the requested set of tables.
+  This currently includes:
+    * not writing to a table that has generated columns
+    * not writing to a table that has triggers
+  @warning This needs to be called after the tabes are opened.
+
+  @param table_array The list of tables accessed
+  @retval true operation can continue
+  @retval false we should stop
+ */
+static bool is_access_to_tables_supported(Table_ref *table_array) {
+  for (Table_ref *tables = table_array; tables; tables = tables->next_global) {
+    if (tables->lock_descriptor().type == TL_WRITE && tables->table) {
+      TABLE *tb = tables->table;
+      /* We do not support writing to generated columns yet */
+      if (tb->has_gcol()) return false;
+      /* We do not support writing to tables with triggers */
+      if (tb->triggers &&
+          (tb->triggers->has_update_triggers() ||
+           tb->triggers->has_delete_triggers() ||
+           tb->triggers->has_triggers(TRG_EVENT_INSERT, TRG_ACTION_BEFORE) ||
+           tb->triggers->has_triggers(TRG_EVENT_INSERT, TRG_ACTION_AFTER)))
+        return false;
+    }
+  }
+  return true;
+}
+
 int Table_access_impl::begin() {
   /*
     Read lock must be acquired during entire open_and_lock_tables function
@@ -784,6 +822,11 @@ int Table_access_impl::begin() {
 
   assert(!m_in_tx);
   m_in_tx = true;
+
+  if (!is_access_to_tables_supported(m_table_array)) {
+    return TA_ERROR_OPEN;
+  }
+
   return 0;
 }
 

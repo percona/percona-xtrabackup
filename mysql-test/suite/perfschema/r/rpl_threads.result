@@ -17,32 +17,31 @@ where COMMAND = "Binlog Dump"
   into @master_dump_pid;
 Warnings:
 Warning	1287	'INFORMATION_SCHEMA.PROCESSLIST' is deprecated and will be removed in a future release. Please use performance_schema.processlist instead
+Warning	1329	No data - zero rows fetched, selected, or processed
 select COMMAND, STATE
 from INFORMATION_SCHEMA.PROCESSLIST
 where ID = @master_dump_pid;
 COMMAND	STATE
-Binlog Dump	Source has sent all binlog to replica; waiting for more updates
 Warnings:
 Warning	1287	'INFORMATION_SCHEMA.PROCESSLIST' is deprecated and will be removed in a future release. Please use performance_schema.processlist instead
 select NAME, TYPE, PROCESSLIST_COMMAND, PROCESSLIST_STATE
 from performance_schema.threads
 where PROCESSLIST_ID = @master_dump_pid;
 NAME	TYPE	PROCESSLIST_COMMAND	PROCESSLIST_STATE
-thread/sql/one_connection	FOREGROUND	Binlog Dump	Source has sent all binlog to replica; waiting for more updates
 select THREAD_ID from performance_schema.threads
 where PROCESSLIST_ID = @master_dump_pid
 into @master_dump_tid;
+Warnings:
+Warning	1329	No data - zero rows fetched, selected, or processed
 select VARIABLE_NAME,
 IF (VARIABLE_VALUE = @master_dump_pid, "same", "different") as 'test'
   from performance_schema.variables_by_thread
 where VARIABLE_NAME = 'pseudo_thread_id' and THREAD_ID = @master_dump_tid;
 VARIABLE_NAME	test
-pseudo_thread_id	same
 select VARIABLE_NAME, VARIABLE_VALUE
 from performance_schema.status_by_thread
 where VARIABLE_NAME = 'Compression_level' and THREAD_ID = @master_dump_tid;
 VARIABLE_NAME	VARIABLE_VALUE
-Compression_level	0
 "============ Performance schema on slave ============"
 select ID from INFORMATION_SCHEMA.PROCESSLIST
 where STATE like "Waiting for source to send event%"

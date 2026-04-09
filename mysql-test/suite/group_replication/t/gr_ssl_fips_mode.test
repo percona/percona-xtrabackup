@@ -6,7 +6,6 @@
 # 1. Setup the first member (M1) with a recovery user that requires SSL with
 #    ssl_fips_mode= 'ON'.
 # 2. Start and bootstrap M1.
-# 3. Insert some data and verify that it gives warning for MD5().
 # 4. Configure joining member (M2) to use SSL and Fips mode options on recovery.
 #    Start GR on M2. Check the data is there.
 # 5. Restart M2 with weak cipher with Fips mode ON and verify it does not start.
@@ -52,14 +51,12 @@ SET SESSION sql_log_bin= 1;
 
 
 --echo #
---echo # 3. Insert some data and verify that it gives warning for MD5().
+--echo # 3. Insert some data
 --echo #
-CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY, hash CHAR(32)) ENGINE=InnoDB;
+CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY, hash CHAR(64)) ENGINE=InnoDB;
 
 INSERT INTO t1 VALUES (1, 'test');
-INSERT INTO t1 VALUES (2, MD5(8));
-SHOW WARNINGS;
-
+INSERT INTO t1 VALUES (2, SHA2(8,224));
 
 --echo #
 --echo # 4. Configure joining member (M2) to use SSL and Fips mode options on recovery.

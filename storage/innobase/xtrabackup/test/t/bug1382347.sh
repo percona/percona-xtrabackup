@@ -12,12 +12,14 @@ mkdir -p ${TEST_VAR_ROOT}/dir/{undo,data,logs}
 MYSQLD_EXTRA_MY_CNF_OPTS="
 innodb_file_per_table=1
 innodb_undo_directory=${TEST_VAR_ROOT}/dir/undo
-innodb_undo_tablespaces=4
 innodb_data_home_dir=${TEST_VAR_ROOT}/dir/data
 innodb_log_group_home_dir=${TEST_VAR_ROOT}/dir/logs
 "
 
 start_server
+mysql -e "CREATE UNDO TABLESPACE undo_001 ADD DATAFILE 'undo_001.ibu'"
+mysql -e "CREATE UNDO TABLESPACE undo_002 ADD DATAFILE 'undo_002.ibu'"
+
 load_sakila
 
 checksum1=`checksum_table sakila payment`

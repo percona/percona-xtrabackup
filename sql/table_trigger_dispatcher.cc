@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -630,6 +630,16 @@ void Table_trigger_dispatcher::disable_fields_temporary_nullability() {
 
   for (Field **next_field = m_subject_table->field; *next_field; ++next_field)
     (*next_field)->reset_tmp_nullable();
+}
+
+/**
+  Reset the temporary null values set to the field for triggers.
+ */
+void Table_trigger_dispatcher::reset_field_nulls() {
+  assert(m_subject_table);
+
+  for (Field **next_field = m_subject_table->field; *next_field; ++next_field)
+    (*next_field)->reset_tmp_null();
 }
 
 /**

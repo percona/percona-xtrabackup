@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -176,12 +176,6 @@ class Temp_table_param {
     @see Table_ref::update_derived_keys.
   */
   bool skip_create_table;
-  /*
-    If true, create_tmp_field called from create_tmp_table will convert
-    all BIT fields to 64-bit longs. This is a workaround the limitation
-    that MEMORY tables cannot index BIT columns.
-  */
-  bool bit_fields_as_long;
 
   /// Whether the UNIQUE index can be promoted to PK
   bool can_use_pk_for_unique;
@@ -230,7 +224,6 @@ class Temp_table_param {
         precomputed_group_by(false),
         force_copy_fields(false),
         skip_create_table(false),
-        bit_fields_as_long(false),
         can_use_pk_for_unique(true),
         m_window(nullptr) {}
 
@@ -254,7 +247,6 @@ class Temp_table_param {
         precomputed_group_by(other.precomputed_group_by),
         force_copy_fields(other.force_copy_fields),
         skip_create_table(other.skip_create_table),
-        bit_fields_as_long(other.bit_fields_as_long),
         can_use_pk_for_unique(other.can_use_pk_for_unique),
         force_hash_field_for_unique(other.force_hash_field_for_unique),
         m_window_frame_buffer(other.m_window_frame_buffer),
@@ -286,7 +278,6 @@ class Temp_table_param {
     precomputed_group_by = other.precomputed_group_by;
     force_copy_fields = other.force_copy_fields;
     skip_create_table = other.skip_create_table;
-    bit_fields_as_long = other.bit_fields_as_long;
     can_use_pk_for_unique = other.can_use_pk_for_unique;
     force_hash_field_for_unique = other.force_hash_field_for_unique;
     m_window_frame_buffer = other.m_window_frame_buffer;

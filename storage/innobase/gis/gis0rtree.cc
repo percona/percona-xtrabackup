@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -927,6 +927,7 @@ rec_t *rtr_page_split_and_insert(
   }
 
 func_start:
+  ut_ad(*heap != nullptr);
   ut_ad(tuple->m_heap != *heap);
   mem_heap_empty(*heap);
   *offsets = nullptr;
@@ -1160,10 +1161,9 @@ after_insert:
   page_zip = buf_block_get_page_zip(root_block);
   page_set_ssn_id(root_block, page_zip, next_ssn, mtr);
 
-  /* Insert fit on the page: update the free bits for the
-  left and right pages in the same mtr */
-
-  if (page_is_leaf(page)) {
+  /* Insert fit on the page: update the free bits (for non-temporary
+  tablespaces) for the left and right pages in the same mtr */
+  if (page_is_leaf(page) && !cursor->index->table->is_temporary()) {
     ibuf_update_free_bits_for_two_pages_low(block, new_block, mtr);
   }
 

@@ -39,12 +39,14 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_select_metadata_v2_gr",
       "router_check_member_state",
       "router_select_members_count",
+      "get_guidelines_router_info",
+      "get_routing_guidelines",
+      "get_routing_guidelines_version",
     ],
     options);
 
 var router_select_group_membership_primary_unavailable = common_stmts.get(
     "router_select_group_membership", options_primary_unavailable);
-
 
 ({
   stmts: function(stmt) {

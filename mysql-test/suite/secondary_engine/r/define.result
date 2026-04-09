@@ -52,10 +52,10 @@ DROP TABLE t1;
 # Attempt to create a temporary table with a secondary engine defined.
 #
 CREATE TEMPORARY TABLE t1 (a INT) SECONDARY_ENGINE NONEXISTENT;
-ERROR HY000: Secondary engine operation failed. Temporary tables not supported.
+ERROR HY000: Secondary engine operation failed. Temporary table cannot have a secondary engine.
 CREATE TABLE t1 (a INT) SECONDARY_ENGINE NONEXISTENT;
 CREATE TEMPORARY TABLE t2 LIKE t1;
-ERROR HY000: Secondary engine operation failed. Temporary tables not supported.
+ERROR HY000: Secondary engine NONEXISTENT cannot be set for temporary table.
 DROP TABLE t1;
 #
 # Attempt to create a table with a primary engine that does not support

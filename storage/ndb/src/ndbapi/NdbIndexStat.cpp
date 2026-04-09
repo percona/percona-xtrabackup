@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -373,10 +373,10 @@ NdbIndexStat::Bound::Bound(const NdbIndexStat *is, void *buffer) {
   DBUG_ENTER("NdbIndexStat::Bound::Bound");
   require(is != nullptr && is->m_impl.m_indexSet);
   require(buffer != nullptr);
-  Uint8 *buf = (Uint8 *)buffer;
+  auto *buf = (Uint8 *)buffer;
   // bound impl
   Uint8 *buf1 = buf;
-  UintPtr ubuf1 = (UintPtr)buf1;
+  auto ubuf1 = (UintPtr)buf1;
   if (ubuf1 % 8 != 0) buf1 += (8 - ubuf1 % 8);
   new (buf1) NdbIndexStatImpl::Bound(is->m_impl.m_keySpec);
   m_impl = (void *)buf1;
@@ -474,10 +474,10 @@ int NdbIndexStat::convert_range(Range &range_f, const NdbRecord *key_record,
 NdbIndexStat::Stat::Stat(void *buffer) {
   DBUG_ENTER("NdbIndexStat::Stat::Stat");
   require(buffer != nullptr);
-  Uint8 *buf = (Uint8 *)buffer;
+  auto *buf = (Uint8 *)buffer;
   // stat impl
   Uint8 *buf1 = buf;
-  UintPtr ubuf1 = (UintPtr)buf1;
+  auto ubuf1 = (UintPtr)buf1;
   if (ubuf1 % 8 != 0) buf1 += (8 - ubuf1 % 8);
   new (buf1) NdbIndexStatImpl::Stat;
   m_impl = (void *)buf1;

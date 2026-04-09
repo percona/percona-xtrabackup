@@ -237,7 +237,7 @@ BEGIN
       INSERT INTO temp VALUES  ('qwe', 'abc', '2000-11-09', 100, 'uvw', 1000);
       INSERT INTO temp VALUES  ('qwe', 'abc', '2005-11-07', 100, 'uvw', 1000);
    END;
-   SELECT COUNT( f1 ), f1 FROM temp GROUP BY f1;
+   SELECT COUNT( f1 ), f1 FROM temp GROUP BY f1 ORDER BY f1;
    UPDATE temp SET temp.f1 = 'updated_2' WHERE temp.f1 ='qwe' AND temp.f2 = 'abc';
 END//
 

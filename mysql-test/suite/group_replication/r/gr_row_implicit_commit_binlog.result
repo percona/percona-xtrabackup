@@ -26,7 +26,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -42,7 +42,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -57,7 +57,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; ANALYZE TABLE nt_1
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -73,7 +73,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -89,7 +89,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; OPTIMIZE TABLE nt_1
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -105,7 +105,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; REPAIR TABLE nt_1
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -119,7 +119,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -132,7 +132,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
 
@@ -145,7 +145,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; CREATE USER 'user'@'localhost' IDENTIFIED WITH 'caching_sha2_password'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -159,7 +159,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; GRANT ALL PRIVILEGES ON *.* TO 'user'@'localhost'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -173,7 +173,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; ALTER USER 'user'@'localhost' IDENTIFIED WITH 'caching_sha2_password' AS '<non-deterministic-password-hash>'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -187,7 +187,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'user'@'localhost'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -201,7 +201,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; RENAME USER 'user'@'localhost' TO 'user_new'@'localhost'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -215,7 +215,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; DROP USER 'user_new'@'localhost'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -229,7 +229,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` EVENT evt ON SCHEDULE AT CURRENT_TIMESTAMP + INTERVAL 1 HOUR DO SELECT * FROM tt_1
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -243,7 +243,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; ALTER EVENT evt COMMENT 'evt'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -257,7 +257,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; DROP EVENT evt
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -271,7 +271,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` FUNCTION `fc`() RETURNS varchar(64) CHARSET utf8mb4
 RETURN "fc"
@@ -286,7 +286,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; ALTER FUNCTION fc COMMENT 'fc'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -300,7 +300,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; DROP FUNCTION fc
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -314,7 +314,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; CREATE DEFINER=`root`@`localhost` PROCEDURE `pc`()
 UPDATE tt_2 SET ddl_case = ddl_case WHERE ddl_case= NEW.ddl_case
@@ -329,7 +329,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; ALTER PROCEDURE pc COMMENT 'pc'
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -343,7 +343,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS SELECT * FROM tt_1
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -357,7 +357,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; DROP PROCEDURE pc
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -371,7 +371,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; ALTER ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v` AS SELECT * FROM tt_1
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -385,7 +385,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; DROP VIEW v
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -399,7 +399,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; CREATE TABLE tt_xx (a int)
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -413,7 +413,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; RENAME TABLE tt_xx TO new_tt_xx
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -429,7 +429,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	use `test`; DROP TABLE IF EXISTS `new_tt_xx`,`tt_xx` /* generated by server */
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -443,7 +443,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	CREATE DATABASE db
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-
@@ -457,7 +457,7 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.tt_1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Query	#	#	DROP DATABASE IF EXISTS db
 -e-e-e-e-e-e-e-e-e-e-e- >> << -e-e-e-e-e-e-e-e-e-e-e-

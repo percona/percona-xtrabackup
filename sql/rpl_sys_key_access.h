@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -98,7 +98,7 @@ class Rpl_sys_key_access {
     @retval 0     Success
     @retval !0    Error
   */
-  int init(TABLE *table, std::string pos);
+  int init(TABLE *table, const std::string &pos);
 
   /**
     Closes all initialized index or random scan during destruction.

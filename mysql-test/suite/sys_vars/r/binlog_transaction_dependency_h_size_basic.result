@@ -13,7 +13,7 @@ binlog_transaction_dependency_history_size
 SET @@GLOBAL.binlog_transaction_dependency_history_size= 1;
 include/assert.inc ['binlog_transaction_dependency_history_size is a dynamic variable']
 SET @@GLOBAL.binlog_transaction_dependency_history_size= default;
-include/assert.inc ['Default value is 25000']
+include/assert.inc ['Default value is 10000000']
 SET @@GLOBAL.binlog_transaction_dependency_history_size= ON;
 ERROR 42000: Incorrect argument type to variable 'binlog_transaction_dependency_history_size'
 SET @@GLOBAL.binlog_transaction_dependency_history_size= OFF;
@@ -27,17 +27,17 @@ ERROR 42000: Incorrect argument type to variable 'binlog_transaction_dependency_
 Expect value still set to 25000
 SELECT @@GLOBAL.binlog_transaction_dependency_history_size;
 @@GLOBAL.binlog_transaction_dependency_history_size
-25000
+10000000
 SET @@GLOBAL.binlog_transaction_dependency_history_size= 0;
 Warnings:
 Warning	1292	Truncated incorrect binlog_transaction_dependency_history_size value: '0'
 SET @@GLOBAL.binlog_transaction_dependency_history_size= -1;
 Warnings:
 Warning	1292	Truncated incorrect binlog_transaction_dependency_history_size value: '-1'
-SET @@GLOBAL.binlog_transaction_dependency_history_size= 2000000;
+SET @@GLOBAL.binlog_transaction_dependency_history_size= 200000000;
 Warnings:
-Warning	1292	Truncated incorrect binlog_transaction_dependency_history_size value: '2000000'
+Warning	1292	Truncated incorrect binlog_transaction_dependency_history_size value: '200000000'
 SET @@GLOBAL.binlog_transaction_dependency_history_size= 1;
 SET @@GLOBAL.binlog_transaction_dependency_history_size= 20000;
-SET @@GLOBAL.binlog_transaction_dependency_history_size= 1000000;
+SET @@GLOBAL.binlog_transaction_dependency_history_size= 10000000;
 SET @@GLOBAL.binlog_transaction_dependency_history_size= @save_binlog_transaction_dependency_history_size;

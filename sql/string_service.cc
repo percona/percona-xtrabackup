@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,8 +29,8 @@
 
 #include "sql/string_service.h"
 
-#include <stddef.h>
 #include <sys/types.h>
+#include <cstddef>
 
 #include "my_compiler.h"
 #include "my_inttypes.h"
@@ -53,7 +53,7 @@ int mysql_string_convert_to_char_ptr(mysql_string_handle string_handle,
                                      const char *charset_name [[maybe_unused]],
                                      char *buffer, unsigned int buffer_size,
                                      int *error) {
-  String *str = (String *)string_handle;
+  auto *str = (String *)string_handle;
   const int len =
       (int)my_convert(buffer, buffer_size - 1, &my_charset_utf8mb3_general_ci,
                       str->ptr(), str->length(), str->charset(), (uint *)error);
@@ -66,7 +66,7 @@ int mysql_string_convert_to_char_ptr(mysql_string_handle string_handle,
   server and used in plugins.
 */
 void mysql_string_free(mysql_string_handle string_handle) {
-  String *str = (String *)string_handle;
+  auto *str = (String *)string_handle;
   str->mem_free();
   delete[] str;
 }
@@ -82,8 +82,8 @@ void mysql_string_iterator_free(mysql_string_iterator_handle iterator_handle) {
 /* This service function allocate mysql_string_iterator_handle and return it */
 mysql_string_iterator_handle mysql_string_get_iterator(
     mysql_string_handle string_handle) {
-  String *str = (String *)string_handle;
-  st_string_iterator *iterator = (st_string_iterator *)my_malloc(
+  auto *str = (String *)string_handle;
+  auto *iterator = (st_string_iterator *)my_malloc(
       key_memory_string_iterator, sizeof(st_string_iterator), MYF(0));
   iterator->iterator_str = str;
   iterator->iterator_ptr = str->ptr();
@@ -94,7 +94,7 @@ mysql_string_iterator_handle mysql_string_get_iterator(
 /* Provide service which returns the next mysql_string_iterator_handle */
 int mysql_string_iterator_next(mysql_string_iterator_handle iterator_handle) {
   int char_len, char_type, tmp_len;
-  st_string_iterator *iterator = (st_string_iterator *)iterator_handle;
+  auto *iterator = (st_string_iterator *)iterator_handle;
   const String *str = iterator->iterator_str;
   const CHARSET_INFO *cs = str->charset();
   const char *end = str->ptr() + str->length();
@@ -104,10 +104,8 @@ int mysql_string_iterator_next(mysql_string_iterator_handle iterator_handle) {
       pointer_cast<const uchar *>(end)));
   iterator->ctype = char_type;
   tmp_len = (char_len > 0 ? char_len : (char_len < 0 ? -char_len : 1));
-  if (iterator->iterator_ptr + tmp_len > end)
-    return (0);
-  else
-    iterator->iterator_ptr += tmp_len;
+  if (iterator->iterator_ptr + tmp_len > end) return (0);
+  iterator->iterator_ptr += tmp_len;
   return (1);
 }
 
@@ -117,7 +115,7 @@ int mysql_string_iterator_next(mysql_string_iterator_handle iterator_handle) {
 */
 int mysql_string_iterator_isupper(
     mysql_string_iterator_handle iterator_handle) {
-  st_string_iterator *iterator = (st_string_iterator *)iterator_handle;
+  auto *iterator = (st_string_iterator *)iterator_handle;
   return (iterator->ctype & MY_CHAR_U);
 }
 
@@ -127,7 +125,7 @@ int mysql_string_iterator_isupper(
 */
 int mysql_string_iterator_islower(
     mysql_string_iterator_handle iterator_handle) {
-  st_string_iterator *iterator = (st_string_iterator *)iterator_handle;
+  auto *iterator = (st_string_iterator *)iterator_handle;
   return (iterator->ctype & MY_CHAR_L);
 }
 
@@ -137,7 +135,7 @@ int mysql_string_iterator_islower(
 */
 int mysql_string_iterator_isdigit(
     mysql_string_iterator_handle iterator_handle) {
-  st_string_iterator *iterator = (st_string_iterator *)iterator_handle;
+  auto *iterator = (st_string_iterator *)iterator_handle;
   return (iterator->ctype & MY_CHAR_NMR);
 }
 
@@ -147,8 +145,8 @@ int mysql_string_iterator_isdigit(
 */
 mysql_string_handle mysql_string_to_lowercase(
     mysql_string_handle string_handle) {
-  String *str = (String *)string_handle;
-  String *res = new String[1];
+  auto *str = (String *)string_handle;
+  auto *res = new String[1];
   const CHARSET_INFO *cs = str->charset();
   if (cs->casedn_multiply == 1) {
     res->copy(*str);

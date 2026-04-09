@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,12 @@
 #ifndef MYSQL_GTID_GTIDSET_H
 #define MYSQL_GTID_GTIDSET_H
 
+#include "mysql/utils/deprecate_header.h"  // DEPRECATE_HEADER
+
+#ifndef NO_DEPRECATION_WARNING_FOR_HEADER_GTIDSET_H
+DEPRECATE_HEADER(libbinlogevents_include_gtids_gtidset)
+#endif
+
 #include <cstddef>
 #include <map>
 #include <set>
@@ -33,7 +39,6 @@
 #include "mysql/gtid/gtid.h"
 #include "mysql/gtid/tag.h"
 #include "mysql/gtid/tsid.h"
-#include "mysql/utils/nodiscard.h"
 
 /// @addtogroup GroupLibsMysqlGtid
 /// @{
@@ -249,9 +254,9 @@ class Gtid_set {
   using Tsid = mysql::gtid::Tsid;
 
  protected:
-  [[NODISCARD]] virtual bool do_add(const Tsid &tsid,
+  [[nodiscard]] virtual bool do_add(const Tsid &tsid,
                                     const Gno_interval &interval);
-  [[NODISCARD]] virtual bool do_add(const Uuid &uuid, const Tag &tag,
+  [[nodiscard]] virtual bool do_add(const Uuid &uuid, const Tag &tag,
                                     const Gno_interval &interval);
 
  public:
@@ -310,7 +315,7 @@ class Gtid_set {
    * @return true if the there was an error adding the interval, false
    * otherwise.
    */
-  [[NODISCARD]] virtual bool add(const Tsid &tsid,
+  [[nodiscard]] virtual bool add(const Tsid &tsid,
                                  const Gno_interval &interval);
 
   /**

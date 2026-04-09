@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,9 @@
 #include <gtest/gtest-param-test.h>
 #include <gtest/gtest.h>
 
+#ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 #include "my_rapidjson_size_t.h"
+#endif
 
 #include <rapidjson/pointer.h>
 
@@ -193,8 +195,7 @@ class SharedRouter {
     dests.reserve(servers.size());
 
     for (const auto &s : servers) {
-      dests.push_back(s->server_host() + ":" +
-                      std::to_string(s->server_port()));
+      dests.push_back(s->classic_tcp_destination().str());
     }
 
     return dests;
@@ -206,8 +207,7 @@ class SharedRouter {
     dests.reserve(servers.size());
 
     for (const auto &s : servers) {
-      dests.push_back(s->server_host() + ":" +
-                      std::to_string(s->server_mysqlx_port()));
+      dests.push_back(s->x_tcp_destination().str());
     }
 
     return dests;
@@ -2008,9 +2008,8 @@ class RouterRequireConnectionPoolTest : public RouterComponentTest {
     std::vector<std::string> dests;
     dests.reserve(servers.size());
 
-    for (const auto &s : servers) {
-      dests.push_back(s->server_host() + ":" +
-                      std::to_string(s->server_port()));
+    for (const auto &srv : servers) {
+      dests.push_back(srv->classic_tcp_destination().str());
     }
 
     return dests;
@@ -2313,6 +2312,42 @@ TEST_F(RouterRequireConnectionPoolTest,
     // password: YES)
     EXPECT_EQ(connect_res.error().value(), 1045) << connect_res.error();
   };
+}
+
+TEST_F(RouterRequireConnectionPoolTest, classic_protocol_user_with_comment) {
+  RecordProperty("Bug", "37903358");
+  RecordProperty("Description",
+                 "If the user's attributes contain other attributes than "
+                 "'router_require', auth shouldn't fail.");
+  // start router.
+  auto &proc = spawn_router(
+      classic_destinations_from_shared_servers(test_env->servers()));
+  ASSERT_TRUE(proc.wait_for_sync_point_result());
+
+  // add a connection to the pool
+  for (auto &srv : test_env->servers()) {
+    auto admin_cli_res = srv->admin_cli();
+
+    ASSERT_NO_ERROR(admin_cli_res);
+    auto admin_cli = std::move(*admin_cli_res);
+
+    ASSERT_NO_ERROR(admin_cli.query("DROP USER IF EXISTS user_with_comment"));
+
+    ASSERT_NO_ERROR(
+        admin_cli.query("CREATE USER user_with_comment IDENTIFIED BY "
+                        "'user_with_comment_password' comment 'Testuser'"));
+  };
+
+  {
+    MysqlClient cli;
+
+    cli.username("user_with_comment");
+    cli.password("user_with_comment_password");
+
+    ASSERT_NO_ERROR(cli.connect(host(), port(kPreferredPreferred)));
+
+    ASSERT_NO_ERROR(cli.query("DO 1"));
+  }
 }
 
 int main(int argc, char *argv[]) {

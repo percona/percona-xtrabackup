@@ -35,7 +35,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_check_member_state",
       "router_select_members_count",
       "router_select_group_membership",
-      "router_update_last_check_in_v2",
+      "router_update_last_check_in_v2_4",
       "router_clusterset_present",
     ],
     options);

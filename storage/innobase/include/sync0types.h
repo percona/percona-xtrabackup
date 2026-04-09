@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -274,6 +274,8 @@ enum latch_level_t {
 
   SYNC_INDEX_ONLINE_LOG,
 
+  SYNC_PAGE_ZIP_STAT,
+
   SYNC_IBUF_BITMAP,
   SYNC_IBUF_BITMAP_MUTEX,
   SYNC_IBUF_TREE_NODE,
@@ -292,13 +294,13 @@ enum latch_level_t {
   SYNC_RSEG_HEADER_NEW,
   SYNC_TEMP_SPACE_RSEG,
   SYNC_UNDO_SPACE_RSEG,
-  SYNC_TRX_SYS_RSEG,
   SYNC_TRX_UNDO,
   SYNC_PURGE_LATCH,
   SYNC_TREE_NODE,
   SYNC_TREE_NODE_FROM_HASH,
   SYNC_TREE_NODE_NEW,
   SYNC_INDEX_TREE,
+  SYNC_TABLE_STATS_COMPUTE,
   SYNC_RSEGS,
   SYNC_UNDO_SPACES,
 
@@ -405,7 +407,6 @@ enum latch_id_t {
   LATCH_ID_RECV_WRITER,
   LATCH_ID_TEMP_SPACE_RSEG,
   LATCH_ID_UNDO_SPACE_RSEG,
-  LATCH_ID_TRX_SYS_RSEG,
   LATCH_ID_RW_LOCK_DEBUG,
   LATCH_ID_RTR_SSN_MUTEX,
   LATCH_ID_RTR_ACTIVE_MUTEX,
@@ -453,6 +454,7 @@ enum latch_id_t {
   LATCH_ID_IBUF_INDEX_TREE,
   LATCH_ID_INDEX_TREE,
   LATCH_ID_DICT_TABLE_STATS,
+  LATCH_ID_DICT_TABLE_STATS_COMPUTE,
   LATCH_ID_HASH_TABLE_RW_LOCK,
   LATCH_ID_BUF_CHUNK_MAP_LATCH,
   LATCH_ID_SYNC_DEBUG_MUTEX,

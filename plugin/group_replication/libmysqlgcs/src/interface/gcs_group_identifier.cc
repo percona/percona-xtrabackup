@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,6 @@ bool Gcs_group_identifier::operator<(const Gcs_group_identifier &other) const {
 }
 
 bool Gcs_group_identifier::operator==(const Gcs_group_identifier &other) const {
-  return group_id.compare(other.group_id) == 0;
+  return group_id == other.group_id;
 }
 /* purecov: end */

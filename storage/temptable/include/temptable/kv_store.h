@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -31,6 +31,7 @@ TempTable key-value store implementation. */
 #include <string>
 #include <unordered_map>
 
+#include "my_thread_local.h"  // my_thread_id
 #include "storage/temptable/include/temptable/constants.h"
 #include "storage/temptable/include/temptable/kv_store_logger.h"
 
@@ -118,6 +119,22 @@ class Key_value_store
     } else {
       return nullptr;
     }
+  }
+
+  /** Searches for all tables tagged with the given owner ID.
+   *
+   * [in] id  ID of the thread whose temptables we're looking for.
+   * @return Vector containing the names of all temptables owned by this thread.
+   * */
+  std::vector<std::string> find_all(my_thread_id id) {
+    Exclusive_or_shared_lock lock(m_lock);
+    std::vector<std::string> tables;
+    for (auto &[name, table] : m_kv_store) {
+      if (table.owner_id() == id) {
+        tables.push_back(name);
+      }
+    }
+    return tables;
   }
 
   /** Removes the table (if one exists) with the given name (key).

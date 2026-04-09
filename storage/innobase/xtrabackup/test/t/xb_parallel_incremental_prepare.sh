@@ -4,7 +4,7 @@
 
 . inc/common.sh
 
-start_server --innodb_file_per_table --innodb_buffer_pool-size=1G --innodb_log_file_size=1G
+start_server --innodb_file_per_table --innodb_buffer_pool-size=1G --innodb_redo_log_capacity=2G
 
 num_tables=1000
 num_threads=16
@@ -118,7 +118,7 @@ for pid in "${pids[@]}"; do
 done
 
 stop_server
-start_server --innodb_buffer_pool-size=1G --innodb_log_file_size=1G
+start_server --innodb_buffer_pool-size=1G --innodb_redo_log_capacity=2G
 
 # Do an incremental parallel backup
 xtrabackup --backup --parallel=$num_threads \

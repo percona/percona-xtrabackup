@@ -12,7 +12,7 @@ INSERT INTO t2 SELECT a FROM t1;
 --source suite/query_rewrite_plugins/include/install_rewriter.inc
 
 INSERT INTO query_rewrite.rewrite_rules ( pattern, pattern_database, replacement )
-VALUES ( 'UPDATE test.t1 SET a = ? WHERE b = ? ORDER BY ? LIMIT ?', 'test',
+VALUES ( 'UPDATE test.t1 SET a = ? WHERE b = ? ORDER BY 3 LIMIT ?', 'test',
          'UPDATE test.t1 SET b = ? WHERE b = ? ORDER BY a LIMIT 4'),
        ( 'UPDATE test.t1, test.t2 SET t1.a = ?, t2.a = ? WHERE t1.b = ?', 'test',
          'UPDATE test.t1, test.t2 SET t1.a = ?, t1.b = ? WHERE t1.a = ?' ),

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -366,10 +366,8 @@ bool Sql_cmd_analyze_table::send_histogram_results(
   Item *item;
   mem_root_deque<Item *> field_list(thd->mem_root);
 
-  auto guard = create_scope_guard([thd]() {
-    thd->get_stmt_da()->reset_condition_info(thd);
-    my_eof(thd);
-  });
+  auto guard = create_scope_guard(
+      [thd]() { thd->get_stmt_da()->reset_condition_info(thd); });
 
   field_list.push_back(item =
                            new Item_empty_string("Table", NAME_CHAR_LEN * 2));
@@ -724,6 +722,66 @@ static Check_result check_for_upgrade(THD *thd, dd::String_type &sname,
   return {false, result_code};
 }
 
+/**
+  Run analyze in secondary engine.
+
+  @param[in] thd The thread handler.
+  @param[in] table The table to be analyzed.
+  @returns true on fatal errors, false otherwise.
+ */
+static bool secondary_engine_analyze(THD *thd, Table_ref *table) {
+  const char *op_name = "analyze secondary engine";
+  std::string combined_name(table->db, table->db_length);
+  combined_name.append(".");
+  combined_name.append(table->table_name, table->table_name_length);
+
+  Protocol *protocol = thd->get_protocol();
+
+  // Reopen table in secondary engine.
+  Open_table_context ot_ctx(thd, MYSQL_OPEN_SECONDARY_ENGINE);
+  TABLE *primary_table = table->table;
+  table->table = nullptr;
+  // open_table will fail if we are in LOCK TABLES mode.
+  if (thd->locked_tables_mode != LTM_NONE) {
+    my_error(ER_LOCK_OR_ACTIVE_TRANSACTION, MYF(0));
+  } else if (!open_table(thd, table, &ot_ctx)) {
+    assert(table->table->s->is_secondary_engine());
+    table->table->file->ha_set_primary_handler(primary_table->file);
+    if (table->table->file->ha_external_lock(thd, F_RDLCK) == 0) {
+      int res = table->table->file->ha_analyze(thd, nullptr);
+      table->table->file->ha_external_lock(thd, F_UNLCK);
+
+      // We ignore that secondary engine has not implemented analyze.
+      if (res == HA_ADMIN_NOT_IMPLEMENTED) {
+        return false;
+      }
+      if (res == HA_ADMIN_OK) {
+        protocol->start_row();
+        protocol->store_string(combined_name.c_str(), combined_name.length(),
+                               system_charset_info);
+        protocol->store(op_name, system_charset_info);
+        protocol->store_string(STRING_WITH_LEN("status"), system_charset_info);
+        protocol->store_string(STRING_WITH_LEN("OK"), system_charset_info);
+        return protocol->end_row();
+      }
+    }
+  }
+
+  // If we reach here, there were non-fatal errors.
+  thd->clear_error();  // These errors should not cause statement to fail.
+  if (send_analyze_table_errors(thd, op_name, combined_name.c_str())) {
+    return true;
+  }
+  protocol->start_row();
+  protocol->store_string(combined_name.c_str(), combined_name.length(),
+                         system_charset_info);
+  protocol->store(op_name, system_charset_info);
+  protocol->store_string(STRING_WITH_LEN("status"), system_charset_info);
+  protocol->store_string(STRING_WITH_LEN("Operation failed"),
+                         system_charset_info);
+  return protocol->end_row();
+}
+
 /*
   RETURN VALUES
     false Message sent to net (admin operation went ok)
@@ -744,7 +802,10 @@ static bool mysql_admin_table(
   */
   const Disable_autocommit_guard autocommit_guard(thd);
 
-  const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+  // Defining an Auto_releaser here does not work, since the
+  // transaction is committed and locks released at the end
+  // of each loop iteration in the for loop over the tables
+  // below.
 
   Table_ref *table;
   Query_block *select = thd->lex->query_block;
@@ -793,777 +854,805 @@ static bool mysql_admin_table(
   if (gtid_rollback_must_be_skipped) thd->skip_gtid_rollback = true;
 
   for (table = tables; table; table = table->next_local) {
-    char table_name[NAME_LEN * 2 + 2];
-    const char *db = table->db;
-    bool fatal_error = false;
-    bool open_error;
-    bool histogram_update_failed = false;
-
-    DBUG_PRINT("admin", ("table: '%s'.'%s'", table->db, table->table_name));
-    DBUG_PRINT("admin", ("extra_open_options: %u", extra_open_options));
-    strxmov(table_name, db, ".", table->table_name, NullS);
-    thd->open_options |= extra_open_options;
-    table->set_lock({lock_type, THR_DEFAULT});
-    /*
-      To make code safe for re-execution we need to reset type of MDL
-      request as code below may change it.
-      To allow concurrent execution of read-only operations we acquire
-      weak metadata lock for them.
-    */
-    table->mdl_request.set_type((lock_type >= TL_WRITE_ALLOW_WRITE)
-                                    ? MDL_SHARED_NO_READ_WRITE
-                                    : MDL_SHARED_READ);
-    /* open only one table from local list of command */
     {
-      Table_ref *save_next_global, *save_next_local;
-      save_next_global = table->next_global;
-      table->next_global = nullptr;
-      save_next_local = table->next_local;
-      table->next_local = nullptr;
-      select->m_table_list.first = table;
-      /*
-        Time zone tables and SP tables can be add to lex->query_tables list,
-        so it have to be prepared.
-        TODO: Investigate if we can put extra tables into argument instead of
-        using lex->query_tables
-      */
-      lex->query_tables = table;
-      lex->query_tables_last = &table->next_global;
-      lex->query_tables_own_last = nullptr;
-      /*
-        CHECK TABLE command is allowed for views as well. Check on alter flags
-        to differentiate from ALTER TABLE...CHECK PARTITION on which view is not
-        allowed.
-      */
-      if (alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION ||
-          check_view != 1)
-        table->required_type = dd::enum_table_type::BASE_TABLE;
+      // Define an Auto-releaser here since the transaction is committed
+      // and locks released at the end of the loop body.
+      dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
 
-      if (!thd->locked_tables_mode && repair_table_use_frm) {
+      char table_name[NAME_LEN * 2 + 2];
+      const char *db = table->db;
+      bool fatal_error = false;
+      bool open_error;
+      bool histogram_update_failed = false;
+
+      DBUG_PRINT("admin", ("table: '%s'.'%s'", table->db, table->table_name));
+      DBUG_PRINT("admin", ("extra_open_options: %u", extra_open_options));
+      strxmov(table_name, db, ".", table->table_name, NullS);
+      thd->open_options |= extra_open_options;
+      table->set_lock({lock_type, THR_DEFAULT});
+      /*
+        To make code safe for re-execution we need to reset type of MDL
+        request as code below may change it.
+        To allow concurrent execution of read-only operations we acquire
+        weak metadata lock for them.
+      */
+      table->mdl_request.set_type((lock_type >= TL_WRITE_ALLOW_WRITE)
+                                      ? MDL_SHARED_NO_READ_WRITE
+                                      : MDL_SHARED_READ);
+      /* open only one table from local list of command */
+      {
+        Table_ref *save_next_global, *save_next_local;
+        save_next_global = table->next_global;
+        table->next_global = nullptr;
+        save_next_local = table->next_local;
+        table->next_local = nullptr;
+        select->m_table_list.first = table;
         /*
-          If we're not under LOCK TABLES and we're executing REPAIR TABLE
-          USE_FRM, we need to ignore errors from open_and_lock_tables().
-          REPAIR TABLE USE_FRM is a heavy weapon used when a table is
-          critically damaged, so open_and_lock_tables() will most likely
-          report errors. Those errors are not interesting for the user
-          because it's already known that the table is badly damaged.
+          Time zone tables and SP tables can be add to lex->query_tables list,
+          so it have to be prepared.
+          TODO: Investigate if we can put extra tables into argument instead of
+          using lex->query_tables
         */
+        lex->query_tables = table;
+        lex->query_tables_last = &table->next_global;
+        lex->query_tables_own_last = nullptr;
+        /*
+          CHECK TABLE command is allowed for views as well. Check on alter flags
+          to differentiate from ALTER TABLE...CHECK PARTITION on which view is
+          not allowed.
+        */
+        if (alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION ||
+            check_view != 1)
+          table->required_type = dd::enum_table_type::BASE_TABLE;
 
-        Diagnostics_area tmp_da(false);
-        thd->push_diagnostics_area(&tmp_da);
+        if (!thd->locked_tables_mode && repair_table_use_frm) {
+          /*
+            If we're not under LOCK TABLES and we're executing REPAIR TABLE
+            USE_FRM, we need to ignore errors from open_and_lock_tables().
+            REPAIR TABLE USE_FRM is a heavy weapon used when a table is
+            critically damaged, so open_and_lock_tables() will most likely
+            report errors. Those errors are not interesting for the user
+            because it's already known that the table is badly damaged.
+          */
 
-        open_error = open_temporary_tables(thd, table);
+          Diagnostics_area tmp_da(false);
+          thd->push_diagnostics_area(&tmp_da);
 
-        if (!open_error) {
-          open_error = open_and_lock_tables(thd, table, 0);
+          open_error = open_temporary_tables(thd, table);
 
-          if (!open_error && need_to_acquire_shared_backup_lock &&
-              /*
-                Acquire backup lock explicitly since lock types used by
-                admin statements won't cause its automatic acquisition
-                in open_and_lock_tables().
-              */
-              acquire_shared_backup_lock(thd,
-                                         thd->variables.lock_wait_timeout)) {
-            result_code = HA_ADMIN_FAILED;
-            goto send_result;
+          if (!open_error) {
+            open_error = open_and_lock_tables(thd, table, 0);
+
+            if (!open_error && need_to_acquire_shared_backup_lock &&
+                /*
+                  Acquire backup lock explicitly since lock types used by
+                  admin statements won't cause its automatic acquisition
+                  in open_and_lock_tables().
+                */
+                acquire_shared_backup_lock(thd,
+                                           thd->variables.lock_wait_timeout)) {
+              result_code = HA_ADMIN_FAILED;
+              goto send_result;
+            }
+          }
+
+          thd->pop_diagnostics_area();
+          if (tmp_da.is_error()) {
+            // Copy the exception condition information.
+            thd->get_stmt_da()->set_error_status(tmp_da.mysql_errno(),
+                                                 tmp_da.message_text(),
+                                                 tmp_da.returned_sqlstate());
+          }
+        } else {
+          /*
+            It's assumed that even if it is REPAIR TABLE USE_FRM, the table
+            can be opened if we're under LOCK TABLES (otherwise LOCK TABLES
+            would fail). Thus, the only errors we could have from
+            open_and_lock_tables() are logical ones, like incorrect locking
+            mode. It does make sense for the user to see such errors.
+          */
+
+          open_error = open_temporary_tables(thd, table);
+
+          if (!open_error) {
+            open_error = open_and_lock_tables(thd, table, 0);
+
+            if (!open_error && need_to_acquire_shared_backup_lock &&
+                /*
+                  Acquire backup lock explicitly since lock types used by
+                  admin statements won't cause its automatic acquisition
+                  in open_and_lock_tables().
+                */
+                acquire_shared_backup_lock(thd,
+                                           thd->variables.lock_wait_timeout)) {
+              result_code = HA_ADMIN_FAILED;
+              goto send_result;
+            }
           }
         }
 
-        thd->pop_diagnostics_area();
-        if (tmp_da.is_error()) {
-          // Copy the exception condition information.
-          thd->get_stmt_da()->set_error_status(tmp_da.mysql_errno(),
-                                               tmp_da.message_text(),
-                                               tmp_da.returned_sqlstate());
-        }
-      } else {
         /*
-          It's assumed that even if it is REPAIR TABLE USE_FRM, the table
-          can be opened if we're under LOCK TABLES (otherwise LOCK TABLES
-          would fail). Thus, the only errors we could have from
-          open_and_lock_tables() are logical ones, like incorrect locking
-          mode. It does make sense for the user to see such errors.
+          Views are always treated as materialized views, including creation
+          of temporary table descriptor.
         */
+        if (!open_error && table->is_view()) {
+          open_error = table->resolve_derived(thd, false);
+          if (!open_error) open_error = table->setup_materialized_derived(thd);
+        }
+        table->next_global = save_next_global;
+        table->next_local = save_next_local;
+        thd->open_options &= ~extra_open_options;
 
-        open_error = open_temporary_tables(thd, table);
+        /*
+          If open_and_lock_tables() failed, close_thread_tables() will close
+          the table and table->table can therefore be invalid.
+        */
+        if (open_error) table->table = nullptr;
 
-        if (!open_error) {
-          open_error = open_and_lock_tables(thd, table, 0);
+        /*
+          Under locked tables, we know that the table can be opened,
+          so any errors opening the table are logical errors.
+          In these cases it does not make sense to try to repair.
+        */
+        if (open_error && thd->locked_tables_mode) {
+          result_code = HA_ADMIN_FAILED;
+          goto send_result;
+        }
+        if (table->table) {
+          /*
+            Set up which partitions that should be processed
+            if ALTER TABLE t ANALYZE/CHECK/OPTIMIZE/REPAIR PARTITION ..
+            CACHE INDEX/LOAD INDEX for specified partitions
+          */
+          if (alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION) {
+            if (!table->table->part_info) {
+              my_error(ER_PARTITION_MGMT_ON_NONPARTITIONED, MYF(0));
+              result_code = HA_ADMIN_FAILED;
+              goto send_result;
+            }
 
-          if (!open_error && need_to_acquire_shared_backup_lock &&
-              /*
-                Acquire backup lock explicitly since lock types used by
-                admin statements won't cause its automatic acquisition
-                in open_and_lock_tables().
-              */
-              acquire_shared_backup_lock(thd,
-                                         thd->variables.lock_wait_timeout)) {
-            result_code = HA_ADMIN_FAILED;
-            goto send_result;
+            if (set_part_state(alter_info, table->table->part_info, PART_ADMIN,
+                               true)) {
+              my_error(ER_DROP_PARTITION_NON_EXISTENT, MYF(0), table_name);
+              result_code = HA_ADMIN_FAILED;
+              goto send_result;
+            }
           }
+        }
+      }
+      DBUG_PRINT("admin", ("table: %p", table->table));
+
+      if (prepare_func) {
+        DBUG_PRINT("admin", ("calling prepare_func"));
+        switch ((*prepare_func)(thd, table, check_opt)) {
+          case 1:  // error, message written to net
+            trans_rollback_stmt(thd);
+            trans_rollback(thd);
+            /* Make sure this table instance is not reused after the operation.
+             */
+            if (table->table) table->table->invalidate_dict();
+            close_thread_tables(thd);
+            thd->mdl_context.release_transactional_locks();
+            DBUG_PRINT("admin", ("simple error, admin next table"));
+            continue;
+          case -1:  // error, message could be written to net
+            /* purecov: begin inspected */
+            DBUG_PRINT("admin", ("severe error, stop"));
+            goto err;
+            /* purecov: end */
+          default:  // should be 0 otherwise
+            DBUG_PRINT("admin", ("prepare_func succeeded"));
+            ;
         }
       }
 
       /*
-        Views are always treated as materialized views, including creation
-        of temporary table descriptor.
+        CHECK TABLE command is only command where VIEW allowed here and this
+        command use only temporary teble method for VIEWs resolving => there
+        can't be VIEW tree substitition of join view => if opening table
+        succeed then table->table will have real TABLE pointer as value (in
+        case of join view substitution table->table can be 0, but here it is
+        impossible)
       */
-      if (!open_error && table->is_view()) {
-        open_error = table->resolve_derived(thd, false);
-        if (!open_error) open_error = table->setup_materialized_derived(thd);
-      }
-      table->next_global = save_next_global;
-      table->next_local = save_next_local;
-      thd->open_options &= ~extra_open_options;
-
-      /*
-        If open_and_lock_tables() failed, close_thread_tables() will close
-        the table and table->table can therefore be invalid.
-      */
-      if (open_error) table->table = nullptr;
-
-      /*
-        Under locked tables, we know that the table can be opened,
-        so any errors opening the table are logical errors.
-        In these cases it does not make sense to try to repair.
-      */
-      if (open_error && thd->locked_tables_mode) {
-        result_code = HA_ADMIN_FAILED;
+      if (!table->table) {
+        DBUG_PRINT("admin", ("open table failed"));
+        if (thd->get_stmt_da()->cond_count() == 0)
+          push_warning(thd, Sql_condition::SL_WARNING, ER_CHECK_NO_SUCH_TABLE,
+                       ER_THD(thd, ER_CHECK_NO_SUCH_TABLE));
+        if (thd->get_stmt_da()->is_error() &&
+            table_not_corrupt_error(thd->get_stmt_da()->mysql_errno()))
+          result_code = HA_ADMIN_FAILED;
+        else
+          /* Default failure code is corrupt table */
+          result_code = HA_ADMIN_CORRUPT;
         goto send_result;
       }
-      if (table->table) {
-        /*
-          Set up which partitions that should be processed
-          if ALTER TABLE t ANALYZE/CHECK/OPTIMIZE/REPAIR PARTITION ..
-          CACHE INDEX/LOAD INDEX for specified partitions
-        */
-        if (alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION) {
-          if (!table->table->part_info) {
-            my_error(ER_PARTITION_MGMT_ON_NONPARTITIONED, MYF(0));
-            result_code = HA_ADMIN_FAILED;
-            goto send_result;
-          }
 
-          if (set_part_state(alter_info, table->table->part_info, PART_ADMIN,
-                             true)) {
-            my_error(ER_DROP_PARTITION_NON_EXISTENT, MYF(0), table_name);
-            result_code = HA_ADMIN_FAILED;
-            goto send_result;
-          }
-        }
+      if (table->is_view()) {
+        result_code = HA_ADMIN_OK;
+        goto send_result;
       }
-    }
-    DBUG_PRINT("admin", ("table: %p", table->table));
 
-    if (prepare_func) {
-      DBUG_PRINT("admin", ("calling prepare_func"));
-      switch ((*prepare_func)(thd, table, check_opt)) {
-        case 1:  // error, message written to net
+      if (table->schema_table) {
+        result_code = HA_ADMIN_NOT_IMPLEMENTED;
+        goto send_result;
+      }
+
+      if ((table->table->db_stat & HA_READ_ONLY) && open_for_modify) {
+        /* purecov: begin inspected */
+        char buff[FN_REFLEN + MYSQL_ERRMSG_SIZE];
+        size_t length;
+        const enum_sql_command save_sql_command = lex->sql_command;
+        DBUG_PRINT("admin", ("sending error message"));
+        protocol->start_row();
+        protocol->store(table_name, system_charset_info);
+        protocol->store(operator_name, system_charset_info);
+        protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
+        length = snprintf(buff, sizeof(buff), ER_THD(thd, ER_OPEN_AS_READONLY),
+                          table_name);
+        protocol->store_string(buff, length, system_charset_info);
+        {
+          /* Prevent intermediate commits to invoke commit order */
+          const Implicit_substatement_state_guard substatement_guard(
+              thd, enum_implicit_substatement_guard_mode ::
+                       DISABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE);
+          trans_commit_stmt(thd, ignore_grl_on_analyze);
+          trans_commit(thd, ignore_grl_on_analyze);
+        }
+        /* Make sure this table instance is not reused after the operation. */
+        if (table->table) table->table->invalidate_dict();
+        close_thread_tables(thd);
+        thd->mdl_context.release_transactional_locks();
+        lex->reset_query_tables_list(false);
+        /*
+          Restore Query_tables_list::sql_command value to make statement
+          safe for re-execution.
+        */
+        lex->sql_command = save_sql_command;
+        if (protocol->end_row()) goto err;
+        thd->get_stmt_da()->reset_diagnostics_area();
+        continue;
+        /* purecov: end */
+      }
+
+      /*
+        Close all instances of the table to allow MyISAM "repair"
+        to rename files.
+        @todo: This code does not close all instances of the table.
+        It only closes instances in other connections, but if this
+        connection has LOCK TABLE t1 a READ, t1 b WRITE,
+        both t1 instances will be kept open.
+        There is no need to execute this branch for InnoDB, which does
+        repair by recreate. There is no need to do it for OPTIMIZE,
+        which doesn't move files around.
+        Hence, this code should be moved to prepare_for_repair(),
+        and executed only for MyISAM engine.
+      */
+      if (lock_type == TL_WRITE && !table->table->s->tmp_table) {
+        if (wait_while_table_is_used(thd, table->table,
+                                     HA_EXTRA_PREPARE_FOR_RENAME))
+          goto err;
+        DEBUG_SYNC(thd, "after_admin_flush");
+        /*
+          XXX: hack: switch off open_for_modify to skip the
+          flush that is made later in the execution flow.
+        */
+        open_for_modify = false;
+      }
+
+      if (table->table->s->crashed && operator_func == &handler::ha_check) {
+        /* purecov: begin inspected */
+        DBUG_PRINT("admin", ("sending crashed warning"));
+        protocol->start_row();
+        protocol->store(table_name, system_charset_info);
+        protocol->store(operator_name, system_charset_info);
+        protocol->store_string(STRING_WITH_LEN("warning"), system_charset_info);
+        protocol->store_string(STRING_WITH_LEN("Table is marked as crashed"),
+                               system_charset_info);
+        if (protocol->end_row()) goto err;
+        /* purecov: end */
+      }
+
+      if (operator_func == &handler::ha_repair &&
+          !(check_opt->sql_flags & TT_USEFRM)) {
+        if ((check_table_for_old_types(table->table) == HA_ADMIN_NEEDS_ALTER) ||
+            (table->table->file->ha_check_for_upgrade(check_opt) ==
+             HA_ADMIN_NEEDS_ALTER)) {
+          DBUG_PRINT("admin", ("recreating table"));
+          /*
+            Temporary table are always created by current server so they never
+            require upgrade. So we don't need to pre-open them before calling
+            mysql_recreate_table().
+          */
+          assert(!table->table->s->tmp_table);
+
           trans_rollback_stmt(thd);
           trans_rollback(thd);
           /* Make sure this table instance is not reused after the operation. */
           if (table->table) table->table->invalidate_dict();
           close_thread_tables(thd);
           thd->mdl_context.release_transactional_locks();
-          DBUG_PRINT("admin", ("simple error, admin next table"));
-          continue;
-        case -1:  // error, message could be written to net
-          /* purecov: begin inspected */
-          DBUG_PRINT("admin", ("severe error, stop"));
-          goto err;
-          /* purecov: end */
-        default:  // should be 0 otherwise
-          DBUG_PRINT("admin", ("prepare_func succeeded"));
-          ;
-      }
-    }
 
-    /*
-      CHECK TABLE command is only command where VIEW allowed here and this
-      command use only temporary teble method for VIEWs resolving => there
-      can't be VIEW tree substitition of join view => if opening table
-      succeed then table->table will have real TABLE pointer as value (in
-      case of join view substitution table->table can be 0, but here it is
-      impossible)
-    */
-    if (!table->table) {
-      DBUG_PRINT("admin", ("open table failed"));
-      if (thd->get_stmt_da()->cond_count() == 0)
-        push_warning(thd, Sql_condition::SL_WARNING, ER_CHECK_NO_SUCH_TABLE,
-                     ER_THD(thd, ER_CHECK_NO_SUCH_TABLE));
-      if (thd->get_stmt_da()->is_error() &&
-          table_not_corrupt_error(thd->get_stmt_da()->mysql_errno()))
-        result_code = HA_ADMIN_FAILED;
-      else
-        /* Default failure code is corrupt table */
-        result_code = HA_ADMIN_CORRUPT;
-      goto send_result;
-    }
-
-    if (table->is_view()) {
-      result_code = HA_ADMIN_OK;
-      goto send_result;
-    }
-
-    if (table->schema_table) {
-      result_code = HA_ADMIN_NOT_IMPLEMENTED;
-      goto send_result;
-    }
-
-    if ((table->table->db_stat & HA_READ_ONLY) && open_for_modify) {
-      /* purecov: begin inspected */
-      char buff[FN_REFLEN + MYSQL_ERRMSG_SIZE];
-      size_t length;
-      const enum_sql_command save_sql_command = lex->sql_command;
-      DBUG_PRINT("admin", ("sending error message"));
-      protocol->start_row();
-      protocol->store(table_name, system_charset_info);
-      protocol->store(operator_name, system_charset_info);
-      protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
-      length = snprintf(buff, sizeof(buff), ER_THD(thd, ER_OPEN_AS_READONLY),
-                        table_name);
-      protocol->store_string(buff, length, system_charset_info);
-      {
-        /* Prevent intermediate commits to invoke commit order */
-        const Implicit_substatement_state_guard substatement_guard(
-            thd, enum_implicit_substatement_guard_mode ::
-                     DISABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE);
-        trans_commit_stmt(thd, ignore_grl_on_analyze);
-        trans_commit(thd, ignore_grl_on_analyze);
-      }
-      /* Make sure this table instance is not reused after the operation. */
-      if (table->table) table->table->invalidate_dict();
-      close_thread_tables(thd);
-      thd->mdl_context.release_transactional_locks();
-      lex->reset_query_tables_list(false);
-      /*
-        Restore Query_tables_list::sql_command value to make statement
-        safe for re-execution.
-      */
-      lex->sql_command = save_sql_command;
-      if (protocol->end_row()) goto err;
-      thd->get_stmt_da()->reset_diagnostics_area();
-      continue;
-      /* purecov: end */
-    }
-
-    /*
-      Close all instances of the table to allow MyISAM "repair"
-      to rename files.
-      @todo: This code does not close all instances of the table.
-      It only closes instances in other connections, but if this
-      connection has LOCK TABLE t1 a READ, t1 b WRITE,
-      both t1 instances will be kept open.
-      There is no need to execute this branch for InnoDB, which does
-      repair by recreate. There is no need to do it for OPTIMIZE,
-      which doesn't move files around.
-      Hence, this code should be moved to prepare_for_repair(),
-      and executed only for MyISAM engine.
-    */
-    if (lock_type == TL_WRITE && !table->table->s->tmp_table) {
-      if (wait_while_table_is_used(thd, table->table,
-                                   HA_EXTRA_PREPARE_FOR_RENAME))
-        goto err;
-      DEBUG_SYNC(thd, "after_admin_flush");
-      /*
-        XXX: hack: switch off open_for_modify to skip the
-        flush that is made later in the execution flow.
-      */
-      open_for_modify = false;
-    }
-
-    if (table->table->s->crashed && operator_func == &handler::ha_check) {
-      /* purecov: begin inspected */
-      DBUG_PRINT("admin", ("sending crashed warning"));
-      protocol->start_row();
-      protocol->store(table_name, system_charset_info);
-      protocol->store(operator_name, system_charset_info);
-      protocol->store_string(STRING_WITH_LEN("warning"), system_charset_info);
-      protocol->store_string(STRING_WITH_LEN("Table is marked as crashed"),
-                             system_charset_info);
-      if (protocol->end_row()) goto err;
-      /* purecov: end */
-    }
-
-    if (operator_func == &handler::ha_repair &&
-        !(check_opt->sql_flags & TT_USEFRM)) {
-      if ((check_table_for_old_types(table->table) == HA_ADMIN_NEEDS_ALTER) ||
-          (table->table->file->ha_check_for_upgrade(check_opt) ==
-           HA_ADMIN_NEEDS_ALTER)) {
-        DBUG_PRINT("admin", ("recreating table"));
-        /*
-          Temporary table are always created by current server so they never
-          require upgrade. So we don't need to pre-open them before calling
-          mysql_recreate_table().
-        */
-        assert(!table->table->s->tmp_table);
-
-        trans_rollback_stmt(thd);
-        trans_rollback(thd);
-        /* Make sure this table instance is not reused after the operation. */
-        if (table->table) table->table->invalidate_dict();
-        close_thread_tables(thd);
-        thd->mdl_context.release_transactional_locks();
-
-        /*
-          table_list->table has been closed and freed. Do not reference
-          uninitialized data. open_tables() could fail.
-        */
-        table->table = nullptr;
-        /* Same applies to MDL ticket. */
-        table->mdl_request.ticket = nullptr;
-
-        {
-          // binlogging is done by caller if wanted
-          const Disable_binlog_guard binlog_guard(thd);
-          result_code = mysql_recreate_table(thd, table, false);
-        }
-        /*
-          mysql_recreate_table() can push OK or ERROR.
-          Clear 'OK' status. If there is an error, keep it:
-          we will store the error message in a result set row
-          and then clear.
-        */
-        if (thd->get_stmt_da()->is_ok())
-          thd->get_stmt_da()->reset_diagnostics_area();
-        table->table = nullptr;
-        result_code = result_code ? HA_ADMIN_FAILED : HA_ADMIN_OK;
-        goto send_result;
-      }
-    }
-
-    if (check_opt && (check_opt->sql_flags & TT_FOR_UPGRADE) != 0) {
-      if (table->table->s->tmp_table) {
-        result_code = HA_ADMIN_OK;
-      } else {
-        dd::String_type snam = dd::make_string_type(table->table->s->db);
-        dd::String_type tnam =
-            dd::make_string_type(table->table->s->table_name);
-
-        Check_result cr = check_for_upgrade(thd, snam, tnam, [&]() {
-          DBUG_PRINT("admin", ("calling operator_func '%s'", operator_name));
-          return (table->table->file->*operator_func)(thd, check_opt);
-        });
-
-        result_code = cr.second;
-        if (cr.first) {
-          goto err;
-        }
-      }
-    }
-    // Some other admin COMMAND
-    else {
-      DBUG_PRINT("admin", ("calling operator_func '%s'", operator_name));
-      result_code = (table->table->file->*operator_func)(thd, check_opt);
-
-      // Update histograms under ANALYZE TABLE.
-      if (operator_func == &handler::ha_analyze) {
-        if (histograms::auto_update_table_histograms(thd, table)) {
-          result_code = HA_ADMIN_FAILED;
-          histogram_update_failed = true;
-        }
-      }
-    }
-    DBUG_PRINT("admin", ("operator_func returned: %d", result_code));
-
-    /*
-      ANALYZE statement calculates values for dynamic fields of
-      I_S.TABLES and I_S.STATISTICS table in table_stats and index_stats
-      table. This table is joined with new dd table to provide results
-      when I_S table is queried.
-      To get latest statistics of table or index, user should use analyze
-      table statement before querying I_S.TABLES or I_S.STATISTICS
-    */
-
-    if (!read_only && ignore_grl_on_analyze) {
-      // Acquire the lock
-      if (dd::info_schema::update_table_stats(thd, table) ||
-          dd::info_schema::update_index_stats(thd, table)) {
-        // Play safe, rollback possible changes to the data-dictionary.
-        trans_rollback_stmt(thd);
-        trans_rollback_implicit(thd);
-        result_code = HA_ADMIN_STATS_UPD_ERR;
-        goto send_result;
-      }
-    }
-
-    /*
-      push_warning() if the table version is lesser than current
-      server version and there are triggers for this table.
-    */
-    if (operator_func == &handler::ha_check &&
-        (check_opt->sql_flags & TT_FOR_UPGRADE) && table->table->triggers) {
-      table->table->triggers->print_upgrade_warnings(thd);
-    }
-
-  send_result:
-
-    lex->cleanup_after_one_table_open();
-    thd->clear_error();  // these errors shouldn't get client
-    if (send_analyze_table_errors(thd, operator_name, table_name)) goto err;
-    protocol->start_row();
-    protocol->store(table_name, system_charset_info);
-    protocol->store(operator_name, system_charset_info);
-
-  send_result_message:
-
-    DBUG_PRINT("info", ("result_code: %d", result_code));
-    switch (result_code) {
-      case HA_ADMIN_NOT_IMPLEMENTED: {
-        char buf[MYSQL_ERRMSG_SIZE];
-        const size_t length =
-            snprintf(buf, sizeof(buf), ER_THD(thd, ER_CHECK_NOT_IMPLEMENTED),
-                     operator_name);
-        protocol->store_string(STRING_WITH_LEN("note"), system_charset_info);
-        protocol->store_string(buf, length, system_charset_info);
-      } break;
-
-      case HA_ADMIN_NOT_BASE_TABLE: {
-        char buf[MYSQL_ERRMSG_SIZE];
-
-        String tbl_name;
-        tbl_name.append(String(db, system_charset_info));
-        tbl_name.append('.');
-        tbl_name.append(String(table_name, system_charset_info));
-
-        const size_t length =
-            snprintf(buf, sizeof(buf), ER_THD(thd, ER_BAD_TABLE_ERROR),
-                     tbl_name.c_ptr());
-        protocol->store_string(STRING_WITH_LEN("note"), system_charset_info);
-        protocol->store_string(buf, length, system_charset_info);
-      } break;
-
-      case HA_ADMIN_OK:
-        protocol->store_string(STRING_WITH_LEN("status"), system_charset_info);
-        protocol->store_string(STRING_WITH_LEN("OK"), system_charset_info);
-        break;
-
-      case HA_ADMIN_FAILED:
-        protocol->store_string(STRING_WITH_LEN("status"), system_charset_info);
-        protocol->store_string(STRING_WITH_LEN("Operation failed"),
-                               system_charset_info);
-        break;
-
-      case HA_ADMIN_REJECT:
-        protocol->store_string(STRING_WITH_LEN("status"), system_charset_info);
-        protocol->store_string(
-            STRING_WITH_LEN("Operation need committed state"),
-            system_charset_info);
-        open_for_modify = false;
-        break;
-
-      case HA_ADMIN_ALREADY_DONE:
-        protocol->store_string(STRING_WITH_LEN("status"), system_charset_info);
-        protocol->store_string(STRING_WITH_LEN("Table is already up to date"),
-                               system_charset_info);
-        break;
-
-      case HA_ADMIN_CORRUPT:
-        protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
-        protocol->store_string(STRING_WITH_LEN("Corrupt"), system_charset_info);
-        fatal_error = true;
-        break;
-
-      case HA_ADMIN_INVALID:
-        protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
-        protocol->store_string(STRING_WITH_LEN("Invalid argument"),
-                               system_charset_info);
-        break;
-
-      case HA_ADMIN_TRY_ALTER: {
-        uint save_flags;
-
-        /* Store the original value of alter_info->flags */
-        save_flags = alter_info->flags;
-        {
-          /* Prevent intermediate commits to invoke commit order */
-          const Implicit_substatement_state_guard substatement_guard(
-              thd, enum_implicit_substatement_guard_mode ::
-                       DISABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE);
           /*
-            This is currently used only by InnoDB. ha_innobase::optimize()
-            answers "try with alter", so here we close the table, do an ALTER
-            TABLE, reopen the table and do ha_innobase::analyze() on it. We have
-            to end the row, so analyze could return more rows.
+            table_list->table has been closed and freed. Do not reference
+            uninitialized data. open_tables() could fail.
           */
-          trans_commit_stmt(thd, ignore_grl_on_analyze);
-          trans_commit(thd, ignore_grl_on_analyze);
+          table->table = nullptr;
+          /* Same applies to MDL ticket. */
+          table->mdl_request.ticket = nullptr;
+
+          {
+            // binlogging is done by caller if wanted
+            const Disable_binlog_guard binlog_guard(thd);
+            result_code = mysql_recreate_table(thd, table, false);
+          }
+          /*
+            mysql_recreate_table() can push OK or ERROR.
+            Clear 'OK' status. If there is an error, keep it:
+            we will store the error message in a result set row
+            and then clear.
+          */
+          if (thd->get_stmt_da()->is_ok())
+            thd->get_stmt_da()->reset_diagnostics_area();
+          table->table = nullptr;
+          result_code = result_code ? HA_ADMIN_FAILED : HA_ADMIN_OK;
+          goto send_result;
         }
-        close_thread_tables(thd);
-        thd->mdl_context.release_transactional_locks();
+      }
 
-        /*
-           table_list->table has been closed and freed. Do not reference
-           uninitialized data. open_tables() could fail.
-         */
-        table->table = nullptr;
-        /* Same applies to MDL ticket. */
-        table->mdl_request.ticket = nullptr;
-
-        DEBUG_SYNC(thd, "ha_admin_try_alter");
-        protocol->store_string(STRING_WITH_LEN("note"), system_charset_info);
-        if (alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION) {
-          protocol->store_string(
-              STRING_WITH_LEN("Table does not support optimize on "
-                              "partitions. All partitions "
-                              "will be rebuilt and analyzed."),
-              system_charset_info);
+      if (check_opt && (check_opt->sql_flags & TT_FOR_UPGRADE) != 0) {
+        if (table->table->s->tmp_table) {
+          result_code = HA_ADMIN_OK;
         } else {
-          protocol->store_string(
-              STRING_WITH_LEN("Table does not support optimize, "
-                              "doing recreate + analyze instead"),
-              system_charset_info);
+          dd::String_type snam = dd::make_string_type(table->table->s->db);
+          dd::String_type tnam =
+              dd::make_string_type(table->table->s->table_name);
+
+          Check_result cr = check_for_upgrade(thd, snam, tnam, [&]() {
+            DBUG_PRINT("admin", ("calling operator_func '%s'", operator_name));
+            return (table->table->file->*operator_func)(thd, check_opt);
+          });
+
+          result_code = cr.second;
+          if (cr.first) {
+            goto err;
+          }
         }
-        if (protocol->end_row()) goto err;
-        DBUG_PRINT("info", ("HA_ADMIN_TRY_ALTER, trying analyze..."));
-        Table_ref *save_next_local = table->next_local,
-                  *save_next_global = table->next_global;
-        table->next_local = table->next_global = nullptr;
-        {
-          // binlogging is done by caller if wanted
-          const Disable_binlog_guard binlog_guard(thd);
-          /* Don't forget to pre-open temporary tables. */
-          result_code = (open_temporary_tables(thd, table) ||
-                         mysql_recreate_table(thd, table, false));
-        }
-        /*
-          mysql_recreate_table() can push OK or ERROR.
-          Clear 'OK' status. If there is an error, keep it:
-          we will store the error message in a result set row
-          and then clear.
-        */
-        if (thd->get_stmt_da()->is_ok())
-          thd->get_stmt_da()->reset_diagnostics_area();
-        {
-          /* Prevent intermediate commits to invoke commit order */
-          const Implicit_substatement_state_guard substatement_guard(
-              thd, enum_implicit_substatement_guard_mode ::
-                       DISABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE);
-          trans_commit_stmt(thd, ignore_grl_on_analyze);
-          trans_commit(thd, ignore_grl_on_analyze);
-        }
-        close_thread_tables(thd);
-        thd->mdl_context.release_transactional_locks();
-        /* Clear references to TABLE and MDL_ticket after releasing them. */
-        table->table = nullptr;
-        table->mdl_request.ticket = nullptr;
-        if (!result_code)  // recreation went ok
-        {
-          DEBUG_SYNC(thd, "ha_admin_open_ltable");
-          if (acquire_shared_backup_lock(thd,
-                                         thd->variables.lock_wait_timeout)) {
+      }
+      // Some other admin COMMAND
+      else {
+        DBUG_PRINT("admin", ("calling operator_func '%s'", operator_name));
+        result_code = (table->table->file->*operator_func)(thd, check_opt);
+
+        // Update histograms under ANALYZE TABLE.
+        if (operator_func == &handler::ha_analyze) {
+          if (histograms::auto_update_table_histograms(thd, table)) {
             result_code = HA_ADMIN_FAILED;
-          } else {
-            table->mdl_request.set_type(MDL_SHARED_READ);
-            if (!open_temporary_tables(thd, table) &&
-                (table->table = open_n_lock_single_table(
-                     thd, table, TL_READ_NO_INSERT, 0))) {
-              /*
-                Reset the ALTER_ADMIN_PARTITION bit in alter_info->flags
-                to force analyze on all partitions.
-               */
-              alter_info->flags &= ~(Alter_info::ALTER_ADMIN_PARTITION);
-              result_code = table->table->file->ha_analyze(thd, check_opt);
-              if (result_code == HA_ADMIN_ALREADY_DONE)
-                result_code = HA_ADMIN_OK;
-              else if (result_code)  // analyze failed
-                table->table->file->print_error(result_code, MYF(0));
-              alter_info->flags = save_flags;
-            } else
-              result_code = -1;  // open failed
+            histogram_update_failed = true;
           }
         }
-        /* Start a new row for the final status row */
-        protocol->start_row();
-        protocol->store(table_name, system_charset_info);
-        protocol->store(operator_name, system_charset_info);
-        if (result_code)  // either mysql_recreate_table or analyze failed
-        {
-          assert(thd->is_error() || thd->killed);
-          if (thd->is_error()) {
-            Diagnostics_area *da = thd->get_stmt_da();
-            if (!thd->get_protocol()->connection_alive()) {
-              LogEvent()
-                  .type(LOG_TYPE_ERROR)
-                  .subsys(LOG_SUBSYSTEM_TAG)
-                  .prio(ERROR_LEVEL)
-                  .source_file(MY_BASENAME)
-                  .lookup(ER_ERROR_INFO_FROM_DA, da->mysql_errno(),
-                          da->message_text())
-                  .sqlstate(da->returned_sqlstate());
-            } else {
-              /* Hijack the row already in-progress. */
-              protocol->store_string(STRING_WITH_LEN("error"),
-                                     system_charset_info);
-              protocol->store(da->message_text(), system_charset_info);
-              if (protocol->end_row()) goto err;
-              /* Start off another row for HA_ADMIN_FAILED */
-              protocol->start_row();
-              protocol->store(table_name, system_charset_info);
-              protocol->store(operator_name, system_charset_info);
-            }
-            thd->clear_error();
-          }
-          /* Make sure this table instance is not reused after the operation. */
-          if (table->table) table->table->invalidate_dict();
+      }
+      DBUG_PRINT("admin", ("operator_func returned: %d", result_code));
+
+      /*
+        ANALYZE statement calculates values for dynamic fields of
+        I_S.TABLES and I_S.STATISTICS table in table_stats and index_stats
+        table. This table is joined with new dd table to provide results
+        when I_S table is queried.
+        To get latest statistics of table or index, user should use analyze
+        table statement before querying I_S.TABLES or I_S.STATISTICS
+      */
+
+      if (!read_only && ignore_grl_on_analyze) {
+        // Acquire the lock
+        if (dd::info_schema::update_table_stats(thd, table) ||
+            dd::info_schema::update_index_stats(thd, table)) {
+          // Play safe, rollback possible changes to the data-dictionary.
+          trans_rollback_stmt(thd);
+          trans_rollback_implicit(thd);
+          result_code = HA_ADMIN_STATS_UPD_ERR;
+          goto send_result;
         }
-        result_code = result_code ? HA_ADMIN_FAILED : HA_ADMIN_OK;
-        table->next_local = save_next_local;
-        table->next_global = save_next_global;
-        goto send_result_message;
-      }
-      case HA_ADMIN_WRONG_CHECKSUM: {
-        protocol->store_string(STRING_WITH_LEN("note"), system_charset_info);
-        protocol->store_string(ER_THD(thd, ER_VIEW_CHECKSUM),
-                               strlen(ER_THD(thd, ER_VIEW_CHECKSUM)),
-                               system_charset_info);
-        break;
       }
 
-      case HA_ADMIN_NEEDS_UPGRADE:
-      case HA_ADMIN_NEEDS_ALTER: {
-        char buf[MYSQL_ERRMSG_SIZE];
-        size_t length;
-
-        protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
-        if (table->table->file->ha_table_flags() & HA_CAN_REPAIR)
-          length =
-              snprintf(buf, sizeof(buf), ER_THD(thd, ER_TABLE_NEEDS_UPGRADE),
-                       table->table_name);
-        else
-          length =
-              snprintf(buf, sizeof(buf), ER_THD(thd, ER_TABLE_NEEDS_REBUILD),
-                       table->table_name);
-        protocol->store_string(buf, length, system_charset_info);
-        fatal_error = true;
-        break;
+      /*
+        push_warning() if the table version is lesser than current
+        server version and there are triggers for this table.
+      */
+      if (operator_func == &handler::ha_check &&
+          (check_opt->sql_flags & TT_FOR_UPGRADE) && table->table->triggers) {
+        table->table->triggers->print_upgrade_warnings(thd);
       }
 
-      case HA_ADMIN_STATS_UPD_ERR:
-        protocol->store_string(STRING_WITH_LEN("status"), system_charset_info);
-        protocol->store_string(
-            STRING_WITH_LEN("Unable to write table statistics to DD tables"),
-            system_charset_info);
-        break;
+    send_result:
 
-      case HA_ADMIN_NEEDS_DUMP_UPGRADE: {
-        /*
-          In-place upgrade does not allow pre 5.0 decimal to 8.0. Recreation of
-          tables will not create pre 5.0 decimal types. Hence, control should
-          never reach here.
-        */
-        assert(false);
+      lex->cleanup_after_one_table_open();
+      thd->clear_error();  // these errors shouldn't get client
+      if (send_analyze_table_errors(thd, operator_name, table_name)) goto err;
+      protocol->start_row();
+      protocol->store(table_name, system_charset_info);
+      protocol->store(operator_name, system_charset_info);
 
-        char buf[MYSQL_ERRMSG_SIZE];
-        size_t length;
+    send_result_message:
 
-        protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
-        length = snprintf(buf, sizeof(buf),
-                          "Table upgrade required for "
-                          "`%-.64s`.`%-.64s`. Please dump/reload table to "
-                          "fix it!",
-                          table->db, table->table_name);
-        protocol->store_string(buf, length, system_charset_info);
-        fatal_error = true;
-        break;
-      }
+      DBUG_PRINT("info", ("result_code: %d", result_code));
+      switch (result_code) {
+        case HA_ADMIN_NOT_IMPLEMENTED: {
+          char buf[MYSQL_ERRMSG_SIZE];
+          const size_t length =
+              snprintf(buf, sizeof(buf), ER_THD(thd, ER_CHECK_NOT_IMPLEMENTED),
+                       operator_name);
+          protocol->store_string(STRING_WITH_LEN("note"), system_charset_info);
+          protocol->store_string(buf, length, system_charset_info);
+        } break;
 
-      default:  // Probably HA_ADMIN_INTERNAL_ERROR
-      {
-        char buf[MYSQL_ERRMSG_SIZE];
-        const size_t length = snprintf(
-            buf, sizeof(buf), "Unknown - internal error %d during operation",
-            result_code);
-        protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
-        protocol->store_string(buf, length, system_charset_info);
-        fatal_error = true;
-        break;
-      }
-    }
-    if (table->table) {
-      if (table->table->s->tmp_table) {
-        /*
-          If the table was not opened successfully, do not try to get
-          status information. (Bug#47633)
-        */
-        if (open_for_modify && !open_error)
-          table->table->file->info(HA_STATUS_CONST);
-      } else if (open_for_modify || fatal_error) {
-        if (operator_func == &handler::ha_analyze && !histogram_update_failed)
+        case HA_ADMIN_NOT_BASE_TABLE: {
+          char buf[MYSQL_ERRMSG_SIZE];
+
+          String tbl_name;
+          tbl_name.append(String(db, system_charset_info));
+          tbl_name.append('.');
+          tbl_name.append(String(table_name, system_charset_info));
+
+          const size_t length =
+              snprintf(buf, sizeof(buf), ER_THD(thd, ER_BAD_TABLE_ERROR),
+                       tbl_name.c_ptr());
+          protocol->store_string(STRING_WITH_LEN("note"), system_charset_info);
+          protocol->store_string(buf, length, system_charset_info);
+        } break;
+
+        case HA_ADMIN_OK:
+          protocol->store_string(STRING_WITH_LEN("status"),
+                                 system_charset_info);
+          protocol->store_string(STRING_WITH_LEN("OK"), system_charset_info);
+          break;
+
+        case HA_ADMIN_FAILED:
+          protocol->store_string(STRING_WITH_LEN("status"),
+                                 system_charset_info);
+          protocol->store_string(STRING_WITH_LEN("Operation failed"),
+                                 system_charset_info);
+          break;
+
+        case HA_ADMIN_REJECT:
+          protocol->store_string(STRING_WITH_LEN("status"),
+                                 system_charset_info);
+          protocol->store_string(
+              STRING_WITH_LEN("Operation need committed state"),
+              system_charset_info);
+          open_for_modify = false;
+          break;
+
+        case HA_ADMIN_ALREADY_DONE:
+          protocol->store_string(STRING_WITH_LEN("status"),
+                                 system_charset_info);
+          protocol->store_string(STRING_WITH_LEN("Table is already up to date"),
+                                 system_charset_info);
+          break;
+
+        case HA_ADMIN_CORRUPT:
+          protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
+          protocol->store_string(STRING_WITH_LEN("Corrupt"),
+                                 system_charset_info);
+          fatal_error = true;
+          break;
+
+        case HA_ADMIN_INVALID:
+          protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
+          protocol->store_string(STRING_WITH_LEN("Invalid argument"),
+                                 system_charset_info);
+          break;
+
+        case HA_ADMIN_TRY_ALTER: {
+          uint save_flags;
+
+          /* Store the original value of alter_info->flags */
+          save_flags = alter_info->flags;
+          {
+            /* Prevent intermediate commits to invoke commit order */
+            const Implicit_substatement_state_guard substatement_guard(
+                thd, enum_implicit_substatement_guard_mode ::
+                         DISABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE);
+            /*
+              This is currently used only by InnoDB. ha_innobase::optimize()
+              answers "try with alter", so here we close the table, do an ALTER
+              TABLE, reopen the table and do ha_innobase::analyze() on it. We
+              have to end the row, so analyze could return more rows.
+            */
+            trans_commit_stmt(thd, ignore_grl_on_analyze);
+            trans_commit(thd, ignore_grl_on_analyze);
+          }
+          close_thread_tables(thd);
+          thd->mdl_context.release_transactional_locks();
+
           /*
-            Force update of key distribution statistics in rec_per_key array and
-            info in TABLE::file::stats by marking existing TABLE instances as
-            needing reopening. Upon reopening, the TABLE instances will also
-            acquire a pointer to the updated collection of histograms. Any
-            subsequent statement that uses this table will have to call
-            handler::open() which will cause this information to be updated.
-            OTOH, such subsequent statements won't have to wait for already
-            running statements to go away since we do not invalidate
-            TABLE_SHARE.
+             table_list->table has been closed and freed. Do not reference
+             uninitialized data. open_tables() could fail.
+           */
+          table->table = nullptr;
+          /* Same applies to MDL ticket. */
+          table->mdl_request.ticket = nullptr;
+
+          DEBUG_SYNC(thd, "ha_admin_try_alter");
+          protocol->store_string(STRING_WITH_LEN("note"), system_charset_info);
+          if (alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION) {
+            protocol->store_string(
+                STRING_WITH_LEN("Table does not support optimize on "
+                                "partitions. All partitions "
+                                "will be rebuilt and analyzed."),
+                system_charset_info);
+          } else {
+            protocol->store_string(
+                STRING_WITH_LEN("Table does not support optimize, "
+                                "doing recreate + analyze instead"),
+                system_charset_info);
+          }
+          if (protocol->end_row()) goto err;
+          DBUG_PRINT("info", ("HA_ADMIN_TRY_ALTER, trying analyze..."));
+          Table_ref *save_next_local = table->next_local,
+                    *save_next_global = table->next_global;
+          table->next_local = table->next_global = nullptr;
+          {
+            // binlogging is done by caller if wanted
+            const Disable_binlog_guard binlog_guard(thd);
+            /* Don't forget to pre-open temporary tables. */
+            result_code = (open_temporary_tables(thd, table) ||
+                           mysql_recreate_table(thd, table, false));
+          }
+          /*
+            mysql_recreate_table() can push OK or ERROR.
+            Clear 'OK' status. If there is an error, keep it:
+            we will store the error message in a result set row
+            and then clear.
           */
-          tdc_remove_table(thd, TDC_RT_MARK_FOR_REOPEN, table->db,
-                           table->table_name, false);
-        else
-          tdc_remove_table(thd, TDC_RT_REMOVE_UNUSED, table->db,
-                           table->table_name, false);
-      } else {
-        /*
-          Reset which partitions that should be processed
-          if ALTER TABLE t ANALYZE/CHECK/.. PARTITION ..
-          CACHE INDEX/LOAD INDEX for specified partitions
-        */
-        if (table->table->part_info &&
-            alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION) {
-          set_all_part_state(table->table->part_info, PART_NORMAL);
+          if (thd->get_stmt_da()->is_ok())
+            thd->get_stmt_da()->reset_diagnostics_area();
+          {
+            /* Prevent intermediate commits to invoke commit order */
+            const Implicit_substatement_state_guard substatement_guard(
+                thd, enum_implicit_substatement_guard_mode ::
+                         DISABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE);
+            trans_commit_stmt(thd, ignore_grl_on_analyze);
+            trans_commit(thd, ignore_grl_on_analyze);
+          }
+          close_thread_tables(thd);
+          thd->mdl_context.release_transactional_locks();
+          /* Clear references to TABLE and MDL_ticket after releasing them. */
+          table->table = nullptr;
+          table->mdl_request.ticket = nullptr;
+          if (!result_code)  // recreation went ok
+          {
+            DEBUG_SYNC(thd, "ha_admin_open_ltable");
+            if (acquire_shared_backup_lock(thd,
+                                           thd->variables.lock_wait_timeout)) {
+              result_code = HA_ADMIN_FAILED;
+            } else {
+              table->mdl_request.set_type(MDL_SHARED_READ);
+              if (!open_temporary_tables(thd, table) &&
+                  (table->table = open_n_lock_single_table(
+                       thd, table, TL_READ_NO_INSERT, 0))) {
+                /*
+                  Reset the ALTER_ADMIN_PARTITION bit in alter_info->flags
+                  to force analyze on all partitions.
+                 */
+                alter_info->flags &= ~(Alter_info::ALTER_ADMIN_PARTITION);
+                result_code = table->table->file->ha_analyze(thd, check_opt);
+                if (result_code == HA_ADMIN_ALREADY_DONE)
+                  result_code = HA_ADMIN_OK;
+                else if (result_code)  // analyze failed
+                  table->table->file->print_error(result_code, MYF(0));
+                alter_info->flags = save_flags;
+              } else
+                result_code = -1;  // open failed
+            }
+          }
+          /* Start a new row for the final status row */
+          protocol->start_row();
+          protocol->store(table_name, system_charset_info);
+          protocol->store(operator_name, system_charset_info);
+          if (result_code)  // either mysql_recreate_table or analyze failed
+          {
+            assert(thd->is_error() || thd->killed);
+            if (thd->is_error()) {
+              Diagnostics_area *da = thd->get_stmt_da();
+              if (!thd->get_protocol()->connection_alive()) {
+                LogEvent()
+                    .type(LOG_TYPE_ERROR)
+                    .subsys(LOG_SUBSYSTEM_TAG)
+                    .prio(ERROR_LEVEL)
+                    .source_file(MY_BASENAME)
+                    .lookup(ER_ERROR_INFO_FROM_DA, da->mysql_errno(),
+                            da->message_text())
+                    .sqlstate(da->returned_sqlstate());
+              } else {
+                /* Hijack the row already in-progress. */
+                protocol->store_string(STRING_WITH_LEN("error"),
+                                       system_charset_info);
+                protocol->store(da->message_text(), system_charset_info);
+                if (protocol->end_row()) goto err;
+                /* Start off another row for HA_ADMIN_FAILED */
+                protocol->start_row();
+                protocol->store(table_name, system_charset_info);
+                protocol->store(operator_name, system_charset_info);
+              }
+              thd->clear_error();
+            }
+            /* Make sure this table instance is not reused after the operation.
+             */
+            if (table->table) table->table->invalidate_dict();
+          }
+          result_code = result_code ? HA_ADMIN_FAILED : HA_ADMIN_OK;
+          table->next_local = save_next_local;
+          table->next_global = save_next_global;
+          goto send_result_message;
+        }
+        case HA_ADMIN_WRONG_CHECKSUM: {
+          protocol->store_string(STRING_WITH_LEN("note"), system_charset_info);
+          protocol->store_string(ER_THD(thd, ER_VIEW_CHECKSUM),
+                                 strlen(ER_THD(thd, ER_VIEW_CHECKSUM)),
+                                 system_charset_info);
+          break;
+        }
+
+        case HA_ADMIN_NEEDS_UPGRADE:
+        case HA_ADMIN_NEEDS_ALTER: {
+          char buf[MYSQL_ERRMSG_SIZE];
+          size_t length;
+
+          protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
+          if (table->table->file->ha_table_flags() & HA_CAN_REPAIR)
+            length =
+                snprintf(buf, sizeof(buf), ER_THD(thd, ER_TABLE_NEEDS_UPGRADE),
+                         table->table_name);
+          else
+            length =
+                snprintf(buf, sizeof(buf), ER_THD(thd, ER_TABLE_NEEDS_REBUILD),
+                         table->table_name);
+          protocol->store_string(buf, length, system_charset_info);
+          fatal_error = true;
+          break;
+        }
+
+        case HA_ADMIN_STATS_UPD_ERR:
+          protocol->store_string(STRING_WITH_LEN("status"),
+                                 system_charset_info);
+          protocol->store_string(
+              STRING_WITH_LEN("Unable to write table statistics to DD tables"),
+              system_charset_info);
+          break;
+
+        case HA_ADMIN_NEEDS_DUMP_UPGRADE: {
+          /*
+            In-place upgrade does not allow pre 5.0 decimal to 8.0. Recreation
+            of tables will not create pre 5.0 decimal types. Hence, control
+            should never reach here.
+          */
+          assert(false);
+
+          char buf[MYSQL_ERRMSG_SIZE];
+          size_t length;
+
+          protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
+          length = snprintf(buf, sizeof(buf),
+                            "Table upgrade required for "
+                            "`%-.64s`.`%-.64s`. Please dump/reload table to "
+                            "fix it!",
+                            table->db, table->table_name);
+          protocol->store_string(buf, length, system_charset_info);
+          fatal_error = true;
+          break;
+        }
+
+        default:  // Probably HA_ADMIN_INTERNAL_ERROR
+        {
+          char buf[MYSQL_ERRMSG_SIZE];
+          const size_t length = snprintf(
+              buf, sizeof(buf), "Unknown - internal error %d during operation",
+              result_code);
+          protocol->store_string(STRING_WITH_LEN("error"), system_charset_info);
+          protocol->store_string(buf, length, system_charset_info);
+          fatal_error = true;
+          break;
         }
       }
-    }
-    /* Error path, a admin command failed. */
-    if (thd->transaction_rollback_request || histogram_update_failed) {
-      /*
-        There are two cases that can trigger a rollback request:
+      if (table->table) {
+        if (table->table->s->tmp_table) {
+          /*
+            If the table was not opened successfully, do not try to get
+            status information. (Bug#47633)
+          */
+          if (open_for_modify && !open_error)
+            table->table->file->info(HA_STATUS_CONST);
+        } else if (open_for_modify || fatal_error) {
+          if (operator_func == &handler::ha_analyze && !histogram_update_failed)
+            /*
+              Force update of key distribution statistics in rec_per_key array
+              and info in TABLE::file::stats by marking existing TABLE instances
+              as needing reopening. Upon reopening, the TABLE instances will
+              also acquire a pointer to the updated collection of histograms.
+              Any subsequent statement that uses this table will have to call
+              handler::open() which will cause this information to be updated.
+              OTOH, such subsequent statements won't have to wait for already
+              running statements to go away since we do not invalidate
+              TABLE_SHARE.
+            */
+            tdc_remove_table(thd, TDC_RT_MARK_FOR_REOPEN, table->db,
+                             table->table_name, false);
+          else
+            tdc_remove_table(thd, TDC_RT_REMOVE_UNUSED, table->db,
+                             table->table_name, false);
+        } else {
+          /*
+            Reset which partitions that should be processed
+            if ALTER TABLE t ANALYZE/CHECK/.. PARTITION ..
+            CACHE INDEX/LOAD INDEX for specified partitions
+          */
+          if (table->table->part_info &&
+              alter_info->flags & Alter_info::ALTER_ADMIN_PARTITION) {
+            set_all_part_state(table->table->part_info, PART_NORMAL);
+          }
+        }
+      }
+      /* Error path, a admin command failed. */
+      if (thd->transaction_rollback_request || histogram_update_failed) {
+        /*
+          There are two cases that can trigger a rollback request:
 
-        1. Unlikely, but transaction rollback was requested by one of storage
-           engines (e.g. due to deadlock).
+          1. Unlikely, but transaction rollback was requested by one of storage
+             engines (e.g. due to deadlock).
 
-        2. The histogram update under ANALYZE TABLE failed, for example when
-           attempting to persist a new histogram to the dictionary. We roll back
-           the transaction and any changes to the dictionary.
-      */
-      DBUG_PRINT("admin", ("rollback"));
+          2. The histogram update under ANALYZE TABLE failed, for example when
+             attempting to persist a new histogram to the dictionary. We roll
+          back the transaction and any changes to the dictionary.
+        */
+        DBUG_PRINT("admin", ("rollback"));
 
-      if (trans_rollback_stmt(thd) || trans_rollback_implicit(thd)) goto err;
-    } else {
-      enum_implicit_substatement_guard_mode mode =
-          enum_implicit_substatement_guard_mode ::
-              DISABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE;
+        if (trans_rollback_stmt(thd) || trans_rollback_implicit(thd)) goto err;
+      } else {
+        enum_implicit_substatement_guard_mode mode =
+            enum_implicit_substatement_guard_mode ::
+                DISABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE;
 
-      if (strcmp(operator_name, "optimize") == 0 ||
-          strcmp(operator_name, "analyze") == 0 ||
-          strcmp(operator_name, "repair") == 0) {
-        mode = enum_implicit_substatement_guard_mode ::
-            ENABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE;
+        if (strcmp(operator_name, "optimize") == 0 ||
+            strcmp(operator_name, "analyze") == 0 ||
+            strcmp(operator_name, "repair") == 0) {
+          mode = enum_implicit_substatement_guard_mode ::
+              ENABLE_GTID_AND_SPCO_IF_SPCO_ACTIVE;
+        }
+
+        /*
+          It allows saving GTID and invoking commit order i.e. set
+          thd->is_operating_substatement_implicitly = false, when
+          replica-preserve-commit-order is enabled and any of OPTIMIZE TABLE,
+          ANALYZE TABLE and REPAIR TABLE command is getting executed,
+          otherwise saving GTID and invoking commit order is disabled.
+        */
+        const Implicit_substatement_state_guard guard(thd, mode);
+
+        if (trans_commit_stmt(thd, ignore_grl_on_analyze) ||
+            trans_commit_implicit(thd, ignore_grl_on_analyze))
+          goto err;
+        DBUG_PRINT("admin", ("commit"));
       }
 
-      /*
-        It allows saving GTID and invoking commit order i.e. set
-        thd->is_operating_substatement_implicitly = false, when
-        replica-preserve-commit-order is enabled and any of OPTIMIZE TABLE,
-        ANALYZE TABLE and REPAIR TABLE command is getting executed,
-        otherwise saving GTID and invoking commit order is disabled.
-      */
-      const Implicit_substatement_state_guard guard(thd, mode);
+      if (protocol->end_row()) goto err;
 
-      if (trans_commit_stmt(thd, ignore_grl_on_analyze) ||
-          trans_commit_implicit(thd, ignore_grl_on_analyze))
-        goto err;
-      DBUG_PRINT("admin", ("commit"));
-    }
-    close_thread_tables(thd);
+      // Run ANALYZE in secondary engine.
+      if (operator_func == &handler::ha_analyze && table->table != nullptr &&
+          table->table->s->has_secondary_engine() &&
+          table->table->s->secondary_load &&
+          thd->variables.enable_secondary_engine_statistics) {
+        if (secondary_engine_analyze(thd, table)) {
+          goto err;
+        }
+      }
+
+      close_thread_tables(thd);
+    }  // Auto_releaser releaser goes out of scope here.
+    // When there are no errors the Auto_releaser needs
+    // to run after committing the transaction, but before releasing MDLs.
+
     thd->mdl_context.release_transactional_locks();
-
-    if (protocol->end_row()) goto err;
   }
 
   my_eof(thd);
@@ -1818,7 +1907,6 @@ bool Sql_cmd_analyze_table::handle_histogram_command_inner(
   // updated snapshot.
   tdc_remove_table(thd, TDC_RT_MARK_FOR_REOPEN, table->db, table->table_name,
                    false);
-  close_thread_tables(thd);
   return false;
 }
 
@@ -1826,7 +1914,22 @@ bool Sql_cmd_analyze_table::handle_histogram_command(THD *thd,
                                                      Table_ref *table) {
   histograms::results_map results;
   handle_histogram_command_inner(thd, table, results);
-  return thd->is_fatal_error() || send_histogram_results(thd, results, table);
+  if (thd->is_fatal_error() || send_histogram_results(thd, results, table)) {
+    return true;
+  }
+
+  // Run ANALYZE in secondary engine.
+  bool secondary_error = false;
+  if (get_histogram_command() == Histogram_command::UPDATE_HISTOGRAM &&
+      table->table != nullptr && table->table->s->has_secondary_engine() &&
+      table->table->s->secondary_load &&
+      thd->variables.enable_secondary_engine_statistics) {
+    secondary_error = secondary_engine_analyze(thd, table);
+  }
+
+  close_thread_tables(thd);
+  my_eof(thd);
+  return secondary_error;
 }
 
 bool Sql_cmd_analyze_table::execute(THD *thd) {

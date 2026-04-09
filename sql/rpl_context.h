@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,6 @@
 
 #include "my_inttypes.h"                                // IWYU pragma: keep
 #include "mysql/binlog/event/compression/compressor.h"  // mysql::binlog::event::compression::Compressor
-#include "mysql/utils/nodiscard.h"
 
 #include "mysql/binlog/event/compression/factory.h"
 #include "sql/binlog/group_commit/bgc_ticket.h"
@@ -311,6 +310,11 @@ class Binlog_group_commit_ctx {
     @param ticket The ticket to set the THD session to.
    */
   void set_session_ticket(binlog::BgcTicket ticket);
+#ifndef NDEBUG
+  /// @brief Pushes new bgc ticket, for testing purposes
+  void push_new_ticket();
+#endif
+
   /**
     Assigns the THD session to the ticket accepting assignments in the
     ticket manager. The method is idem-potent within the execution of a

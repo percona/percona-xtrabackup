@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,11 +27,12 @@
 #define MYSQLD_MOCK_X_MOCK_SESSION_INCLUDED
 
 #include <memory>
-#include <mutex>
-#include <set>
 
+#include "mysql/harness/destination_endpoint.h"
+#include "mysql/harness/destination_socket.h"
 #include "mysql/harness/logging/logger.h"
 #include "mysql/harness/net_ts/impl/socket_constants.h"
+#include "mysql/harness/tls_server_context.h"
 #include "mysql_server_mock.h"
 #include "router/src/mock_server/src/mock_session.h"
 #include "router/src/mock_server/src/statement_reader.h"
@@ -86,8 +87,8 @@ class MySQLServerMockSessionX : public MySQLServerMockSession {
   using clock_type = std::chrono::steady_clock;
 
   MySQLServerMockSessionX(
-      ProtocolBase::socket_type client_sock,
-      ProtocolBase::endpoint_type client_ep, TlsServerContext &tls_server_ctx,
+      mysql_harness::DestinationSocket sock,
+      mysql_harness::DestinationEndpoint ep, TlsServerContext &tls_ctx,
       std::unique_ptr<StatementReaderBase> statement_processor,
       const bool debug_mode, bool with_tls);
 

@@ -102,4 +102,55 @@ prepare s from "SELECT ADDTIME(?, TIME'01:01:01')";
 execute s using @ts;
 prepare s from "SELECT ADDTIME(?, TIME'01:01:01')";
 execute s using @t;
+#
+# Bug#37818573: assertion data_type() != mysql_type_datetime ||
+#               data_type() != mysql_type_string failed
+CREATE TABLE t1(t TIME, d DATE);
+INSERT INTO t1 VALUES(TIME'11:59:59', DATE'2025-04-11');
 
+SELECT COALESCE(ADDTIME(t, DATE(d)), '00:00:00') AS c1 FROM t1;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#37864407: Assertion mt.time_type == MYSQL_TIMESTAMP_DATETIME
+--echo #
+
+SELECT TIME(ADDTIME(241, 241));
+
+--echo #
+--echo # Bug#37946872: Assertion 'null_value' failed at sql/item.cc
+--echo #
+
+SELECT ADDTIME(TIME'00:20:08',
+               LEAST(DATEDIFF(TIMESTAMP'2004-07-15 19:35:20.060', '2005-07-21'),
+                     '0000-00-00 00:00:00', TIME'00:20:08'
+                    )
+              ) AS c1;
+
+--echo #
+--echo # Bug#37953309: Assertion 'date.time_type == time.time.type' failed
+--echo #
+
+SELECT ADDTIME(FROM_UNIXTIME(2985951232, "%y-%r-%i-%b-%x"), DATE('0000-00-00'));
+
+--echo #
+--echo # Bug#38487675: Assertion failed: is_valid() && iv.year == 0 &&
+--echo #               iv.month == 0 && iv.day == 0
+--echo #
+
+SET TIMESTAMP = UNIX_TIMESTAMP('2025-10-11 00:00:00');
+
+SELECT INTERVAL '{"a":[1,2,3,4,5]}' DAY_MICROSECOND + TIME'11:22:33';
+
+SET TIMESTAMP = DEFAULT;
+
+--echo #
+--echo # Bug#38487373: Assertion failed: time.time_type == MYSQL_TIMESTAMP_TIME
+--echo #
+
+SET TIMESTAMP = UNIX_TIMESTAMP('2025-10-11 00:00:00');
+
+DO ADDTIME(TIME_FORMAT('-250:07:38.935647', '1974-10-18 08:57:35.681107'), 1);
+
+SET TIMESTAMP = DEFAULT;

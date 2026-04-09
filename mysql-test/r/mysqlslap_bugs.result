@@ -1,0 +1,25 @@
+#
+# Bug #37353662: Contribution: fix mysqlslap --ssl-mode=disable not working issue
+#
+CREATE PROCEDURE signal_if_ssl(is_present int)
+BEGIN
+if (is_present =
+(SELECT count(*) FROM performance_schema.session_status
+WHERE VARIABLE_NAME='Ssl_version' AND VARIABLE_VALUE = '')
+) THEN
+signal SQLSTATE '42000' SET MESSAGE_TEXT = 'SSL not as expected', MYSQL_ERRNO=1000;
+END IF;
+END$
+SET GLOBAL log_output="TABLE";
+# Try with SSL required: should pass
+# Try with SSL disabled: should pass
+SET GLOBAL log_output=default;
+SELECT argument FROM mysql.general_log WHERE command_type = 'Connect' ORDER BY event_time;
+argument
+root@localhost on  using SSL/TLS
+root@localhost on mysqlslap using SSL/TLS
+root@localhost on  using TCP/IP
+root@localhost on mysqlslap using TCP/IP
+DROP PROCEDURE signal_if_ssl;
+TRUNCATE mysql.general_log;
+# End of 9.3 tests

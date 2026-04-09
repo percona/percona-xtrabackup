@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,46 +29,51 @@
 #ifndef MYSQL_UTILS_CONCAT_H
 #define MYSQL_UTILS_CONCAT_H
 
-#include <sstream>  // std::ostringstream
-#include <string>   // std::string
+#include <sstream>                       // ostringstream
+#include <string>                        // string
+#include <utility>                       // ignore
+#include "mysql/utils/call_and_catch.h"  // call_and_catch
 
 /// @addtogroup GroupLibsMysqlUtils
 /// @{
 
-namespace mysql::utils {
+namespace mysql::utils::throwing {
 
-namespace internal {
-
-// Helper for 'concat' (base case)
-inline void concat_to_stringstream([[maybe_unused]] std::ostringstream &out) {}
-
-// Helper for 'concat' (recursive)
-template <class T, class... Args>
-void concat_to_stringstream(std::ostringstream &out, T first,
-                            Args... remainder) {
-  out << first;
-  concat_to_stringstream(out, remainder...);
-}
-
-}  // namespace internal
-
-/// Convert all the arguments to strings and concatenate the strings.
+/// Stream all the arguments to a stringstream and return the resulting string.
 ///
-/// This feeds all arguments to a `std::ostringstream`, so supports all
-/// types for which `operator<<(std::ostringstream&, ...)` is defined.
+/// @tparam Args_t types of the arguments.
 ///
 /// @param args Arguments to concatenate.
 ///
 /// @return The resulting std::string.
-template <class... Args>
-std::string concat(Args... args) {
+///
+/// @throws bad_alloc if an out-of-memory condition occurs.
+template <class... Args_t>
+[[nodiscard]] std::string concat(Args_t &&...args) {
   std::ostringstream out;
-  internal::concat_to_stringstream(out, args...);
+  // std::ignore required to workaround
+  // https://github.com/llvm/llvm-project/issues/140205
+  std::ignore = (out << ... << std::forward<Args_t>(args));
   return out.str();
 }
 
-}  // namespace mysql::utils
+}  // namespace mysql::utils::throwing
 
+namespace mysql::utils {
+
+/// Stream all the arguments to a stringstream and return the resulting string.
+///
+/// @param args Arguments to concatenate.
+///
+/// @return std::optional<std::string>, holding a value on success, or holding
+/// no value if an out-of-memory condition occurs.
+template <class... Args_t>
+[[nodiscard]] std::optional<std::string> concat(Args_t &&...args) noexcept {
+  return call_and_catch(
+      [&] { return throwing::concat(std::forward<Args_t>(args)...); });
+}
+
+}  // namespace mysql::utils
 /// @}
 
 #endif  // MYSQL_UTILS_CONCAT_H

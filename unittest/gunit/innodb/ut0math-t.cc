@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -46,7 +46,7 @@ TEST(ut0math, div_ceil) {
 void test_multiply_uint64(uint64_t x, uint64_t y) {
   const auto xy = x * y;
   uint64_t hi;
-  uint64_t lo = ut::detail::multiply_uint64_portable(x, y, hi);
+  uint64_t const lo = ut::detail::multiply_uint64_portable(x, y, hi);
   ASSERT_EQ(hi, 0);
   ASSERT_EQ(lo, xy);
 }
@@ -107,7 +107,7 @@ TEST(ut0math, divide_uint128) {
     const uint64_t y = ut::random_64();
     if (x == 0 || y == 0) continue;
     uint64_t high;
-    uint64_t low = ut::detail::multiply_uint64_portable(x, y, high);
+    uint64_t const low = ut::detail::multiply_uint64_portable(x, y, high);
     ASSERT_EQ(ut::divide_128(high, low, x), y);
     ASSERT_EQ(ut::divide_128(high, low, y), x);
   }
@@ -118,7 +118,7 @@ TEST(ut0math, fast_modulo) {
     const uint64_t x = ut::random_64();
     const uint64_t y = ut::random_64();
     if (y == 0) continue;
-    ut::fast_modulo_t mod{y};
+    ut::fast_modulo_t const mod{y};
     ASSERT_EQ(x % y, x % mod);
   }
   for (int i = 0; i < 1000000; i++) {
@@ -132,7 +132,7 @@ TEST(ut0math, fast_modulo) {
 
 static void BM_FAST_MODULO_CALCULATE(const size_t num_iterations) {
   uint32_t fold = 0;
-  ut::fast_modulo_t mod{123 + num_iterations};
+  ut::fast_modulo_t const mod{123 + num_iterations};
   for (size_t n = 0; n < num_iterations * 1000; n++) {
     fold += n % mod;
   }

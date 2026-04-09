@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -24,14 +24,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 /* This test component register 3 UDFsin the init method (install) and
    unregister them in deinit (uninstall). */
 
-#include <ctype.h>
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/udf_registration.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 
 REQUIRES_SERVICE_PLACEHOLDER(udf_registration);
@@ -187,14 +187,14 @@ bool avgcost_init(UDF_INIT *initid, UDF_ARGS *args, char *message) {
 
 void avgcost_deinit(UDF_INIT *initid) {
   void *void_ptr = initid->ptr;
-  avgcost_data *data = static_cast<avgcost_data *>(void_ptr);
+  auto *data = static_cast<avgcost_data *>(void_ptr);
   delete data;
 }
 
 /* This is needed to get things to work in MySQL 4.1.1 and above */
 
 void avgcost_clear(UDF_INIT *initid, unsigned char *, unsigned char *) {
-  struct avgcost_data *data = (struct avgcost_data *)initid->ptr;
+  auto *data = (struct avgcost_data *)initid->ptr;
   data->totalprice = 0.0;
   data->totalquantity = 0;
   data->count = 0;
@@ -203,9 +203,9 @@ void avgcost_clear(UDF_INIT *initid, unsigned char *, unsigned char *) {
 void avgcost_add(UDF_INIT *initid, UDF_ARGS *args, unsigned char *,
                  unsigned char *) {
   if (args->args[0] && args->args[1]) {
-    struct avgcost_data *data = (struct avgcost_data *)initid->ptr;
-    long long quantity = *((long long *)args->args[0]);
-    long long newquantity = data->totalquantity + quantity;
+    auto *data = (struct avgcost_data *)initid->ptr;
+    long long const quantity = *((long long *)args->args[0]);
+    long long const newquantity = data->totalquantity + quantity;
     double price = *((double *)args->args[1]);
 
     data->count++;
@@ -239,7 +239,7 @@ void avgcost_add(UDF_INIT *initid, UDF_ARGS *args, unsigned char *,
 
 double avgcost(UDF_INIT *initid, UDF_ARGS *, unsigned char *is_null,
                unsigned char *) {
-  struct avgcost_data *data = (struct avgcost_data *)initid->ptr;
+  auto *data = (struct avgcost_data *)initid->ptr;
   if (!data->count || !data->totalquantity) {
     *is_null = 1;
     return 0.0;

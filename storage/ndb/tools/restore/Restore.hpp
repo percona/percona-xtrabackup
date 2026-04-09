@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,6 +49,7 @@
 #define NDB_RESTORE_ERROR_INSERT_SKIP_ROWS 2
 #define NDB_RESTORE_ERROR_INSERT_FAIL_REPLAY_LOG 3
 #define NDB_RESTORE_ERROR_INSERT_FAIL_RESTORE_TUPLE 4
+#define NDB_RESTORE_ERROR_INSERT_FAIL_LOG_CONSTRAINT 5
 
 #endif
 
@@ -185,12 +186,10 @@ class TupleS {
 
  public:
   TupleS() {
-    m_currentTable = 0;
-    allAttrData = 0;
+    m_currentTable = nullptr;
+    allAttrData = nullptr;
   }
-  ~TupleS() {
-    if (allAttrData) delete[] allAttrData;
-  }
+  ~TupleS() { delete[] allAttrData; }
   TupleS(const TupleS &tuple);  // disable copy constructor
   TupleS &operator=(const TupleS &tuple);
   int getNoOfAttributes() const;
@@ -270,7 +269,7 @@ class TableS {
 
   int getNoOfAttributes() const { return allAttributesDesc.size(); }
 
-  bool have_auto_inc() const { return m_auto_val_attrib != 0; }
+  bool have_auto_inc() const { return m_auto_val_attrib != nullptr; }
 
   bool have_auto_inc(Uint32 id) const {
     return (m_auto_val_attrib ? m_auto_val_attrib->attrId == id : false);
@@ -304,7 +303,9 @@ class TableS {
    * Returns true if a table contains blobs, or is
    * a Blob parts table
    */
-  bool isBlobRelated() const { return (m_has_blobs || m_main_table != NULL); }
+  bool isBlobRelated() const {
+    return (m_has_blobs || m_main_table != nullptr);
+  }
 
   inline bool isBroken() const {
     return m_broken || (m_main_table && m_main_table->isBroken());
@@ -334,7 +335,7 @@ class TableS {
     return false;
   }
 
-  const Vector<TableS *> getBlobTables() { return m_blobTables; }
+  Vector<TableS *> getBlobTables() { return m_blobTables; }
 
   bool m_staging;
   BaseString m_stagingName;
@@ -404,7 +405,8 @@ class BackupFile {
 
   void setName(const char *path, const char *name);
 
-  BackupFile(void (*free_data_callback)(void *) = 0, void *ctx = 0);
+  BackupFile(void (*free_data_callback)(void *) = nullptr, void *ctx = nullptr,
+             Uint32 bufferSz = DEFAULT_BUFFER_SIZE);
   virtual ~BackupFile();
 
  public:
@@ -416,7 +418,7 @@ class BackupFile {
   const char *getFilename() const { return m_fileName; }
   Uint32 getNodeId() const { return m_nodeId; }
   const BackupFormat::FileHeader &getFileHeader() const { return m_fileHeader; }
-  bool Twiddle(const AttributeDesc *const attr_desc, AttributeData *attr_data);
+  bool Twiddle(const AttributeDesc *attr_desc, AttributeData *attr_data);
 
   Uint64 get_file_size() const { return m_file_size; }
   /**
@@ -432,10 +434,10 @@ class BackupFile {
 #ifdef ERROR_INSERT
   void error_insert(unsigned int code);
 #endif
-  static const Uint32 BUFFER_SIZE = 128 * 1024;
+  static const Uint32 DEFAULT_BUFFER_SIZE = 128 * 1024;
 
  private:
-  void twiddle_atribute(const AttributeDesc *const attr_desc,
+  void twiddle_atribute(const AttributeDesc *attr_desc,
                         AttributeData *attr_data);
 };
 
@@ -493,7 +495,8 @@ class RestoreDataIterator : public BackupFile {
  public:
   // Constructor
   RestoreDataIterator(const RestoreMetaData &,
-                      void (*free_data_callback)(void *), void *);
+                      void (*free_data_callback)(void *), void *,
+                      Uint32 bufferSz);
   ~RestoreDataIterator() override;
 
   // Read data file fragment header
@@ -501,7 +504,7 @@ class RestoreDataIterator : public BackupFile {
   bool validateFragmentFooter();
   bool validateRestoreDataIterator();
 
-  const TupleS *getNextTuple(int &res, const bool skipFragment);
+  const TupleS *getNextTuple(int &res, bool skipFragment);
   TableS *getCurrentTable();
 
  private:
@@ -575,7 +578,7 @@ class RestoreLogIterator : public BackupFile {
    * not including log entry header.
    * No harm in require space for a few extra words to header too.
    */
-  static_assert(BackupFile::BUFFER_SIZE >=
+  static_assert(BackupFile::DEFAULT_BUFFER_SIZE >=
                 BackupFormat::LogFile::LogEntry::MAX_SIZE);
 
  private:

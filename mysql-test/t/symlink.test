@@ -2,6 +2,8 @@
 --source include/not_windows.inc
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --disable_warnings
 drop table if exists t1,t2,t7,t8,t9;
@@ -318,3 +320,5 @@ eval CREATE TABLE test.t1(id INT(11)) ENGINE MYISAM
 DATA DIRECTORY "$MYSQLTEST_VARDIR/tmp";
 
 DROP TABLE test.t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -357,9 +357,9 @@ xcl::Handler_result Session_holder::count_received_messages(
   const auto server_message_name =
       Mysqlx::ServerMessages::descriptor()->full_name();
   const bool is_empty_message = (protobuf_message_name == server_message_name);
-  const std::string &msg_name = !is_empty_message
-                                    ? msg.GetDescriptor()->full_name()
-                                    : server_msgs_by_id[msg_id].second;
+  const std::string &msg_name =
+      !is_empty_message ? std::string(msg.GetDescriptor()->full_name())
+                        : server_msgs_by_id[msg_id].second;
 
   ++m_received_msg_counters[msg_name];
 
@@ -367,11 +367,14 @@ xcl::Handler_result Session_holder::count_received_messages(
     return xcl::Handler_result::Continue;
 
   static const std::array<std::string, 5> k_notice_type_id = {
-      Mysqlx::Notice::Warning::descriptor()->full_name(),
-      Mysqlx::Notice::SessionVariableChanged::descriptor()->full_name(),
-      Mysqlx::Notice::SessionStateChanged::descriptor()->full_name(),
-      Mysqlx::Notice::GroupReplicationStateChanged::descriptor()->full_name(),
-      Mysqlx::Notice::ServerHello::descriptor()->full_name(),
+      std::string(Mysqlx::Notice::Warning::descriptor()->full_name()),
+      std::string(
+          Mysqlx::Notice::SessionVariableChanged::descriptor()->full_name()),
+      std::string(
+          Mysqlx::Notice::SessionStateChanged::descriptor()->full_name()),
+      std::string(Mysqlx::Notice::GroupReplicationStateChanged::descriptor()
+                      ->full_name()),
+      std::string(Mysqlx::Notice::ServerHello::descriptor()->full_name()),
   };
 
   const auto notice_type =

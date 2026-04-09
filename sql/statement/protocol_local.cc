@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -206,8 +206,9 @@ bool Protocol_local::store_date(const MYSQL_TIME &time) {
 
 /** Store MYSQL_TIME (in binary format) */
 
-bool Protocol_local::store_time(const MYSQL_TIME &time, uint) {
-  return store_column(&time, sizeof(MYSQL_TIME));
+bool Protocol_local::store_time(const Time_val &time, uint) {
+  MYSQL_TIME tm = MYSQL_TIME(time);
+  return store_column(&tm, sizeof(MYSQL_TIME));
 }
 
 /* Store a floating point number, as is. */

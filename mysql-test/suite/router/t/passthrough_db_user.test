@@ -1,0 +1,546 @@
+# Tests that services that have the passthroughDbUser option set will execute
+# SQL for DB endpoints as that user.
+
+# create the schemas
+create schema db1;
+
+create table db1.tbl (a int primary key auto_increment, user varchar(100) default (current_user()));
+create table db1.tbl2 (a int primary key auto_increment, user varchar(100) default (current_user()));
+
+create function db1.f() returns char(100) return current_user();
+create function db1.f2() returns char(100) return current_user();
+
+delimiter $$;
+create procedure db1.p() sql security invoker begin select current_user(); end$$
+create procedure db1.p2() sql security invoker begin select current_user(); end$$
+delimiter ;$$
+
+create role user1role;
+grant all on db1.* to user1role;
+
+create user user1@'%' identified by 'secretpass1';
+grant user1role to user1@'%';
+
+create user user3@'%' identified by 'secretpass3';
+grant user1role to user3@'%';
+
+create user user2@'%' identified by 'secretpass2';
+grant select, insert, update, delete on db1.tbl2 to user2@'%';
+grant execute on procedure db1.p2 to user2@'%';
+grant execute on function db1.f2 to user2@'%';
+
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+# set size of the passthroughDbUser db session pool
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"passthroughDbUser": {"poolSize": 4, "maxSessionsPerUser":7}}');
+
+--source ../include/mrs/start_object_definition.inc
+
+# expose endpoints for db1
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_service_options='{"logging":{"exceptions":true}, "passthroughDbUser":true}'
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=db1
+--let $mrs_add_schema_path=/db
+--let $mrs_add_schema_auth=TRUE
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=p
+--let $mrs_add_db_object_path=/p
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=p2
+--let $mrs_add_db_object_path=/p2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=f
+--let $mrs_add_db_object_path=/f
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=f2
+--let $mrs_add_db_object_path=/f2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=tbl
+--let $mrs_add_db_object_path=/tbl
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=tbl2
+--let $mrs_add_db_object_path=/tbl2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_schema=db1
+--let $mrs_add_schema_path=/db_no_auth
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=tbl2
+--let $mrs_add_db_object_path=/tbl2
+--source ../include/mrs/db_object/add.inc
+
+# add user1 and user2 as MySQL Internal accounts
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_registered_users_only=1
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_user_ext_uid='user1@%'
+--let $mrs_add_user_name='user1'
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid='user2@%'
+--let $mrs_add_user_name='user2'
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify that authentication for registered and uregistered users when passthroughDbUser is activated.
+--echo #
+--echo # 1. Registred users authentication is succesfful.
+--echo # 2. Unregistered users authentication fails.
+--echo # 3. Verify that MRS allocates few MySQL sessions for each session.
+--echo #
+--echo ## II. Verify that access to db-objects is derived from MySQL account.
+--echo #
+--echo # 1. Verify user with full access.
+--echo # 2. Verify user which has limited access.
+--echo #
+--echo ## III. Configuration changes in DB and MRS metadata
+--echo #
+--echo # 1. Change user1 password, and check if new password is used.
+--echo # 2. Allow unregistered users and verfiy 'user3' (previously failing)
+--echo #    can login.
+--echo #
+--echo ## IV. Verify passthrough cache limits
+--echo #
+--echo # 1. Verify that user session can't allocate more MySQL sessions than configured (7).
+--echo # 2. Verify that logout removes all allocated MySQL sessions
+--echo # 3. Verify that session create for the same user share the same MySQL Session pool
+--echo #    (allocating more session than configured limit causes authentication failure).
+--echo # 4. Logout one session for user1, causes that new authentication for this user
+--echo #    is successful (went down below limit)
+--echo # 5. Logout of all sessions for user1, causes that all MySQL Sessions are deallocated.
+--echo #
+--echo ## V. Other tests.
+--echo #
+--echo # 1. Verify that we can use JWT token/session with passthrough.
+--echo # 2. Verify that after changing passthrough parameters, MRS applies those.
+--echo #
+
+--echo #
+--echo # I.1
+--echo # authenticate user1 and user2
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+
+--echo #
+--echo # I.2
+--echo # should fail because not registered
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user3
+  -p secretpass3
+  --expected-status Unauthorized
+  --session-file $MYSQL_TMP_DIR/user3_session.dat;
+
+
+--echo #
+--echo # I.4
+--echo # there should be 4 connections for each user corresponding to the pool
+--let $wait_condition=SELECT COUNT(*)=4 FROM performance_schema.processlist WHERE user='user1';
+--source include/wait_condition_or_abort.inc
+--let $wait_condition=SELECT COUNT(*)=4 FROM performance_schema.processlist WHERE user='user2';
+--source include/wait_condition_or_abort.inc
+
+
+--echo #
+--echo # II.1
+--echo # user1 has access to everything
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl
+  -t POST
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl2
+  -t POST
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl2
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/p
+  -t PUT
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/p2
+  -t PUT
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+ exec $MRS_CLIENT_ARGS
+  --path /svc/db/f
+  -t PUT
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/f2
+  -t PUT
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+
+--echo #
+--echo # II.2
+--echo # user2 only has access to *2 objects
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl
+  -t POST
+  --payload {}
+  --expected-status InternalError
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl
+  --expected-status InternalError
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl2
+  -t POST
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl2
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/p
+  -t PUT
+  --payload {}
+  --expected-status InternalError
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/p2
+  -t PUT
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/f
+  -t PUT
+  --payload {}
+  --expected-status InternalError
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/f2
+  -t PUT
+  --payload {}
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+--echo # user3 should be rejected
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl
+  --expected-status Unauthorized
+  --session-file $MYSQL_TMP_DIR/user3_session.dat;
+
+
+--echo #
+--echo # III.1
+--echo # change password and try again
+SET PASSWORD FOR user1@'%'='newpass';
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p newpass
+  --session-file $MYSQL_TMP_DIR/user1b_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl
+  --session-file $MYSQL_TMP_DIR/user1b_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t POST
+  --path /svc/authentication/logout
+  --session-file $MYSQL_TMP_DIR/user1b_session.dat;
+
+--let $wait_condition=SELECT count(*)=0 FROM performance_schema.processlist where USER = 'user1'
+--source include/wait_condition.inc
+
+--echo #
+--echo # III.2
+--echo # switch off restriction to registered users and try again with user3
+update mysql_rest_service_metadata.auth_app set limit_to_registered_users=0;
+
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user3
+  -p secretpass3
+  --session-file $MYSQL_TMP_DIR/user3_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl
+  --session-file $MYSQL_TMP_DIR/user3_session.dat;
+
+--echo # overload user1
+exec $MRS_CLIENT_ARGS
+  -t POST
+  --path /svc/authentication/logout
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+
+--echo #
+--echo # IV.1
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p newpass
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+LOCK TABLE db1.tbl WRITE;
+--exec_in_background $MRS_CLIENT_ARGS --path /svc/db/tbl?8 --session-file $MYSQL_TMP_DIR/user1_session.dat
+sleep 0.5;
+--exec_in_background $MRS_CLIENT_ARGS --path /svc/db/tbl?7 --session-file $MYSQL_TMP_DIR/user1_session.dat
+sleep 0.5;
+--exec_in_background $MRS_CLIENT_ARGS --path /svc/db/tbl?6 --session-file $MYSQL_TMP_DIR/user1_session.dat
+sleep 0.5;
+--exec_in_background $MRS_CLIENT_ARGS --path /svc/db/tbl?5 --session-file $MYSQL_TMP_DIR/user1_session.dat
+sleep 0.5;
+--exec_in_background $MRS_CLIENT_ARGS --path /svc/db/tbl?4 --session-file $MYSQL_TMP_DIR/user1_session.dat
+sleep 0.5;
+--exec_in_background $MRS_CLIENT_ARGS --path /svc/db/tbl?3 --session-file $MYSQL_TMP_DIR/user1_session.dat
+sleep 0.5;
+--exec_in_background $MRS_CLIENT_ARGS --path /svc/db/tbl?2 --session-file $MYSQL_TMP_DIR/user1_session.dat
+sleep 0.5;
+
+# Please note that only 4 first requests blocks other fail like 8th.
+--let $wait_condition=SELECT COUNT(*)=4 FROM performance_schema.processlist WHERE STATE like "Waiting%" and USER="user1";
+--source include/wait_condition_or_abort.inc
+
+--echo # 8th attempt, out of sessions
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl?1
+  --session-file $MYSQL_TMP_DIR/user1_session.dat --expected-status TooManyRequests;
+UNLOCK TABLES;
+
+
+--echo #
+--echo # IV.2
+
+--echo # after log out, there should be no more pooled sessions
+exec $MRS_CLIENT_ARGS
+  -t POST
+  --path /svc/authentication/logout
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t POST
+  --path /svc/authentication/logout
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t POST
+  --path /svc/authentication/logout
+  --session-file $MYSQL_TMP_DIR/user3_session.dat;
+
+--let $wait_condition=SELECT count(*)=0 FROM performance_schema.processlist where USER in ('user1', 'user2', 'user3')
+--source include/wait_condition.inc
+
+--let $wait_condition=SELECT COUNT(*)=0 FROM performance_schema.processlist WHERE user='user1';
+--source include/wait_condition_or_abort.inc
+--let $wait_condition=SELECT COUNT(*)=0 FROM performance_schema.processlist WHERE user='user2';
+--source include/wait_condition_or_abort.inc
+--let $wait_condition=SELECT COUNT(*)=0 FROM performance_schema.processlist WHERE user='user3';
+--source include/wait_condition_or_abort.inc
+
+
+--echo #
+--echo # IV.3
+
+--echo # check limit of passthrough sessions for the same user
+# open 7 sessions
+--let $i=0
+while ($i < 7) {
+  exec $MRS_CLIENT_ARGS
+    -a BASIC
+    --path /svc/authentication/login
+    -u user1
+    -p newpass
+    --session-file $MYSQL_TMP_DIR/session$i.dat;
+  let $i=`select $i + 1`;
+}
+# open 1 more = error
+exec $MRS_CLIENT_ARGS
+    -a BASIC
+    --path /svc/authentication/login
+    -u user1
+    -p newpass
+    --expected-status TooManyRequests;
+
+
+--echo #
+--echo # IV.4
+
+# close 1 and then open 1 = ok
+exec $MRS_CLIENT_ARGS
+    -t POST
+    --path /svc/authentication/logout
+    --session-file $MYSQL_TMP_DIR/session5.dat;
+
+exec $MRS_CLIENT_ARGS
+    -a BASIC
+    --path /svc/authentication/login
+    -u user1
+    -p newpass
+    --session-file $MYSQL_TMP_DIR/session5.dat;
+
+
+--echo #
+--echo # IV.5
+
+# close everything for cleanup
+--let $i=0
+while ($i < 7) {
+  exec $MRS_CLIENT_ARGS
+    -t POST
+    --path /svc/authentication/logout
+    --session-file $MYSQL_TMP_DIR/session$i.dat;
+  remove_file $MYSQL_TMP_DIR/session$i.dat;
+  let $i=`select $i + 1`;
+}
+
+--let $wait_condition=SELECT COUNT(*)=0 FROM performance_schema.processlist WHERE user='user1';
+--source include/wait_condition_or_abort.inc
+
+--echo #
+--echo # V.1
+--echo # try with jwt session
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --session-type jwt
+  --path /svc/authentication/login
+  -u user1
+  -p newpass
+  --session-file $MYSQL_TMP_DIR/user_jwt_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc/db/tbl
+  --session-file $MYSQL_TMP_DIR/user_jwt_session.dat;
+
+exec $MRS_CLIENT_ARGS
+    -t POST
+    --path /svc/authentication/logout
+    --session-file $MYSQL_TMP_DIR/user_jwt_session.dat;
+
+
+--echo #
+--echo # V.2
+
+--echo # shrink limits and see if it refreshes
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"passthroughDbUser": {"poolSize": 2, "maxSessionsPerUser": 1}}');
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p newpass
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+--let $wait_condition=SELECT COUNT(*)=2 FROM performance_schema.processlist WHERE user='user1';
+--source include/wait_condition_or_abort.inc
+
+--echo # Access db-object that doesn't require authentication, still service requires it.
+exec $MRS_CLIENT_ARGS
+    -a BASIC
+    --path /svc/authentication/login
+    -u user1
+    -p newpass
+    --expected-status TooManyRequests;
+
+# Both service and dbobject must require authentication
+# otherwise its bad configuration, reject such requests.
+exec $MRS_CLIENT_ARGS
+  --expected-status  BadRequest
+  --path /svc/db_no_auth/tbl2;
+
+# Both service and dbobject must require authentication
+# otherwise its bad configuration, reject such requests
+# even when a valid session was provided.
+exec $MRS_CLIENT_ARGS
+  --expected-status BadRequest
+  --path /svc/db_no_auth/tbl2
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+    -t POST
+    --path /svc/authentication/logout
+    --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+# Cleanup
+remove_file $MYSQL_TMP_DIR/user1_session.dat;
+remove_file $MYSQL_TMP_DIR/user1b_session.dat;
+remove_file $MYSQL_TMP_DIR/user2_session.dat;
+remove_file $MYSQL_TMP_DIR/user3_session.dat;
+remove_file $MYSQL_TMP_DIR/user_jwt_session.dat;
+drop user user1@'%';
+drop user user2@'%';
+drop user user3@'%';
+drop user user1role;
+drop schema db1;
+--source ../include/mrs/cleanup.inc

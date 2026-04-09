@@ -83,10 +83,47 @@ ORDER BY node_id;
 # Then promote the pending files to active
 --exec $NDB_SIGN_KEYS --no-config -t api --promote
 
+# Now the files have been renamed from pending to active
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-private-key
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-cert
+
+# Create second pending client key and cert in no-config mode
+--exec $NDB_SIGN_KEYS --no-config --create-key --pending -t api --bind-host=0
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-pending-key
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-pending-cert
+
+# Then promote second pending files to active
+--exec $NDB_SIGN_KEYS --no-config -t api --promote
+
+# Second set of files have been renamed from pending to active
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-private-key
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-cert
+
+# Second promote should give retired files
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-retired-key
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-retired-cert
+
+# Create third set to promote when retired files already exist
+--exec $NDB_SIGN_KEYS --no-config --create-key --pending -t api --bind-host=0
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-pending-key
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-pending-cert
+
+# Then promote third pending files to active
+--exec $NDB_SIGN_KEYS --no-config -t api --promote
+
+# Third set of files have been renamed from pending to active, and retired files created
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-private-key
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-cert
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-retired-key
+--file_exists $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-retired-cert
+
 # Remove them
 --chmod 0600 $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-private-key
+--chmod 0600 $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-retired-key
 --remove_file $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-private-key
 --remove_file $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-cert
+--remove_file $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-retired-key
+--remove_file $MYSQLTEST_VARDIR/mysql_cluster.1/ndb-api-retired-cert
 
 # Try to create a CSR for node 10.
 # There is not a node 10 configured, so this fails.

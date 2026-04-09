@@ -223,3 +223,14 @@ DROP TABLE t1;
 SET @e:=1;
 --error ER_DATA_OUT_OF_RANGE
 DO ( 'x' IN (CONVERT(EXP(0xbf40f8f5) USING  utf32), UNHEX(@e)) );
+
+--echo #
+--echo # Bug#38556362: Assertion failed: is_nullable(), file item_geofunc.cc
+--echo #
+
+--error ER_GIS_INVALID_DATA
+SELECT ST_ISSIMPLE((SELECT CURRENT_TIME) IN (21 ,'-1-11-30 00:00:00'));
+
+SELECT GREATEST(-29858, 0x667adb23, 'zzzz',
+                UTC_TIME() IN (0xebe4032e, '{"ac":0,"cacbb":false}', 31),
+                15720) AS greatest;

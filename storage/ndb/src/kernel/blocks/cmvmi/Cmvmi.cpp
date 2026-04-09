@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,10 +29,12 @@
 #include <NdbTick.h>
 #include <kernel_types.h>
 #include <portlib/NdbMem.h>
+#include <portlib/NdbTimestamp.h>
 #include <signal.h>
 #include <Configuration.hpp>
 #include <NdbOut.hpp>
 #include <cstring>
+#include <ctime>
 #include <util/ConfigValues.hpp>
 
 #include <FastScheduler.hpp>
@@ -49,7 +51,6 @@
 #include <signaldata/EventSubscribeReq.hpp>
 #include <signaldata/GetConfig.hpp>
 #include <signaldata/NodeStateSignalData.hpp>
-#include <signaldata/SetLogLevelOrd.hpp>
 #include <signaldata/StartOrd.hpp>
 #include <signaldata/Sync.hpp>
 #include <signaldata/TamperOrd.hpp>
@@ -72,12 +73,6 @@
 #define JAM_FILE_ID 380
 
 #define ZREPORT_MEMORY_USAGE 1000
-
-extern int simulate_error_during_shutdown;
-
-#ifdef ERROR_INSERT
-extern int simulate_error_during_error_reporting;
-#endif
 
 // Index pages used by ACC instances
 Uint32 g_acc_pages_used[1 + MAX_NDBMT_LQH_WORKERS];
@@ -112,7 +107,7 @@ Cmvmi::Cmvmi(Block_context &ctx)
 
   // Add received signals
   addRecSignal(GSN_NDB_TAMPER, &Cmvmi::execNDB_TAMPER, true);
-  addRecSignal(GSN_SET_LOGLEVELORD, &Cmvmi::execSET_LOGLEVELORD);
+  addRecSignal(GSN_SET_LOGLEVELORD_v9_4_0, &Cmvmi::execSET_LOGLEVELORD);
   addRecSignal(GSN_EVENT_REP, &Cmvmi::execEVENT_REP);
   addRecSignal(GSN_STTOR, &Cmvmi::execSTTOR);
   addRecSignal(GSN_READ_CONFIG_REQ, &Cmvmi::execREAD_CONFIG_REQ);
@@ -149,15 +144,6 @@ Cmvmi::Cmvmi(Block_context &ctx)
 
   subscriberPool.setSize(5);
   c_syncReqPool.setSize(5);
-
-  const ndb_mgm_configuration_iterator *db =
-      m_ctx.m_config.getOwnConfigIterator();
-  for (unsigned j = 0; j < LogLevel::LOGLEVEL_CATEGORIES; j++) {
-    Uint32 logLevel;
-    if (!ndb_mgm_get_int_parameter(db, CFG_MIN_LOGLEVEL + j, &logLevel)) {
-      clogLevel.setLogLevel((LogLevel::EventCategory)j, logLevel);
-    }
-  }
 
   ndb_mgm_configuration_iterator *iter =
       m_ctx.m_config.getClusterConfigIterator();
@@ -213,17 +199,20 @@ void Cmvmi::execNDB_TAMPER(Signal *signal) {
     ndbabort();
   }
 
+#ifdef ERROR_INSERT
 #ifndef _WIN32
   if (ERROR_INSERTED(9996)) {
-    simulate_error_during_shutdown = SIGSEGV;
+    globalEmulatorData.theConfiguration->setShutdownHandlingFault(
+        Configuration::SHF_UNIX_SIGNAL, SIGSEGV);
     ndbabort();
   }
 
   if (ERROR_INSERTED(9995)) {
-    simulate_error_during_shutdown = SIGSEGV;
+    globalEmulatorData.theConfiguration->setShutdownHandlingFault(
+        Configuration::SHF_UNIX_SIGNAL, SIGSEGV);
     kill(getpid(), SIGABRT);
   }
-
+#endif
 #endif
 
 }  // execNDB_TAMPER()
@@ -325,19 +314,13 @@ void Cmvmi::sendSYNC_REP(Signal *signal, Ptr<SyncRecord> ptr) {
 }
 
 void Cmvmi::execSET_LOGLEVELORD(Signal *signal) {
-  SetLogLevelOrd *const llOrd = (SetLogLevelOrd *)&signal->theData[0];
-  LogLevel::EventCategory category;
-  Uint32 level;
   jamEntry();
-
-  ndbrequire(llOrd->noOfEntries <= LogLevel::LOGLEVEL_CATEGORIES);
-
-  for (unsigned int i = 0; i < llOrd->noOfEntries; i++) {
-    category = (LogLevel::EventCategory)(llOrd->theData[i] >> 16);
-    level = llOrd->theData[i] & 0xFFFF;
-
-    clogLevel.setLogLevel(category, level);
-  }
+  /*
+   * Version 9.4.0 was the highest version supporting this signal.
+   * We still need to ignore it in newer versions as long as we support 9.4.0
+   * or lower version nodes to connect.
+   */
+  return;
 }  // execSET_LOGLEVELORD()
 
 struct SavedEvent {
@@ -426,10 +409,11 @@ void SavedEventBuffer::save(const Uint32 *theData, Uint32 len) {
   Uint32 total = len + SavedEvent::HeaderLength;
   alloc(total);
 
+  std::timespec now = NdbTimestamp_GetCurrentTime();
   SavedEvent s;
   s.m_len = len;  // size of SavedEvent
   s.m_seq = m_saved_event_sequence++;
-  s.m_time = (Uint32)time(0);
+  s.m_time = (Uint32)now.tv_sec;
   const Uint32 *src = (const Uint32 *)&s;
   Uint32 *dst = m_data + m_write_pos;
 
@@ -598,15 +582,9 @@ void Cmvmi::execEVENT_REP(Signal *signal) {
     saveBuf = NDB_ARRAY_SIZE(m_saved_event_buffer) - 1;
   m_saved_event_buffer[saveBuf].save(data, sz);
 
-  if (clogLevel.getLogLevel(eventCategory) < threshold) {
-    if (num_sections > 0) {
-      releaseSections(handle);
-    }
-    return;
-  }
-
   // Print the event info
-  g_eventLogger->log(eventReport->getEventType(), data, sz, 0, 0);
+  Uint32 remoteNodeId = (nodeId == getOwnNodeId()) ? 0 : nodeId;
+  g_eventLogger->log(eventReport->getEventType(), data, sz, remoteNodeId);
 
   if (num_sections > 0) {
     releaseSections(handle);
@@ -815,12 +793,8 @@ void Cmvmi::execSTTOR(Signal *signal) {
       refresh_watch_dog(9);
       int res = NdbMem_MemLockAll(1);
       if (res != 0) {
-        char buf[100];
-        BaseString::snprintf(buf, sizeof(buf),
-                             "Failed to memlock pages, error: %d (%s)", errno,
-                             strerror(errno));
-        g_eventLogger->warning("%s", buf);
-        warningEvent("%s", buf);
+        warningEvent("Failed to memlock pages, error: %d (%s)", errno,
+                     strerror(errno));
       } else {
         g_eventLogger->info("Using locked memory");
       }
@@ -1378,7 +1352,6 @@ void Cmvmi::execDUMP_STATE_ORD(Signal *signal) {
                    (num_secs > 0) ? ptr[0].sz : 0,
                    (num_secs > 1) ? ptr[1].sz : 0,
                    (num_secs > 2) ? ptr[2].sz : 0, node_id, getOwnNodeId());
-          g_eventLogger->info("%s", msg);
           infoEvent("%s", msg);
           releaseSections(handle);
         } else if (val == DumpStateOrd::CmvmiSendDummySignal) {
@@ -1935,11 +1908,16 @@ void Cmvmi::execDUMP_STATE_ORD(Signal *signal) {
 #ifdef ERROR_INSERT
   if (arg == DumpStateOrd::CmvmiSetErrorHandlingError) {
     Uint32 val = 0;
+    Uint32 extra = 0;
     if (signal->length() >= 2) {
       val = signal->theData[1];
+      if (signal->length() >= 3) {
+        extra = signal->theData[2];
+      }
     }
-    g_eventLogger->info("Cmvmi : Setting ErrorHandlingError to %u", val);
-    simulate_error_during_error_reporting = val;
+    g_eventLogger->info("Cmvmi : Setting ShutdownErrorHandling to %u %u", val,
+                        extra);
+    globalEmulatorData.theConfiguration->setShutdownHandlingFault(val, extra);
   }
 #endif
 

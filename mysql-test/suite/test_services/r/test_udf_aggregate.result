@@ -1,0 +1,8 @@
+# Test udf_aggregate_error
+INSTALL COMPONENT "file://component_test_udf_aggregate";
+# Test mysql udf aggregate error
+# Must throw feature unsupported (from test aggregate), before
+# test_udf_aggregate_crash crashes on its invocation
+SELECT test_udf_aggregate_error(1), test_udf_aggregate_crash(2);
+ERROR HY000: Feature Test Aggregate is unsupported (by MySQL).
+UNINSTALL COMPONENT "file://component_test_udf_aggregate";

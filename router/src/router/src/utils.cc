@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,6 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>  // strtol
-#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>  // cout
@@ -81,51 +80,6 @@ bool my_check_access(const std::string &path) {
 #else
   return (_access(path.c_str(), 0x04) == 0);
 #endif
-}
-
-void copy_file(const std::string &from, const std::string &to) {
-  std::ofstream ofile;
-  std::ifstream ifile;
-
-  ofile.open(to,
-             std::ofstream::out | std::ofstream::binary | std::ofstream::trunc);
-  if (ofile.fail()) {
-    throw std::system_error(errno, std::generic_category(),
-                            "Could not create file '" + to + "'");
-  }
-  ifile.open(from, std::ofstream::in | std::ofstream::binary);
-  if (ifile.fail()) {
-    throw std::system_error(errno, std::generic_category(),
-                            "Could not open file '" + from + "'");
-  }
-
-  ofile << ifile.rdbuf();
-
-  ofile.close();
-  ifile.close();
-}
-
-stdx::expected<void, std::error_code> rename_file(const std::string &from,
-                                                  const std::string &to) {
-#ifndef _WIN32
-  if (0 != rename(from.c_str(), to.c_str())) {
-    return stdx::unexpected(std::error_code{errno, std::generic_category()});
-  }
-#else
-  // In Windows, rename fails if the file destination already exists, so ...
-  if (0 ==
-      MoveFileExA(
-          from.c_str(), to.c_str(),
-          MOVEFILE_REPLACE_EXISTING |  // override existing file
-              MOVEFILE_COPY_ALLOWED |  // allow copy of file to different drive
-              MOVEFILE_WRITE_THROUGH   // don't return until the operation is
-                                       // physically finished
-          )) {
-    return stdx::unexpected(std::error_code{static_cast<int>(GetLastError()),
-                                            std::system_category()});
-  }
-#endif
-  return {};
 }
 
 bool substitute_envvar(std::string &line) noexcept {

@@ -320,9 +320,9 @@ CREATE DEFINER = 'u1'@'%.com' VIEW v4 as SELECT * FROM t1;
 CREATE DEFINER = 'u1'@'AbC.com' VIEW v5 as SELECT * FROM t1;
 # should not match with any definer account names
 DROP USER 'u1'@'192.129.12.%';
-ERROR HY000: Operation DROP USER failed for 'u1'@'192.129.12.%'
+ERROR HY000: Operation DROP USER failed for 'u1'@'192.129.12.%' (User account does not exist)
 DROP USER 'u1'@'%';
-ERROR HY000: Operation DROP USER failed for 'u1'@'%'
+ERROR HY000: Operation DROP USER failed for 'u1'@'%' (User account does not exist)
 # should pass with warnings
 DROP USER u1@192.129.12.11;
 Warnings:

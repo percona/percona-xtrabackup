@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,12 +40,12 @@
   Please see errmsg_readme.txt in this directory for more information.
 */
 
-#include <assert.h>
 #include <fcntl.h>
 #include <mysql_version.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <new>
 #include <set>
@@ -74,7 +74,6 @@
 #define MAX_ERROR_NAME_LENGTH 64
 #define HEADER_LENGTH 32 /* Length of header in errmsg.sys */
 #define ERRMSG_VERSION 3 /* Version number of errmsg.sys */
-#define DEFAULT_CHARSET_DIR "../share/charsets"
 #define ER_PREFIX "ER_"
 #define WARN_PREFIX "WARN_"
 #define OBSOLETE_ER_PREFIX "OBSOLETE_ER_"
@@ -201,8 +200,6 @@ static struct my_option my_long_options[] = {
      GET_NO_ARG, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"version", 'V', "Prints version", nullptr, nullptr, nullptr, GET_NO_ARG,
      NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
-    {"charset", 'C', "Charset dir", &charsets_dir, &charsets_dir, nullptr,
-     GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"in_file_errlog", 'e', "Input file", &MSGS_ERRLOG, &MSGS_ERRLOG, nullptr,
      GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"in_file_toclient", 'c', "Input file", &MSGS_TO_CLIENT, &MSGS_TO_CLIENT,
@@ -262,7 +259,6 @@ int my_main(int argc, char *argv[]) {
   {
     DBUG_TRACE;
 
-    charsets_dir = DEFAULT_CHARSET_DIR;
     my_umask_dir = 0777;
 
     if ((argc > 1) && get_options(&argc, &argv)) goto done;
@@ -380,7 +376,7 @@ static void print_escaped_string(FILE *f, const char *str) {
   }
 }
 
-std::string get_file_contents(std::string filename) {
+std::string get_file_contents(const std::string &filename) {
   std::ifstream ifs(filename);
   if (!ifs.good()) {
     return "";
@@ -389,8 +385,8 @@ std::string get_file_contents(std::string filename) {
                      std::istreambuf_iterator<char>());
 }
 
-static void compare_and_move_file(std::string source_filename,
-                                  std::string destination_filename) {
+static void compare_and_move_file(const std::string &source_filename,
+                                  const std::string &destination_filename) {
   const auto source_contents = get_file_contents(source_filename);
   const auto destination_contents = get_file_contents(destination_filename);
   if (source_contents == destination_contents) {
@@ -410,9 +406,9 @@ static int create_header_files(struct errors *error_head) {
 
   DBUG_TRACE;
 
-  std::string headerfile_tmp = std::string(HEADERFILE) + "_tmp";
-  std::string namefile_tmp = std::string(NAMEFILE) + "_tmp";
-  std::string msgfile_tmp = std::string(MSGFILE) + "_tmp";
+  std::string const headerfile_tmp = std::string(HEADERFILE) + "_tmp";
+  std::string const namefile_tmp = std::string(NAMEFILE) + "_tmp";
+  std::string const msgfile_tmp = std::string(MSGFILE) + "_tmp";
 
   if (!(er_definef = my_fopen(headerfile_tmp.c_str(), O_WRONLY, MYF(MY_WME)))) {
     return 1;
@@ -660,11 +656,11 @@ static int create_sys_files(struct languages *lang_head,
     int4store(head + 10, row_count);
     head[30] = csnum;
 
-    my_fseek(to, 0l, MY_SEEK_SET);
+    my_fseek(to, 0L, MY_SEEK_SET);
     if (my_fwrite(to, (uchar *)head, HEADER_LENGTH, MYF(MY_WME | MY_FNABP)))
       goto err;
 
-    for (uint pos : file_pos) {
+    for (uint const pos : file_pos) {
       int4store(head, pos);
       if (my_fwrite(to, (uchar *)head, 4, MYF(MY_WME | MY_FNABP))) goto err;
     }
@@ -694,7 +690,7 @@ static void clean_up(struct languages *lang_head, struct errors *error_head) {
 
   for (tmp_error = error_head; tmp_error; tmp_error = next_error) {
     next_error = tmp_error->next_error;
-    size_t count = (tmp_error->msg).size();
+    size_t const count = (tmp_error->msg).size();
     for (size_t i = 0; i < count; i++) {
       struct message *tmp;
       tmp = &tmp_error->msg[i];
@@ -941,7 +937,8 @@ static bool parse_reserved_error_section(char *str) {
 
   /* reading the section start number */
   if (!(offset = get_word(&str))) return true; /* OOM: Fatal error */
-  uint sec_start = static_cast<uint>(my_strtoll10(offset, nullptr, &error));
+  uint const sec_start =
+      static_cast<uint>(my_strtoll10(offset, nullptr, &error));
   my_free(offset);
   DBUG_PRINT("info", ("reserved_range_start: %u", sec_start));
 
@@ -952,7 +949,7 @@ static bool parse_reserved_error_section(char *str) {
 
   /* reading the section end number */
   if (!(offset = get_word(&str))) return true; /* OOM: Fatal error */
-  uint sec_end = static_cast<uint>(my_strtoll10(offset, nullptr, &error));
+  uint const sec_end = static_cast<uint>(my_strtoll10(offset, nullptr, &error));
   my_free(offset);
   DBUG_PRINT("info", ("reserved_range_end: %u", sec_end));
 
@@ -1057,7 +1054,7 @@ static struct message *find_message(struct errors *err, const char *lang,
   struct message *tmp, *return_val = nullptr;
   DBUG_TRACE;
 
-  size_t count = (err->msg).size();
+  size_t const count = (err->msg).size();
   for (size_t i = 0; i < count; i++) {
     tmp = &err->msg[i];
 
@@ -1095,7 +1092,7 @@ static struct message *find_message(struct errors *err, const char *lang,
 
 static ha_checksum checksum_format_specifier(const char *msg) {
   ha_checksum chksum = 0;
-  const uchar *p = (const uchar *)msg;
+  const auto *p = (const uchar *)msg;
   const uchar *start = nullptr;
   uint32 num_format_specifiers = 0;
   while (*p) {
@@ -1292,7 +1289,7 @@ static struct errors *parse_error_string(char *str, int er_count,
 
   /* Check if code overlaps with any of the reserved error sections */
   for (auto section : reserved_sections) {
-    uint new_code = static_cast<uint>(er_offset + er_count);
+    uint const new_code = static_cast<uint>(er_offset + er_count);
     if (new_code >= section.first && new_code <= section.second) {
       fprintf(
           stderr,
@@ -1380,7 +1377,7 @@ static struct languages *parse_charset_string(char *str) {
   }
 
   str = skip_delimiters(str);
-  if (!(*str != ';' && *str)) return nullptr;
+  if (*str == ';' || !*str) return nullptr;
 
   do {
     /*creating new element of the linked list */
@@ -1512,7 +1509,7 @@ static char *parse_text_line(char *pos, bool allow_newline_escape) {
     fprintf(stderr, "Could not find a '\"' on the end of the message\n");
     return nullptr;
   }
-  for (auto end_of_line = pos + 1; *end_of_line; end_of_line++) {
+  for (auto *end_of_line = pos + 1; *end_of_line; end_of_line++) {
     if (*end_of_line != '\n' && *end_of_line != '\r') {
       fprintf(stderr,
               "Unexpected character at the end of the line, expected newline, "

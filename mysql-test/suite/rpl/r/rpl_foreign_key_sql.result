@@ -1,0 +1,133 @@
+include/rpl/init_source_replica.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+# FR-10) Replica must enforce foreign key checks on the parent table, and any
+# CASCADE operations affecting child tables must produce identical results on
+# the replica as they do on the source server.
+# Note:rpl_row_idempotency.test verifies FK check
+# Also tests FR 11.1) Source(SQL FK) -> Replica(SQL FK)
+#Source
+#t1 - Parent table
+CREATE TABLE t1 (f1 INT PRIMARY KEY) ENGINE=INNODB;
+#t2(f1) -> t1(f1) -  ON DELETE | UPDATE CASCADE
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY(f1) REFERENCES t1(f1) ON DELETE CASCADE ON UPDATE CASCADE) ENGINE=INNODB;
+#t3(f2) -> t1(f1) - ON DELETE | UPDATE SET NULL
+CREATE TABLE t3 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY(f2) REFERENCES t1(f1) ON DELETE SET NULL ON UPDATE SET NULL) ENGINE=INNODB;
+#Multi Level Cascade from t22(f1) -> t2(f1) -> t1(f1)
+CREATE TABLE t22 (f1 INT PRIMARY KEY, f2 INT,
+FOREIGN KEY(f1) REFERENCES t2(f1) ON DELETE CASCADE ON UPDATE CASCADE) ENGINE=INNODB;
+INSERT INTO t1 VALUES (10), (20), (30);
+INSERT INTO t2 VALUES (10, 10), (20, 20), (30, 30);
+INSERT INTO t3 VALUES (10, 10), (20, 20), (30, 30);
+INSERT INTO t22 VALUES (10, 10), (20, 20), (30, 30);
+SELECT * FROM t1 ORDER BY f1;
+f1
+10
+20
+30
+SELECT * FROM t2 ORDER BY f1;
+f1	f2
+10	10
+20	20
+30	30
+SELECT * FROM t3 ORDER BY f1;
+f1	f2
+10	10
+20	20
+30	30
+SELECT * FROM t22 ORDER BY f1;
+f1	f2
+10	10
+20	20
+30	30
+include/rpl/sync_to_replica.inc
+#Replica
+SELECT * FROM t1 ORDER BY f1;
+f1
+10
+20
+30
+SELECT * FROM t2 ORDER BY f1;
+f1	f2
+10	10
+20	20
+30	30
+SELECT * FROM t3 ORDER BY f1;
+f1	f2
+10	10
+20	20
+30	30
+SELECT * FROM t22 ORDER BY f1;
+f1	f2
+10	10
+20	20
+30	30
+#Source
+# Update row in t1 and verify that it cascades to t2 and t3 correctly on
+#  both the master and replica.
+UPDATE t1 SET f1=50 where f1=20;
+# Delete a row from t1 and verify that it cascades to t2 and t3 correctly on
+#  both the master and replica.
+DELETE FROM t1 where f1=10;
+SHOW VARIABLES LIKE '%innodb_native_foreign_key%';
+Variable_name	Value
+innodb_native_foreign_keys	OFF
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+t1	1	1
+t2	1	1
+t22	1	1
+t3	2	0
+SELECT * FROM t1 ORDER BY f1;
+f1
+30
+50
+SELECT * FROM t2 ORDER BY f1;
+f1	f2
+30	30
+50	20
+SELECT * FROM t3 ORDER BY f1;
+f1	f2
+10	NULL
+20	NULL
+30	30
+SELECT * FROM t22 ORDER BY f1;
+f1	f2
+30	30
+50	20
+include/rpl/sync_to_replica.inc
+#Replica
+SHOW VARIABLES LIKE '%innodb_native_foreign_key%';
+Variable_name	Value
+innodb_native_foreign_keys	OFF
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+t1	1	1
+t2	1	1
+t22	1	1
+t3	2	0
+SELECT * FROM t1 ORDER BY f1;
+f1
+30
+50
+SELECT * FROM t2 ORDER BY f1;
+f1	f2
+30	30
+50	20
+SELECT * FROM t3 ORDER BY f1;
+f1	f2
+10	NULL
+20	NULL
+30	30
+SELECT * FROM t22 ORDER BY f1;
+f1	f2
+30	30
+50	20
+drop table t3,t22, t2,t1;
+include/rpl/deinit.inc

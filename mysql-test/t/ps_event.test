@@ -184,8 +184,13 @@ DELIMITER ;$
 
 CALL event_creator();
 EXECUTE ce;
-DROP EVENT e1;
+let $wait_condition=
+  SELECT COUNT(*) = 0 FROM information_schema.events WHERE EVENT_NAME = 'e1';
+--source include/wait_condition.inc
 EXECUTE ce;
-DROP EVENT e1;
 DEALLOCATE PREPARE ce;
 DROP PROCEDURE event_creator;
+let $wait_condition=
+  SELECT COUNT(*) = 0 FROM information_schema.events WHERE EVENT_NAME = 'e1';
+--source include/wait_condition.inc
+

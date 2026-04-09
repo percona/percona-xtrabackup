@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -124,22 +124,13 @@ TARGET_COMPILE_DEFINITIONS(mysqlxmessages_shared
 TARGET_COMPILE_OPTIONS(mysqlxmessages_shared
   PUBLIC $<TARGET_PROPERTY:mysqlxmessages,INTERFACE_COMPILE_OPTIONS>)
 
-# get the INCLUDE_DIRECTORIES manually, as cmake 3.6.x will fail if
-#
-#   $<TARGET_PROPERTY,mysqlxmessages:INCLUDE_DIRECTORIES>
-#
-# is used in TARGET_INCLUDE_DIRECTORIES().
-
-GET_TARGET_PROPERTY(XMSG_INC_DIRS mysqlxmessages
-  INCLUDE_DIRECTORIES)
-GET_TARGET_PROPERTY(XMSG_SYS_INC_DIRS mysqlxmessages
-  INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
-
 TARGET_INCLUDE_DIRECTORIES(mysqlxmessages_shared
-  PRIVATE ${XMSG_INC_DIRS})
+  PRIVATE $<TARGET_PROPERTY:mysqlxmessages,INCLUDE_DIRECTORIES>
+  )
 TARGET_INCLUDE_DIRECTORIES(mysqlxmessages_shared
-  SYSTEM PUBLIC ${XMSG_SYS_INC_DIRS})
-
+  SYSTEM PUBLIC
+  $<TARGET_PROPERTY:mysqlxmessages,INTERFACE_SYSTEM_INCLUDE_DIRECTORIES>
+  )
 
 MYSQL_PROTOBUF_GENERATE_CPP_LIBRARY(
   ${PROTOBUF_LITE_LIB_NAME}

@@ -1,0 +1,8 @@
+-- source include/have_ndb.inc
+-- source include/have_hypergraph.inc
+
+set explain_format=tree;
+--source condition_pushdown.inc
+set explain_format=default;
+
+--source include/disable_hypergraph.inc

@@ -1,6 +1,8 @@
 --source include/have_archive.inc
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 create table t1 (id int(8), name varchar(32));
 create table t2 (id int(8), name varchar(32)) ENGINE="MyISAM";
@@ -1114,3 +1116,5 @@ SELECT COUNT(*) FROM v1;
 
 DROP VIEW  v1;
 DROP TABLE t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

@@ -1,0 +1,82 @@
+# Verify authentication redirection query parameter.
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+create user mrsuser@'%' identified by 'S3kre7';
+grant all on *.* to mrsuser@'%';
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Create servcice without url-regex-redirection validation, check that basic validation is done:
+--echo #
+--echo # 1. host part contains control characters
+--echo # 2. double slashes after host
+--echo # 3. "@" to inject fake domains after it
+--echo # 4. double slashes without protocol
+--echo # 5. unknown protocol (allow only http, https)
+--echo # 6. no protocol selected
+--echo # 7. path part contains control characters
+--echo # 8. relative path, directory traversing
+--echo #
+--echo ## II. Create servcice with url-regex-redirection validation (accept alls), but basic validation takes precedense:
+--echo #
+--echo # 1. host part contains control characters
+--echo # 2. double slashes after host
+--echo # 3. "@" to inject fake domains after it
+--echo # 4. double slashes without protocol
+--echo # 5. unknown protocol (allow only http, https)
+--echo # 6. no protocol selected
+--echo # 7. path part contains control characters
+--echo # 8. relative path, directory traversing
+--echo #
+--echo ## III. Execute user redirection, but change the target URL
+--echo #
+--echo # 1. all fragments must be reseted
+--echo #
+
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc_no_valid"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_service_path="/svc_open_valid"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_url_validation=".*"
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_auth_app=Internal
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_services=('/svc_no_valid', '/svc_open_valid')
+--source ../include/mrs/auth_app/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+# No object defined.
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $test_service=svc_no_valid
+--source ../include/test/authentication_redirect.inc
+
+--let $test_service=svc_open_valid
+--source ../include/test/authentication_redirect.inc
+
+--echo
+--echo #
+--echo # III.1
+--let $mrs_client_arg_path='/svc_no_valid/authentication/login?onCompletionRedirect=/path1/#fragment'
+--let $mrs_client_arg_authentication=basic
+--let $mrs_client_arg_user=mrsuser
+--let $mrs_client_arg_password=S3kre7
+--let $mrs_client_arg_expect_header=Location
+--let $mrs_client_arg_expect_header_value="/path1/?authApp=Internal&login=success"
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+drop user mrsuser@'%';
+--source ../include/mrs/cleanup.inc

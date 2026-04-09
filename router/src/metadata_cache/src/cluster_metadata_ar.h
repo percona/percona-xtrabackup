@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -72,9 +72,10 @@ class METADATA_CACHE_EXPORT ARClusterMetadata : public ClusterMetadata {
    * @param needs_writable_node flag indicating if the caller needs us to query
    * for writable node
    * @param [out] instance_id id of the server the metadata was fetched from
+   * @param routing_guidelines Routing Guidelines document
    * @return object containing cluster topology information in case of success,
    * or error code in case of failure
-   * @throws metadata_cache::metadata_error
+   * @throws metadata_cache::metadata_error If fetching metadata fails.
    */
   stdx::expected<metadata_cache::ClusterTopology, std::error_code>
   fetch_cluster_topology(
@@ -82,7 +83,7 @@ class METADATA_CACHE_EXPORT ARClusterMetadata : public ClusterMetadata {
       mysqlrouter::TargetCluster &target_cluster, const unsigned router_id,
       const metadata_cache::metadata_servers_list_t &metadata_servers,
       bool needs_writable_node, const std::string & /*clusterset_id*/,
-      bool /*whole_topology*/, std::size_t &instance_id) override;
+      std::size_t &instance_id, std::string &routing_guidelines) override;
 
   /** @brief Returns cluster type this object is suppsed to handle
    */

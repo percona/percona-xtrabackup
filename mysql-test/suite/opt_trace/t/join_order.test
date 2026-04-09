@@ -2,6 +2,7 @@
 --source include/have_hypergraph.inc # join_order is shown only in hypergraph
 --source include/no_cursor_protocol.inc
 --source include/no_sp_protocol.inc
+--source include/elide_costs.inc
 
 --echo #
 --echo # Bug#34299473: Hypergraph : More join order information in the optimizer
@@ -27,6 +28,7 @@ analyze table t1;
 select * from t1, t1 t2, t1 t3 where t1.id = t2.id and t2.id = t3.id;
 
 eval $insert_stmt;
+--replace_regex $elide_trace_costs_and_rows
 eval $select_stmt;
 
 drop table t1;
@@ -44,6 +46,7 @@ with x1 as (select max(a) as m1 from t1 group by b)
     where y1.b+y2.b = (select max(m1) from x1);
 
 eval $insert_stmt;
+--replace_regex $elide_trace_costs_and_rows
 eval $select_stmt;
 
 drop table t1;

@@ -67,7 +67,6 @@ SET @saved_binlog_order_commits = @@GLOBAL.binlog_order_commits;
 SET @saved_binlog_rows_query_log_events = @@GLOBAL.binlog_rows_query_log_events;
 SET @saved_binlog_stmt_cache_size = @@GLOBAL.binlog_stmt_cache_size;
 
-SET @saved_gr_allow_local_lower_version_join = @@GLOBAL.group_replication_allow_local_lower_version_join;
 SET @saved_gr_auto_increment_increment = @@GLOBAL.group_replication_auto_increment_increment;
 SET @saved_gr_bootstrap_group = @@GLOBAL.group_replication_bootstrap_group;
 SET @saved_gr_components_stop_timeout = @@GLOBAL.group_replication_components_stop_timeout;
@@ -112,7 +111,6 @@ SET GLOBAL binlog_order_commits=true;
 SET GLOBAL binlog_rows_query_log_events= ON;
 SET GLOBAL binlog_stmt_cache_size= 4096;
 
-SET GLOBAL group_replication_allow_local_lower_version_join= ON;
 SET GLOBAL group_replication_auto_increment_increment= 5;
 SET GLOBAL group_replication_bootstrap_group= ON;
 SET GLOBAL group_replication_components_stop_timeout= 10;
@@ -158,7 +156,6 @@ SET @@GLOBAL.binlog_order_commits = @saved_binlog_order_commits;
 SET @@GLOBAL.binlog_rows_query_log_events = @saved_binlog_rows_query_log_events;
 SET @@GLOBAL.binlog_stmt_cache_size = @saved_binlog_stmt_cache_size;
 
-SET @@GLOBAL.group_replication_allow_local_lower_version_join= @saved_gr_allow_local_lower_version_join;
 SET @@GLOBAL.group_replication_auto_increment_increment= @saved_gr_auto_increment_increment;
 SET @@GLOBAL.group_replication_bootstrap_group= @saved_gr_bootstrap_group;
 SET @@GLOBAL.group_replication_components_stop_timeout= @saved_gr_components_stop_timeout;

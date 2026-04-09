@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2020, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@ const std::string &Challenge_response_verification::get_salt() const {
 
 std::string Challenge_response_verification::generate_salt() {
   std::string salt(SCRAMBLE_LENGTH, '\0');
-  ::generate_user_salt(&salt[0], static_cast<int>(salt.size()));
+  ::generate_user_salt(salt.data(), static_cast<int>(salt.size()));
   return salt;
 }
 

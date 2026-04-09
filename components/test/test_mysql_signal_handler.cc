@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/services/mysql_signal_handler.h>
 #include <cassert>
 #ifndef _WIN32
-#include <signal.h>  // SIGSEGV, siginfo_t
 #include <unistd.h>
+#include <csignal>  // SIGSEGV, siginfo_t
 #else
 #include <Windows.h>  // GetStdHandle, STD_ERROR_HANDLE
 #include <fileapi.h>  // WriteFile, SetFilePointer
@@ -65,7 +65,8 @@ static auto test_fatal_signal_callback(int signum,
     -> void {
   assert(signum == SIGSEGV);
   if (signum != SIGSEGV) return;
-  auto message = "Signal from the test_mysql_signal_handler component.\n";
+  const auto *message =
+      "Signal from the test_mysql_signal_handler component.\n";
   safe_write_stderr(message, strlen(message));
 }
 

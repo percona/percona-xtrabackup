@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -702,24 +702,23 @@ static bool login_connection(THD *thd) {
              ("login_connection called by thread %u", thd->thread_id()));
 
   /* Use "connect_timeout" value during connection phase */
-  thd->get_protocol_classic()->set_read_timeout(connect_timeout, true);
-  thd->get_protocol_classic()->set_write_timeout(connect_timeout);
+  Protocol_classic *protocol = thd->get_protocol_classic();
+  protocol->set_read_timeout(connect_timeout, true);
+  protocol->set_write_timeout(connect_timeout);
 
   error = check_connection(thd);
   thd->send_statement_status();
 
   if (error) {  // Wrong permissions
 #ifdef _WIN32
-    if (vio_type(thd->get_protocol_classic()->get_vio()) == VIO_TYPE_NAMEDPIPE)
+    if (vio_type(protocol->get_vio()) == VIO_TYPE_NAMEDPIPE)
       my_sleep(1000); /* must wait after eof() */
 #endif
     return true;
   }
   /* Connect completed, set read/write timeouts back to default */
-  thd->get_protocol_classic()->set_read_timeout(
-      thd->variables.net_read_timeout);
-  thd->get_protocol_classic()->set_write_timeout(
-      thd->variables.net_write_timeout);
+  protocol->set_read_timeout(thd->variables.net_read_timeout);
+  protocol->set_write_timeout(thd->variables.net_write_timeout);
   return false;
 }
 
@@ -778,16 +777,16 @@ static void prepare_new_connection_state(THD *thd) {
   NET *net = thd->get_protocol_classic()->get_net();
   Security_context *sctx = thd->security_context();
 
-  if (thd->get_protocol()->has_client_capability(CLIENT_COMPRESS) ||
-      thd->get_protocol()->has_client_capability(
-          CLIENT_ZSTD_COMPRESSION_ALGORITHM)) {
+  Protocol *protocol = thd->get_protocol();
+  if (protocol->has_client_capability(CLIENT_COMPRESS) ||
+      protocol->has_client_capability(CLIENT_ZSTD_COMPRESSION_ALGORITHM)) {
     net->compress = true;  // Use compression
-    const enum enum_compression_algorithm algorithm = get_compression_algorithm(
-        thd->get_protocol()->get_compression_algorithm());
+    const enum enum_compression_algorithm algorithm =
+        get_compression_algorithm(protocol->get_compression_algorithm());
     NET_SERVER *server_extn = static_cast<NET_SERVER *>(net->extension);
     if (server_extn != nullptr)
       mysql_compress_context_init(&server_extn->compress_ctx, algorithm,
-                                  thd->get_protocol()->get_compression_level());
+                                  protocol->get_compression_level());
     if (net->extension == nullptr) {
       const LEX_CSTRING sctx_user = sctx->user();
       Host_errors errors;

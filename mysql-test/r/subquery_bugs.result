@@ -837,13 +837,13 @@ ST_POINTFROMTEXT(
 ST_ASWKT(
 NOT EXISTS(
 SELECT 1 FROM t1
-WHERE IS_UUID(CAST(SHA(a>>0xA7FE1B22)AS JSON)) WINDOW w1 AS()
+WHERE IS_UUID(CAST(SHA2(a>>0xA7FE1B22,256)AS JSON)) WINDOW w1 AS()
 ),'AXIS-ORDER=SRID-DEFINED'
       ),1,'AXIS-ORDER=LONG-LAT'
     )
 )
 );
-ERROR 22032: Invalid JSON text in argument 1 to function cast_as_json: "The document root must not be followed by other values." at position 4.
+ERROR 22032: Invalid JSON text in argument 1 to function cast_as_json: "The document root must not be followed by other values." at position 6.
 DROP TABLE t1;
 #
 # Bug#29669840 REGRESSION: CRASH IN DECIMAL_ADD()
@@ -2459,3 +2459,65 @@ HAVING 1 IN (SELECT min(x.x) FROM (SELECT 1) AS w(w))
 )
 WHERE 1 = 2;
 col
+#
+# Bug#37243446: Assertion: item->contextualized in Item::Item
+#
+CREATE TABLE t (c integer);
+SELECT (SELECT t.c FROM t) AS f FROM t
+UNION ALL
+SELECT 1 FROM t;
+f
+SELECT c IN (SELECT t.c FROM t) AS f FROM t
+UNION ALL
+SELECT 1 FROM t;
+f
+SELECT c >ANY (SELECT t.c FROM t) AS f FROM t
+UNION ALL
+SELECT 1 FROM t;
+f
+SELECT EXISTS (SELECT t.c FROM t) AS f FROM t
+UNION ALL
+SELECT 1 FROM t;
+f
+DROP TABLE t;
+#
+# Bug#37587388:Assertion failure at 'strategy == Subquery_strategy::
+#              CANDIDATE_FOR_IN2EXISTS_OR_MAT' in item_subselect.cc
+#
+CREATE TABLE t1 (f1 INTEGER);
+SELECT f1 FROM t1
+WHERE (f1 = ANY(SELECT f1 FROM t1)) OR (f1 IN (SELECT RANK() OVER () FROM t1));
+f1
+DROP TABLE t1;
+#
+# Bug#38110792 The missing semi join condition causes incorrect result
+#
+CREATE TABLE t1 (id INT);
+CREATE TABLE t2 (id INT);
+CREATE VIEW v1 AS SELECT abs(t1.id) AS id FROM t1 LEFT JOIN t2 ON t1.id = t2.id;
+INSERT INTO t1 VALUES (1), (2);
+INSERT INTO t2 VALUES (1), (2);
+SET optimizer_switch='loosescan=off,firstmatch=off,duplicateweedout=off';
+EXPLAIN FORMAT=tree SELECT /*+ JOIN_SUFFIX(t1, t2) */ * FROM v1 WHERE v1.id IN (SELECT id FROM v1);
+EXPLAIN
+-> Left hash join (t2.id = t1.id)  (rows=16)
+    -> Inner hash join (abs(t1.id) = `<subquery2>`.id)  (rows=8)
+        -> Table scan on t1  (rows=2)
+        -> Hash
+            -> Table scan on <subquery2>  (rows=4)
+                -> Materialize with deduplication  (rows=4)
+                    -> Filter: (abs(t1.id) is not null)  (rows=4)
+                        -> Left hash join (t1.id = t2.id)  (rows=4)
+                            -> Table scan on t1  (rows=2)
+                            -> Hash
+                                -> Table scan on t2  (rows=2)
+    -> Hash
+        -> Table scan on t2  (rows=2)
+
+SELECT /*+ JOIN_SUFFIX(t1, t2) */ * FROM v1 WHERE v1.id IN (SELECT id FROM v1);
+id
+1
+2
+DROP TABLE t1,t2;
+DROP VIEW v1;
+SET optimizer_switch = default;

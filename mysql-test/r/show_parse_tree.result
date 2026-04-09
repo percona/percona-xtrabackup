@@ -163,12 +163,18 @@ Show_parse_tree
                       "func_name": "func",
                       "components": [
                         {
-                          "text": "c",
-                          "type": "PTI_udf_expr",
+                          "text": "func(c)",
+                          "type": "Item_func_sp",
                           "components": [
                             {
                               "text": "c",
-                              "type": "PTI_simple_ident_ident"
+                              "type": "PTI_udf_expr",
+                              "components": [
+                                {
+                                  "text": "c",
+                                  "type": "PTI_simple_ident_ident"
+                                }
+                              ]
                             }
                           ]
                         }
@@ -2450,7 +2456,13 @@ Show_parse_tree
                     {
                       "text": "db.func()",
                       "type": "PTI_function_call_generic_2d",
-                      "func_name": "`db`.`func`"
+                      "func_name": "`db`.`func`",
+                      "components": [
+                        {
+                          "text": "db.func()",
+                          "type": "Item_func_sp"
+                        }
+                      ]
                     }
                   ]
                 },
@@ -2500,22 +2512,29 @@ Show_parse_tree
                       "func_name": "concat",
                       "components": [
                         {
-                          "text": "a",
-                          "type": "PTI_udf_expr",
+                          "text": "concat(a,b)",
+                          "type": "Item_func_concat",
+                          "func_name": "concat",
                           "components": [
                             {
                               "text": "a",
-                              "type": "PTI_simple_ident_ident"
-                            }
-                          ]
-                        },
-                        {
-                          "text": "b",
-                          "type": "PTI_udf_expr",
-                          "components": [
+                              "type": "PTI_udf_expr",
+                              "components": [
+                                {
+                                  "text": "a",
+                                  "type": "PTI_simple_ident_ident"
+                                }
+                              ]
+                            },
                             {
                               "text": "b",
-                              "type": "PTI_simple_ident_ident"
+                              "type": "PTI_udf_expr",
+                              "components": [
+                                {
+                                  "text": "b",
+                                  "type": "PTI_simple_ident_ident"
+                                }
+                              ]
                             }
                           ]
                         }
@@ -2538,22 +2557,29 @@ Show_parse_tree
                           "func_name": "concat",
                           "components": [
                             {
-                              "text": "a",
-                              "type": "PTI_udf_expr",
+                              "text": "concat(a,b)",
+                              "type": "Item_func_concat",
+                              "func_name": "concat",
                               "components": [
                                 {
                                   "text": "a",
-                                  "type": "PTI_simple_ident_ident"
-                                }
-                              ]
-                            },
-                            {
-                              "text": "b",
-                              "type": "PTI_udf_expr",
-                              "components": [
+                                  "type": "PTI_udf_expr",
+                                  "components": [
+                                    {
+                                      "text": "a",
+                                      "type": "PTI_simple_ident_ident"
+                                    }
+                                  ]
+                                },
                                 {
                                   "text": "b",
-                                  "type": "PTI_simple_ident_ident"
+                                  "type": "PTI_udf_expr",
+                                  "components": [
+                                    {
+                                      "text": "b",
+                                      "type": "PTI_simple_ident_ident"
+                                    }
+                                  ]
                                 }
                               ]
                             }

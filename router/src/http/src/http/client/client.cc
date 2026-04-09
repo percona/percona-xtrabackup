@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2024, Oracle and/or its affiliates.
+  Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -97,33 +97,6 @@ V value_or(V value_users, V value_default) {
   return value_users;
 }
 
-static Client::Endpoint get_endpoint_from(const http::base::Uri &url) {
-  static const std::map<std::string, impl::ConfigSchema> k_protocol_ports{
-      {k_http, {false, 80}}, {k_https, {true, 8080}}};
-  Client::Endpoint result;
-
-  auto scheme = value_or(url.get_scheme(), k_http);
-
-  auto port_it = k_protocol_ports.find(scheme);
-  if (port_it == k_protocol_ports.end()) {
-    throw make_error_code(FailureCode::kInvalidScheme);
-  }
-
-  result.port = url.get_port();
-  result.port = result.port > 0 ? result.port : port_it->second.port;
-  result.is_tls = port_it->second.is_tls;
-  result.host = url.get_host();
-
-  // Remove the URL notation for ipv6 addresses.
-  if (!result.host.empty()) {
-    if (*result.host.begin() == '[' && *result.host.rbegin() == ']') {
-      result.host = result.host.substr(1, result.host.length() - 2);
-    }
-  }
-
-  return result;
-}
-
 static const std::string &get_method_as_string(
     http::base::method::key_type method) {
   // Use the 'namespace' for readability of enumeration of
@@ -148,7 +121,7 @@ static const std::string &get_method_as_string(
   return it->second;
 }
 
-// `CallbakcsPrivateImpl` class is declared as private and
+// `CallbakcsImpl` class is declared as private and
 // its implemented later one.
 // To workaround the mentioned limitations, here we use it
 // as templated type.
@@ -185,12 +158,11 @@ impl::Connection create_connection_object(
 
 PayloadCallback::~PayloadCallback() = default;
 
-class Client::CallbacksPrivateImpl
-    : public PayloadCallback,
-      public ConnectionTls::ConnectionStatusCallbacks,
-      public ConnectionRaw::ConnectionStatusCallbacks {
+class Client::CallbacksImpl : public PayloadCallback,
+                              public ConnectionTls::ConnectionStatusCallbacks,
+                              public ConnectionRaw::ConnectionStatusCallbacks {
  public:
-  explicit CallbacksPrivateImpl(Client *client) : parent_{client} {}
+  explicit CallbacksImpl(Client *client) : parent_{client} {}
 
  public:  // PayloadCallback
   void on_connection_ready() override;
@@ -214,19 +186,114 @@ class Client::CallbacksPrivateImpl
   Client *parent_;
 };
 
+#define PRINT_AND_CALL(X) \
+  print(#X);              \
+  X
+
+template <typename Callbacks>
+class TraceCallbacks : public Callbacks {
+ public:
+  template <typename... Args>
+  TraceCallbacks(Args &&...args)  // NOLINT(runtime/explicit)
+      : Callbacks{std::forward<Args>(args)...}, out_{&std::cout} {
+    print("ctor");
+  }
+
+  void on_connection_ready() override {
+    PRINT_AND_CALL(Callbacks::on_connection_ready());
+  }
+
+  void on_input_payload(const char *data, size_t size) override {
+    PRINT_AND_CALL(Callbacks::on_input_payload(data, size));
+  }
+  void on_input_begin(int status_code,
+                      const std::string &status_text) override {
+    PRINT_AND_CALL(Callbacks::on_input_begin(status_code, status_text));
+  }
+  void on_input_end() override { PRINT_AND_CALL(Callbacks::on_input_end()); }
+  void on_input_header(std::string &&key, std::string &&value) override {
+    PRINT_AND_CALL(
+        Callbacks::on_input_header(std::move(key), std::move(value)));
+  }
+  void on_output_end_payload() override {
+    PRINT_AND_CALL(Callbacks::on_output_end_payload());
+  }
+
+ public:  // ConnectionTls::ConnectionStatusCallbacks
+  void on_connection_close(ConnectionTls::Parent *connection) override {
+    PRINT_AND_CALL(Callbacks::on_connection_close(connection));
+  }
+  void on_connection_io_error(ConnectionTls::Parent *connection,
+                              const std::error_code &ec) override {
+    PRINT_AND_CALL(Callbacks::on_connection_io_error(connection, ec));
+  }
+
+ public:  // ConnectionRaw::ConnectionStatusCallbacks
+  void on_connection_close(ConnectionRaw::Parent *connection) override {
+    PRINT_AND_CALL(Callbacks::on_connection_close(connection));
+  }
+  void on_connection_io_error(ConnectionRaw::Parent *connection,
+                              const std::error_code &ec) override {
+    PRINT_AND_CALL(Callbacks::on_connection_io_error(connection, ec));
+  }
+
+  std::ostream *out_;
+  template <typename... Args>
+  void print(const Args &...args) {
+    *out_ << "this:" << this << ", thread:" << std::this_thread::get_id()
+          << ": ";
+    ((*out_ << args), ...);
+    *out_ << std::endl;
+    out_->flush();
+  }
+};
+
+#undef PRINT_AND_CALL
+
+// Choose one of following.
+using UsedCallbackImpl = Client::CallbacksImpl;
+// TraceCallbacks<Client::CallbacksImpl>;
+
 Client::Client(io_context &io_context, TlsClientContext &&tls_context,
                bool use_http2)
     : io_context_{io_context},
       tls_context_{std::move(tls_context)},
-      callbacks_{std::make_unique<CallbacksPrivateImpl>(this)},
+      callbacks_{std::make_unique<UsedCallbackImpl>(this)},
       use_http2_{use_http2} {}
 
 Client::Client(io_context &io_context, const bool use_http2)
     : io_context_{io_context},
-      callbacks_{std::make_unique<CallbacksPrivateImpl>(this)},
+      callbacks_{std::make_unique<UsedCallbackImpl>(this)},
       use_http2_{use_http2} {}
 
 Client::~Client() = default;
+
+Client::Endpoint Client::get_endpoint_from(const http::base::Uri &url) {
+  static const std::map<std::string, impl::ConfigSchema> k_protocol_ports{
+      {k_http, {false, 80}}, {k_https, {true, 443}}};
+  Client::Endpoint result;
+
+  auto scheme = impl::value_or(url.get_scheme(), k_http);
+
+  auto port_it = k_protocol_ports.find(scheme);
+  if (port_it == k_protocol_ports.end()) {
+    throw make_error_code(FailureCode::kInvalidScheme);
+  }
+
+  result.port = url.get_port();
+  result.port = url.get_port() > 0 ? result.port : port_it->second.port;
+  result.is_tls = port_it->second.is_tls;
+  result.host = url.get_host();
+
+  // Remove the URL notation for ipv6 addresses.
+  if (!result.host.empty()) {
+    if (*result.host.begin() == '[' && *result.host.rbegin() == ']') {
+      result.host = result.host.substr(1, result.host.length() - 2);
+    }
+  }
+
+  return result;
+}
 
 void Client::async_send_request(http::client::Request *request) {
   using namespace std::string_literals;
@@ -237,15 +304,15 @@ void Client::async_send_request(http::client::Request *request) {
     request->holder_->status = 0;
     request->holder_->status_text.clear();
 
-    if (!url) throw make_error_code(FailureCode::kInvalidUrl);
+    if (url.empty()) throw make_error_code(FailureCode::kInvalidUrl);
 
-    auto endpoint = impl::get_endpoint_from(url);
+    auto endpoint = get_endpoint_from(url);
 
     if (endpoint.host.empty())
       throw make_error_code(FailureCode::kInvalidHostname);
 
     auto &headers = request->get_output_headers();
-    headers.add("Host", std::string(endpoint.host));
+    impl::headers_add_if_not_present(&headers, "Host", endpoint.host.c_str());
     impl::headers_add_if_not_present(
         &headers, "User-Agent", "router-http-client/" MYSQL_ROUTER_VERSION);
     impl::headers_add_if_not_present(&headers, "Accept", "*/*");
@@ -350,7 +417,7 @@ std::string Client::error_message() const { return error_code_.message(); }
 
 const Client::Statistics &Client::statistics() const { return statistics_; }
 
-void Client::CallbacksPrivateImpl::on_input_begin(
+void Client::CallbacksImpl::on_input_begin(
     int status_code, [[maybe_unused]] const std::string &status_text) {
   auto *holder = parent_->fill_request_by_callback_->holder_.get();
   holder->status = status_code;
@@ -359,7 +426,7 @@ void Client::CallbacksPrivateImpl::on_input_begin(
   holder->buffer_input.clear();
 }
 
-void Client::CallbacksPrivateImpl::on_input_end() {
+void Client::CallbacksImpl::on_input_end() {
   bool close_connection = false;
   auto &oh = parent_->fill_request_by_callback_->get_output_headers();
   auto &ih = parent_->fill_request_by_callback_->get_input_headers();
@@ -377,17 +444,17 @@ void Client::CallbacksPrivateImpl::on_input_end() {
   }
 }
 
-void Client::CallbacksPrivateImpl::on_output_end_payload() {
+void Client::CallbacksImpl::on_output_end_payload() {
   if (!parent_->use_http2_) parent_->connection_->start();
 }
 
-void Client::CallbacksPrivateImpl::on_input_header(std::string &&key,
-                                                   std::string &&value) {
+void Client::CallbacksImpl::on_input_header(std::string &&key,
+                                            std::string &&value) {
   parent_->fill_request_by_callback_->holder_->headers_input.add(
       std::move(key), std::move(value));
 }
 
-void Client::CallbacksPrivateImpl::on_connection_ready() {
+void Client::CallbacksImpl::on_connection_ready() {
   auto request = parent_->fill_request_by_callback_;
   const auto &url = request->get_uri();
   const auto &method = impl::get_method_as_string(request->get_method());
@@ -396,19 +463,18 @@ void Client::CallbacksPrivateImpl::on_connection_ready() {
                              request->get_output_buffer());
 }
 
-void Client::CallbacksPrivateImpl::on_input_payload(const char *data,
-                                                    size_t size) {
+void Client::CallbacksImpl::on_input_payload(const char *data, size_t size) {
   parent_->fill_request_by_callback_->holder_->buffer_input.get().append(data,
                                                                          size);
 }
 
-void Client::CallbacksPrivateImpl::on_connection_close(
+void Client::CallbacksImpl::on_connection_close(
     ConnectionTls::Parent *connection) {
   connection->get_socket().close();
   parent_->is_connected_ = false;
 }
 
-void Client::CallbacksPrivateImpl::on_connection_io_error(
+void Client::CallbacksImpl::on_connection_io_error(
     [[maybe_unused]] ConnectionTls::Parent *connection,
     const std::error_code &ec) {
   parent_->error_code_ = ec;
@@ -420,13 +486,13 @@ void Client::CallbacksPrivateImpl::on_connection_io_error(
   }
 }
 
-void Client::CallbacksPrivateImpl::on_connection_close(
+void Client::CallbacksImpl::on_connection_close(
     ConnectionRaw::Parent *connection) {
   connection->get_socket().close();
   parent_->is_connected_ = false;
 }
 
-void Client::CallbacksPrivateImpl::on_connection_io_error(
+void Client::CallbacksImpl::on_connection_io_error(
     [[maybe_unused]] ConnectionRaw::Parent *connection,
     const std::error_code &ec) {
   parent_->error_code_ = ec;

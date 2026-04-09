@@ -10,7 +10,7 @@ userX
 userY
 # Case 1 : Try removing a non-existing user
 DROP USER userX, userY, userZ;
-ERROR HY000: Operation DROP USER failed for 'userZ'@'%'
+ERROR HY000: Operation DROP USER failed for 'userZ'@'%' (User account does not exist)
 # Must show userX and userY
 SELECT user FROM mysql.user WHERE user LIKE 'user%';
 user

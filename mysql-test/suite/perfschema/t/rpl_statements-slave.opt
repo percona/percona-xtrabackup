@@ -1,2 +1,2 @@
 --binlog-format=mixed
---replica-parallel-workers=0
+--replica-parallel-workers=1

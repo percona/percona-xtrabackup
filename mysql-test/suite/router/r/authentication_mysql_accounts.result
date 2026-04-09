@@ -1,0 +1,87 @@
+INSTALL PLUGIN mysql_no_login SONAME 'mysql_no_login.so';
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE USER user_valid@'%' IDENTIFIED BY 'pwd';
+CREATE USER user_valid_empty_pass@'%' IDENTIFIED BY '';
+CREATE USER user_no_login@'%' IDENTIFIED WITH 'mysql_no_login' AS 'pwd';
+CREATE USER user_wrong_host@'not-existing-invalid-host' IDENTIFIED BY 'pwd';
+CREATE USER user_locked@'%' IDENTIFIED BY 'pwd' ACCOUNT LOCK;
+GRANT ALL ON *.* TO user_no_login@'%';
+GRANT ALL ON *.* TO user_wrong_host@'not-existing-invalid-host';
+GRANT ALL ON *.* TO user_locked@'%';
+
+
+## I. Create service and MySQL authentication application,
+##    that is not locked just to existing accounts:
+#
+# 1. verify that MySQL internal auth-app is configured,
+# 2. verify that valid MySQL account may be used with the auth-app,
+# 3. verify that invalid/not-matching MySQL accounts are rejected by auth-app,
+# 4. verify that authentication with invalid password is rejected,
+# 5. verify that MySQL accounts without a password are rejected by auth-app,
+#
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/tab
+# Registred AUTH APP at path: /svc
+
+#
+# I.1
+GET /svc/authentication/authApps
+[
+    {
+        "name": "default authentication1",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# I.2
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+
+#
+# I.3
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+
+#
+# I.4
+GET /svc/authentication/login
+
+OK
+
+#
+# I.5
+GET /svc/authentication/login
+
+OK
+DROP USER user_valid@'%';
+DROP USER user_valid_empty_pass@'%';
+DROP USER user_no_login@'%';
+DROP USER user_wrong_host@'not-existing-invalid-host';
+DROP USER user_locked@'%';
+UNINSTALL PLUGIN mysql_no_login;
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_dev;
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'mysql_rest_service_meta_provider';
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'mysql_rest_service_data_provider';
+GRANT mysql_rest_service_meta_provider TO mrs_user WITH ADMIN OPTION;
+GRANT mysql_rest_service_data_provider TO mrs_user WITH ADMIN OPTION;

@@ -1,3 +1,5 @@
+--source include/not_hypergraph.inc
+
 --echo #
 --echo #  WL#6266 Make use of hidden key parts
 --echo #

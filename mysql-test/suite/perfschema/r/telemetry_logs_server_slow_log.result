@@ -1,0 +1,156 @@
+#########
+# SETUP #
+#########
+call mtr.add_suppression("Test message #33");
+UPDATE performance_schema.setup_loggers SET level='none';
+INSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
+INSTALL COMPONENT 'file://component_test_server_telemetry_logs_client';
+SET @old_log_output=       @@global.log_output;
+SET @old_slow_query_log=   @@global.slow_query_log;
+SET @old_long_query_time=  @@session.long_query_time;
+SET GLOBAL log_output="FILE,TABLE";
+TRUNCATE TABLE mysql.slow_log;
+SET GLOBAL slow_query_log=ON;
+##############
+# Operations #
+##############
+# List available loggers
+SELECT * FROM performance_schema.setup_loggers;
+NAME	LEVEL	DESCRIPTION
+logger/sql/error_log	none	MySQL error logger
+logger/sql/slow_log	none	MySQL slow query logger
+logger/sql/general_log	none	MySQL general logger
+logger/test_logs_componentA/test1	info	Test logger #1
+logger/test_logs_componentA/test2	info	Test logger #2
+# No message should not be logged by OTEL logger when level = none
+UPDATE performance_schema.setup_loggers SET level='none';
+SELECT * FROM performance_schema.setup_loggers;
+NAME	LEVEL	DESCRIPTION
+logger/sql/error_log	none	MySQL error logger
+logger/sql/slow_log	none	MySQL slow query logger
+logger/sql/general_log	none	MySQL general logger
+logger/test_logs_componentA/test1	none	Test logger #1
+logger/test_logs_componentA/test2	none	Test logger #2
+set session long_query_time=0.3;
+select sleep(0.5) AS query1;
+select * from mysql.slow_log;
+start_time	user_host	query_time	lock_time	rows_sent	rows_examined	db	last_insert_id	insert_id	server_id	sql_text	thread_id
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	1	1	test	0	0	1	select sleep(0.5) AS query1	THREAD_ID
+# Slow log gets logged by OTEL logger when level = warn
+UPDATE performance_schema.setup_loggers SET level='warn' WHERE name='logger/sql/slow_log';
+select sleep(0.5) AS query2;
+select * from mysql.slow_log;
+start_time	user_host	query_time	lock_time	rows_sent	rows_examined	db	last_insert_id	insert_id	server_id	sql_text	thread_id
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	1	1	test	0	0	1	select sleep(0.5) AS query1	THREAD_ID
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	1	1	test	0	0	1	select sleep(0.5) AS query2	THREAD_ID
+# Slow log gets logged by OTEL logger regardless of log_output setting
+SET GLOBAL log_output="NONE";
+select sleep(0.5) AS query3;
+select * from mysql.slow_log;
+start_time	user_host	query_time	lock_time	rows_sent	rows_examined	db	last_insert_id	insert_id	server_id	sql_text	thread_id
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	1	1	test	0	0	1	select sleep(0.5) AS query1	THREAD_ID
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	1	1	test	0	0	1	select sleep(0.5) AS query2	THREAD_ID
+# Slow log does not expose secrets within the OTEL logger
+SET GLOBAL log_output="TABLE";
+set session long_query_time=0;
+CREATE USER u1@localhost IDENTIFIED BY 'abcd';
+set session long_query_time=0.3;
+select * from mysql.general_log;
+event_time	user_host	thread_id	server_id	command_type	argument
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	TRUNCATE TABLE mysql.slow_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET GLOBAL slow_query_log=ON
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SELECT * FROM performance_schema.setup_loggers
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='none'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SELECT * FROM performance_schema.setup_loggers
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	set session long_query_time=0.3
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select sleep(0.5) AS query1
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.slow_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='warn' WHERE name='logger/sql/slow_log'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select sleep(0.5) AS query2
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.slow_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET GLOBAL log_output="NONE"
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	set session long_query_time=0
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	set session long_query_time=0.3
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+# Slow log exports extra fields if log_slow_extra set
+SET GLOBAL log_slow_extra=1;
+Warnings:
+Warning	3795	slow query log file format changed as requested, but setting will have no effect when not actually logging to a file.
+select sleep(0.5) AS query4;
+select * from mysql.general_log;
+event_time	user_host	thread_id	server_id	command_type	argument
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	TRUNCATE TABLE mysql.slow_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET GLOBAL slow_query_log=ON
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SELECT * FROM performance_schema.setup_loggers
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='none'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SELECT * FROM performance_schema.setup_loggers
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	set session long_query_time=0.3
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select sleep(0.5) AS query1
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.slow_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='warn' WHERE name='logger/sql/slow_log'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select sleep(0.5) AS query2
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.slow_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET GLOBAL log_output="NONE"
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	set session long_query_time=0
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	set session long_query_time=0.3
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET GLOBAL log_slow_extra=1
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SHOW WARNINGS
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select sleep(0.5) AS query4
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+SET GLOBAL log_slow_extra=0;
+Warnings:
+Warning	3795	slow query log file format changed as requested, but setting will have no effect when not actually logging to a file.
+# Slow log gets logged by OTEL logger even if slow log disabled
+SET GLOBAL slow_query_log=OFF;
+select sleep(0.5) AS query5;
+select * from mysql.slow_log;
+start_time	user_host	query_time	lock_time	rows_sent	rows_examined	db	last_insert_id	insert_id	server_id	sql_text	thread_id
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	1	1	test	0	0	1	select sleep(0.5) AS query1	THREAD_ID
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	1	1	test	0	0	1	select sleep(0.5) AS query2	THREAD_ID
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	0	0	test	0	0	1	set session long_query_time=0	THREAD_ID
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	0	0	test	0	0	1	CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>	THREAD_ID
+TIMESTAMP	USER_HOST	QUERY_TIME	LOCK_TIME	1	1	test	0	0	1	select sleep(0.5) AS query4	THREAD_ID
+###########
+# CLEANUP #
+###########
+DROP USER u1@localhost;
+SET @@global.log_output = @old_log_output;
+SET @@global.slow_query_log = @old_slow_query_log;
+SET @@session.long_query_time = @old_long_query_time;
+SET @@global.log_slow_extra = default;
+TRUNCATE TABLE mysql.slow_log;
+TRUNCATE TABLE mysql.general_log;
+UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_client';
+UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
+Component logs (OTEL logger) should log only one entry:
+test_server_telemetry_logs_export_component_init init:
+ - Initialized log service.
+ - System variables registered.
+ - Telemetry logs callback registered.
+ - Telemetry logs UDFs registered.
+End of init
+test_server_telemetry_logs_client_component_init init:
+ - Initialized log service.
+ - Telemetry logs loggers registered.
+ - Telemetry logs UDFs registered.
+End of init
+telemetry_log_cb(logger/sql/slow_log): Log message 'select sleep(0.5) AS query2' (level=2/warn, attributes: 'priv_user'='root'; 'user'='root'; 'host'='localhost'; 'ip'=''; 'query'='select sleep(0.5) AS query2'; 'query_time'=NUMBER; 'lock_time'=NUMBER; 'is_command'=false; 'rows_sent'=NUMBER; 'rows_examined'=NUMBER; 'start'='TIMESTAMP'; 'end'='TIMESTAMP')
+telemetry_log_cb(logger/sql/slow_log): Log message 'select sleep(0.5) AS query3' (level=2/warn, attributes: 'priv_user'='root'; 'user'='root'; 'host'='localhost'; 'ip'=''; 'query'='select sleep(0.5) AS query3'; 'query_time'=NUMBER; 'lock_time'=NUMBER; 'is_command'=false; 'rows_sent'=NUMBER; 'rows_examined'=NUMBER; 'start'='TIMESTAMP'; 'end'='TIMESTAMP')
+telemetry_log_cb(logger/sql/slow_log): Log message 'set session long_query_time=0' (level=2/warn, attributes: 'priv_user'='root'; 'user'='root'; 'host'='localhost'; 'ip'=''; 'query'='set session long_query_time=0'; 'query_time'=NUMBER; 'lock_time'=NUMBER; 'is_command'=false; 'rows_sent'=NUMBER; 'rows_examined'=NUMBER; 'start'='TIMESTAMP'; 'end'='TIMESTAMP')
+telemetry_log_cb(logger/sql/slow_log): Log message 'CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>' (level=2/warn, attributes: 'priv_user'='root'; 'user'='root'; 'host'='localhost'; 'ip'=''; 'query'='CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>'; 'query_time'=NUMBER; 'lock_time'=NUMBER; 'is_command'=false; 'rows_sent'=NUMBER; 'rows_examined'=NUMBER; 'start'='TIMESTAMP'; 'end'='TIMESTAMP')
+telemetry_log_cb(logger/sql/slow_log): Log message 'select sleep(0.5) AS query4' (level=2/warn, attributes: 'priv_user'='root'; 'user'='root'; 'host'='localhost'; 'ip'=''; 'query'='select sleep(0.5) AS query4'; 'query_time'=NUMBER; 'lock_time'=NUMBER; 'is_command'=false; 'rows_sent'=NUMBER; 'rows_examined'=NUMBER; 'start'='TIMESTAMP'; 'end'='TIMESTAMP'; 'errno'=NUMBER; 'killed'=false; 'bytes_received'=NUMBER; 'bytes_sent'=NUMBER; 'read_first'=NUMBER; 'read_last'=NUMBER; 'read_key'=NUMBER; 'read_next'=NUMBER; 'read_prev'=NUMBER; 'read_rnd'=NUMBER; 'read_rnd_next'=NUMBER; 'sort_merge_passes'=NUMBER; 'sort_range_count'=NUMBER; 'sort_rows'=NUMBER; 'sort_scan_count'=NUMBER; 'created_tmp_disk_tables'=NUMBER; 'created_tmp_tables'=NUMBER; 'count_hit_tmp_table_size'=0)
+telemetry_log_cb(logger/sql/slow_log): Log message 'select sleep(0.5) AS query5' (level=2/warn, attributes: 'priv_user'='root'; 'user'='root'; 'host'='localhost'; 'ip'=''; 'query'='select sleep(0.5) AS query5'; 'query_time'=NUMBER; 'lock_time'=NUMBER; 'is_command'=false; 'rows_sent'=NUMBER; 'rows_examined'=NUMBER; 'start'='TIMESTAMP'; 'end'='TIMESTAMP')
+test_server_telemetry_logs_client_component_deinit:
+ - Telemetry logs loggers unregistered.
+ - UDFs unregistered.
+ - Deinitialized log service.
+End of deinit
+test_server_telemetry_logs_export_component_deinit:
+ - Telemetry logs callbacks unregistered.
+ - System variables unregistered.
+ - UDFs unregistered.
+ - Deinitialized log service.
+End of deinit

@@ -1,7 +1,7 @@
 #ifndef ITEM_INCLUDED
 #define ITEM_INCLUDED
 
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,6 +50,7 @@
 #include "my_inttypes.h"
 #include "my_sys.h"
 #include "my_table_map.h"
+#include "my_temporal.h"
 #include "my_time.h"
 #include "mysql/strings/dtoa.h"
 #include "mysql/strings/m_ctype.h"
@@ -163,24 +164,21 @@ inline Item_result numeric_context_result_type(enum_field_types data_type,
   MY_COLL_ALLOW_SUPERSET_CONV  - allow conversion to a superset
   MY_COLL_ALLOW_COERCIBLE_CONV - allow conversion of a coercible value
                                  (i.e. constant).
-  MY_COLL_ALLOW_CONV           - allow any kind of conversion
-                                 (combination of the above two)
   MY_COLL_ALLOW_NUMERIC_CONV   - if all items were numbers, convert to
                                  @@character_set_connection
-  MY_COLL_DISALLOW_NONE        - don't allow return DERIVATION_NONE
-                                 (e.g. when aggregating for comparison)
-  MY_COLL_CMP_CONV             - combination of MY_COLL_ALLOW_CONV
-                                 and MY_COLL_DISALLOW_NONE
+  MY_COLL_ALLOW_NONE           - allow return DERIVATION_NONE
+                                 (e.g. when aggregating for string result)
+  MY_COLL_CMP_CONV             - for comparison: Allow SUPERSET and COERCIBLE
+                                 conversion, disallow NONE.
 */
 
 #define MY_COLL_ALLOW_SUPERSET_CONV 1
 #define MY_COLL_ALLOW_COERCIBLE_CONV 2
-#define MY_COLL_DISALLOW_NONE 4
+#define MY_COLL_ALLOW_NONE 4
 #define MY_COLL_ALLOW_NUMERIC_CONV 8
 
-#define MY_COLL_ALLOW_CONV \
+#define MY_COLL_CMP_CONV \
   (MY_COLL_ALLOW_SUPERSET_CONV | MY_COLL_ALLOW_COERCIBLE_CONV)
-#define MY_COLL_CMP_CONV (MY_COLL_ALLOW_CONV | MY_COLL_DISALLOW_NONE)
 
 class DTCollation {
  public:
@@ -238,8 +236,8 @@ class DTCollation {
     switch (derivation) {
       case DERIVATION_NUMERIC:
         return "NUMERIC";
-      case DERIVATION_IGNORABLE:
-        return "IGNORABLE";
+      case DERIVATION_NULL:
+        return "NULL";
       case DERIVATION_COERCIBLE:
         return "COERCIBLE";
       case DERIVATION_IMPLICIT:
@@ -972,6 +970,7 @@ class Item : public Parse_tree_node {
     INT_ITEM,            ///< An integer literal value.
     DECIMAL_ITEM,        ///< A decimal literal value.
     REAL_ITEM,           ///< A floating-point literal value.
+    JSON_ITEM,           ///< A JSON literal value.
     NULL_ITEM,           ///< A NULL value.
     HEX_BIN_ITEM,        ///< A hexadecimal or binary literal value.
     DEFAULT_VALUE_ITEM,  ///< A default value for a column.
@@ -1516,7 +1515,7 @@ class Item : public Parse_tree_node {
 
   inline void set_data_type_null() {
     set_data_type(MYSQL_TYPE_NULL);
-    collation.set(&my_charset_bin, DERIVATION_IGNORABLE);
+    collation.set(&my_charset_bin, DERIVATION_NULL);
     max_length = 0;
     set_nullable(true);
   }
@@ -1902,20 +1901,6 @@ class Item : public Parse_tree_node {
     Return date value of item in packed longlong format.
   */
   virtual longlong val_date_temporal();
-  /**
-    Return time value of item in packed longlong format.
-  */
-  virtual longlong val_time_temporal();
-
-  /**
-    Return date or time value of item in packed longlong format,
-    depending on item field type.
-  */
-  longlong val_temporal_by_field_type() {
-    if (data_type() == MYSQL_TYPE_TIME) return val_time_temporal();
-    assert(is_temporal_with_date());
-    return val_date_temporal();
-  }
 
   /**
     Produces a key suitable for filesort. Most of the time, val_int() would
@@ -1926,7 +1911,11 @@ class Item : public Parse_tree_node {
      @return A sort key value.
   */
   longlong int_sort_key() {
-    if (data_type() == MYSQL_TYPE_TIME) return val_time_temporal_at_utc();
+    if (data_type() == MYSQL_TYPE_TIME) {
+      Time_val time;
+      if (val_time(&time)) return 0;
+      return time.for_comparison();
+    }
     if (is_temporal_with_date()) return val_date_temporal_at_utc();
     return val_int();
   }
@@ -2146,12 +2135,16 @@ class Item : public Parse_tree_node {
   /**
     Convert a non-temporal type to date
   */
-  bool get_date_from_non_temporal(MYSQL_TIME *ltime, my_time_flags_t fuzzydate);
+  bool get_date_from_non_temporal(Date_val *date, my_time_flags_t flags);
 
   /**
     Convert a non-temporal type to time
   */
-  bool get_time_from_non_temporal(MYSQL_TIME *ltime);
+  bool get_time_from_non_temporal(Time_val *time);
+  /**
+    Convert a non-temporal type to datetime
+  */
+  bool get_datetime_from_non_temporal(Datetime_val *dt, my_time_flags_t flags);
 
  protected:
   /* Helper functions, see item_sum.cc */
@@ -2219,7 +2212,7 @@ class Item : public Parse_tree_node {
   }
 
   /**
-    Get the value to return from get_date() in case of errors.
+    Get the value to return from val_date() in case of errors.
 
     @see Item::error_bool
 
@@ -2231,7 +2224,7 @@ class Item : public Parse_tree_node {
   }
 
   /**
-    Get the value to return from get_time() in case of errors.
+    Get the value to return from val_time() in case of errors.
 
     @see Item::error_bool
 
@@ -2281,64 +2274,87 @@ class Item : public Parse_tree_node {
   }
 
   /**
-    Convert val_str() to date in MYSQL_TIME
+    Convert val_str() to date
   */
-  bool get_date_from_string(MYSQL_TIME *ltime, my_time_flags_t flags);
+  bool get_date_from_string(Date_val *date, my_time_flags_t flags);
   /**
-    Convert val_real() to date in MYSQL_TIME
+    Convert val_real() to date
   */
-  bool get_date_from_real(MYSQL_TIME *ltime, my_time_flags_t flags);
+  bool get_date_from_real(Date_val *date, my_time_flags_t flags);
   /**
-    Convert val_decimal() to date in MYSQL_TIME
+    Convert val_decimal() to date
   */
-  bool get_date_from_decimal(MYSQL_TIME *ltime, my_time_flags_t flags);
+  bool get_date_from_decimal(Date_val *date, my_time_flags_t flags);
   /**
-    Convert val_int() to date in MYSQL_TIME
+    Convert val_int() to date
   */
-  bool get_date_from_int(MYSQL_TIME *ltime, my_time_flags_t flags);
+  bool get_date_from_int(Date_val *date, my_time_flags_t flags);
   /**
-    Convert get_time() from time to date in MYSQL_TIME
+    Convert val_time() to date
   */
-  bool get_date_from_time(MYSQL_TIME *ltime);
-
+  bool get_date_from_time(Date_val *date);
   /**
     Convert a numeric type to date
   */
-  bool get_date_from_numeric(MYSQL_TIME *ltime, my_time_flags_t fuzzydate);
+  bool get_date_from_numeric(Date_val *date, my_time_flags_t flags);
 
   /**
-    Convert val_str() to time in MYSQL_TIME
+    Convert val_str() to datetime
   */
-  bool get_time_from_string(MYSQL_TIME *ltime);
+  bool get_datetime_from_string(Datetime_val *dt, my_time_flags_t flags);
   /**
-    Convert val_real() to time in MYSQL_TIME
+    Convert val_real() to datetime
   */
-  bool get_time_from_real(MYSQL_TIME *ltime);
+  bool get_datetime_from_real(Datetime_val *dt, my_time_flags_t flags);
   /**
-    Convert val_decimal() to time in MYSQL_TIME
+    Convert val_decimal() to datetime
   */
-  bool get_time_from_decimal(MYSQL_TIME *ltime);
+  bool get_datetime_from_decimal(Datetime_val *dt, my_time_flags_t flags);
   /**
-    Convert val_int() to time in MYSQL_TIME
+    Convert val_int() to datetime
   */
-  bool get_time_from_int(MYSQL_TIME *ltime);
+  bool get_datetime_from_int(Datetime_val *dt, my_time_flags_t flags);
+  /**
+    Convert val_time() to datetime
+  */
+  bool get_datetime_from_time(Datetime_val *dt);
+
+  /**
+    Convert a numeric type to datetime
+  */
+  bool get_datetime_from_numeric(Datetime_val *dt, my_time_flags_t flags);
+
+  /**
+    Convert val_str() to time
+  */
+  bool get_time_from_string(Time_val *time);
+  /**
+    Convert val_real() to time
+  */
+  bool get_time_from_real(Time_val *time);
+  /**
+    Convert val_decimal() to time
+  */
+  bool get_time_from_decimal(Time_val *time);
+  /**
+    Convert val_int() to time
+  */
+  bool get_time_from_int(Time_val *time);
   /**
     Convert date to time
   */
-  bool get_time_from_date(MYSQL_TIME *ltime);
+  bool get_time_from_date(Time_val *time);
   /**
     Convert datetime to time
   */
-  bool get_time_from_datetime(MYSQL_TIME *ltime);
+  bool get_time_from_datetime(Time_val *time);
 
   /**
     Convert a numeric type to time
   */
-  bool get_time_from_numeric(MYSQL_TIME *ltime);
+  bool get_time_from_numeric(Time_val *time);
 
   virtual longlong val_date_temporal_at_utc() { return val_date_temporal(); }
-
-  virtual longlong val_time_temporal_at_utc() { return val_time_temporal(); }
 
  public:
   type_conversion_status save_time_in_field(Field *field);
@@ -2489,6 +2505,16 @@ class Item : public Parse_tree_node {
     str->append(full_name());
   }
 
+  /**
+  Generate hash unique to an item depending on its attributes. When overriding
+  this function, care must be taken to properly handle and fix possible hash
+  collisions, either due to missing attributes or other reasons.
+
+  If a unique hash cannot be generated for the Item (e.g. due to lack of
+  available information), the NULL hash value should be returned (0).
+  */
+  virtual uint64_t hash() { return 0; }
+
   void print_item_w_name(const THD *thd, String *,
                          enum_query_type query_type) const;
   /**
@@ -2520,8 +2546,39 @@ class Item : public Parse_tree_node {
   bool split_sum_func2(THD *thd, Ref_item_array ref_item_array,
                        mem_root_deque<Item *> *fields, Item **ref,
                        bool skip_registered);
-  virtual bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) = 0;
-  virtual bool get_time(MYSQL_TIME *ltime) = 0;
+  /**
+    Evaluate the item and return result as a date value
+
+    @param date  Address of date value to return
+    @param flags Modifier flags for how to interpret date values
+
+    @returns false if successful and non-NULL, true otherwise
+
+    @note: Check NULL vs. error as follows...
+  */
+  virtual bool val_date(Date_val *date, my_time_flags_t flags) = 0;
+  /**
+    Evaluate the item and return result as a time value.
+
+    @param time   Address of time value object to return
+
+    @returns false if successful and non-NULL, true otherwise
+
+    @note: Check NULL vs. error as follows...
+  */
+  virtual bool val_time(Time_val *time) = 0;
+
+  /**
+    Evaluate the item and return result as a datetime value
+
+    @param dt     Address of datetime value to return
+    @param flags  Modifier flags for how to interpret date values
+
+    @returns false if successful and non-NULL, true otherwise
+             true return means that the result is either a NULL value,
+             or an error.
+  */
+  virtual bool val_datetime(Datetime_val *dt, my_time_flags_t flags) = 0;
   /**
     Get timestamp in "struct timeval" format.
     @retval  false on success
@@ -2736,7 +2793,9 @@ class Item : public Parse_tree_node {
     if (fixed) cleanup();
     return false;
   }
-
+  bool contains_item(uchar *arg) {
+    return *(pointer_cast<Item **>(arg)) == this;
+  }
   virtual bool collect_item_field_processor(uchar *) { return false; }
   virtual bool collect_item_field_or_ref_processor(uchar *) { return false; }
   virtual bool collect_outer_field_processor(uchar *) { return false; }
@@ -2908,6 +2967,7 @@ class Item : public Parse_tree_node {
     Query_block *const m_root;
 
     friend class Item;
+    friend class Item_func_eq;
     friend class Item_sum;
     friend class Item_subselect;
     friend class Item_ref;
@@ -3235,6 +3295,7 @@ class Item : public Parse_tree_node {
   struct Item_view_ref_replacement : Item_replacement {
     Item *m_target;  ///< The item identifying the view_ref to be replaced
     Field *m_field;  ///< The replacement field
+    Item_field *m_outer_field{nullptr};  ///< replacement field if outer ref
     ///< subquery. Pushed when diving into
     ///< subqueries.
     Item_view_ref_replacement(Item *target, Field *field, Query_block *select)
@@ -3569,7 +3630,7 @@ class Item : public Parse_tree_node {
 
     @see Query_arena::free_list
   */
-  Item *next_free;
+  Item *next_free{nullptr};
 
  protected:
   /// str_values's main purpose is to cache the value in save_in_field
@@ -3609,8 +3670,9 @@ class Item : public Parse_tree_node {
     /// When doing constant propagation (e.g. change_cond_ref_to_const(), to
     /// remember that we have already processed the item.
     MARKER_CONST_PROPAG = 2,
-    /// When creating an internal temporary table: says how to store BIT fields.
-    MARKER_BIT = 4,
+    /// When creating an internal temporary table: marking group by
+    /// fields
+    MARKER_GROUP_BY_BIT = 4,
     /// When analyzing functional dependencies for only_full_group_by (says
     /// whether a nullable column can be treated at not nullable).
     MARKER_FUNC_DEP_NOT_NULL = 5,
@@ -3867,7 +3929,13 @@ class Item_basic_constant : public Item {
     Item::cleanup();
   }
   bool basic_const_item() const override { return true; }
-  void set_str_value(String *str) { str_value = *str; }
+  /**
+    Note that str_value.ptr() will now point to a string owned by some
+    other object.
+   */
+  void set_str_value(String *str) {
+    str_value.set(str->ptr(), str->length(), str->charset());
+  }
 };
 
 /*****************************************************************************
@@ -3901,8 +3969,9 @@ class Item_sp_variable : public Item {
   String *val_str(String *sp) override;
   my_decimal *val_decimal(my_decimal *decimal_value) override;
   bool val_json(Json_wrapper *result) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
-  bool get_time(MYSQL_TIME *ltime) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   bool is_null() override;
 
  public:
@@ -3987,6 +4056,8 @@ class Item_splocal final : public Item_sp_variable,
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
 
+  uint64_t hash() override;
+
  public:
   uint get_var_idx() const { return m_var_idx; }
 
@@ -4030,6 +4101,8 @@ class Item_case_expr final : public Item_sp_variable {
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
 
+  uint64_t hash() override;
+
  private:
   uint m_case_expr_id;
 };
@@ -4066,11 +4139,14 @@ class Item_name_const final : public Item {
   longlong val_int() override;
   String *val_str(String *sp) override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
-  bool get_time(MYSQL_TIME *ltime) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   bool is_null() override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+
+  uint64_t hash() override;
 
   Item_result result_type() const override { return value_item->result_type(); }
 
@@ -4086,25 +4162,22 @@ class Item_name_const final : public Item {
   }
 };
 
-bool convert_const_strings(DTCollation &coll, Item **args, uint nargs,
-                           int item_sep);
+bool convert_const_strings(DTCollation &coll, Item **args, uint nargs);
 bool agg_item_collations_for_comparison(DTCollation &c, const char *name,
-                                        Item **items, uint nitems, uint flags);
+                                        Item **items, uint nitems);
 bool agg_item_charsets(DTCollation &c, const char *name, Item **items,
-                       uint nitems, uint flags, int item_sep);
+                       uint nitems, uint flags);
 inline bool agg_item_charsets_for_string_result(DTCollation &c,
                                                 const char *name, Item **items,
-                                                uint nitems, int item_sep = 1) {
-  const uint flags = MY_COLL_ALLOW_SUPERSET_CONV |
+                                                uint nitems) {
+  const uint flags = MY_COLL_ALLOW_SUPERSET_CONV | MY_COLL_ALLOW_NONE |
                      MY_COLL_ALLOW_COERCIBLE_CONV | MY_COLL_ALLOW_NUMERIC_CONV;
-  return agg_item_charsets(c, name, items, nitems, flags, item_sep);
+  return agg_item_charsets(c, name, items, nitems, flags);
 }
 inline bool agg_item_charsets_for_comparison(DTCollation &c, const char *name,
-                                             Item **items, uint nitems,
-                                             int item_sep = 1) {
-  const uint flags = MY_COLL_ALLOW_SUPERSET_CONV |
-                     MY_COLL_ALLOW_COERCIBLE_CONV | MY_COLL_DISALLOW_NONE;
-  return agg_item_charsets(c, name, items, nitems, flags, item_sep);
+                                             Item **items, uint nitems) {
+  const uint flags = MY_COLL_ALLOW_SUPERSET_CONV | MY_COLL_ALLOW_COERCIBLE_CONV;
+  return agg_item_charsets(c, name, items, nitems, flags);
 }
 
 class Item_num : public Item_basic_constant {
@@ -4122,6 +4195,9 @@ inline constexpr uint16 NO_FIELD_INDEX((uint16)(-1));
 
 class Item_ident : public Item {
   typedef Item super;
+
+  /** To cache the hash value of this item, populated upon hash() invocation. */
+  uint64_t m_hash_val{0};
 
  protected:
   /**
@@ -4287,6 +4363,7 @@ class Item_ident : public Item {
              enum_query_type query_type) const override {
     print(thd, str, query_type, db_name, table_name);
   }
+  uint64_t hash() override;
 
  protected:
   /**
@@ -4314,6 +4391,8 @@ class Item_ident : public Item {
   */
   void print(const THD *thd, String *str, enum_query_type query_type,
              const char *db_name_arg, const char *table_name_arg) const;
+
+  uint64_t hash(const char *db_name_arg, const char *table_name_arg);
 
  public:
   ///< Argument object to change_context_processor
@@ -4372,10 +4451,13 @@ class Item_ident_for_show final : public Item {
   my_decimal *val_decimal(my_decimal *dec) override {
     return field->val_decimal(dec);
   }
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return field->get_date(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return field->val_date(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override { return field->get_time(ltime); }
+  bool val_time(Time_val *time) override { return field->val_time(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return field->val_datetime(dt, flags);
+  }
   void make_field(Send_field *tmp_field) override;
   const CHARSET_INFO *charset_for_protocol() override {
     return field->charset_for_protocol();
@@ -4445,6 +4527,13 @@ class Item_field : public Item_ident {
   */
   Item_multi_eq *m_multi_equality{nullptr};
 
+  /**
+    Indicates whether this field should be treated as an outer reference due to
+    being the result of inlining a local variable within a stored program
+    (currently applicable only to stored functions).
+  */
+  bool m_was_sp_local_variable{false};
+
  public:
   /**
     Index for this field in table->field array. Holds NO_FIELD_INDEX
@@ -4457,6 +4546,11 @@ class Item_field : public Item_ident {
     assert(item_equal != nullptr);
     item_equal_all_join_nests = item_equal;
   }
+
+  /**
+    Sets m_was_sp_local_variable to true.
+  */
+  void set_item_was_sp_local_variable() { m_was_sp_local_variable = true; }
 
   // A list of fields that are considered "equal" to this field. E.g., a query
   // on the form "a JOIN b ON a.i = b.i JOIN c ON b.i = c.i" would consider
@@ -4497,9 +4591,7 @@ class Item_field : public Item_ident {
   bool eq(const Item *item) const override;
   double val_real() override;
   longlong val_int() override;
-  longlong val_time_temporal() override;
   longlong val_date_temporal() override;
-  longlong val_time_temporal_at_utc() override;
   longlong val_date_temporal_at_utc() override;
   my_decimal *val_decimal(my_decimal *) override;
   String *val_str(String *) override;
@@ -4532,8 +4624,9 @@ class Item_field : public Item_ident {
   const Item_field *base_item_field() const {
     return m_base_item_field ? m_base_item_field : this;
   }
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
-  bool get_time(MYSQL_TIME *ltime) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   bool get_timeval(my_timeval *tm, int *warnings) override;
   bool is_null() override {
     // NOTE: May return true even if maybe_null is not set!
@@ -4764,12 +4857,12 @@ class Item_null : public Item_basic_constant {
   bool eq(const Item *item) const override;
   double val_real() override;
   longlong val_int() override;
-  longlong val_time_temporal() override { return val_int(); }
   longlong val_date_temporal() override { return val_int(); }
   String *val_str(String *str) override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *, my_time_flags_t) override { return true; }
-  bool get_time(MYSQL_TIME *) override { return true; }
+  bool val_date(Date_val *, my_time_flags_t) override { return true; }
+  bool val_time(Time_val *) override { return true; }
+  bool val_datetime(Datetime_val *, my_time_flags_t) override { return true; }
   bool val_json(Json_wrapper *wr) override;
   bool send(Protocol *protocol, String *str) override;
   Item_result result_type() const override { return STRING_RESULT; }
@@ -4780,6 +4873,7 @@ class Item_null : public Item_basic_constant {
              enum_query_type query_type) const override {
     str->append(query_type == QT_NORMALIZED_FORMAT ? "?" : "NULL");
   }
+  uint64_t hash() override;
 
   bool check_partition_func_processor(uchar *) override { return false; }
 };
@@ -4955,6 +5049,9 @@ class Item_param final : public Item, private Settable_routine_parameter {
 
   Item_param(const POS &pos, MEM_ROOT *root, uint pos_in_query_arg);
 
+  Item_param(const POS &pos, long long val);
+  Item_param(const POS &pos, double val);
+
   bool do_itemize(Parse_context *pc, Item **item) override;
 
   Item_result result_type() const override { return m_result_type; }
@@ -5000,9 +5097,9 @@ class Item_param final : public Item, private Settable_routine_parameter {
   my_decimal *val_decimal(my_decimal *) override;
   String *val_str(String *) override;
   bool val_json(Json_wrapper *result) override;
-  bool get_time(MYSQL_TIME *tm) override;
-  bool get_date(MYSQL_TIME *tm, my_time_flags_t fuzzydate) override;
-
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   void set_data_type_source(enum_field_types data_type, bool unsigned_val) {
     m_data_type_source = data_type;
     m_unsigned_actual = unsigned_val;
@@ -5048,6 +5145,7 @@ class Item_param final : public Item, private Settable_routine_parameter {
   table_map used_tables() const override { return INNER_TABLE_BIT; }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   bool is_null() override {
     assert(m_param_state != NO_VALUE);
     return m_param_state == NULL_VALUE;
@@ -5123,6 +5221,8 @@ class Item_int : public Item_num {
   typedef Item_num super;
 
  public:
+  static Item_int *narrow(Item *item);
+
   longlong value;
   Item_int(int32 i, uint length = MY_INT32_NUM_DECIMAL_DIGITS)
       : value((longlong)i) {
@@ -5205,13 +5305,17 @@ class Item_int : public Item_num {
   }
   my_decimal *val_decimal(my_decimal *) override;
   String *val_str(String *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_int(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_int(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override { return get_time_from_int(ltime); }
+  bool val_time(Time_val *time) override { return get_time_from_int(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_int(dt, flags);
+  }
   Item *clone_item() const override { return new Item_int(this); }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   Item_num *neg() override {
     value = -value;
     return this;
@@ -5235,7 +5339,7 @@ class Item_int_0 final : public Item_int {
 
 /*
   Item_temporal is used to store numeric representation
-  of time/date/datetime values for queries like:
+  of date/datetime values for queries like:
 
      WHERE datetime_column NOT IN
      ('2006-04-25 10:00:00','2006-04-25 10:02:00', ...);
@@ -5253,12 +5357,14 @@ class Item_temporal final : public Item_int {
  public:
   Item_temporal(enum_field_types field_type_arg, longlong i) : Item_int(i) {
     assert(is_temporal_type(field_type_arg));
+    assert(field_type_arg != MYSQL_TYPE_TIME);
     set_data_type(field_type_arg);
   }
   Item_temporal(enum_field_types field_type_arg, const Name_string &name_arg,
                 longlong i, uint length)
       : Item_int(i) {
     assert(is_temporal_type(field_type_arg));
+    assert(field_type_arg != MYSQL_TYPE_TIME);
     set_data_type(field_type_arg);
     max_length = length;
     item_name = name_arg;
@@ -5267,14 +5373,17 @@ class Item_temporal final : public Item_int {
   Item *clone_item() const override {
     return new Item_temporal(data_type(), value);
   }
-  longlong val_time_temporal() override { return val_int(); }
   longlong val_date_temporal() override { return val_int(); }
-  bool get_date(MYSQL_TIME *, my_time_flags_t) override {
-    assert(0);
+  bool val_date(Date_val *, my_time_flags_t) override {
+    assert(false);
     return false;
   }
-  bool get_time(MYSQL_TIME *) override {
-    assert(0);
+  bool val_time(Time_val *) override {
+    assert(false);
+    return false;
+  }
+  bool val_datetime(Datetime_val *, my_time_flags_t) override {
+    assert(false);
     return false;
   }
 };
@@ -5309,6 +5418,7 @@ class Item_uint : public Item_int {
   }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   Item_num *neg() override;
   uint decimal_precision() const override { return max_length; }
 };
@@ -5338,17 +5448,19 @@ class Item_decimal : public Item_num {
   double val_real() override;
   String *val_str(String *) override;
   my_decimal *val_decimal(my_decimal *) override { return &decimal_value; }
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_decimal(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_decimal(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override {
-    return get_time_from_decimal(ltime);
+  bool val_time(Time_val *time) override { return get_time_from_decimal(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_decimal(dt, flags);
   }
   Item *clone_item() const override {
     return new Item_decimal(item_name, &decimal_value, decimals, max_length);
   }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   Item_num *neg() override {
     my_decimal_neg(&decimal_value);
     unsigned_flag = !decimal_value.sign();
@@ -5425,11 +5537,12 @@ class Item_float : public Item_num {
   }
   String *val_str(String *) override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_real(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_real(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override {
-    return get_time_from_real(ltime);
+  bool val_time(Time_val *time) override { return get_time_from_real(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_real(dt, flags);
   }
   Item *clone_item() const override {
     return new Item_float(item_name, value, decimals, max_length);
@@ -5440,6 +5553,7 @@ class Item_float : public Item_num {
   }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   bool eq(const Item *item) const override;
 };
 
@@ -5587,11 +5701,12 @@ class Item_string : public Item_basic_constant {
     return &str_value;
   }
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_string(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_string(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override {
-    return get_time_from_string(ltime);
+  bool val_time(Time_val *time) override { return get_time_from_string(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_string(dt, flags);
   }
   Item_result result_type() const override { return STRING_RESULT; }
   bool eq(const Item *item) const override;
@@ -5609,6 +5724,7 @@ class Item_string : public Item_basic_constant {
   }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   bool check_partition_func_processor(uchar *) override { return false; }
 
   /**
@@ -5677,7 +5793,7 @@ class Item_static_string_func : public Item_string {
   void print(const THD *, String *str, enum_query_type) const override {
     str->append(func_name);
   }
-
+  uint64_t hash() override;
   bool check_partition_func_processor(uchar *) override { return true; }
   bool check_function_as_value_generator(uchar *args) override {
     Check_function_as_value_generator_parameters *func_arg =
@@ -5770,11 +5886,12 @@ class Item_hex_string : public Item_basic_constant {
     return &str_value;
   }
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_string(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_string(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override {
-    return get_time_from_string(ltime);
+  bool val_time(Time_val *time) override { return get_time_from_string(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_string(dt, flags);
   }
   Item_result result_type() const override { return STRING_RESULT; }
   Item_result numeric_context_result_type() const override {
@@ -5783,6 +5900,7 @@ class Item_hex_string : public Item_basic_constant {
   Item_result cast_to_int_type() const override { return INT_RESULT; }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   bool eq(const Item *item) const override;
   bool check_partition_func_processor(uchar *) override { return false; }
   static LEX_CSTRING make_hex_str(const char *str, size_t str_length);
@@ -5958,14 +6076,15 @@ class Item_ref : public Item_ident {
   }
   double val_real() override;
   longlong val_int() override;
-  longlong val_time_temporal() override;
   longlong val_date_temporal() override;
   my_decimal *val_decimal(my_decimal *) override;
   bool val_bool() override;
   String *val_str(String *tmp) override;
   bool val_json(Json_wrapper *result) override;
   bool is_null() override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   bool send(Protocol *prot, String *tmp) override;
   void make_field(Send_field *field) override;
   bool fix_fields(THD *, Item **) override;
@@ -6052,6 +6171,7 @@ class Item_ref : public Item_ident {
   bool clean_up_after_removal(uchar *arg) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   void cleanup() override;
   Item_field *field_for_view_update() override {
     return ref_item()->field_for_view_update();
@@ -6083,12 +6203,6 @@ class Item_ref : public Item_ident {
   void bring_value() override {
     assert(m_ref_item != nullptr);
     if (result_type() == ROW_RESULT) ref_item()->bring_value();
-  }
-  bool get_time(MYSQL_TIME *ltime) override {
-    assert(fixed);
-    const bool result = ref_item()->get_time(ltime);
-    null_value = ref_item()->null_value;
-    return result;
   }
 
   bool basic_const_item() const override { return false; }
@@ -6354,12 +6468,13 @@ class Item_ref_null_helper final : public Item_ref {
                              item) {}
   double val_real() override;
   longlong val_int() override;
-  longlong val_time_temporal() override;
   longlong val_date_temporal() override;
   String *val_str(String *s) override;
   my_decimal *val_decimal(my_decimal *) override;
   bool val_bool() override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
+  bool val_time(Time_val *time) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
   Ref_Type ref_type() const override { return NULL_HELPER_REF; }
@@ -6397,6 +6512,7 @@ class Item_int_with_ref : public Item_int {
     unsigned_flag = unsigned_arg;
   }
   Item *clone_item() const override;
+  uint64_t hash() override;
   Item *real_item() override { return ref; }
   const Item *real_item() const override { return ref; }
 };
@@ -6413,13 +6529,15 @@ class Item_temporal_with_ref : public Item_int_with_ref {
   }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
-  bool get_date(MYSQL_TIME *, my_time_flags_t) override {
-    assert(0);
+
+  bool val_date(Date_val *, my_time_flags_t) override {
+    assert(false);
     return true;
   }
-  bool get_time(MYSQL_TIME *) override {
-    assert(0);
-    return true;
+  bool val_time(Time_val *time) override {
+    bool rc = ref->val_time(time);
+    null_value = ref->null_value;
+    return rc;
   }
 };
 
@@ -6444,35 +6562,6 @@ class Item_datetime_with_ref final : public Item_temporal_with_ref {
   }
   Item *clone_item() const override;
   longlong val_date_temporal() override { return val_int(); }
-  longlong val_time_temporal() override {
-    assert(0);
-    return val_int();
-  }
-};
-
-/*
-  Item_time_with_ref is used to optimize queries like:
-    SELECT ... FROM t1 WHERE time_column = 20110101101010;
-  The numeric constant is replaced to Item_time_with_ref
-  by convert_constant_item().
-*/
-class Item_time_with_ref final : public Item_temporal_with_ref {
- public:
-  /**
-    Constructor for Item_time_with_ref.
-    @param    decimals_arg   Number of fractional digits.
-    @param    i              Temporal value in packed format.
-    @param    ref_arg        Pointer to the original numeric Item.
-  */
-  Item_time_with_ref(uint8 decimals_arg, longlong i, Item *ref_arg)
-      : Item_temporal_with_ref(MYSQL_TYPE_TIME, decimals_arg, i, ref_arg,
-                               false) {}
-  Item *clone_item() const override;
-  longlong val_time_temporal() override { return val_int(); }
-  longlong val_date_temporal() override {
-    assert(0);
-    return val_int();
-  }
 };
 
 /**
@@ -6539,6 +6628,15 @@ class Cached_item_int : public Cached_item {
   bool cmp() override;
 };
 
+class Cached_item_time : public Cached_item {
+ public:
+  explicit Cached_item_time(Item *item_par) : Cached_item(item_par) {}
+  bool cmp() override;
+
+ private:
+  Time_val m_time;
+};
+
 class Cached_item_temporal : public Cached_item {
   longlong value{0};
 
@@ -6573,6 +6671,7 @@ class Item_default_value final : public Item_field {
   void cleanup() override { Item::cleanup(); }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   table_map used_tables() const override { return 0; }
   Item *get_tmp_table_item(THD *thd) override { return copy_or_same(thd); }
   bool collect_item_field_or_view_ref_processor(uchar *arg) override;
@@ -6653,6 +6752,7 @@ class Item_insert_value final : public Item_field {
   void cleanup() override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   /*
    We use RAND_TABLE_BIT to prevent Item_insert_value from
    being treated as a constant and precalculated before execution
@@ -6863,6 +6963,7 @@ class Item_cache : public Item_basic_constant {
   table_map used_tables() const override { return used_table_map; }
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
+  uint64_t hash() override;
   bool eq_def(const Field *field) {
     return cached_field != nullptr && cached_field->field->eq_def(field);
   }
@@ -6933,11 +7034,8 @@ class Item_cache : public Item_basic_constant {
 };
 
 class Item_cache_int : public Item_cache {
- protected:
-  longlong value;
-
  public:
-  Item_cache_int() : Item_cache(MYSQL_TYPE_LONGLONG), value(0) {}
+  Item_cache_int() : Item_cache(MYSQL_TYPE_LONGLONG) {}
   Item_cache_int(enum_field_types field_type_arg)
       : Item_cache(field_type_arg), value(0) {}
 
@@ -6948,16 +7046,21 @@ class Item_cache_int : public Item_cache {
   void store_value(Item *item, longlong val_arg);
   double val_real() override;
   longlong val_int() override;
-  longlong val_time_temporal() override { return val_int(); }
   longlong val_date_temporal() override { return val_int(); }
   String *val_str(String *str) override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_int(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_int(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override { return get_time_from_int(ltime); }
+  bool val_time(Time_val *time) override { return get_time_from_int(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_int(dt, flags);
+  }
   Item_result result_type() const override { return INT_RESULT; }
   bool cache_value() override;
+
+ protected:
+  longlong value{0};
 };
 
 /**
@@ -6982,30 +7085,29 @@ class Item_cache_bit final : public Item_cache_int {
 };
 
 class Item_cache_real final : public Item_cache {
-  double value;
-
  public:
-  Item_cache_real() : Item_cache(MYSQL_TYPE_DOUBLE), value(0) {}
+  Item_cache_real() : Item_cache(MYSQL_TYPE_DOUBLE) {}
 
   double val_real() override;
   longlong val_int() override;
   String *val_str(String *str) override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_real(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_real(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override {
-    return get_time_from_real(ltime);
+  bool val_time(Time_val *time) override { return get_time_from_real(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_real(dt, flags);
   }
   Item_result result_type() const override { return REAL_RESULT; }
   bool cache_value() override;
   void store_value(Item *expr, double value);
+
+ private:
+  double value{0};
 };
 
 class Item_cache_decimal final : public Item_cache {
- protected:
-  my_decimal decimal_value;
-
  public:
   Item_cache_decimal() : Item_cache(MYSQL_TYPE_NEWDECIMAL) {}
 
@@ -7013,15 +7115,19 @@ class Item_cache_decimal final : public Item_cache {
   longlong val_int() override;
   String *val_str(String *str) override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_decimal(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_decimal(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override {
-    return get_time_from_decimal(ltime);
+  bool val_time(Time_val *time) override { return get_time_from_decimal(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_decimal(dt, flags);
   }
   Item_result result_type() const override { return DECIMAL_RESULT; }
   bool cache_value() override;
   void store_value(Item *expr, my_decimal *d);
+
+ private:
+  my_decimal decimal_value;
 };
 
 class Item_cache_str final : public Item_cache {
@@ -7046,11 +7152,12 @@ class Item_cache_str final : public Item_cache {
   longlong val_int() override;
   String *val_str(String *) override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_string(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_string(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override {
-    return get_time_from_string(ltime);
+  bool val_time(Time_val *time) override { return get_time_from_string(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_string(dt, flags);
   }
   Item_result result_type() const override { return STRING_RESULT; }
   const CHARSET_INFO *charset() const { return value->charset(); }
@@ -7059,11 +7166,8 @@ class Item_cache_str final : public Item_cache {
 };
 
 class Item_cache_row final : public Item_cache {
-  Item_cache **values;
-  uint item_count;
-
  public:
-  Item_cache_row() : Item_cache(), values(nullptr), item_count(2) {}
+  Item_cache_row() : Item_cache() {}
 
   /**
     'allocate' is only used in Item_cache_row::setup()
@@ -7093,15 +7197,18 @@ class Item_cache_row final : public Item_cache {
     illegal_method_call("val_decimal");
     return nullptr;
   }
-  bool get_date(MYSQL_TIME *, my_time_flags_t) override {
-    illegal_method_call("get_date");
+  bool val_date(Date_val *, my_time_flags_t) override {
+    illegal_method_call("val_date");
     return true;
   }
-  bool get_time(MYSQL_TIME *) override {
-    illegal_method_call("get_time");
+  bool val_time(Time_val *) override {
+    illegal_method_call("val_time");
     return true;
   }
-
+  bool val_datetime(Datetime_val *, my_time_flags_t) override {
+    illegal_method_call("val_datetime");
+    return true;
+  }
   Item_result result_type() const override { return ROW_RESULT; }
 
   uint cols() const override { return item_count; }
@@ -7112,18 +7219,45 @@ class Item_cache_row final : public Item_cache {
   void bring_value() override;
   void cleanup() override { Item_cache::cleanup(); }
   bool cache_value() override;
+
+ private:
+  Item_cache **values{nullptr};
+  uint item_count{2};
+};
+
+class Item_cache_time : public Item_cache {
+ public:
+  Item_cache_time() : Item_cache(MYSQL_TYPE_TIME) {
+    cmp_context = STRING_RESULT;
+  }
+
+  void store(Item *item) override;
+  double val_real() override;
+  longlong val_int() override;
+  longlong val_date_temporal() override;
+  String *val_str(String *str) override;
+  my_decimal *val_decimal(my_decimal *) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
+  Item_result result_type() const override { return STRING_RESULT; }
+  bool cache_value() override;
+  /**
+    Cache a single non-NULL time value. Requires that "example" is not set.
+
+    @param time   Time value to cache
+  */
+  void store_value(Time_val time);
+
+ private:
+  Time_val time_value;
 };
 
 class Item_cache_datetime : public Item_cache {
-  String cached_string;
-
- protected:
-  longlong int_value;
-  bool str_value_cached;
-
  public:
   Item_cache_datetime(enum_field_types field_type_arg)
       : Item_cache(field_type_arg), int_value(0), str_value_cached(false) {
+    assert(field_type_arg != MYSQL_TYPE_TIME);
     cmp_context = STRING_RESULT;
   }
 
@@ -7131,12 +7265,12 @@ class Item_cache_datetime : public Item_cache {
   void store(Item *item) override;
   double val_real() override;
   longlong val_int() override;
-  longlong val_time_temporal() override;
   longlong val_date_temporal() override;
   String *val_str(String *str) override;
   my_decimal *val_decimal(my_decimal *) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
-  bool get_time(MYSQL_TIME *ltime) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   Item_result result_type() const override { return STRING_RESULT; }
   /*
     In order to avoid INT <-> STRING conversion of a DATETIME value
@@ -7151,6 +7285,14 @@ class Item_cache_datetime : public Item_cache {
     Item_cache::clear();
     str_value_cached = false;
   }
+
+ private:
+  /// Used for DATE and DATETIME values
+  longlong int_value{0};
+  /// Used when required in a string context
+  String cached_string;
+  /// If true, cached_string contains a valid value
+  bool str_value_cached{false};
 };
 
 /// An item cache for values of type JSON.
@@ -7172,8 +7314,9 @@ class Item_cache_json : public Item_cache {
 
   double val_real() override;
   my_decimal *val_decimal(my_decimal *val) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
-  bool get_time(MYSQL_TIME *ltime) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   /// Sort cached data. Only arrays are affected.
   void sort();
   /// Returns true when cached value is array and it's sorted
@@ -7203,11 +7346,12 @@ class Item_aggregate_type : public Item {
   longlong val_int() override = 0;
   my_decimal *val_decimal(my_decimal *) override = 0;
   String *val_str(String *) override = 0;
-  bool get_date(MYSQL_TIME *, my_time_flags_t) override = 0;
-  bool get_time(MYSQL_TIME *) override = 0;
-
+  bool val_date(Date_val *, my_time_flags_t) override = 0;
+  bool val_time(Time_val *time) override = 0;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override = 0;
   Item_result result_type() const override;
-  bool unify_types(THD *, Item *);
+  bool unify_types(Item *item);
+  bool unify_types(const char *op_string, Item **items, size_t count);
   Field *make_field_by_type(TABLE *table, bool strict);
   static uint32 display_length(Item *item);
   Field::geometry_type get_geometry_type() const override {
@@ -7251,8 +7395,9 @@ class Item_type_holder final : public Item_aggregate_type {
   longlong val_int() override;
   my_decimal *val_decimal(my_decimal *) override;
   String *val_str(String *) override;
-  bool get_date(MYSQL_TIME *, my_time_flags_t) override;
-  bool get_time(MYSQL_TIME *) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
 };
 
 /**
@@ -7297,9 +7442,9 @@ class Item_values_column final : public Item_aggregate_type {
   String *val_str(String *tmp) override;
   bool val_json(Json_wrapper *result) override;
   bool is_null() override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
-  bool get_time(MYSQL_TIME *ltime) override;
-
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   enum Type type() const override { return VALUES_COLUMN_ITEM; }
   void set_value(Item *new_value) { m_value_ref = new_value; }
   table_map used_tables() const override { return m_aggregated_used_tables; }
@@ -7314,16 +7459,18 @@ class Item_json final : public Item_basic_constant {
   Item_json(unique_ptr_destroy_only<Json_wrapper> value,
             const Item_name_string &name);
   ~Item_json() override;
-  enum Type type() const override { return STRING_ITEM; }
+  enum Type type() const override { return JSON_ITEM; }
   void print(const THD *, String *str, enum_query_type) const override;
+  uint64_t hash() override;
   bool val_json(Json_wrapper *result) override;
   Item_result result_type() const override { return STRING_RESULT; }
   double val_real() override;
   longlong val_int() override;
   String *val_str(String *str) override;
   my_decimal *val_decimal(my_decimal *buf) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t) override;
-  bool get_time(MYSQL_TIME *ltime) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   Item *clone_item() const override;
 };
 

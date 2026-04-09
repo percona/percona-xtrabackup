@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,8 +34,11 @@
 
 #include "basic_protocol_splicer.h"
 #include "context.h"
-#include "destination.h"  // RouteDestination
+#include "destination.h"  // DestinationManager
 #include "destination_error.h"
+#include "mysql/harness/destination.h"
+#include "mysql/harness/destination_endpoint.h"
+#include "mysql/harness/destination_socket.h"
 #include "mysql/harness/net_ts/io_context.h"
 #include "mysql/harness/net_ts/timer.h"
 #include "mysql/harness/stdx/expected.h"
@@ -53,37 +56,55 @@ class MySQLRoutingConnectionBase {
   MySQLRoutingContext &context() { return context_; }
   const MySQLRoutingContext &context() const { return context_; }
 
-  virtual std::string get_destination_id() const = 0;
-
-  virtual std::string read_only_destination_id() const {
-    return get_destination_id();
-  }
-
-  virtual std::string read_write_destination_id() const {
-    return get_destination_id();
-  }
-
-  virtual std::optional<net::ip::tcp::endpoint> destination_endpoint()
+  virtual std::optional<mysql_harness::Destination> get_destination_id()
       const = 0;
 
-  virtual std::optional<net::ip::tcp::endpoint> read_only_destination_endpoint()
+  virtual std::optional<mysql_harness::Destination> read_only_destination_id()
       const {
+    return get_destination_id();
+  }
+
+  virtual std::optional<mysql_harness::Destination> read_write_destination_id()
+      const {
+    return get_destination_id();
+  }
+
+  virtual std::optional<mysql_harness::DestinationEndpoint>
+  destination_endpoint() const = 0;
+
+  virtual std::optional<mysql_harness::DestinationEndpoint>
+  read_only_destination_endpoint() const {
     return destination_endpoint();
   }
 
-  virtual std::optional<net::ip::tcp::endpoint>
+  virtual std::optional<mysql_harness::DestinationEndpoint>
   read_write_destination_endpoint() const {
     return destination_endpoint();
   }
 
   virtual net::impl::socket::native_handle_type get_client_fd() const = 0;
 
+  virtual std::string get_routing_source() const = 0;
+
+  virtual void set_routing_source(std::string name) = 0;
+
+  virtual void wait_until_completed() = 0;
+  virtual void completed() = 0;
+
+  virtual routing_guidelines::Server_info get_server_info() const = 0;
+
   /**
    * @brief Returns address of server to which connection is established.
    *
    * @return address of server
    */
-  virtual std::string get_server_address() const = 0;
+  std::string get_server_address() const {
+    return stats_([](const Stats &stats) { return stats.server_address; });
+  }
+
+  void server_address(const std::string &dest) {
+    return stats_([&dest](Stats &stats) { stats.server_address = dest; });
+  }
 
   virtual void disconnect() = 0;
 
@@ -92,7 +113,13 @@ class MySQLRoutingConnectionBase {
    *
    * @return address of client
    */
-  virtual std::string get_client_address() const = 0;
+  std::string get_client_address() const {
+    return stats_([](const Stats &stats) { return stats.client_address; });
+  }
+
+  void client_address(const std::string &dest) {
+    return stats_([&dest](Stats &stats) { stats.client_address = dest; });
+  }
 
   std::size_t get_bytes_up() const {
     return stats_([](const Stats &stats) { return stats.bytes_up; });
@@ -123,6 +150,25 @@ class MySQLRoutingConnectionBase {
   }
 
   struct Stats {
+    Stats() = default;
+
+    Stats(std::string client_address, std::string server_address,
+          std::size_t bytes_up, std::size_t bytes_down, time_point_type started,
+          time_point_type connected_to_server,
+          time_point_type last_sent_to_server,
+          time_point_type last_received_from_server)
+        : client_address(std::move(client_address)),
+          server_address(std::move(server_address)),
+          bytes_up(bytes_up),
+          bytes_down(bytes_down),
+          started(started),
+          connected_to_server(connected_to_server),
+          last_sent_to_server(last_sent_to_server),
+          last_received_from_server(last_received_from_server) {}
+
+    std::string client_address;
+    std::string server_address;
+
     std::size_t bytes_up{0};
     std::size_t bytes_down{0};
 
@@ -167,6 +213,10 @@ class MySQLRoutingConnectionBase {
     return disconnect_([](auto requested) { return requested; });
   }
 
+  routing_guidelines::Session_info get_session_info() const;
+
+  void set_routing_guidelines_session_rand();
+
  protected:
   /** @brief wrapper for common data used by all routing threads */
   MySQLRoutingContext &context_;
@@ -181,28 +231,24 @@ class MySQLRoutingConnectionBase {
 
  private:
   net::impl::socket::native_handle_type client_fd_;
-  std::string client_id_;
-  std::string server_id_;
+  std::optional<double> routing_guidelines_session_rand_;
 };
 
 class ConnectorBase {
  public:
-  using server_protocol_type = net::ip::tcp;
-
-  ConnectorBase(net::io_context &io_ctx, RouteDestination *route_destination,
-                Destinations &destinations)
+  ConnectorBase(net::io_context &io_ctx, MySQLRoutingContext &context,
+                DestinationManager *destination_manager)
       : io_ctx_{io_ctx},
-        route_destination_{route_destination},
-        destinations_{destinations},
-        destinations_it_{destinations_.begin()} {}
+        context_{context},
+        destination_manager_{destination_manager} {}
 
   enum class Function {
     kInitDestination,
     kConnectFinish,
   };
 
-  server_protocol_type::socket &socket() { return server_sock_; }
-  server_protocol_type::endpoint &endpoint() { return server_endpoint_; }
+  mysql_harness::DestinationSocket &socket() { return server_sock_; }
+  mysql_harness::DestinationEndpoint &endpoint() { return server_endpoint_; }
 
   net::steady_timer &timer() { return connect_timer_; }
 
@@ -210,31 +256,48 @@ class ConnectorBase {
 
   bool connect_timed_out() const { return connect_timed_out_; }
 
-  void destination_id(std::string id) { destination_id_ = id; }
-  std::string destination_id() const { return destination_id_; }
+  void destination_id(std::optional<mysql_harness::Destination> id) {
+    destination_id_ = std::move(id);
+  }
+  std::optional<mysql_harness::Destination> destination_id() const {
+    return destination_id_;
+  }
+
+  std::string routing_source() const { return destination_->route_name(); }
+  void set_routing_source(std::string name) {
+    destination_->set_route_name(std::move(name));
+  }
+
+  const routing_guidelines::Server_info &server_info() const {
+    return destination_->get_server_info();
+  }
 
   void on_connect_failure(
-      std::function<void(std::string, uint16_t, std::error_code)> func) {
+      std::function<void(const mysql_harness::Destination &, std::error_code)>
+          func) {
     on_connect_failure_ = std::move(func);
   }
 
-  void on_connect_success(std::function<void(std::string, uint16_t)> func) {
+  void on_connect_success(
+      std::function<void(const mysql_harness::Destination &)> func) {
     on_connect_success_ = std::move(func);
   }
 
-  void on_is_destination_good(std::function<bool(std::string, uint16_t)> func) {
+  void on_is_destination_good(
+      std::function<bool(const mysql_harness::Destination &dest)> func) {
     on_is_destination_good_ = std::move(func);
   }
 
-  bool is_destination_good(const std::string &hostname, uint16_t port) const {
-    if (on_is_destination_good_) return on_is_destination_good_(hostname, port);
+  bool is_destination_good(const mysql_harness::Destination &dest) const {
+    if (on_is_destination_good_) return on_is_destination_good_(dest);
 
     return true;
   }
 
  protected:
   stdx::expected<void, std::error_code> resolve();
-  stdx::expected<void, std::error_code> init_destination();
+  stdx::expected<void, std::error_code> init_destination(
+      routing_guidelines::Session_info session_info);
   stdx::expected<void, std::error_code> init_endpoint();
   stdx::expected<void, std::error_code> next_endpoint();
   stdx::expected<void, std::error_code> next_destination();
@@ -245,16 +308,19 @@ class ConnectorBase {
   stdx::expected<void, std::error_code> connect_failed(std::error_code ec);
 
   net::io_context &io_ctx_;
+  MySQLRoutingContext &context_;
 
   net::ip::tcp::resolver resolver_{io_ctx_};
-  server_protocol_type::socket server_sock_{io_ctx_};
-  server_protocol_type::endpoint server_endpoint_;
+  mysql_harness::DestinationSocket server_sock_{
+      mysql_harness::DestinationSocket::TcpType{io_ctx_}};
+  mysql_harness::DestinationEndpoint server_endpoint_;
 
-  RouteDestination *route_destination_;
-  Destinations &destinations_;
-  Destinations::iterator destinations_it_;
-  net::ip::tcp::resolver::results_type endpoints_;
-  net::ip::tcp::resolver::results_type::iterator endpoints_it_;
+  routing_guidelines::Session_info session_info_;
+
+  DestinationManager *destination_manager_;
+  std::unique_ptr<Destination> destination_{nullptr};
+  std::vector<mysql_harness::DestinationEndpoint> endpoints_;
+  std::vector<mysql_harness::DestinationEndpoint>::iterator endpoints_it_;
 
   std::error_code last_ec_{make_error_code(DestinationsErrc::kNotSet)};
 
@@ -263,12 +329,13 @@ class ConnectorBase {
   net::steady_timer connect_timer_{io_ctx_};
 
   bool connect_timed_out_{false};
-  std::string destination_id_;
+  std::optional<mysql_harness::Destination> destination_id_;
 
-  std::function<void(std::string, uint16_t, std::error_code)>
+  std::function<void(const mysql_harness::Destination &, std::error_code)>
       on_connect_failure_;
-  std::function<void(std::string, uint16_t)> on_connect_success_;
-  std::function<bool(std::string, uint16_t)> on_is_destination_good_;
+  std::function<void(const mysql_harness::Destination &)> on_connect_success_;
+  std::function<bool(const mysql_harness::Destination &)>
+      on_is_destination_good_;
 };
 
 template <class ConnectionType>
@@ -276,10 +343,11 @@ class Connector : public ConnectorBase {
  public:
   using ConnectorBase::ConnectorBase;
 
-  stdx::expected<ConnectionType, std::error_code> connect() {
+  stdx::expected<ConnectionType, std::error_code> connect(
+      routing_guidelines::Session_info session_info) {
     switch (func_) {
       case Function::kInitDestination: {
-        auto init_res = init_destination();
+        auto init_res = init_destination(std::move(session_info));
         if (!init_res) return stdx::unexpected(init_res.error());
 
       } break;
@@ -290,7 +358,7 @@ class Connector : public ConnectorBase {
       } break;
     }
 
-    if (destination_id().empty()) {
+    if (!destination_id().has_value()) {
       // stops at 'connect_init()
       {
         auto connect_res = try_connect();
@@ -299,60 +367,16 @@ class Connector : public ConnectorBase {
     }
     using ret_type = stdx::expected<ConnectionType, std::error_code>;
 
-    return ret_type{std::in_place,
-                    std::make_unique<TcpConnection>(std::move(socket()),
-                                                    std::move(endpoint()))};
-  }
-};
-
-template <class ConnectionType>
-class PooledConnector : public ConnectorBase {
- public:
-  using pool_lookup_cb = std::function<std::optional<ConnectionType>(
-      const server_protocol_type::endpoint &ep)>;
-
-  PooledConnector(net::io_context &io_ctx, RouteDestination *route_destination,
-                  Destinations &destinations, pool_lookup_cb pool_lookup)
-      : ConnectorBase{io_ctx, route_destination, destinations},
-        pool_lookup_{std::move(pool_lookup)} {}
-
-  stdx::expected<ConnectionType, std::error_code> connect() {
-    switch (func_) {
-      case Function::kInitDestination: {
-        auto init_res = init_destination();
-        if (!init_res) return stdx::unexpected(init_res.error());
-
-      } break;
-      case Function::kConnectFinish: {
-        auto connect_res = connect_finish();
-        if (!connect_res) return stdx::unexpected(connect_res.error());
-
-      } break;
+    if (socket().is_local()) {
+      return ret_type{std::in_place, std::make_unique<UnixDomainConnection>(
+                                         std::move(socket().as_local()),
+                                         std::move(endpoint().as_local()))};
     }
 
-    if (destination_id().empty()) {
-      // stops at 'connect_init()
-      if (auto pool_res = probe_pool()) {
-        // return the pooled connection.
-        return std::move(pool_res.value());
-      }
-
-      {
-        auto connect_res = try_connect();
-        if (!connect_res) return stdx::unexpected(connect_res.error());
-      }
-    }
-
-    return {std::in_place, std::make_unique<TcpConnection>(
-                               std::move(socket()), std::move(endpoint()))};
+    return ret_type{std::in_place, std::make_unique<TcpConnection>(
+                                       std::move(socket().as_tcp()),
+                                       std::move(endpoint().as_tcp()))};
   }
-
- private:
-  std::optional<ConnectionType> probe_pool() {
-    return pool_lookup_(server_endpoint_);
-  }
-
-  pool_lookup_cb pool_lookup_;
 };
 
 #endif /* ROUTING_CONNECTION_INCLUDED */

@@ -83,11 +83,17 @@ bool Keyring_vault_backend::init() {
     m_valid = true;
 
     return false;
+  } catch (const std::exception &e) {
+    std::string err_msg = std::string("std exception in function '") +
+                          __func__ + "': " + e.what();
+    LogComponentErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG, err_msg.c_str());
   } catch (...) {
-    mysql_components_handle_std_exception(__func__);
-    curl_global_cleanup();
-    return true;
+    std::string err_msg =
+        std::string("Unknown exception in function '") + __func__ + '\'';
+    LogComponentErr(ERROR_LEVEL, ER_LOG_PRINTF_MSG, err_msg.c_str());
   }
+  curl_global_cleanup();
+  return true;
 }
 
 bool Keyring_vault_backend::load_cache(

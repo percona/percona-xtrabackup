@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -23,6 +23,8 @@
 
 #ifndef COMPONENTS_SERVICES_DEFS_MYSQL_STRING_DEFS_H
 #define COMPONENTS_SERVICES_DEFS_MYSQL_STRING_DEFS_H
+
+#include <cstddef>
 
 /**
   @file mysql/components/services/defs/mysql_string_defs.h

@@ -198,7 +198,7 @@ drop table t1;
 #
 
 set names utf8mb3;
-create table t1(a text,fulltext(a)) collate=utf8_swedish_ci;
+create table t1(a text,fulltext(a)) collate=utf8mb3_swedish_ci;
 insert into t1 values('test test '),('test'),('test'),('test'),
 ('test'),('test'),('test'),('test'),('test'),('test'),('test'),('test'),
 ('test'),('test'),('test'),('test'),('test'),('test'),('test'),('test'),

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -101,7 +101,7 @@ ProcessInfo *ProcessInfo::forNodeId(Uint16 nodeId) {
   ProcessInfo *process = getOwnProcessInfo(nodeId);
   if (process->node_id == nodeId) return process;
   /* Make a copy */
-  ProcessInfo *self = new ProcessInfo();
+  auto *self = new ProcessInfo();
   self->node_id = nodeId;  // do not copy node id
   strncpy(self->process_name, process->process_name, ProcessNameLength);
   self->process_id = process->process_id;

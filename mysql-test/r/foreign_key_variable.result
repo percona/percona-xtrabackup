@@ -1,0 +1,58 @@
+# FR 8) Add innodb_native_foreign_keys system variable for switching FK handling.
+SHOW VARIABLES LIKE 'innodb_native_foreign_keys';
+Variable_name	Value
+innodb_native_foreign_keys	OFF
+# Test scope is Global
+SELECT @@SESSION.innodb_native_foreign_keys;
+ERROR HY000: Variable 'innodb_native_foreign_keys' is a GLOBAL variable
+SELECT @@GLOBAL.innodb_native_foreign_keys;
+@@GLOBAL.innodb_native_foreign_keys
+0
+# Test Mutable Type is static
+SET GLOBAL innodb_native_foreign_keys = OFF;
+ERROR HY000: Variable 'innodb_native_foreign_keys' is a read only variable
+# FR 8.1) innodb_native_foreign_keys=OFF = SQL FK handling for InnoDB
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+CREATE TABLE t2 (f1 INT, f2 INT,
+FOREIGN KEY (f1) REFERENCES t1 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+INSERT INTO t2 VALUES (1,1), (2,2), (3,3);
+DELETE FROM t1 WHERE f1=1;
+# rows_deleted should tally child table records (SQL FK handling)
+SELECT table_name, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_deleted
+t1	1
+t2	1
+DROP TABLE t1, t2;
+# Request server restart with innodb_native_foreign_keys system variable ON
+# FR 8.4) Startup with innodb_native_foreign_keys should deprecate in log
+# restart: --innodb_native_foreign_keys=ON
+Pattern "The syntax '--innodb_native_foreign_keys' is deprecated and will be removed" found
+# Check innodb_native_foreign_keys after restart
+SHOW VARIABLES LIKE 'innodb_native_foreign_keys';
+Variable_name	Value
+innodb_native_foreign_keys	ON
+# FR 8.2) innodb_native_foreign_keys=ON = native InnoDB FK handling
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+CREATE TABLE t2 (f1 INT, f2 INT,
+FOREIGN KEY (f1) REFERENCES t1 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+INSERT INTO t2 VALUES (1,1), (2,2), (3,3);
+DELETE FROM t1 WHERE f1=1;
+# rows_deleted should NOT tally child table records (native FK handling)
+SELECT table_name, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_deleted
+t1	1
+t2	0
+DROP TABLE t1, t2;
+# restart with innodb_native_foreign_keys default value
+# restart: --innodb_native_foreign_keys=OFF
+Pattern "The syntax '--innodb_native_foreign_keys' is deprecated and will be removed" found
+# cleanup: restart without innodb_native_foreign_keys variable
+# restart:
+# After cleanup restart
+SHOW VARIABLES LIKE 'innodb_native_foreign_keys';
+Variable_name	Value
+innodb_native_foreign_keys	OFF

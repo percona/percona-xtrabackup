@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -58,9 +58,8 @@ class TransporterReceiveHandle : public TransporterReceiveData {
    *
    * @returns true if no more signals should be delivered
    */
-  virtual bool deliver_signal(SignalHeader *const header, Uint8 prio,
-                              TransporterError &error_code,
-                              Uint32 *const signalData,
+  virtual bool deliver_signal(SignalHeader *header, Uint8 prio,
+                              TransporterError &error_code, Uint32 *signalData,
                               LinearSectionPtr ptr[3]) = 0;
 
   /**

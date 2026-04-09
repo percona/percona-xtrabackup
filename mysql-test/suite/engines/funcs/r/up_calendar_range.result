@@ -26,9 +26,6 @@ c1
 2007-02-16
 2007-02-17
 UPDATE t1 SET c1 = NOW() WHERE c1 >= ADDTIME(NOW(),'2 02:01:01');
-Warnings:
-Note	1265	Data truncated for column 'c1' at row 4
-Note	1265	Data truncated for column 'c1' at row 5
 SELECT * FROM t1 ORDER BY c1;
 c1
 2007-02-13

@@ -100,7 +100,7 @@ user = "test_user4"
 ##############################################
 # Tests for mysql_config_editor's help command
 ##############################################
-Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+Copyright (c) 2012, 2026, Oracle and/or its affiliates.
 
 Oracle is a registered trademark of Oracle Corporation and/or its
 affiliates. Other names may be trademarks of their respective
@@ -173,6 +173,8 @@ CREATE USER test_user1;
 # Creating user 'test_user2'
 CREATE USER test_user2;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 #
 # Now trying to connect again..
 # Connecting using 'test_user1'

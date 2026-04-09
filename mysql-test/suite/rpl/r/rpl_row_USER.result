@@ -9,6 +9,8 @@ CREATE USER tester IDENTIFIED BY 'test', ''@'localhost%';
 GRANT ALL ON mysqltest1.* TO 'tester'@'%';
 GRANT ALL ON mysqltest1.* TO ''@'localhost%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE mysqltest1.t1 (a INT, users VARCHAR(255), PRIMARY KEY(a));
 INSERT INTO mysqltest1.t1 VALUES(1,USER());
 INSERT INTO mysqltest1.t1 VALUES(2,CURRENT_USER());
@@ -42,6 +44,8 @@ CREATE DATABASE mysqltest1;
 CREATE USER 'tester1'@'' IDENTIFIED BY 'test';
 GRANT ALL ON mysqltest1.* TO 'tester1'@'';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE mysqltest1.t1 (a INT, users VARCHAR(255), PRIMARY KEY(a));
 INSERT INTO mysqltest1.t1 VALUES(1,USER());
 INSERT INTO mysqltest1.t1 VALUES(2,CURRENT_USER());

@@ -282,6 +282,143 @@ SET @@global.connection_control_max_connection_delay = @saved_value;
 SELECT @@global.connection_control_max_connection_delay;
 @@global.connection_control_max_connection_delay
 2147483647
+# Test setting connection_control_exempt_unknown_users to invalid values
+SET @saved_exempt= @@global.connection_control_exempt_unknown_users;
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= -1;
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of '-1'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= 7;
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of '7'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "YESS";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'YESS'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "ye";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'ye'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "NOOOOO";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'NOOOOO'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "n";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'n'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "ONN";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'ONN'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "offf";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'offf'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "NO";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'NO'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= NO;
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'NO'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "YES";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'YES'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= YES;
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'YES'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "no";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'no'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "yes";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'yes'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "FALSE";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'FALSE'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "TRUE";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'TRUE'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "false";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'false'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "true";
+ERROR 42000: Variable 'connection_control_exempt_unknown_users' can't be set to the value of 'true'
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+# Test setting connection_control_exempt_unknown_users to valid values
+SET @@global.connection_control_exempt_unknown_users= 0;
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= 1;
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+1
+SET @@global.connection_control_exempt_unknown_users= "OFF";
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "ON";
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+1
+SET @@global.connection_control_exempt_unknown_users= FALSE;
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= TRUE;
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+1
+SET @@global.connection_control_exempt_unknown_users= "off";
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= "on";
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+1
+SET @@global.connection_control_exempt_unknown_users= false;
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+0
+SET @@global.connection_control_exempt_unknown_users= true;
+SELECT @@global.connection_control_exempt_unknown_users;
+@@global.connection_control_exempt_unknown_users
+1
+SET @@global.connection_control_exempt_unknown_users= @saved_exempt;
 #-----------------------------------------------------------------------
 # Cleanup
 DROP USER no_privs@localhost;

@@ -624,9 +624,6 @@ SELECT ST_ASTEXT(ST_DIFFERENCE(ST_GEOMFROMTEXT(@star_of_elems),));
 --error ER_PARSE_ERROR
 SELECT ST_ASTEXT(ST_DIFFERENCE(,ST_GEOMFROMTEXT(@star_top)));
 
---echo # Invalid geometry in input
-SELECT ST_ASTEXT(ST_DIFFERENCE(ST_GEOMFROMTEXT(@star_elem_vertical),ST_GEOMFROMTEXT(@star_of_elems)));
-
 SELECT ST_ASTEXT(ST_DIFFERENCE(ST_GEOMFROMTEXT(@star_elem_vertical),ST_GEOMFROMTEXT(@star_collection_elems)));
 
 --echo # Invalid geometry in input

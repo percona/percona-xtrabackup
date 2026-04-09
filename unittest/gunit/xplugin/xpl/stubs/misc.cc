@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -136,7 +136,7 @@ THD *thd_get_current_thd() { return current_thd; }
 
 bool check_address_is_wildcard(const char *, size_t) { return false; }
 
-void conditional_sync_point(std::string) {}
+void conditional_sync_point(const std::string &, unsigned short) {}
 
 uint opt_debug_sync_timeout;
 void debug_sync(THD *, char const *, size_t) {}

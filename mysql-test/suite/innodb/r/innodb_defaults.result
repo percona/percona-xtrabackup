@@ -30,11 +30,11 @@ SELECT @@innodb_doublewrite_pages;
 128
 SELECT @@innodb_change_buffering;
 @@innodb_change_buffering
-none
+all
 SET GLOBAL innodb_change_buffering = DEFAULT;
 SELECT @@innodb_change_buffering;
 @@innodb_change_buffering
-none
+all
 SELECT @@innodb_adaptive_hash_index;
 @@innodb_adaptive_hash_index
 0

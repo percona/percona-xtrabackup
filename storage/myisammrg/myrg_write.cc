@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2001, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,11 +31,9 @@ int myrg_write(MYRG_INFO *info, uchar *rec) {
   /* [phi] MERGE_WRITE_DISABLED is handled by the else case */
   if (info->merge_insert_method == MERGE_INSERT_TO_FIRST)
     return mi_write((info->current_table = info->open_tables)->table, rec);
-  else if (info->merge_insert_method == MERGE_INSERT_TO_LAST)
+  if (info->merge_insert_method == MERGE_INSERT_TO_LAST)
     return mi_write((info->current_table = info->end_table - 1)->table, rec);
-  else /* unsupported insertion method */
-  {
-    set_my_errno(HA_ERR_WRONG_COMMAND);
-    return HA_ERR_WRONG_COMMAND;
-  }
+  /* unsupported insertion method */
+  set_my_errno(HA_ERR_WRONG_COMMAND);
+  return HA_ERR_WRONG_COMMAND;
 }

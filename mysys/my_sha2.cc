@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,30 +32,73 @@
   oft-used external library, OpenSSL.
 */
 
+#include <stddef.h>
+
+#include "my_compiler.h"
+#include "my_ssl_algo_cache.h"  // IWYU pragma: keep
 #include "sha2.h"
 
+#include <openssl/opensslv.h>  // for OPENSSL_VERSION_NUMBER
+#include <openssl/sha.h>       // for SHA224_Final, SHA224_Init, SHA224_Update
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
-#define GEN_OPENSSL_EVP_SHA2_BRIDGE(size)                                     \
-  unsigned char *SHA_EVP##size(const unsigned char *input_ptr,                \
-                               size_t input_length,                           \
-                               char unsigned *output_ptr) {                   \
-    EVP_Digest(input_ptr, input_length, output_ptr, nullptr, EVP_sha##size(), \
-               nullptr);                                                      \
-    return (output_ptr);                                                      \
-  }
+
+// OpenSSL3.x EVP APIs are 6x slower than these (deprecated) APIs
+MY_COMPILER_DIAGNOSTIC_PUSH()
+MY_COMPILER_CLANG_DIAGNOSTIC_IGNORE("-Wdeprecated-declarations")
+MY_COMPILER_GCC_DIAGNOSTIC_IGNORE("-Wdeprecated-declarations")
+MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(4996)
+
+unsigned char *SHA_EVP512(const unsigned char *input_ptr, size_t input_length,
+                          char unsigned *output_ptr) {
+  SHA512_CTX ctx;
+  SHA512_Init(&ctx);
+  SHA512_Update(&ctx, input_ptr, input_length);
+  SHA512_Final(output_ptr, &ctx);
+  return output_ptr;
+}
+
+unsigned char *SHA_EVP384(const unsigned char *input_ptr, size_t input_length,
+                          char unsigned *output_ptr) {
+  SHA512_CTX ctx;
+  SHA384_Init(&ctx);
+  SHA384_Update(&ctx, input_ptr, input_length);
+  SHA384_Final(output_ptr, &ctx);
+  return output_ptr;
+}
+
+unsigned char *SHA_EVP256(const unsigned char *input_ptr, size_t input_length,
+                          char unsigned *output_ptr) {
+  SHA256_CTX ctx;
+  SHA256_Init(&ctx);
+  SHA256_Update(&ctx, input_ptr, input_length);
+  SHA256_Final(output_ptr, &ctx);
+  return output_ptr;
+}
+
+unsigned char *SHA_EVP224(const unsigned char *input_ptr, size_t input_length,
+                          char unsigned *output_ptr) {
+  SHA256_CTX ctx;
+  SHA224_Init(&ctx);
+  SHA224_Update(&ctx, input_ptr, input_length);
+  SHA224_Final(output_ptr, &ctx);
+  return output_ptr;
+}
+
+// restore clang/gcc checks for -Wdeprecated-declarations
+MY_COMPILER_DIAGNOSTIC_POP()
+
 #else /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 #define GEN_OPENSSL_EVP_SHA2_BRIDGE(size)                          \
   unsigned char *SHA_EVP##size(const unsigned char *input_ptr,     \
                                size_t input_length,                \
                                char unsigned *output_ptr) {        \
     EVP_MD_CTX *md_ctx = EVP_MD_CTX_create();                      \
-    EVP_DigestInit_ex(md_ctx, EVP_sha##size(), NULL);              \
+    EVP_DigestInit_ex(md_ctx, my_EVP_sha##size(), NULL);           \
     EVP_DigestUpdate(md_ctx, input_ptr, input_length);             \
     EVP_DigestFinal_ex(md_ctx, (unsigned char *)output_ptr, NULL); \
     EVP_MD_CTX_destroy(md_ctx);                                    \
-    return (output_ptr);                                           \
+    return output_ptr;                                             \
   }
-#endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 
 /*
   @fn SHA_EVP512
@@ -69,3 +112,5 @@ GEN_OPENSSL_EVP_SHA2_BRIDGE(384)
 GEN_OPENSSL_EVP_SHA2_BRIDGE(256)
 GEN_OPENSSL_EVP_SHA2_BRIDGE(224)
 #undef GEN_OPENSSL_EVP_SHA2_BRIDGE
+
+#endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */

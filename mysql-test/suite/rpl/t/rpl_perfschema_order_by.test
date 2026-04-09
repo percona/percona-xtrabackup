@@ -6,9 +6,8 @@
 # === Implementation ===
 #
 # 1) Setup a multi-source replication topology.
-# 2) With STS, execute DDLs on both the masters and use SQL ordering
+# 2) Execute DDLs on both the sources and use SQL ordering
 #    on PFS tables on slave.
-# 3) Repeat step 2 with Multi-threaded Slave.
 #
 # === References ===
 # Bug #22958077: ORDER BY LAST_SEEN_TRANSACTION RESULTS IN EMPTY SET (OR DEBUG
@@ -22,19 +21,11 @@
 --let $rpl_connection_name= server_2
 --source include/connection.inc
 SET @save.replica_parallel_workers= @@global.replica_parallel_workers;
-
---echo # Test for Single Threaded Slave
-SET GLOBAL replica_parallel_workers= 0;
-START REPLICA;
---source common/rpl/rpl_perfschema_order_by.test
-
---echo # Test for Multi Threaded Slave
-STOP REPLICA;
 SET GLOBAL replica_parallel_workers = 2;
-START REPLICA;
+--source include/rpl/start_replica.inc
 --source common/rpl/rpl_perfschema_order_by.test
 
-#Cleanup
+# clean up
 STOP REPLICA;
 --disable_warnings
 SET @@global.replica_parallel_workers= @save.replica_parallel_workers;

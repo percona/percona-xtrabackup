@@ -83,7 +83,7 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 server-relay-log-group_replication_applier.000002	#	Format_desc	#	#	SERVER_VERSION, BINLOG_VERSION
 server-relay-log-group_replication_applier.000002	#	Query	#	#	BEGIN
 server-relay-log-group_replication_applier.000002	#	Table_map	#	#	table_id: # (test.t1)
-server-relay-log-group_replication_applier.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-relay-log-group_replication_applier.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-relay-log-group_replication_applier.000002	#	Xid	#	#	COMMIT /* XID */
 server-relay-log-group_replication_applier.000002	#	Rotate	#	#	server-relay-log-group_replication_applier.000003;pos=4
 include/rpl/deprecated/show_relaylog_events.inc [FOR CHANNEL 'group_replication_applier']

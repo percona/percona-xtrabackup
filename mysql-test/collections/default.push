@@ -24,3 +24,5 @@ perl mysql-test-run.pl --exclude-platform=_el7-|_solaris11- --timer --testcase-t
 #
 # Group Replication
 perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication --vardir=var-group_replication --suite=group_replication
+
+perl mysql-test-run.pl --force --timer --comment=classic_hashing --vardir=var-classic_hashing  --suite=classic_hashing  --no-skip --big-test

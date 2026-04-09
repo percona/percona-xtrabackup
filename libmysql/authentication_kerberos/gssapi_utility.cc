@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,9 @@
 
 #include "gssapi_utility.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-extern Logger_client *g_logger_client;
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 static void gssapi_errmsg(OM_uint32 major, OM_uint32 minor, char *buf,
                           size_t size) {
@@ -38,15 +36,15 @@ static void gssapi_errmsg(OM_uint32 major, OM_uint32 minor, char *buf,
   gss_buffer_desc status{0, nullptr};
   char *t_message = buf;
   char *end = t_message + size - 1;
-  int types[] = {GSS_C_GSS_CODE, GSS_C_MECH_CODE};
+  int const types[] = {GSS_C_GSS_CODE, GSS_C_MECH_CODE};
 
-  for (int i = 0; i < 2; i++) {
+  for (int type : types) {
     message_context = 0;
-    status_code = types[i] == GSS_C_GSS_CODE ? major : minor;
+    status_code = type == GSS_C_GSS_CODE ? major : minor;
 
     if (!status_code) continue;
     do {
-      maj_status = gss_display_status(&min_status, status_code, types[i],
+      maj_status = gss_display_status(&min_status, status_code, type,
                                       GSS_C_NO_OID, &message_context, &status);
       if (maj_status) break;
 

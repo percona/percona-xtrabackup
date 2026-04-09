@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,8 @@
 #ifndef MYSQL_SERVICE_SECURITY_CONTEXT
 #define MYSQL_SERVICE_SECURITY_CONTEXT
 
+#include "mysql/components/services/bits/thd.h"
+
 /**
   @file include/mysql/service_security_context.h
 
@@ -31,8 +33,6 @@
 
   @sa security_context_service_st
 */
-
-#include "mysql/plugin.h"
 
 #ifdef __cplusplus
 class Security_context;

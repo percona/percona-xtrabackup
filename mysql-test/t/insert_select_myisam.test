@@ -1,5 +1,7 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 #
 # bug in bulk insert optimization
@@ -112,3 +114,5 @@ insert into t1 values(1),(2),(3);
 create table t2 (key(f1)) engine=myisam select sql_buffer_result f1 from t1;
 check table t2 extended;
 drop table t1,t2;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

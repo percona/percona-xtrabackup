@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -823,9 +823,7 @@ static inline Rec_instant_state rec_convert_dtuple_to_rec_comp(
         }
         break;
       case REC_STATUS_NODE_PTR:
-        ut_ad(n_fields ==
-              static_cast<ulint>(
-                  dict_index_get_n_unique_in_tree_nonleaf(index) + 1));
+        ut_ad(n_fields == dict_index_get_n_unique_in_tree_nonleaf(index) + 1U);
         n_node_ptr_field = n_fields - 1;
         n_null = index->get_nullable_before_instant_add_drop();
         break;

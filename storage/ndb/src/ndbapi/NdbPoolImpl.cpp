@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -74,7 +74,7 @@ bool NdbPool::initPoolMutex() {
   bool ret_result = false;
   if (pool_mutex == nullptr) {
     pool_mutex = NdbMutex_Create();
-    ret_result = ((pool_mutex == nullptr) ? false : true);
+    ret_result = (pool_mutex != nullptr);
   }
   return ret_result;
 }
@@ -174,7 +174,7 @@ bool NdbPool::init(Uint32 init_no_objects) {
     }
     ret_result = true;
     break;
-  } while (1);
+  } while (true);
   return ret_result;
 }
 
@@ -194,7 +194,7 @@ Ndb *NdbPool::get_ndb_object(Uint32 &hint_id, const char *a_catalog_name,
   Ndb *ret_ndb = nullptr;
   Uint32 hash_entry = compute_hash(a_schema_name);
   NdbMutex_Lock(pool_mutex);
-  while (1) {
+  while (true) {
     /*
     We start by checking if we can use the hinted Ndb object.
     */
@@ -374,12 +374,11 @@ Ndb *NdbPool::get_hint_ndb(Uint32 hint_id, Uint32 hash_entry) {
       ret_ndb = m_pool_reference[hint_id].ndb_reference;
       if (ret_ndb != nullptr) {
         break;
-      } else {
-        assert(false);
       }
+      assert(false);
     }
     return nullptr;
-  } while (1);
+  } while (true);
   /*
   This is where we remove the entry from the free list and from the db hash
   table.
@@ -425,7 +424,7 @@ void NdbPool::remove_db_hash(Uint32 id, Uint32 hash_entry) {
 }
 
 Uint32 NdbPool::compute_hash(const char *a_schema_name) {
-  Uint32 len = Uint32(strlen(a_schema_name));
+  auto len = Uint32(strlen(a_schema_name));
   Uint32 h = 147;
   for (Uint32 i = 0; i < len; i++) {
     Uint32 c = a_schema_name[i];

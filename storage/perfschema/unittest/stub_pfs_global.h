@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -29,8 +29,6 @@
 #include "storage/perfschema/pfs_global.h"
 
 bool pfs_initialized = false;
-size_t pfs_allocated_memory_size = 0;
-size_t pfs_allocated_memory_count = 0;
 
 bool stub_alloc_always_fails = true;
 bool stub_alloc_maybe_fails = true;

@@ -15,6 +15,9 @@
 # Bug#33090128 RANDOM ERROR 1201: COULD NOT INITIALIZE MASTER INFO STRUCTURE; ON CHANGE MASTER
 #
 
+--source include/not_valgrind.inc
+--source include/have_nodebug.inc
+--source include/big_test.inc
 --source include/have_binlog_format_row.inc
 --source include/rpl/init_source_replica.inc
 

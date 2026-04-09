@@ -1828,3 +1828,14 @@ ERROR SR001: There's no spatial reference system with SRID 10.
 # The only geographic SRS allowed is 4326.
 DO ST_GEOHASH(ST_GEOMFROMTEXT('POINT(0 0)', 3819), 10);
 ERROR 22S00: Function st_geohash is only defined for SRID 0 and SRID 4326.
+#
+# Bug#38541728: Assertion '!null_value || is_nullable()' failed after
+#               validate_srid_arg
+#
+DO ST_POINTFROMGEOHASH(ST_GEOHASH(POINT(129, 224), 84),
+CONVERT((1 <=> 2), UNSIGNED INT)
+);
+ERROR 22003: latitude value is out of range in 'st_geohash'
+DO ST_POINTFROMGEOHASH(ST_GEOHASH(POINT(129, CAST(-1 AS UNSIGNED) + 10), 84),
+CONVERT((1 <=> 2), UNSIGNED INT));
+ERROR 22003: BIGINT UNSIGNED value is out of range in '(cast(-(1) as unsigned) + 10)'

@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 
 #include <cstddef>
 #include <string>
+#include <string_view>
 
 #include "mysql/strings/api.h"
 
@@ -75,28 +76,22 @@ class MYSQL_STRINGS_EXPORT Name {
     @note throws std::bad_alloc
   */
   Name(const char *name, size_t size);
+  ~Name() = default;
+
+  // These must be explicitly defined for clang on Windows due to
+  // __declspec(dllexport).
+  Name(const Name &) = default;
+  Name(Name &&) = default;
+  Name &operator=(const Name &) = default;
+  Name &operator=(Name &&) = default;
 
   /**
-    Constructor
-
-    @note throws std::bad_alloc
+    Returns normalized name as std::string_view.
   */
-  Name(const Name &);
-
-  Name(Name &&) noexcept;
-
-  ~Name();
-
-  Name &operator=(const Name &);
-  Name &operator=(Name &&) noexcept;
-
-  /**
-    Returns normalized name as std::string
-  */
-  std::string operator()() const { return m_normalized; }
+  std::string_view to_string_view() const { return m_normalized; }
 
  private:
-  const char *m_normalized{nullptr};
+  std::string m_normalized;
 };
 
 /**

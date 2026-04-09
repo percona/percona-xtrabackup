@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -88,7 +88,8 @@ bool Sql_cmd_alter_table_exchange_partition::execute(THD *thd) {
   */
   const HA_CREATE_INFO create_info(*lex->create_info);
   Alter_info alter_info(*m_alter_info, thd->mem_root);
-  const ulong priv_needed = ALTER_ACL | DROP_ACL | INSERT_ACL | CREATE_ACL;
+  const Access_bitmask priv_needed =
+      ALTER_ACL | DROP_ACL | INSERT_ACL | CREATE_ACL;
 
   DBUG_TRACE;
 

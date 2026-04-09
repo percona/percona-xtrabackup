@@ -65,6 +65,7 @@ iff windowing_use_high_precision==TRUE
 ANALYZE TABLE t;
 Table	Op	Msg_type	Msg_text
 test.t	analyze	status	OK
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON
 SELECT HEX(i), HEX(li), HEX(b), HEX(lb),
 HEX(BIT_OR(i) OVER w), HEX(BIT_OR(li) OVER w),
@@ -128,6 +129,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select hex(`test`.`t`.`i`) AS `HEX(i)`,hex(`test`.`t`.`li`) AS `HEX(li)`,hex(`test`.`t`.`b`) AS `HEX(b)`,hex(`test`.`t`.`lb`) AS `HEX(lb)`,hex(bit_or(`test`.`t`.`i`) OVER `w`) AS `HEX(BIT_OR(i) OVER w)`,hex(bit_or(`test`.`t`.`li`) OVER `w`) AS `HEX(BIT_OR(li) OVER w)`,hex(bit_or(`test`.`t`.`b`) OVER `w`) AS `HEX(BIT_OR(b) OVER w)`,hex(bit_or(`test`.`t`.`lb`) OVER `w`) AS `HEX(BIT_OR(lb) OVER w)`,sum(`test`.`t`.`d`) OVER `w` AS `dsum` from `test`.`t` window `w` AS (ORDER BY `test`.`t`.`i` ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) 
+SET explain_json_format_version = DEFAULT;
 SELECT HEX(i), HEX(li), HEX(b), HEX(lb),
 HEX(BIT_XOR(i) OVER w), HEX(BIT_XOR(li) OVER w),
 HEX(BIT_XOR(b) OVER w), HEX(BIT_XOR(lb) OVER w),
@@ -470,6 +472,7 @@ iff windowing_use_high_precision==TRUE
 ANALYZE TABLE t;
 Table	Op	Msg_type	Msg_text
 test.t	analyze	status	OK
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON
 SELECT HEX(i), HEX(li), HEX(b), HEX(lb),
 HEX(BIT_OR(i) OVER w), HEX(BIT_OR(li) OVER w),
@@ -532,6 +535,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select hex(`test`.`t`.`i`) AS `HEX(i)`,hex(`test`.`t`.`li`) AS `HEX(li)`,hex(`test`.`t`.`b`) AS `HEX(b)`,hex(`test`.`t`.`lb`) AS `HEX(lb)`,hex(bit_or(`test`.`t`.`i`) OVER `w`) AS `HEX(BIT_OR(i) OVER w)`,hex(bit_or(`test`.`t`.`li`) OVER `w`) AS `HEX(BIT_OR(li) OVER w)`,hex(bit_or(`test`.`t`.`b`) OVER `w`) AS `HEX(BIT_OR(b) OVER w)`,hex(bit_or(`test`.`t`.`lb`) OVER `w`) AS `HEX(BIT_OR(lb) OVER w)`,sum(`test`.`t`.`d`) OVER `w` AS `dsum` from `test`.`t` window `w` AS (ORDER BY `test`.`t`.`i` ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) 
+SET explain_json_format_version = DEFAULT;
 SELECT HEX(i), HEX(li), HEX(b), HEX(lb),
 HEX(BIT_XOR(i) OVER w), HEX(BIT_XOR(li) OVER w),
 HEX(BIT_XOR(b) OVER w), HEX(BIT_XOR(lb) OVER w),

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,26 +34,26 @@ TEST(Cell, ConstructorAndGetters) {
   std::array<unsigned char, 8> data{{8, 4, 6, 2, 0, 0, 5, 7}};
 
   const unsigned char *const valid_data = data.data();
-  const uint32_t valid_data_length = static_cast<uint32_t>(data.size());
+  const auto valid_data_length = static_cast<uint32_t>(data.size());
 
   const unsigned char *const null_data = nullptr;
 
   {
-    temptable::Cell cell(false, valid_data_length, valid_data);
+    temptable::Cell const cell(false, valid_data_length, valid_data);
     EXPECT_EQ(cell.is_null(), false);
     EXPECT_EQ(cell.data_length(), valid_data_length);
     EXPECT_EQ(cell.data(), valid_data);
   }
 
   {
-    temptable::Cell cell(true, valid_data_length - 1, valid_data + 1);
+    temptable::Cell const cell(true, valid_data_length - 1, valid_data + 1);
     EXPECT_EQ(cell.is_null(), true);
     EXPECT_EQ(cell.data_length(), valid_data_length - 1);
     EXPECT_EQ(cell.data(), valid_data + 1);
   }
 
   {
-    temptable::Cell cell(true, 0, null_data);
+    temptable::Cell const cell(true, 0, null_data);
     EXPECT_EQ(cell.is_null(), true);
     EXPECT_EQ(cell.data_length(), 0);
     EXPECT_EQ(cell.data(), null_data);

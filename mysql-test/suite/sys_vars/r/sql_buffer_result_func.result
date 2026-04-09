@@ -1,5 +1,6 @@
 ** Setup **
 
+FLUSH STATUS;
 SET @original_sql_buffer_result = @@sql_buffer_result;
 CREATE TEMPORARY TABLE t1(a varchar(20), b varchar(20));
 INSERT INTO t1 VALUES('aa','bb');

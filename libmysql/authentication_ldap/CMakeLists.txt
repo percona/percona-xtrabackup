@@ -1,4 +1,4 @@
-# Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -56,7 +56,9 @@ ENDIF()
 DISABLE_MISSING_PROFILE_WARNING()
 
 IF(SASL_WITHOUT_KERBEROS)
-  MESSAGE(WARNING "Bad custom SASL library")
+  IF(NOT WITH_SASL STREQUAL "system")
+    MESSAGE(WARNING "Bad custom SASL library")
+  ENDIF()
   MESSAGE(STATUS
     "Building authentication_ldap_sasl_client WITHOUT Kerberos")
 ELSEIF(KERBEROS_FOUND)
@@ -93,7 +95,7 @@ IF(NOT TARGET authentication_ldap_sasl_client)
   RETURN()
 ENDIF()
 
-IF(KERBEROS_FOUND AND (NOT WIN32))
+IF(KERBEROS_FOUND AND LINUX)
   SET(PLUGIN_VERSION_FILE
     ${CMAKE_CURRENT_SOURCE_DIR}/authentication_ldap_sasl_client.ver)
   # Hide all symbols in mysys, to avoid ODR violations.
@@ -123,7 +125,7 @@ IF(WIN32)
   MESSAGE(STATUS "SASL_SCRAM_PLUGIN = ${SASL_SCRAM_PLUGIN}")
   MESSAGE(STATUS "SASL_GSSAPI_PLUGIN = ${SASL_GSSAPI_PLUGIN}")
 
-  # Note that SASL library (libsasl.dll") goes into "bin" directory 
+  # Note that SASL library (libsasl.dll") goes into "bin" directory
   # (where "mysql.exe" and other client executables are located)
   # SASL plugins ("saslSCRAM.dll" and "saslGSSAPI.dll") go into "bin/sasl2" directory
   INSTALL(FILES "${SASL_LIBRARY_DLL}"

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,7 +41,7 @@
 #include "sql/join_optimizer/relational_expression.h"
 #include "sql/mem_root_array.h"  // Mem_root_array
 #include "sql/sql_bitmap.h"      // Bitmap
-#include "sql/sql_show.h"        // append_identifier
+#include "sql/sql_show.h"        // append_identifier_*
 #include "sql_string.h"          // String
 #include "string_with_len.h"
 
@@ -56,6 +56,7 @@ class sys_var;
 struct MEM_ROOT;
 struct TABLE;
 class Table_ref;
+class PT_hint_list;
 
 /**
   Hint types, MAX_HINT_ENUM should be always last.
@@ -352,11 +353,15 @@ class Opt_hints_global : public Opt_hints {
  public:
   PT_hint_max_execution_time *max_exec_time;
   Sys_var_hint *sys_var_hint;
+  PT_hint_list *deferred_hints;
+  bool deferred_hints_flag;
 
   Opt_hints_global(MEM_ROOT *mem_root_arg)
       : Opt_hints(nullptr, nullptr, mem_root_arg) {
     max_exec_time = nullptr;
     sys_var_hint = nullptr;
+    deferred_hints = nullptr;
+    deferred_hints_flag = false;
   }
 
   void append_name(const THD *, String *) override {}

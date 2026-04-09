@@ -1,5 +1,5 @@
 /***********************************************************************
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 Copyright (c) 2009, Percona Inc.
 
 Portions of this file contain modifications contributed and copyrighted
@@ -165,7 +165,7 @@ dberr_t Compression::deserialize(bool dblwr_read, byte *src, byte *dst,
   /* The caller doesn't know what to expect */
   if (dst == nullptr) {
     /* Add a safety margin of an additional 50% */
-    ulint n_bytes = header.m_original_size + (header.m_original_size / 2);
+    ulint const n_bytes = header.m_original_size + (header.m_original_size / 2);
 
     dst = reinterpret_cast<byte *>(
         ut::malloc_withkey(UT_NEW_THIS_FILE_PSI_KEY, n_bytes));

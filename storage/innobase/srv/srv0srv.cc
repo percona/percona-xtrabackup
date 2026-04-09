@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 Copyright (c) 2008, 2009 Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -82,8 +82,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql_thd_internal_api.h"
 #include "srv0mon.h"
 
+#include "debug_sync.h" /* CONDITIONAL_SYNC_POINT */
 #include "my_dbug.h"
 #include "my_psi_config.h"
+#include "mysql/components/library_mysys/my_system.h" /* my_num_vcpus */
 
 #endif /* !UNIV_HOTBACKUP */
 #include "srv0srv.h"
@@ -106,14 +108,6 @@ Srv_threads srv_threads;
 /** Structure with cpu usage information. */
 Srv_cpu_usage srv_cpu_usage;
 #endif /* UNIV_HOTBACKUP */
-
-#ifdef INNODB_DD_TABLE
-/* true when upgrading. */
-/* TODO To be removed in WL#16210 */
-bool srv_is_upgrade_mode = false;
-bool srv_downgrade_logs = false;
-bool srv_upgrade_old_undo_found = false;
-#endif /* INNODB_DD_TABLE */
 
 /* Revert to old partition file name if upgrade fails. */
 bool srv_downgrade_partition_files = false;
@@ -154,13 +148,9 @@ uint32_t srv_rseg_init_threads = 1;
 separated by ';' and can also be absolute paths. */
 char *srv_undo_dir = nullptr;
 
-/** The number of implicit undo tablespaces to use for rollback
-segments. */
-ulong srv_undo_tablespaces = FSP_IMPLICIT_UNDO_TABLESPACES;
-
 #ifndef UNIV_HOTBACKUP
 /* The number of rollback segments per tablespace */
-ulong srv_rollback_segments = TRX_SYS_N_RSEGS;
+ulong srv_rollback_segments = FSP_MAX_ROLLBACK_SEGMENTS;
 
 /* Used for the deprecated setting innodb_undo_logs. This will still get
 put into srv_rollback_segments if it is set to a non-default value. */
@@ -239,10 +229,6 @@ char *srv_log_group_home_dir = nullptr;
 
 /** Enable or disable Encrypt of REDO tablespace. */
 bool srv_redo_log_encrypt = false;
-
-ulong srv_log_n_files = 100; /* Deprecated (used only for deprecated sysvar). */
-
-ulonglong srv_log_file_size; /* Deprecated (used only for deprecated sysvar). */
 
 ulonglong srv_redo_log_capacity, srv_redo_log_capacity_used;
 
@@ -1196,10 +1182,10 @@ static void srv_init(void) {
   /* page_zip_stat_per_index_mutex is acquired from:
   1. page_zip_compress() (after SYNC_FSP)
   2. page_zip_decompress()
-  3. i_s_cmp_per_index_fill_low() (where SYNC_DICT is acquired)
+  3. i_s_cmp_per_index_fill_low() (after SYNC_DICT is acquired)
   4. innodb_cmp_per_index_update(), no other latches
-  since we do not acquire any other latches while holding this mutex,
-  it can have very low level. We pick SYNC_ANY_LATCH for it. */
+  5. dict_index_remove_from_cache_low(),
+  6. btr_free_if_exists() (after SYNC_DICT) */
   mutex_create(LATCH_ID_PAGE_ZIP_STAT_PER_INDEX,
                &page_zip_stat_per_index_mutex);
 
@@ -1749,7 +1735,7 @@ void srv_export_innodb_status(void) {
   below the low limit. */
   ReadView oldest_view;
   trx_sys->mvcc->clone_oldest_view(&oldest_view);
-  trx_id_t low_limit_no = oldest_view.view_low_limit_no();
+  trx_id_t low_limit_no = oldest_view.low_limit_no();
 
   rw_lock_s_unlock(&purge_sys->latch);
 
@@ -2145,21 +2131,7 @@ static void srv_update_cpu_usage() {
   srv_cpu_usage.stime_abs = cpu_stime;
 
   /* Calculate relative. */
-
-  cpu_set_t cs;
-  CPU_ZERO(&cs);
-  if (sched_getaffinity(0, sizeof(cs), &cs) != 0) {
-    return;
-  }
-
-  int n_cpu = 0;
-  constexpr int MAX_CPU_N = 128;
-  for (int i = 0; i < MAX_CPU_N; ++i) {
-    if (CPU_ISSET(i, &cs)) {
-      ++n_cpu;
-    }
-  }
-
+  const int n_cpu = my_num_vcpus();
   srv_cpu_usage.n_cpu = n_cpu;
   MONITOR_SET(MONITOR_CPU_N, int64_t(n_cpu));
 
@@ -2247,32 +2219,7 @@ static void srv_update_cpu_usage() {
   srv_cpu_usage.stime_abs = cpu_stime;
 
   /* Calculate relative. */
-
-  DWORD_PTR process_affinity_mask;
-  DWORD_PTR system_affinity_mask;
-  if (!GetProcessAffinityMask(GetCurrentProcess(), &process_affinity_mask,
-                              &system_affinity_mask)) {
-    return;
-  }
-
-  /* If the system has more than 64 processors and the current process
-     contains threads in multiple groups, GetProcessAffinityMask returns
-     zero for both affinity masks.
-  */
-  if ((process_affinity_mask == 0) && (system_affinity_mask == 0)) {
-    return;
-  }
-
-  int n_cpu = 0;
-  constexpr int MAX_CPU_N = 64;
-  uint64_t j = 1;
-  for (int i = 0; i < MAX_CPU_N; ++i) {
-    if (j & process_affinity_mask) {
-      ++n_cpu;
-    }
-    j = j << 1;
-  }
-
+  const int n_cpu = my_num_vcpus();
   srv_cpu_usage.n_cpu = n_cpu;
   MONITOR_SET(MONITOR_CPU_N, int64_t(n_cpu));
 
@@ -2294,7 +2241,7 @@ static void srv_update_cpu_usage() {
   srv_cpu_usage.utime_abs = 0;
   srv_cpu_usage.stime_pct = 0;
   srv_cpu_usage.stime_abs = 0;
-  srv_cpu_usage.n_cpu = 1;
+  srv_cpu_usage.n_cpu = my_num_vcpus();
 }
 #endif
 
@@ -2656,6 +2603,7 @@ bool srv_enable_undo_encryption() {
 static void srv_master_sleep(void) {
   srv_main_thread_op_info = "sleeping";
   std::this_thread::sleep_for(std::chrono::seconds(1));
+  CONDITIONAL_SYNC_POINT("srv_master_sleep");
   srv_main_thread_op_info = "";
 }
 

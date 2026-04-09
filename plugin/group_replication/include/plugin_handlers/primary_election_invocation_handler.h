@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,11 @@
 #include "plugin/group_replication/include/plugin_handlers/primary_election_secondary_process.h"
 #include "plugin/group_replication/include/plugin_messages/single_primary_message.h"
 #include "plugin/group_replication/include/plugin_observers/group_transaction_observation_manager.h"
+
+struct Gr_primary_election_member {
+  std::string uuid;
+  uint64_t delta;
+};
 
 /**
   @class Primary_election_handler
@@ -131,11 +136,13 @@ class Primary_election_handler {
 
     @param[out] primary_uuid  the primary member to elect
     @param[in]  all_members_info The members currently in the group
+    @param[in]  mode             The primary election mode
 
     @return true if a primary is found, false otherwise
   */
   bool pick_primary_member(std::string &primary_uuid,
-                           Group_member_info_list *all_members_info);
+                           Group_member_info_list *all_members_info,
+                           enum_primary_election_mode mode);
 
   /**
   Execute the standard primary election algorithm (that supports primary
@@ -153,6 +160,20 @@ class Primary_election_handler {
     @param primary_uuid  the primary member to elect
   */
   int legacy_primary_election(std::string &primary_uuid);
+
+  /**
+    Order list of members until lowest_version_end position.
+
+    @param[out] all_members_info   list of members to select primary
+    @param[in]  lowest_version_end position last member to select primary
+    @param[out] members            delta members transactions applied
+
+    @return true if a primary is found, false otherwise
+  */
+  int sort_member_by_most_up_to_date(
+      Group_member_info_list *all_members_info,
+      Group_member_info_list_iterator lowest_version_end,
+      std::vector<Gr_primary_election_member> &members);
 
   /** The handler to handle the election on the primary member */
   Primary_election_primary_process primary_election_handler;

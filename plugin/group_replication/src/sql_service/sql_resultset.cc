@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -127,9 +127,7 @@ void Sql_resultset::clear() {
   m_killed = false;
 }
 
-void Sql_resultset::new_row() {
-  result_value.push_back(std::vector<Field_value *>());
-}
+void Sql_resultset::new_row() { result_value.emplace_back(); }
 
 void Sql_resultset::new_field(Field_value *val) {
   result_value[num_rows].push_back(val);

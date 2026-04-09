@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-#include <errno.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <cerrno>
 
 #include <cstdint>
 
@@ -39,8 +39,7 @@
 #include "unittest/gunit/xplugin/xpl/mock/socket_events.h"
 #include "unittest/gunit/xplugin/xpl/mock/system.h"
 
-namespace xpl {
-namespace test {
+namespace xpl::test {
 
 using namespace ::testing;  // NOLINT(build/namespaces)
 
@@ -76,7 +75,7 @@ MATCHER(EqInvalidSocket, "") {
 }
 
 MATCHER_P(EqCastToCStr, expected, "") {
-  std::string force_string = expected;
+  std::string const force_string = expected;
   return force_string == static_cast<char *>(arg);
 }
 
@@ -151,7 +150,7 @@ class Listener_unix_socket_testsuite : public Test {
         .WillRepeatedly(Return(SOCKET_OK));  // back in setup_listener()
     EXPECT_CALL(*m_mock_socket, set_socket_thread_owner());
 
-    std::shared_ptr<iface::Socket> socket = m_mock_socket;
+    std::shared_ptr<iface::Socket> const socket = m_mock_socket;
     EXPECT_CALL(m_mock_socket_events, listen(socket, _)).WillOnce(Return(true));
   }
 
@@ -215,7 +214,7 @@ TEST_F(Listener_unix_socket_testsuite,
 TEST_F(Listener_unix_socket_testsuite,
        unixsocket_try_to_create_unixsocket_with_too_long_filename) {
 #if defined(HAVE_SYS_UN_H)
-  std::string long_filename(2000, 'a');
+  std::string const long_filename(2000, 'a');
   sut = std::make_shared<Listener_unix_socket>(
       m_mock_factory, long_filename, std::ref(m_mock_socket_events), BACKLOG);
 
@@ -493,7 +492,7 @@ TEST_F(Listener_unix_socket_testsuite, unixsocket_event_regiester_failure) {
       .WillRepeatedly(Return(SOCKET_OK));  // back in setup_listener()
   EXPECT_CALL(*m_mock_socket, set_socket_thread_owner());
 
-  std::shared_ptr<iface::Socket> socket = m_mock_socket;
+  std::shared_ptr<iface::Socket> const socket = m_mock_socket;
   EXPECT_CALL(m_mock_socket_events, listen(socket, _)).WillOnce(Return(false));
 
   EXPECT_CALL(*m_mock_system, unlink(StrEq(UNIX_SOCKET_LOCK_FILE)))
@@ -572,5 +571,4 @@ TEST_F(Listener_unix_socket_testsuite, unixsocket_read_old_x_plugin_lockfile) {
 #endif
 }
 
-}  // namespace test
-}  // namespace xpl
+}  // namespace xpl::test

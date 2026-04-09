@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,9 @@
 
 #include "storage/ndb/plugin/ha_ndbcluster_connection.h"
 
+#include <algorithm>
 #include <chrono>
+#include <vector>
 
 #include <mysql/psi/mysql_thread.h>
 
@@ -39,8 +41,10 @@
 #include "storage/ndb/include/kernel/ndb_limits.h"
 #include "storage/ndb/include/ndbapi/NdbApi.hpp"
 #include "storage/ndb/include/portlib/NdbTick.h"
-#include "storage/ndb/include/util/BaseString.hpp"
-#include "storage/ndb/include/util/Vector.hpp"
+#include "storage/ndb/plugin/ndb_string_conv.h"
+#include "storage/ndb/plugin/ndb_string_split.h"
+#include "storage/ndb/plugin/ndb_string_trim.h"
+
 #ifndef _WIN32
 #include <netdb.h>  // getservbyname
 #endif
@@ -75,21 +79,18 @@ extern ulong opt_ndb_mgm_tls_level;
                        describing the problem has been printed to error log.
  */
 static bool parse_pool_nodeids(const char *opt_str, uint pool_size,
-                               uint force_nodeid, Vector<uint> &nodeids) {
-  if (!opt_str) {
+                               uint force_nodeid, std::vector<uint> &nodeids) {
+  if (opt_str == nullptr || ndbcluster::trim(opt_str).empty()) {
     // The option was not specified.
     return true;
   }
 
-  BaseString tmp(opt_str);
-  Vector<BaseString> list(pool_size);
-  tmp.split(list, ",");
-
-  for (unsigned i = 0; i < list.size(); i++) {
-    list[i].trim();
+  // Split the list of nodeids and validate each
+  for (const auto part : ndbcluster::split_range(opt_str, ',')) {
+    const std::string_view nodeid_str = ndbcluster::trim(part);
 
     // Don't allow empty string
-    if (list[i].empty()) {
+    if (nodeid_str.empty()) {
       ndb_log_error(
           "Found empty nodeid specified in "
           "--ndb-cluster-connection-pool-nodeids='%s'.",
@@ -99,11 +100,11 @@ static bool parse_pool_nodeids(const char *opt_str, uint pool_size,
 
     // Convert string to number
     uint nodeid = 0;
-    if (sscanf(list[i].c_str(), "%u", &nodeid) != 1) {
+    if (!ndbcluster::from_chars_to(nodeid_str, nodeid)) {
       ndb_log_error(
-          "Could not parse '%s' in "
+          "Could not parse '%.*s' in "
           "--ndb-cluster-connection-pool-nodeids='%s'.",
-          list[i].c_str(), opt_str);
+          static_cast<int>(nodeid_str.size()), nodeid_str.data(), opt_str);
       return false;
     }
 
@@ -117,14 +118,12 @@ static bool parse_pool_nodeids(const char *opt_str, uint pool_size,
     }
 
     // Check that nodeid is unique(not already in the list)
-    for (unsigned j = 0; j < nodeids.size(); j++) {
-      if (nodeid == nodeids[j]) {
-        ndb_log_error(
-            "Found duplicate nodeid %d in "
-            "--ndb-cluster-connection-pool-nodeids='%s'.",
-            nodeid, opt_str);
-        return false;
-      }
+    if (std::find(nodeids.begin(), nodeids.end(), nodeid) != nodeids.end()) {
+      ndb_log_error(
+          "Found duplicate nodeid %d in "
+          "--ndb-cluster-connection-pool-nodeids='%s'.",
+          nodeid, opt_str);
+      return false;
     }
 
     nodeids.push_back(nodeid);
@@ -221,7 +220,7 @@ int ndbcluster_connect(ulong wait_connected,  // Timeout in seconds
 
   // Parse the --ndb-cluster-connection-pool-nodeids=nodeid[,nodeidN]
   // comma separated list of nodeids to use for the pool
-  Vector<uint> nodeids;
+  std::vector<uint> nodeids;
   if (!parse_pool_nodeids(connection_pool_nodeids_str, connection_pool_size,
                           force_nodeid, nodeids)) {
     // Error message already printed

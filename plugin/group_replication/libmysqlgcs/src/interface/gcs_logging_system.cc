@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,18 +21,21 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <errno.h>
 #include <algorithm>
 #include <cassert>
+#include <cerrno>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
 #include <sstream>
 #include <string>
 
 #ifndef XCOM_STANDALONE
 #include <fcntl.h>
-#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <time.h>
+#include <cstdio>
+#include <ctime>
 
 #include "my_dir.h"
 #include "my_io.h"
@@ -69,7 +72,7 @@ Sink_interface *Gcs_async_buffer::get_sink() const { return m_sink; }
 
 enum_gcs_error Gcs_async_buffer::initialize() {
   int ret_thread;
-  enum_gcs_error ret_sink = m_sink->initialize();
+  enum_gcs_error const ret_sink = m_sink->initialize();
 
   if (ret_sink == GCS_NOK) {
     /* purecov: begin deadcode */
@@ -194,7 +197,7 @@ inline void Gcs_async_buffer::produce_events(const char *message,
                                              size_t message_size) {
   Gcs_log_event &entry = get_entry();
   char *buffer = entry.get_buffer();
-  size_t size = std::min(entry.get_max_buffer_size(), message_size);
+  size_t const size = std::min(entry.get_max_buffer_size(), message_size);
   strncpy(buffer, message, size);
   entry.set_buffer_size(size);
   notify_entry(entry);
@@ -232,7 +235,7 @@ void Gcs_async_buffer::consume_events() {
       */
       m_free_buffer_mutex->unlock();
       int64_t to_read, read;
-      int64_t max_entries = (m_buffer_size / 25);
+      int64_t const max_entries = (m_buffer_size / 25);
       assert(number_entries != 0);
       if (number_entries > max_entries && max_entries != 0)
         /* purecov: begin deadcode */
@@ -258,7 +261,7 @@ void Gcs_async_buffer::consume_events() {
 }
 
 void *consumer_function(void *ptr) {
-  Gcs_async_buffer *l = static_cast<Gcs_async_buffer *>(ptr);
+  auto *l = static_cast<Gcs_async_buffer *>(ptr);
   l->consume_events();
 
   My_xp_thread_util::exit(nullptr);
@@ -266,7 +269,7 @@ void *consumer_function(void *ptr) {
   return nullptr;
 }
 
-const std::string Gcs_async_buffer::get_information() const {
+std::string Gcs_async_buffer::get_information() const {
   std::stringstream ss;
 
   ss << "asynchronous:"
@@ -328,8 +331,10 @@ void Gcs_default_logger::log_event(const gcs_log_level_t level,
   m_sink->produce_events(log.str());
 }
 
-Gcs_default_debugger::Gcs_default_debugger(Gcs_async_buffer *sink)
-    : m_sink(sink) {}
+Gcs_default_debugger::Gcs_default_debugger(
+    Gcs_async_buffer *sink,
+    std::shared_ptr<Clock_timestamp_interface> clock_timestamp_provider)
+    : m_sink(sink), m_clock_timestamp_provider(clock_timestamp_provider) {}
 
 enum_gcs_error Gcs_default_debugger::initialize() {
   return m_sink->initialize();
@@ -351,7 +356,7 @@ Gcs_file_sink::Gcs_file_sink(const std::string &file_name,
       m_initialized(false) {}
 
 enum_gcs_error Gcs_file_sink::get_file_name(char *file_name_buffer) const {
-  unsigned int flags = MY_REPLACE_DIR | MY_REPLACE_EXT | MY_SAFE_PATH;
+  unsigned int const flags = MY_REPLACE_DIR | MY_REPLACE_EXT | MY_SAFE_PATH;
 
   /*
     Absolute paths or references to the home directory are not allowed.
@@ -463,4 +468,34 @@ const std::string Gcs_file_sink::get_information() const {
 
   return std::string(file_name_buffer);
 }
+
+void Gcs_clock_timestamp_provider::get_timestamp_as_c_string(char *buffer,
+                                                             size_t *size) {
+  std::string ts{};
+  get_timestamp_as_string(ts);
+  size_t n = std::min(ts.size(), *size);
+  strncpy(buffer, ts.c_str(), n);
+  *size = n;
+}
+
+void Gcs_clock_timestamp_provider::get_timestamp_as_string(std::string &out) {
+  std::stringstream ss;
+  auto now{std::chrono::system_clock::now()};
+
+  // get the microseconds part (floor to the second and then diff it)
+  auto us{duration_cast<std::chrono::microseconds>(now.time_since_epoch())};
+  auto us_floored{duration_cast<std::chrono::microseconds>(
+      std::chrono::floor<std::chrono::seconds>(us))};
+  auto delta_us{us - us_floored};
+
+  // get 'now' in a format that we can pass to put_time
+  auto utc_time_t{std::chrono::system_clock::to_time_t(now)};
+  auto utc_time{std::gmtime(&utc_time_t)};
+
+  // print the line with 6 digits after the '.' and pad with zero if need be
+  ss << std::put_time(utc_time, "%FT%T.") << std::setfill('0') << std::setw(6)
+     << delta_us.count() << "Z";
+  out = ss.str();
+}
+
 #endif /* XCOM_STANDALONE */

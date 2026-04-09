@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -72,7 +72,7 @@ int main(int argc, const char *argv[]) {
 
   UErrorCode status = U_ZERO_ERROR;
 
-  UnicodeString rx(
+  UnicodeString const rx(
       "^%(token|left|right|nonassoc)[[:space:]]*"  // g.1: %token, %left etc.
       "(<[._[:alnum:]]+>)?[[:space:]]*"            // g.2: opt. '<' type '>'
       "([_[:alnum:]]+)"                            // g.3: token name
@@ -98,7 +98,7 @@ int main(int argc, const char *argv[]) {
     //
 
     input_line++;
-    UnicodeString sample(s.data(), s.length());
+    UnicodeString const sample(s.data(), s.length());
     match.reset(sample);
     if (match.matches(status)) {
       assert(match.groupCount() == 4);
@@ -107,7 +107,7 @@ int main(int argc, const char *argv[]) {
       // Check if %token definition contains an explicit token number
       //
 
-      UnicodeString uc_declaration = match.group(1, status);
+      UnicodeString const uc_declaration = match.group(1, status);
       if (icu_error(status)) {
         return EXIT_FAILURE;
       }
@@ -118,7 +118,7 @@ int main(int argc, const char *argv[]) {
         // This is %token ...
         //
 
-        UnicodeString uc_token_number = match.group(4, status);
+        UnicodeString const uc_token_number = match.group(4, status);
         if (icu_error(status)) {
           return EXIT_FAILURE;
         }
@@ -131,7 +131,7 @@ int main(int argc, const char *argv[]) {
           exit(EXIT_FAILURE);
         }
 
-        UnicodeString uc_semantic_type = match.group(2, status);
+        UnicodeString const uc_semantic_type = match.group(2, status);
         if (icu_error(status)) {
           return EXIT_FAILURE;
         }
@@ -151,15 +151,15 @@ int main(int argc, const char *argv[]) {
 
   std::map<std::string, bool> words;
 
-  for (size_t i = 0; i < array_elements(symbols); i++) {
-    const SYMBOL *sym = &symbols[i];
+  for (const auto &symbol : symbols) {
+    const SYMBOL *sym = &symbol;
 
     if (sym->group != SG_KEYWORDS && sym->group != SG_HINTABLE_KEYWORDS)
       continue;  // Function or optimizer hint name.
 
     if (!isalpha(sym->name[0])) continue;  // Operator.
 
-    bool is_reserved = keyword_tokens.count(sym->tok) == 0;
+    const bool is_reserved = !keyword_tokens.contains(sym->tok);
     if (!words.insert(std::make_pair(sym->name, is_reserved)).second) {
       fprintf(stderr,
               "This should not happen: \"%s\" has duplicates."
@@ -184,7 +184,7 @@ int main(int argc, const char *argv[]) {
   out << "typedef struct { const char *word; int reserved; } keyword_t;\n\n";
 
   out << "static const keyword_t keyword_list[]= {\n";
-  for (auto p : words)
+  for (const auto &p : words)
     out << "  { \"" << p.first << "\", " << (p.second ? 1 : 0) << " },\n";
   out << "};/*keyword_list*/\n\n";
 

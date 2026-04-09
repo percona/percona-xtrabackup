@@ -1,3 +1,5 @@
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 select INSTRUMENTED, HISTORY
 from performance_schema.threads
 where PROCESSLIST_ID = connection_id();
@@ -37,3 +39,5 @@ select f1();
 f1()
 1
 commit;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

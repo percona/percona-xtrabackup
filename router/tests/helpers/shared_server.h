@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 #ifndef ROUTER_HELPER_SHARED_SERVER_H
 #define ROUTER_HELPER_SHARED_SERVER_H
 
+#include "mysql/harness/destination.h"
 #include "mysql/harness/stdx/expected.h"
 #include "procs.h"
 #include "router/src/routing/tests/mysql_client.h"
@@ -184,12 +185,22 @@ class SharedServer {
     return mysqld_failed_to_start_;
   }
 
-  [[nodiscard]] uint16_t server_port() const { return server_port_; }
-
-  [[nodiscard]] uint16_t server_mysqlx_port() const {
-    return server_mysqlx_port_;
+  [[nodiscard]] mysql_harness::TcpDestination classic_tcp_destination() const {
+    return classic_tcp_dest_;
   }
-  [[nodiscard]] std::string server_host() const { return server_host_; }
+
+  [[nodiscard]] mysql_harness::LocalDestination classic_socket_destination()
+      const {
+    return classic_socket_dest_;
+  }
+
+  [[nodiscard]] mysql_harness::TcpDestination x_tcp_destination() const {
+    return x_tcp_dest_;
+  }
+
+  [[nodiscard]] mysql_harness::LocalDestination x_socket_destination() const {
+    return x_socket_dest_;
+  }
 
   static Account caching_sha2_password_account() {
     constexpr const std::string_view pass("cachingpasswordlongerthan20chars");
@@ -253,9 +264,14 @@ class SharedServer {
   integration_tests::Procs procs_;
   TcpPortPool &port_pool_;
 
-  static const constexpr char server_host_[] = "127.0.0.1";
-  uint16_t server_port_{port_pool_.get_next_available()};
-  uint16_t server_mysqlx_port_{port_pool_.get_next_available()};
+  mysql_harness::TcpDestination classic_tcp_dest_{
+      "127.0.0.1", port_pool_.get_next_available()};
+
+  mysql_harness::TcpDestination x_tcp_dest_{"127.0.0.1",
+                                            port_pool_.get_next_available()};
+
+  mysql_harness::LocalDestination classic_socket_dest_;
+  mysql_harness::LocalDestination x_socket_dest_;
 
   bool mysqld_failed_to_start_{false};
 

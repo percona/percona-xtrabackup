@@ -14,9 +14,10 @@
 --source include/rpl/install_semisync.inc
 
 --source include/rpl/connection_replica.inc
-STOP REPLICA IO_THREAD;
-CHANGE REPLICATION SOURCE TO SOURCE_SSL=1;
-START REPLICA IO_THREAD;
+--let $current_source_ssl= query_get_value(SHOW REPLICA STATUS, Source_SSL_Allowed, 1)
+--let $assert_text= Source_SSL_Allowed must be YES by default
+--let $assert_cond= "$current_source_ssl" = "YES"
+--source include/assert.inc
 
 --source include/rpl/connection_source.inc
 SET @max_binlog_size_save= @@GLOBAL.MAX_BINLOG_SIZE;
@@ -33,9 +34,4 @@ SET GLOBAL rpl_semi_sync_source_timeout= 6000000;
 SET @@GLOBAL.MAX_BINLOG_SIZE= @max_binlog_size_save;
 --source include/rpl/uninstall_semisync.inc
 
---source include/rpl/connection_replica.inc
---source include/rpl/stop_replica.inc
-CHANGE REPLICATION SOURCE TO SOURCE_SSL = 0;
-
---let $rpl_only_running_threads= 1
 --source include/rpl/deinit.inc

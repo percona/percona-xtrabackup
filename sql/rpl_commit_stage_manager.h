@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -211,6 +211,17 @@ class Commit_stage_manager {
     m_stage_cond_leader condition variables and m_lock_done mutex.
   */
   void deinit();
+
+  /**
+    Checks if the THD session parameter BGC ticket is active and
+    the BGC back ticket was incremented.
+
+    @param thd The THD session that holds the ticket to check.
+
+    @return True if the THD session parameter BGC ticket is active and
+            the BGC back ticket was incremented, false otherwise.
+  */
+  bool is_ticket_on_its_turn_and_back_ticket_incremented(THD *thd) const;
 
   /**
     Waits for the THD session parameter underlying BGC ticket to become

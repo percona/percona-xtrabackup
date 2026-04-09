@@ -28,38 +28,38 @@ PARTITION `p3000-299999` VALUES LESS THAN (300000)
 (SUBPARTITION subp12  ,
 SUBPARTITION subp13  ,
 SUBPARTITION subp14  ));
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-4, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-3, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-2, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-1, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (4, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (3, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (2, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (1, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (24, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (23, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (22, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (21, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (34, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (33, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (32, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (31, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (234, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (233, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (232, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (231, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (304, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (303, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (302, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (301, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3004, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3003, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3002, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3001, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299996, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299997, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299998, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299999, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp1) VALUES (-4, '(pNeg-)subp1');
+INSERT INTO t1 PARTITION (subp0) VALUES (-3, '(pNeg-)subp0');
+INSERT INTO t1 PARTITION (subp2) VALUES (-2, '(pNeg-)subp2');
+INSERT INTO t1 PARTITION (subp1) VALUES (-1, '(pNeg-)subp1');
+INSERT INTO t1 PARTITION (subp4) VALUES (4, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (3, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp5) VALUES (2, '(p0-29-)subp5');
+INSERT INTO t1 PARTITION (subp4) VALUES (1, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (24, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp5) VALUES (23, '(p0-29-)subp5');
+INSERT INTO t1 PARTITION (subp4) VALUES (22, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (21, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp7) VALUES (34, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (33, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp8) VALUES (32, '(p30-299-)subp8');
+INSERT INTO t1 PARTITION (subp7) VALUES (31, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (234, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp8) VALUES (233, '(p30-299-)subp8');
+INSERT INTO t1 PARTITION (subp7) VALUES (232, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (231, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp10) VALUES (304, '(p300-2999-)subp10');
+INSERT INTO t1 PARTITION (subp9) VALUES (303, '(p300-2999-)subp9');
+INSERT INTO t1 PARTITION (subp11) VALUES (302, '(p300-2999-)subp11');
+INSERT INTO t1 PARTITION (subp10) VALUES (301, '(p300-2999-)subp10');
+INSERT INTO t1 PARTITION (subp13) VALUES (3004, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp12) VALUES (3003, '(p3000-299999-)subp12');
+INSERT INTO t1 PARTITION (subp14) VALUES (3002, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp13) VALUES (3001, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp14) VALUES (299996, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp12) VALUES (299997, '(p3000-299999-)subp12');
+INSERT INTO t1 PARTITION (subp13) VALUES (299998, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp14) VALUES (299999, '(p3000-299999-)subp14');
 CREATE USER test_user_1 IDENTIFIED BY 'testpw';
 CREATE USER test_user_2 IDENTIFIED BY 'testpw';
 GRANT ALL PRIVILEGES ON test.* TO test_user_1 ;
@@ -71,14 +71,14 @@ set @@global.sql_mode= '';
 connect  session1, localhost, test_user_1,'testpw',test;
 SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
-1	(p0-29-)subp3
-2	(p0-29-)subp3
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+1	(p0-29-)subp4
+2	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	(p0-29-)subp3
-4	(p0-29-)subp3
+4	(p0-29-)subp4
 send
 UPDATE t1 SET b='table-upd-1' WHERE a BETWEEN 0 AND 9;
 connect  session2, localhost, test_user_2,'testpw',test;
@@ -87,10 +87,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 INSERT INTO t1 VALUES (11, 'table-ins');
@@ -101,10 +101,10 @@ a	b
 11	table-ins
 12	table-ins
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 DELETE FROM t1 WHERE b= 'table-ins';
@@ -112,10 +112,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 connection session1;
@@ -124,10 +124,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 connection session2;
@@ -135,10 +135,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 #######################################################
@@ -148,10 +148,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 send
@@ -162,10 +162,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 INSERT INTO t1 PARTITION (`p0-29`, subp4) VALUES (11, '(p0-29-)ins');
@@ -176,10 +176,10 @@ a	b
 11	(p0-29-)ins
 12	(p0-29-)ins
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 DELETE FROM t1 PARTITION (`p0-29`,subp5) WHERE b= '(p0-29-)ins';
@@ -187,10 +187,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 connection session1;
@@ -199,10 +199,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 connection session2;
@@ -210,10 +210,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 disconnect session1;
@@ -248,38 +248,38 @@ PARTITION `p3000-299999` VALUES LESS THAN (300000)
 (SUBPARTITION subp12  ,
 SUBPARTITION subp13  ,
 SUBPARTITION subp14  ));
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-4, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-3, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-2, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-1, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (4, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (3, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (2, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (1, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (24, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (23, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (22, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (21, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (34, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (33, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (32, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (31, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (234, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (233, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (232, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (231, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (304, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (303, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (302, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (301, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3004, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3003, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3002, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3001, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299996, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299997, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299998, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299999, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp1) VALUES (-4, '(pNeg-)subp1');
+INSERT INTO t1 PARTITION (subp0) VALUES (-3, '(pNeg-)subp0');
+INSERT INTO t1 PARTITION (subp2) VALUES (-2, '(pNeg-)subp2');
+INSERT INTO t1 PARTITION (subp1) VALUES (-1, '(pNeg-)subp1');
+INSERT INTO t1 PARTITION (subp4) VALUES (4, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (3, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp5) VALUES (2, '(p0-29-)subp5');
+INSERT INTO t1 PARTITION (subp4) VALUES (1, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (24, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp5) VALUES (23, '(p0-29-)subp5');
+INSERT INTO t1 PARTITION (subp4) VALUES (22, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (21, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp7) VALUES (34, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (33, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp8) VALUES (32, '(p30-299-)subp8');
+INSERT INTO t1 PARTITION (subp7) VALUES (31, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (234, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp8) VALUES (233, '(p30-299-)subp8');
+INSERT INTO t1 PARTITION (subp7) VALUES (232, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (231, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp10) VALUES (304, '(p300-2999-)subp10');
+INSERT INTO t1 PARTITION (subp9) VALUES (303, '(p300-2999-)subp9');
+INSERT INTO t1 PARTITION (subp11) VALUES (302, '(p300-2999-)subp11');
+INSERT INTO t1 PARTITION (subp10) VALUES (301, '(p300-2999-)subp10');
+INSERT INTO t1 PARTITION (subp13) VALUES (3004, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp12) VALUES (3003, '(p3000-299999-)subp12');
+INSERT INTO t1 PARTITION (subp14) VALUES (3002, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp13) VALUES (3001, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp14) VALUES (299996, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp12) VALUES (299997, '(p3000-299999-)subp12');
+INSERT INTO t1 PARTITION (subp13) VALUES (299998, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp14) VALUES (299999, '(p3000-299999-)subp14');
 # Run in ANSI mode
 set @@global.sql_mode= ansi;
 #######################################################
@@ -287,14 +287,14 @@ set @@global.sql_mode= ansi;
 connect  session1, localhost, test_user_1,'testpw',test;
 SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
-1	(p0-29-)subp3
-2	(p0-29-)subp3
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+1	(p0-29-)subp4
+2	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	(p0-29-)subp3
-4	(p0-29-)subp3
+4	(p0-29-)subp4
 send
 UPDATE t1 SET b='table-upd-1' WHERE a BETWEEN 0 AND 9;
 connect  session2, localhost, test_user_2,'testpw',test;
@@ -303,10 +303,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 INSERT INTO t1 VALUES (11, 'table-ins');
@@ -317,10 +317,10 @@ a	b
 11	table-ins
 12	table-ins
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 DELETE FROM t1 WHERE b= 'table-ins';
@@ -328,10 +328,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 connection session1;
@@ -340,10 +340,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 connection session2;
@@ -351,10 +351,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 #######################################################
@@ -364,10 +364,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 send
@@ -378,10 +378,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 INSERT INTO t1 PARTITION (`p0-29`, subp4) VALUES (11, '(p0-29-)ins');
@@ -392,10 +392,10 @@ a	b
 11	(p0-29-)ins
 12	(p0-29-)ins
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 DELETE FROM t1 PARTITION (`p0-29`,subp5) WHERE b= '(p0-29-)ins';
@@ -403,10 +403,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 connection session1;
@@ -415,10 +415,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 connection session2;
@@ -426,10 +426,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 disconnect session1;
@@ -464,38 +464,38 @@ PARTITION `p3000-299999` VALUES LESS THAN (300000)
 (SUBPARTITION subp12  ,
 SUBPARTITION subp13  ,
 SUBPARTITION subp14  ));
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-4, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-3, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-2, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (pNeg, subp0) VALUES (-1, '(pNeg-)subp0');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (4, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (3, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (2, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp3) VALUES (1, '(p0-29-)subp3');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (24, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (23, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (22, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p0-29`, subp5) VALUES (21, '(p0-29-)subp5');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (34, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (33, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (32, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp9) VALUES (31, '(p30-299-)subp6');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (234, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (233, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (232, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p30-299`, subp8) VALUES (231, '(p30-299-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (304, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (303, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (302, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p300-2999`, subp8) VALUES (301, '(p300-2999-)subp8');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3004, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3003, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3002, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp12) VALUES (3001, '(p3000-299999-)subp12');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299996, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299997, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299998, '(p3000-299999-)subp14');
-INSERT INTO t1 PARTITION (`p3000-299999`, subp14) VALUES (299999, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp1) VALUES (-4, '(pNeg-)subp1');
+INSERT INTO t1 PARTITION (subp0) VALUES (-3, '(pNeg-)subp0');
+INSERT INTO t1 PARTITION (subp2) VALUES (-2, '(pNeg-)subp2');
+INSERT INTO t1 PARTITION (subp1) VALUES (-1, '(pNeg-)subp1');
+INSERT INTO t1 PARTITION (subp4) VALUES (4, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (3, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp5) VALUES (2, '(p0-29-)subp5');
+INSERT INTO t1 PARTITION (subp4) VALUES (1, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (24, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp5) VALUES (23, '(p0-29-)subp5');
+INSERT INTO t1 PARTITION (subp4) VALUES (22, '(p0-29-)subp4');
+INSERT INTO t1 PARTITION (subp3) VALUES (21, '(p0-29-)subp3');
+INSERT INTO t1 PARTITION (subp7) VALUES (34, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (33, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp8) VALUES (32, '(p30-299-)subp8');
+INSERT INTO t1 PARTITION (subp7) VALUES (31, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (234, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp8) VALUES (233, '(p30-299-)subp8');
+INSERT INTO t1 PARTITION (subp7) VALUES (232, '(p30-299-)subp7');
+INSERT INTO t1 PARTITION (subp6) VALUES (231, '(p30-299-)subp6');
+INSERT INTO t1 PARTITION (subp10) VALUES (304, '(p300-2999-)subp10');
+INSERT INTO t1 PARTITION (subp9) VALUES (303, '(p300-2999-)subp9');
+INSERT INTO t1 PARTITION (subp11) VALUES (302, '(p300-2999-)subp11');
+INSERT INTO t1 PARTITION (subp10) VALUES (301, '(p300-2999-)subp10');
+INSERT INTO t1 PARTITION (subp13) VALUES (3004, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp12) VALUES (3003, '(p3000-299999-)subp12');
+INSERT INTO t1 PARTITION (subp14) VALUES (3002, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp13) VALUES (3001, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp14) VALUES (299996, '(p3000-299999-)subp14');
+INSERT INTO t1 PARTITION (subp12) VALUES (299997, '(p3000-299999-)subp12');
+INSERT INTO t1 PARTITION (subp13) VALUES (299998, '(p3000-299999-)subp13');
+INSERT INTO t1 PARTITION (subp14) VALUES (299999, '(p3000-299999-)subp14');
 # Run in traditional mode
 set @@global.sql_mode= traditional;
 #######################################################
@@ -503,14 +503,14 @@ set @@global.sql_mode= traditional;
 connect  session1, localhost, test_user_1,'testpw',test;
 SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
-1	(p0-29-)subp3
-2	(p0-29-)subp3
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+1	(p0-29-)subp4
+2	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	(p0-29-)subp3
-4	(p0-29-)subp3
+4	(p0-29-)subp4
 send
 UPDATE t1 SET b='table-upd-1' WHERE a BETWEEN 0 AND 9;
 connect  session2, localhost, test_user_2,'testpw',test;
@@ -519,10 +519,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 INSERT INTO t1 VALUES (11, 'table-ins');
@@ -533,10 +533,10 @@ a	b
 11	table-ins
 12	table-ins
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 DELETE FROM t1 WHERE b= 'table-ins';
@@ -544,10 +544,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 connection session1;
@@ -556,10 +556,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 connection session2;
@@ -567,10 +567,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 #######################################################
@@ -580,10 +580,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	table-upd-2
 2	table-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	table-upd-2
 4	table-upd-2
 send
@@ -594,10 +594,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 INSERT INTO t1 PARTITION (`p0-29`, subp4) VALUES (11, '(p0-29-)ins');
@@ -608,10 +608,10 @@ a	b
 11	(p0-29-)ins
 12	(p0-29-)ins
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 DELETE FROM t1 PARTITION (`p0-29`,subp5) WHERE b= '(p0-29-)ins';
@@ -619,10 +619,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 connection session1;
@@ -631,10 +631,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 connection session2;
@@ -642,10 +642,10 @@ SELECT * FROM t1 PARTITION (`p0-29`);
 a	b
 1	p0-29-upd-2
 2	p0-29-upd-2
-21	(p0-29-)subp5
-22	(p0-29-)subp5
+21	(p0-29-)subp3
+22	(p0-29-)subp4
 23	(p0-29-)subp5
-24	(p0-29-)subp5
+24	(p0-29-)subp3
 3	p0-29-upd-2
 4	p0-29-upd-2
 disconnect session1;

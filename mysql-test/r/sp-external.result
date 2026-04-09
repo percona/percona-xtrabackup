@@ -2256,10 +2256,6 @@ return x-1;
 $a~b$' at line 3
 CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
 DETERMINISTIC LANGUAGE JAVASCRIPT
-AS $//
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '$' at line 3
-CREATE FUNCTION foo(x INTEGER) RETURNS INTEGER
-DETERMINISTIC LANGUAGE JAVASCRIPT
 AS $ $
 return x-1;
 $ $ //
@@ -3652,10 +3648,6 @@ let b = a;
 $a~b$' at line 3
 CREATE PROCEDURE bar(a INTEGER)
 DETERMINISTIC LANGUAGE JAVASCRIPT
-AS $//
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '$' at line 3
-CREATE PROCEDURE bar(a INTEGER)
-DETERMINISTIC LANGUAGE JAVASCRIPT
 AS $ $
 let b = a;
 $ $ //
@@ -4219,3 +4211,994 @@ $hi$
 SELECT 1 AS `$h$i`;
 $h$i
 1
+#
+# WL#16359: SQL syntax for JavaScript Libraries
+#
+CREATE LIBRARY lib1 LANGUAGE JAVASCRIPT
+AS $$
+export function f(n) {
+return n
+}
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+# Tests for valid identifiers
+CREATE LIBRARY
+this_name_is_too_long23456789312345678941234567895123456789612345
+LANGUAGE JAVASCRIPT
+AS "export function f(n) {return n}";
+ERROR 42000: Identifier name 'this_name_is_too_long23456789312345678941234567895123456789612345' is too long
+CREATE LIBRARY
+test.this_name_is_not_too_long678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS "export function f(n) {return n}";
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY
+this_name_is_not_too_long678931234567894123456789512345678961234;
+CREATE LIBRARY 01234
+LANGUAGE JAVASCRIPT
+AS "export function f(n) {return n}";
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '01234
+LANGUAGE JAVASCRIPT
+AS "export function f(n) {return n}"' at line 1
+CREATE LIBRARY
+`01234`
+LANGUAGE JAVASCRIPT
+AS "export function f(n) {return n}";
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY `01234`;
+# Tests for IF NOT EXISTS
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+Note	1304	LIBRARY lib1 already exists
+CREATE LIBRARY IF EXISTS test.lib2 LANGUAGE JAVASCRIPT
+AS "export function f(n) {return n}";
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'EXISTS test.lib2 LANGUAGE JAVASCRIPT
+AS "export function f(n) {return n}"' at line 1
+# This will not fail since component is not installed
+CREATE LIBRARY IF NOT EXISTS test.lib2 LANGUAGE JAVASCRIPT
+AS "whatever";
+Warnings:
+Warning	6001	Language component: Not available.
+# Tests for language clause
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE Javascript
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+Note	1304	LIBRARY lib1 already exists
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE JavaScript
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+Note	1304	LIBRARY lib1 already exists
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE javascript
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+Note	1304	LIBRARY lib1 already exists
+CREATE LIBRARY IF NOT EXISTS lib1
+AS 'export function f(n) {return n}'
+LANGUAGE javascript;
+ERROR 42000: Language is not specified for library. near 'AS 'export function f(n) {return n}'
+LANGUAGE javascript' at line 2
+CREATE LIBRARY IF NOT EXISTS lib1
+AS 'export function f(n) {return n}';
+ERROR 42000: Language is not specified for library. near 'AS 'export function f(n) {return n}'' at line 2
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE
+AS 'export function f(n) {return n}';
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'AS 'export function f(n) {return n}'' at line 2
+CREATE LIBRARY IF NOT EXISTS test.lib2 LANGUAGE SQL
+AS "WHATEVER";
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'SQL
+AS "WHATEVER"' at line 1
+CREATE LIBRARY IF NOT EXISTS test.lib3 LANGUAGE PYTHON
+AS $$ def fib(n): return n $$;
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY test.lib3;
+CREATE LIBRARY IF NOT EXISTS test.lib3 LANGUAGE JAVA1
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY test.lib3;
+CREATE LIBRARY IF NOT EXISTS test.lib3 LANGUAGE $JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	1681	'$ as the first character of an unquoted identifier' is deprecated and will be removed in a future release.
+Warning	6001	Language component: Not available.
+DROP LIBRARY test.lib3;
+CREATE LIBRARY IF NOT EXISTS test.lib2 LANGUAGE $$JAVASCRIPT
+AS 'export function f(n) {return n}';
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '$$JAVASCRIPT
+AS 'export function f(n) {return n}'' at line 1
+CREATE LIBRARY IF NOT EXISTS test.lib3 LANGUAGE 123j
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY test.lib3;
+CREATE LIBRARY IF NOT EXISTS test.lib2 LANGUAGE 123
+AS 'export function f(n) {return n}';
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '123
+AS 'export function f(n) {return n}'' at line 1
+CREATE LIBRARY IF NOT EXISTS test.lib3 LANGUAGE `123`
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY test.lib3;
+CREATE LIBRARY IF NOT EXISTS test.lib3 LANGUAGE __
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY test.lib3;
+# Tests for AS clause
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE JAVASCRIPT;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE JAVASCRIPT
+AS export function f(n) {return n};
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'export function f(n) {return n}' at line 2
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE JAVASCRIPT
+'export function f(n) {return n}';
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''export function f(n) {return n}'' at line 2
+# Tests for CREATE LIBRARY with a COMMENT clause
+CREATE LIBRARY library_with_comment COMMENT "library comment" LANGUAGE JAVASCRIPT AS " export function f(n) {  return n+1 } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_with_comment2 LANGUAGE JAVASCRIPT COMMENT "library comment" AS " export function f(n) {  return n+1 } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_with_empty_comment COMMENT "" LANGUAGE JAVASCRIPT AS " export function f(n) {  return n+1 } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_with_extra_longcomment COMMENT "01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789" LANGUAGE JAVASCRIPT AS " export function f(n) {  return n+1 } ";
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW LIBRARY STATUS WHERE db = 'test';
+Db	Name	Language	Creator	Modified	Created	Comment
+test	lib1	JAVASCRIPT	root@localhost	<modified>	<created>	
+test	lib2	JAVASCRIPT	root@localhost	<modified>	<created>	
+test	library_with_comment	JAVASCRIPT	root@localhost	<modified>	<created>	library comment
+test	library_with_comment2	JAVASCRIPT	root@localhost	<modified>	<created>	library comment
+test	library_with_empty_comment	JAVASCRIPT	root@localhost	<modified>	<created>	
+test	library_with_extra_longcomment	JAVASCRIPT	root@localhost	<modified>	<created>	01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
+SHOW CREATE LIBRARY library_with_comment;
+Library	sql_mode	Create Library
+library_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_comment`
+    COMMENT 'library comment'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+SHOW CREATE LIBRARY library_with_empty_comment;
+Library	sql_mode	Create Library
+library_with_empty_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_empty_comment`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+SHOW CREATE LIBRARY library_with_extra_longcomment;
+Library	sql_mode	Create Library
+library_with_extra_longcomment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_extra_longcomment`
+    COMMENT '01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+# Tests for ALTER LIBRARY
+ALTER LIBRARY library_with_comment COMMENT "updated comment";
+SHOW CREATE LIBRARY library_with_comment;
+Library	sql_mode	Create Library
+library_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_comment`
+    COMMENT 'updated comment'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+CREATE LIBRARY  library_without_comment LANGUAGE JAVASCRIPT AS " export function f(n) {  return n+1 } ";
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE LIBRARY library_without_comment;
+Library	sql_mode	Create Library
+library_without_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_without_comment`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+ALTER LIBRARY library_without_comment COMMENT "added comment";
+SHOW CREATE LIBRARY library_without_comment;
+Library	sql_mode	Create Library
+library_without_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_without_comment`
+    COMMENT 'added comment'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+ALTER LIBRARY library_with_empty_comment COMMENT "01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789";
+SHOW CREATE LIBRARY library_with_empty_comment;
+Library	sql_mode	Create Library
+library_with_empty_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_empty_comment`
+    COMMENT '01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+# BUG#37563225 : An empty comment is ignored.
+ALTER LIBRARY library_with_empty_comment COMMENT '';
+SHOW CREATE LIBRARY library_with_empty_comment;
+Library	sql_mode	Create Library
+library_with_empty_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_empty_comment`
+    COMMENT '01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+ALTER LIBRARY library_with_extra_longcomment COMMENT "";
+SHOW CREATE LIBRARY library_with_extra_longcomment;
+Library	sql_mode	Create Library
+library_with_extra_longcomment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_with_extra_longcomment`
+    COMMENT '01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+ALTER LIBRARY library_without_comment COMMENT "added comment";
+SHOW CREATE LIBRARY library_without_comment;
+Library	sql_mode	Create Library
+library_without_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_without_comment`
+    COMMENT 'added comment'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+ALTER LIBRARY library_without_comment LANGUAGE JavaScript;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'LANGUAGE JavaScript' at line 1
+ALTER LIBRARY library_without_comment AS " export function f(n) { return n+2 }";
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'AS " export function f(n) { return n+2 }"' at line 1
+ALTER LIBRARY library_without_comment;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1
+SHOW CREATE LIBRARY library_without_comment;
+Library	sql_mode	Create Library
+library_without_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `library_without_comment`
+    COMMENT 'added comment'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {  return n+1 } $$
+ALTER LIBRARY it_should_not_exist COMMENT "updated comment";
+ERROR 42000: LIBRARY test.it_should_not_exist does not exist
+SHOW LIBRARY STATUS WHERE db = 'test';
+Db	Name	Language	Creator	Modified	Created	Comment
+test	lib1	JAVASCRIPT	root@localhost	<modified>	<created>	
+test	lib2	JAVASCRIPT	root@localhost	<modified>	<created>	
+test	library_without_comment	JAVASCRIPT	root@localhost	<modified>	<created>	added comment
+test	library_with_comment	JAVASCRIPT	root@localhost	<modified>	<created>	updated comment
+test	library_with_comment2	JAVASCRIPT	root@localhost	<modified>	<created>	library comment
+test	library_with_empty_comment	JAVASCRIPT	root@localhost	<modified>	<created>	01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
+test	library_with_extra_longcomment	JAVASCRIPT	root@localhost	<modified>	<created>	01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
+# Tests for DROP LIBRARY
+DROP LIBRARY lib3;
+ERROR 42000: LIBRARY test.lib3 does not exist
+DROP LIBRARY IF EXISTS lib3;
+Warnings:
+Note	1305	LIBRARY test.lib3 does not exist
+DROP LIBRARY IF NOT EXISTS lib3;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'NOT EXISTS lib3' at line 1
+DROP LIBRARY
+this_name_is_too_long23456789312345678941234567895123456789612345;
+ERROR 42000: Identifier name 'this_name_is_too_long23456789312345678941234567895123456789612345' is too long
+DROP LIBRARY lib1 LANGUAGE JAVASCRIPT;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'LANGUAGE JAVASCRIPT' at line 1
+SHOW CREATE LIBRARY db2.lib1;
+ERROR 42000: LIBRARY lib1 does not exist
+# Test CREATE and ALTER FUNCTION/PROCEDURE WITH USING clause
+CREATE FUNCTION f(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (lib1 AS lib2)
+AS $$ return lib2.f(n) $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib1` AS `lib2`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+ALTER FUNCTION f USING(lib2);
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib2`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+ALTER FUNCTION f USING(lib1, lib2);
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib1`, `test`.`lib2`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+ALTER FUNCTION f USING(lib2 as lib1, lib1);
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib2` AS `lib1`, `test`.`lib1`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+ALTER FUNCTION f USING(lib1, lib2, lib1 as lib3, lib1);
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib1`, `test`.`lib2`, `test`.`lib1` AS `lib3`, `test`.`lib1`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+ALTER FUNCTION f USING(lib1, lib2, lib3);
+ERROR 42000: LIBRARY lib3 does not exist
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib1`, `test`.`lib2`, `test`.`lib1` AS `lib3`, `test`.`lib1`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+ALTER FUNCTION f USING(lib0 as lib2, lib1);
+ERROR 42000: LIBRARY lib0 does not exist
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib1`, `test`.`lib2`, `test`.`lib1` AS `lib3`, `test`.`lib1`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+DROP FUNCTION f;
+CREATE PROCEDURE p(n INTEGER)
+USING (lib1, lib2 AS lib3)
+LANGUAGE JAVASCRIPT
+AS $$ let a = n $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE PROCEDURE p;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+p	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p`(n INTEGER)
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib1`, `test`.`lib2` AS `lib3`)
+AS $$ let a = n $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+ALTER PROCEDURE p USING(lib2);
+SHOW CREATE PROCEDURE p;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+p	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `p`(n INTEGER)
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib2`)
+AS $$ let a = n $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+DROP PROCEDURE p;
+CREATE FUNCTION f(n INTEGER) RETURNS INTEGER
+USING (lib1 AS lib2)
+LANGUAGE JAVASCRIPT
+AS $$ return lib2.f(n) $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`lib1` AS `lib2`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+DROP FUNCTION f;
+CREATE FUNCTION f(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (lib1 AS lib2)
+USING (lib3)
+AS $$ return lib2.f(n) $$;
+ERROR 42000: You have an error in your SQL syntax; Multiple USING clauses are not supported near 'USING (lib3)
+AS $$ return lib2.f(n) $$' at line 3
+CREATE FUNCTION f(n INTEGER) RETURNS INTEGER
+USING (lib3)
+LANGUAGE JAVASCRIPT
+USING (lib3 AS lib1, lib2)
+AS $$ return lib2.f(n) $$;
+ERROR 42000: You have an error in your SQL syntax; Multiple USING clauses are not supported near 'USING (lib3 AS lib1, lib2)
+AS $$ return lib2.f(n) $$' at line 4
+CREATE FUNCTION f(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (lib1 AS lib2)
+AS $$ return lib2.f(n) $$
+USING (lib3);
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'USING (lib3)' at line 4
+CREATE FUNCTION f(n INTEGER) RETURNS INTEGER LANGUAGE SQL
+USING (lib1)
+RETURN n;
+ERROR HY000: Libraries are not supported for SQL.
+CREATE PROCEDURE procedure_with_comment() COMMENT "procedure comment" LANGUAGE JAVASCRIPT USING (library_with_comment) AS "let i=2";
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE PROCEDURE procedure_with_comment;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+procedure_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `procedure_with_comment`()
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment`)
+    COMMENT 'procedure comment'
+AS $$let i=2$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'procedure_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	procedure_with_comment	PROCEDURE	def	test	library_with_comment	NULL
+ALTER PROCEDURE procedure_with_comment USING (library_without_comment);
+SHOW CREATE PROCEDURE procedure_with_comment;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+procedure_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `procedure_with_comment`()
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_without_comment`)
+    COMMENT 'procedure comment'
+AS $$let i=2$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'procedure_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	procedure_with_comment	PROCEDURE	def	test	library_without_comment	NULL
+ALTER PROCEDURE procedure_with_comment USING ();
+SHOW CREATE PROCEDURE procedure_with_comment;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+procedure_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `procedure_with_comment`()
+    LANGUAGE JAVASCRIPT
+    COMMENT 'procedure comment'
+AS $$let i=2$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'procedure_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+ALTER PROCEDURE procedure_with_comment USING (library_without_comment);
+SHOW CREATE PROCEDURE procedure_with_comment;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+procedure_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `procedure_with_comment`()
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_without_comment`)
+    COMMENT 'procedure comment'
+AS $$let i=2$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'procedure_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	procedure_with_comment	PROCEDURE	def	test	library_without_comment	NULL
+ALTER PROCEDURE procedure_with_comment USING (non_existing_library);
+ERROR 42000: LIBRARY non_existing_library does not exist
+SHOW CREATE PROCEDURE procedure_with_comment;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+procedure_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `procedure_with_comment`()
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_without_comment`)
+    COMMENT 'procedure comment'
+AS $$let i=2$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'procedure_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	procedure_with_comment	PROCEDURE	def	test	library_without_comment	NULL
+ALTER PROCEDURE procedure_with_comment COMMENT 'Updated Temporary Procedure Comment';
+SHOW CREATE PROCEDURE procedure_with_comment;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+procedure_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `procedure_with_comment`()
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_without_comment`)
+    COMMENT 'Updated Temporary Procedure Comment'
+AS $$let i=2$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'procedure_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	procedure_with_comment	PROCEDURE	def	test	library_without_comment	NULL
+ALTER PROCEDURE procedure_with_comment COMMENT 'Updated Procedure Comment' USING (library_with_comment AS library_without_comment);
+SHOW CREATE PROCEDURE procedure_with_comment;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+procedure_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` PROCEDURE `procedure_with_comment`()
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment` AS `library_without_comment`)
+    COMMENT 'Updated Procedure Comment'
+AS $$let i=2$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'procedure_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	procedure_with_comment	PROCEDURE	def	test	library_with_comment	NULL
+create function function_with_comment(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT COMMENT "function comment" USING (library_with_comment AS lib) AS "return lib.f(42)";
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment` AS `lib`)
+    COMMENT 'function comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_with_comment	FUNCTION	def	test	library_with_comment	NULL
+ALTER FUNCTION function_with_comment USING (library_without_comment lib);
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_without_comment` AS `lib`)
+    COMMENT 'function comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_with_comment	FUNCTION	def	test	library_without_comment	NULL
+ALTER FUNCTION function_with_comment USING ();
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    COMMENT 'function comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+ALTER FUNCTION function_with_comment COMMENT 'updated comment' USING (library_with_comment AS lib);
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_with_comment` AS `lib`)
+    COMMENT 'updated comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_with_comment	FUNCTION	def	test	library_with_comment	NULL
+ALTER FUNCTION function_with_comment USING () COMMENT 'updated comment';
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    COMMENT 'updated comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+ALTER FUNCTION function_with_comment USING (library_with_comment AS lib) COMMENT 'invalid syntax comment' USING();
+ERROR 42000: You have an error in your SQL syntax; Multiple USING clauses are not supported near 'USING()' at line 1
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    COMMENT 'updated comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+ALTER FUNCTION function_with_comment USING () COMMENT 'invalid inverted syntax comment' USING(library_with_comment AS lib);
+ERROR 42000: You have an error in your SQL syntax; Multiple USING clauses are not supported near 'USING(library_with_comment AS lib)' at line 1
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    COMMENT 'updated comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+ALTER FUNCTION function_with_comment USING (library_without_comment lib) COMMENT "temporary comment";
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_without_comment` AS `lib`)
+    COMMENT 'temporary comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_with_comment	FUNCTION	def	test	library_without_comment	NULL
+ALTER FUNCTION function_with_comment USING (non_existing_library) COMMENT "invalid comment";
+ERROR 42000: LIBRARY non_existing_library does not exist
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_without_comment` AS `lib`)
+    COMMENT 'temporary comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_with_comment	FUNCTION	def	test	library_without_comment	NULL
+ALTER FUNCTION function_with_comment COMMENT "altered function comment";
+SHOW CREATE FUNCTION function_with_comment;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_with_comment	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_with_comment`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`library_without_comment` AS `lib`)
+    COMMENT 'altered function comment'
+AS $$return lib.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'test' AND ROUTINE_NAME = 'function_with_comment';
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_with_comment	FUNCTION	def	test	library_without_comment	NULL
+CREATE DATABASE db2;
+CREATE LIBRARY db2.lib1 LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY test.lib1 LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$;
+ERROR 42000: LIBRARY lib1 already exists
+# lib1 should refer to db2.lib1 (function's schema)
+CREATE FUNCTION db2.f(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (lib1 AS lib2)
+AS $$ return lib2.f(n) $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION db2.f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`db2`.`lib1` AS `lib2`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+DROP FUNCTION db2.f;
+# db2.lib2 does not exist
+CREATE FUNCTION db2.f(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (lib1 AS lib2, db2.lib2)
+AS $$ return lib2.f(n) $$;
+ERROR 42000: LIBRARY lib2 does not exist
+USE db2;
+CREATE FUNCTION f(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (lib1 AS lib2)
+AS $$ return lib2.f(n) $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION f;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`db2`.`lib1` AS `lib2`)
+AS $$ return lib2.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+DROP FUNCTION f;
+USE test;
+DROP LIBRARY lib1;
+DROP LIBRARY test.lib2;
+DROP LIBRARY IF EXISTS db2.lib1;
+DROP LIBRARY IF EXISTS lib1;
+Warnings:
+Note	1305	LIBRARY test.lib1 does not exist
+DROP LIBRARY IF EXISTS db2.lib1;
+Warnings:
+Note	1305	LIBRARY db2.lib1 does not exist
+DROP FUNCTION function_with_comment;
+DROP PROCEDURE procedure_with_comment;
+DROP LIBRARY library_without_comment;
+DROP LIBRARY library_with_comment;
+DROP LIBRARY library_with_comment2;
+DROP LIBRARY library_with_empty_comment;
+DROP LIBRARY library_with_extra_longcomment;
+# Test use of CREATE/DROP LIBRARY in stored procedures and prepared statements
+CREATE PROCEDURE p1() LANGUAGE SQL
+CREATE LIBRARY lib LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$;
+CALL p1();
+Warnings:
+Warning	6001	Language component: Not available.
+# Verify re-execution behavior of SP
+DROP LIBRARY lib;
+CALL p1();
+Warnings:
+Warning	6001	Language component: Not available.
+CALL p1();
+ERROR 42000: LIBRARY lib already exists
+DROP PROCEDURE p1;
+# Test use of ALTER LIBRARY COMMENT as an SP argument.
+CREATE PROCEDURE p1(in comment_text varchar(25)) LANGUAGE SQL
+BEGIN
+PREPARE stmt FROM 'ALTER LIBRARY lib COMMENT ?';
+EXECUTE stmt USING comment_text;
+END //
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'comment_text;
+END' at line 4
+CREATE PROCEDURE p2() LANGUAGE SQL
+ALTER LIBRARY lib COMMENT 'Comment from p2()';
+CALL p2();
+CREATE PROCEDURE p3() LANGUAGE SQL
+SHOW CREATE LIBRARY lib;
+SHOW LIBRARY STATUS WHERE name = 'lib';
+Db	Name	Language	Creator	Modified	Created	Comment
+test	lib	JAVASCRIPT	root@localhost	<modified>	<created>	Comment from p2()
+CALL p3();
+Library	sql_mode	Create Library
+lib	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib`
+    COMMENT 'Comment from p2()'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$
+CREATE PROCEDURE p4() LANGUAGE SQL
+DROP LIBRARY lib;
+CALL p4();
+DROP PROCEDURE p2;
+DROP PROCEDURE p3;
+DROP PROCEDURE p4;
+PREPARE stmt1 FROM 'CREATE LIBRARY lib LANGUAGE JAVASCRIPT AS $$ export function f(n) {return n} $$';
+EXECUTE stmt1;
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY lib;
+EXECUTE stmt1;
+Warnings:
+Warning	6001	Language component: Not available.
+EXECUTE stmt1;
+ERROR 42000: LIBRARY lib already exists
+PREPARE stmt2 FROM 'ALTER LIBRARY lib COMMENT "Comment from stmt2"';
+EXECUTE stmt2;
+PREPARE stmt3 FROM 'SHOW CREATE LIBRARY lib';
+EXECUTE stmt3;
+Library	sql_mode	Create Library
+lib	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib`
+    COMMENT 'Comment from stmt2'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$
+PREPARE stmt4 FROM 'DROP LIBRARY lib';
+EXECUTE stmt4;
+DROP PREPARE stmt1;
+DROP PREPARE stmt2;
+DROP PREPARE stmt3;
+DROP PREPARE stmt4;
+CREATE PROCEDURE p1() LANGUAGE SQL
+BEGIN
+PREPARE stmt1 FROM 'CREATE LIBRARY lib LANGUAGE JAVASCRIPT AS $$ export function f(n) {return n} $$';
+PREPARE stmt2 FROM 'ALTER LIBRARY lib COMMENT "Comment from p1.stmt2()"';
+PREPARE stmt3 FROM 'SHOW CREATE LIBRARY lib';
+PREPARE stmt4 FROM 'DROP LIBRARY lib';
+EXECUTE stmt1;
+EXECUTE stmt2;
+EXECUTE stmt3;
+EXECUTE stmt4;
+END //
+CALL p1()//
+Library	sql_mode	Create Library
+lib	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib`
+    COMMENT 'Comment from p1.stmt2()'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$
+DROP PREPARE stmt1//
+DROP PREPARE stmt2//
+DROP PREPARE stmt3//
+DROP PREPARE stmt4//
+DROP PROCEDURE p1//
+CREATE PROCEDURE p1() LANGUAGE SQL
+BEGIN
+PREPARE stmt1 FROM 'CREATE LIBRARY lib LANGUAGE JAVASCRIPT AS $$ export function f(n) {return n} $$';
+PREPARE stmt2 FROM 'ALTER LIBRARY lib COMMENT "p1.stmt2 again"';
+PREPARE stmt3 FROM 'SHOW CREATE LIBRARY lib';
+PREPARE stmt4 FROM 'DROP LIBRARY lib';
+EXECUTE stmt1;
+EXECUTE stmt2;
+EXECUTE stmt3;
+END//
+CALL p1()//
+Library	sql_mode	Create Library
+lib	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib`
+    COMMENT 'p1.stmt2 again'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$
+EXECUTE stmt4//
+DROP PREPARE stmt1//
+DROP PREPARE stmt2//
+DROP PREPARE stmt3//
+DROP PREPARE stmt4//
+DROP PROCEDURE p1//
+CREATE PROCEDURE p1() LANGUAGE SQL
+BEGIN
+PREPARE stmt1 FROM 'CREATE LIBRARY lib LANGUAGE JAVASCRIPT COMMENT "Created Comment" AS $$ export function f(n) {return n} $$';
+PREPARE stmt2 FROM 'ALTER LIBRARY lib COMMENT "Comment Changed"';
+PREPARE stmt3 FROM 'SHOW CREATE LIBRARY lib';
+PREPARE stmt4 FROM 'DROP LIBRARY lib';
+EXECUTE stmt1;
+EXECUTE stmt2;
+EXECUTE stmt3;
+END//
+CALL p1()//
+Library	sql_mode	Create Library
+lib	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib`
+    COMMENT 'Comment Changed'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$
+EXECUTE stmt4//
+DROP PREPARE stmt1//
+DROP PREPARE stmt2//
+DROP PREPARE stmt3//
+DROP PREPARE stmt4//
+DROP PROCEDURE p1//
+CREATE PROCEDURE p1() LANGUAGE SQL
+BEGIN
+PREPARE stmt1 FROM 'CREATE LIBRARY lib LANGUAGE JAVASCRIPT AS $$ export function f(n) {return n} $$';
+PREPARE stmt2 FROM 'DROP LIBRARY lib';
+EXECUTE stmt1;
+EXECUTE stmt2;
+DROP PREPARE stmt1;
+DROP PREPARE stmt2;
+END//
+CALL p1()//
+# Verify re-execution behavior of SP
+CALL p1()//
+CALL p1()//
+DROP PROCEDURE p1//
+CREATE PROCEDURE p1()
+BEGIN
+PREPARE create_stmt FROM 'CREATE LIBRARY js_lib LANGUAGE JAVASCRIPT AS $$ export function foo() {return -1} $$;';
+EXECUTE create_stmt;
+DEALLOCATE PREPARE create_stmt;
+PREPARE alter_stmt FROM 'ALTER LIBRARY js_lib COMMENT "DEALLOCATED comment";';
+EXECUTE alter_stmt;
+DEALLOCATE PREPARE alter_stmt;
+END//
+CALL p1()//
+# Verify re-execution behavior of SP
+DROP LIBRARY js_lib//
+CALL p1()//
+CALL p1()//
+ERROR 42000: LIBRARY js_lib already exists
+DROP PROCEDURE p1//
+SHOW CREATE LIBRARY js_lib//
+Library	sql_mode	Create Library
+js_lib	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `js_lib`
+    COMMENT 'DEALLOCATED comment'
+    LANGUAGE JAVASCRIPT
+AS $$ export function foo() {return -1} $$
+CREATE PROCEDURE p1()
+BEGIN
+PREPARE drop_stmt FROM 'DROP LIBRARY js_lib;';
+EXECUTE drop_stmt;
+DEALLOCATE PREPARE drop_stmt;
+END//
+CALL p1()//
+DROP PROCEDURE p1//
+# Check what happens if another database than current DB is used.
+CREATE PROCEDURE db2.p1() LANGUAGE SQL
+CREATE LIBRARY lib LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$;
+CALL db2.p1();
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE PROCEDURE db2.p2() LANGUAGE SQL
+ALTER LIBRARY lib COMMENT 'another DB';
+CALL db2.p2();
+CREATE PROCEDURE db2.p3() LANGUAGE SQL
+SHOW CREATE LIBRARY lib;
+CALL db2.p3();
+Library	sql_mode	Create Library
+lib	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib`
+    COMMENT 'another DB'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) {return n} $$
+CREATE PROCEDURE p3() LANGUAGE SQL
+DROP LIBRARY db2.lib;
+CALL p3();
+DROP PROCEDURE db2.p1;
+DROP PROCEDURE p3;
+DROP DATABASE db2;
+# extra long library name
+CREATE DATABASE schema_891123456789212345678931234567894123456789512345678961234;
+USE schema_891123456789212345678931234567894123456789512345678961234;
+CREATE LIBRARY library_91123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+USE test;
+CREATE FUNCTION
+function_1123456789212345678931234567894123456789512345678961234()
+RETURNS INT LANGUAGE JAVASCRIPT
+USING (schema_891123456789212345678931234567894123456789512345678961234.library_91123456789212345678931234567894123456789512345678961234 AS alias_7891123456789212345678931234567894123456789512345678961234)
+AS $$ return 42 $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION function_1123456789212345678931234567894123456789512345678961234;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_1123456789212345678931234567894123456789512345678961234	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_1123456789212345678931234567894123456789512345678961234`() RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`schema_891123456789212345678931234567894123456789512345678961234`.`library_91123456789212345678931234567894123456789512345678961234` AS `alias_7891123456789212345678931234567894123456789512345678961234`)
+AS $$ return 42 $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+DROP FUNCTION function_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_891123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_1_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_2_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_3_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_4_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_5_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_6_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_7_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_8_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_9_1123456789212345678931234567894123456789512345678961234;
+CREATE DATABASE schema_0_1123456789212345678931234567894123456789512345678961234;
+CREATE LIBRARY schema_1_1123456789212345678931234567894123456789512345678961234.library_1_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_2_1123456789212345678931234567894123456789512345678961234.library_2_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_3_1123456789212345678931234567894123456789512345678961234.library_3_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_4_1123456789212345678931234567894123456789512345678961234.library_4_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_5_1123456789212345678931234567894123456789512345678961234.library_5_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_6_1123456789212345678931234567894123456789512345678961234.library_6_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_7_1123456789212345678931234567894123456789512345678961234.library_7_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_8_1123456789212345678931234567894123456789512345678961234.library_8_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_9_1123456789212345678931234567894123456789512345678961234.library_9_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY schema_0_1123456789212345678931234567894123456789512345678961234.library_0_123456789212345678931234567894123456789512345678961234
+LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+# extra long USING clause
+CREATE FUNCTION
+function_2123456789212345678931234567894123456789512345678961234()
+RETURNS INT LANGUAGE JAVASCRIPT
+USING (
+schema_1_1123456789212345678931234567894123456789512345678961234.library_1_123456789212345678931234567894123456789512345678961234 AS alias_1_91123456789212345678931234567894123456789512345678961234,
+schema_2_1123456789212345678931234567894123456789512345678961234.library_2_123456789212345678931234567894123456789512345678961234 AS alias_2_91123456789212345678931234567894123456789512345678961234,
+schema_3_1123456789212345678931234567894123456789512345678961234.library_3_123456789212345678931234567894123456789512345678961234 AS alias_3_91123456789212345678931234567894123456789512345678961234,
+schema_4_1123456789212345678931234567894123456789512345678961234.library_4_123456789212345678931234567894123456789512345678961234 AS alias_4_91123456789212345678931234567894123456789512345678961234,
+schema_5_1123456789212345678931234567894123456789512345678961234.library_5_123456789212345678931234567894123456789512345678961234 AS alias_5_91123456789212345678931234567894123456789512345678961234,
+schema_6_1123456789212345678931234567894123456789512345678961234.library_6_123456789212345678931234567894123456789512345678961234 AS alias_6_91123456789212345678931234567894123456789512345678961234,
+schema_7_1123456789212345678931234567894123456789512345678961234.library_7_123456789212345678931234567894123456789512345678961234 AS alias_7_91123456789212345678931234567894123456789512345678961234,
+schema_8_1123456789212345678931234567894123456789512345678961234.library_8_123456789212345678931234567894123456789512345678961234 AS alias_8_91123456789212345678931234567894123456789512345678961234,
+schema_9_1123456789212345678931234567894123456789512345678961234.library_9_123456789212345678931234567894123456789512345678961234 AS alias_9_91123456789212345678931234567894123456789512345678961234,
+schema_0_1123456789212345678931234567894123456789512345678961234.library_0_123456789212345678931234567894123456789512345678961234 AS alias_0_91123456789212345678931234567894123456789512345678961234
+) AS $$ return 42 $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION function_2123456789212345678931234567894123456789512345678961234;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_2123456789212345678931234567894123456789512345678961234	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_2123456789212345678931234567894123456789512345678961234`() RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`schema_1_1123456789212345678931234567894123456789512345678961234`.`library_1_123456789212345678931234567894123456789512345678961234` AS `alias_1_91123456789212345678931234567894123456789512345678961234`, `schema_2_1123456789212345678931234567894123456789512345678961234`.`library_2_123456789212345678931234567894123456789512345678961234` AS `alias_2_91123456789212345678931234567894123456789512345678961234`, `schema_3_1123456789212345678931234567894123456789512345678961234`.`library_3_123456789212345678931234567894123456789512345678961234` AS `alias_3_91123456789212345678931234567894123456789512345678961234`, `schema_4_1123456789212345678931234567894123456789512345678961234`.`library_4_123456789212345678931234567894123456789512345678961234` AS `alias_4_91123456789212345678931234567894123456789512345678961234`, `schema_5_1123456789212345678931234567894123456789512345678961234`.`library_5_123456789212345678931234567894123456789512345678961234` AS `alias_5_91123456789212345678931234567894123456789512345678961234`, `schema_6_1123456789212345678931234567894123456789512345678961234`.`library_6_123456789212345678931234567894123456789512345678961234` AS `alias_6_91123456789212345678931234567894123456789512345678961234`, `schema_7_1123456789212345678931234567894123456789512345678961234`.`library_7_123456789212345678931234567894123456789512345678961234` AS `alias_7_91123456789212345678931234567894123456789512345678961234`, `schema_8_1123456789212345678931234567894123456789512345678961234`.`library_8_123456789212345678931234567894123456789512345678961234` AS `alias_8_91123456789212345678931234567894123456789512345678961234`, `schema_9_1123456789212345678931234567894123456789512345678961234`.`library_9_123456789212345678931234567894123456789512345678961234` AS `alias_9_91123456789212345678931234567894123456789512345678961234`, `schema_0_1123456789212345678931234567894123456789512345678961234`.`library_0_123456789212345678931234567894123456789512345678961234` AS `alias_0_91123456789212345678931234567894123456789512345678961234`)
+AS $$ return 42 $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_0_1123456789212345678931234567894123456789512345678961234	library_0_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_1123456789212345678931234567894123456789512345678961234	library_1_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_2_1123456789212345678931234567894123456789512345678961234	library_2_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_3_1123456789212345678931234567894123456789512345678961234	library_3_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_4_1123456789212345678931234567894123456789512345678961234	library_4_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_5_1123456789212345678931234567894123456789512345678961234	library_5_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_6_1123456789212345678931234567894123456789512345678961234	library_6_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_7_1123456789212345678931234567894123456789512345678961234	library_7_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_8_1123456789212345678931234567894123456789512345678961234	library_8_123456789212345678931234567894123456789512345678961234	NULL
+def	test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_9_1123456789212345678931234567894123456789512345678961234	library_9_123456789212345678931234567894123456789512345678961234	NULL
+DROP FUNCTION function_2123456789212345678931234567894123456789512345678961234;
+# Orphaned SP where one of its libraries is deleted.
+CREATE LIBRARY deleted_library LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE FUNCTION orphaned_function() RETURNS INT LANGUAGE JAVASCRIPT USING (deleted_library)
+AS 'return deleted_library.f(42)';
+Warnings:
+Warning	6001	Language component: Not available.
+DROP LIBRARY deleted_library;
+SHOW CREATE FUNCTION orphaned_function;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+orphaned_function	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `orphaned_function`() RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`test`.`deleted_library`)
+AS $$return deleted_library.f(42)$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+Warnings:
+Warning	6436	The routine 'orphaned_function' references a missing library 'test.deleted_library' or definer/invoker of the routine lack rights to use it.
+SHOW WARNINGS;
+Level	Code	Message
+Warning	6436	The routine 'orphaned_function' references a missing library 'test.deleted_library' or definer/invoker of the routine lack rights to use it.
+DROP FUNCTION orphaned_function;
+DROP DATABASE schema_1_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_2_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_3_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_4_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_5_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_6_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_7_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_8_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_9_1123456789212345678931234567894123456789512345678961234;
+DROP DATABASE schema_0_1123456789212345678931234567894123456789512345678961234;
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	15
+Com_create_library	49
+Com_drop_library	34
+Com_show_create_library	19

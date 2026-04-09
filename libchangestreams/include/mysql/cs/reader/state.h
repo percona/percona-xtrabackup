@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,8 +30,7 @@
 #include <optional>
 #include <string>
 #include "mysql/binlog/event/trx_boundary_parser.h"
-#include "mysql/gtid/gtid.h"
-#include "mysql/gtid/gtidset.h"
+#include "mysql/gtids/gtids.h"
 
 namespace cs::reader {
 
@@ -47,7 +46,7 @@ class State {
    * This set is updated every time a transaction identifier event comes down
    * the stream. The identifier is added to the stream.
    */
-  mysql::gtid::Gtid_set m_gtid_set;
+  mysql::gtids::Gtid_set m_gtid_set;
 
  public:
   State() = default;
@@ -78,36 +77,32 @@ class State {
    *
    * @return a reference to the internal set of gtids.
    */
-  virtual const mysql::gtid::Gtid_set &get_gtids() const;
-
-  /**
-   * @brief Sets the gtids object in the state. This completely overwrites the
-   * existing gtid set.
-   *
-   * @param gtids The set of gtids to add.
-   * @return true if there was an error while setting the gtids.
-   * @return false if there was no error while setting the gitds.
-   */
-  virtual bool set_gtids(const mysql::gtid::Gtid_set &gtids);
+  [[nodiscard]] virtual const mysql::gtids::Gtid_set &get_gtids() const;
 
   /**
    * @brief Adds a set of gtid to the state.
    *
    * @param gtids the set of transaction identifiers to add.
+   *
+   * @throws bad_alloc if an out-of-memory condition occurs
    */
-  virtual void add_gtid_set(const mysql::gtid::Gtid_set &gtids);
+  virtual void add_gtid_set(const mysql::gtids::Gtid_set &gtids);
 
   /**
    * @brief Adds a gtid to the state.
    *
    * @param gtid the transaction identifier to add to this state.
+   *
+   * @throws bad_alloc if an out-of-memory condition occurs
    */
-  virtual void add_gtid(const mysql::gtid::Gtid &gtid);
+  virtual void add_gtid(const mysql::gtids::Gtid &gtid);
 
   /**
    * @brief Returns a human readable representation of the state.
    *
    * @return std::string A human readable representation of the state.
+   *
+   * @throws bad_alloc if an out-of-memory condition occurs
    */
   virtual std::string to_string() const;
 

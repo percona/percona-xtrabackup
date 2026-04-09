@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -60,7 +60,7 @@
 #endif
 
 static duk_ret_t node_path_join(duk_context *ctx) {
-  duk_idx_t arg_count = duk_get_top(ctx);
+  duk_idx_t const arg_count = duk_get_top(ctx);
   duk_idx_t i;
 
   duk_push_string(ctx, "/");
@@ -88,7 +88,7 @@ static duk_ret_t normalize_path(duk_context *ctx, duk_idx_t obj_idx) {
 }
 
 static duk_ret_t node_format_string(duk_context *ctx) {
-  duk_idx_t arg_count = duk_get_top(ctx);
+  duk_idx_t const arg_count = duk_get_top(ctx);
   duk_idx_t arg_ndx = 1;
   size_t section_count = 0;
 
@@ -379,7 +379,7 @@ static duk_ret_t cb_resolve_module(duk_context *ctx) {
       return 1;
     }
   } else {
-    int has_parent_id = strlen(parent_id) > 0;
+    int const has_parent_id = strlen(parent_id) > 0;
 
     if (has_parent_id && module_id[0] == '.') {
       // strip the filename from the parent's id
@@ -587,27 +587,32 @@ static duk_ret_t cb_load_module(duk_context *ctx) {
 
     duk_push_undefined(ctx);
     return 1;
-  } else if (0 == strcmp(resolved_id, "util")) {
+  }
+  if (0 == strcmp(resolved_id, "util")) {
     duk_put_function_list(ctx, 1, util_module_funcs);
 
     duk_push_undefined(ctx);
     return 1;
-  } else if (0 == strcmp(resolved_id, "fs")) {
+  }
+  if (0 == strcmp(resolved_id, "fs")) {
     duk_put_function_list(ctx, 1, fs_module_funcs);
 
     duk_push_undefined(ctx);
     return 1;
-  } else if (0 == strcmp(resolved_id, "process")) {
+  }
+  if (0 == strcmp(resolved_id, "process")) {
     duk_put_function_list(ctx, 1, process_module_funcs);
 
     duk_push_undefined(ctx);
     return 1;
-  } else if (0 == strcmp(resolved_id, "console")) {
+  }
+  if (0 == strcmp(resolved_id, "console")) {
     duk_put_function_list(ctx, 1, console_module_funcs);
 
     duk_push_undefined(ctx);
     return 1;
-  } else if (0 == strcmp(resolved_id, "events")) {
+  }
+  if (0 == strcmp(resolved_id, "events")) {
     duk_push_string(ctx, "events.js");
     if (DUK_EXEC_SUCCESS !=
         duk_pcompile_string_filename(
@@ -668,17 +673,20 @@ static duk_ret_t cb_load_module(duk_context *ctx) {
 
     duk_push_undefined(ctx);
     return 1;
-  } else if (0 == strcmp(resolved_id, "assert")) {
+  }
+  if (0 == strcmp(resolved_id, "assert")) {
     duk_put_function_list(ctx, 1, assert_module_funcs);
 
     duk_push_undefined(ctx);
     return 1;
-  } else if (0 == strcmp(resolved_id, "tty")) {
+  }
+  if (0 == strcmp(resolved_id, "tty")) {
     duk_put_function_list(ctx, 1, tty_module_funcs);
 
     duk_push_undefined(ctx);
     return 1;
-  } else if (0 == strcmp(resolved_id, "os")) {
+  }
+  if (0 == strcmp(resolved_id, "os")) {
     duk_put_function_list(ctx, 1, os_module_funcs);
 
     duk_push_undefined(ctx);
@@ -715,10 +723,10 @@ void duk_module_shim_init(duk_context *ctx,
   duk_put_global_string(ctx, "clearTimeout");
 
   // var _module = []
-  duk_idx_t module_ndx = duk_push_object(ctx);  // module
+  duk_idx_t const module_ndx = duk_push_object(ctx);  // module
 
   // var _paths = []
-  duk_idx_t paths_ndx = duk_push_array(ctx);  // array
+  duk_idx_t const paths_ndx = duk_push_array(ctx);  // array
 
   size_t ndx{};
   for (const auto &prefix : prefixes) {

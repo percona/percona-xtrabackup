@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -466,9 +466,9 @@ class NdbPack {
    public:
     DataArray() {}
     ~DataArray() {}
-    void init_poai(const Uint32 *buf, const Uint32 cnt);
-    void init_bound(const BoundC &, const Uint32 cnt);
-    int cmp(const Spec *spec, const DataArray *d2, const Uint32 cnt) const;
+    void init_poai(const Uint32 *buf, Uint32 cnt);
+    void init_bound(const BoundC &, Uint32 cnt);
+    int cmp(const Spec *spec, const DataArray *d2, Uint32 cnt) const;
     Uint32 cnt() const;
     Uint32 get_null_cnt() const;
     Uint32 get_data_len() const;
@@ -483,9 +483,9 @@ class NdbPack {
   class BoundArray {
    public:
     BoundArray();
-    BoundArray(const Spec *, const DataArray *, const int side);
+    BoundArray(const Spec *, const DataArray *, int side);
     ~BoundArray() {}
-    int cmp(const DataArray *d2, const Uint32 cnt, bool ok_to_ret_eq) const;
+    int cmp(const DataArray *d2, Uint32 cnt, bool ok_to_ret_eq) const;
     Uint32 cnt() const;
 
    private:
@@ -603,10 +603,8 @@ inline const NdbPack::Type &NdbPack::Spec::get_type(Uint32 i) const {
 inline Uint32 NdbPack::Spec::get_cnt() const { return m_cnt; }
 
 inline Uint32 NdbPack::Spec::get_nullable_cnt(bool allNullable) const {
-  if (!allNullable)
-    return m_nullableCnt;
-  else
-    return m_cnt;
+  if (!allNullable) return m_nullableCnt;
+  return m_cnt;
 }
 
 inline Uint32 NdbPack::Spec::get_nullmask_len(bool allNullable) const {

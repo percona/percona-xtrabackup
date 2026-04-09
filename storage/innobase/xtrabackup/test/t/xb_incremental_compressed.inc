@@ -34,7 +34,7 @@ ib_inc_extra_args=${ib_inc_extra_args:-""}
 innodb_strict_mode
 innodb_file_per_table
 innodb_max_dirty_pages_pct=0
-innodb_log_file_size=4M"
+innodb_redo_log_capacity=8M"
   
   start_server
   if [[ $ib_full_backup_extra_args =~ 'page-tracking' ]]; then
@@ -72,7 +72,7 @@ KEY_BLOCK_SIZE=$page_size" incremental_sample
 
   vlog "Making changes to database"
 
-  ${MYSQL} ${MYSQL_ARGS} -e "CREATE TABLE t2 (a INT(11) DEFAULT NULL, \
+  ${MYSQL} ${MYSQL_ARGS} --commands -e "CREATE TABLE t2 (a INT(11) DEFAULT NULL, \
 number INT(11) DEFAULT NULL) ENGINE=INNODB \
 ROW_FORMAT=COMPRESSED KEY_BLOCK_SIZE=$page_size" incremental_sample
 

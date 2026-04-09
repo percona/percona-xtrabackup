@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -119,7 +119,7 @@ server_error errors[] = {
 */
 server_error *find_error_record_by_symbol(const char *symbol) {
   // naive lookup. optimize later.
-  size_t error_record_count = sizeof(errors) / sizeof(server_error) - 1;
+  size_t const error_record_count = sizeof(errors) / sizeof(server_error) - 1;
 
   for (size_t index = 0; index < error_record_count; index++) {
     if (0 == strcmp(symbol, errors[index].name)) return &errors[index];
@@ -166,10 +166,10 @@ bool is_valid_errlog_errcode(uint errcode) {
 */
 int check_source(const char *file_name) {
   // read the entirety of the input file (that is, a C++ source file)
-  std::ifstream source_file(file_name);
+  std::ifstream const source_file(file_name);
   std::stringstream file_contents;
   file_contents << source_file.rdbuf();
-  std::string buff = file_contents.str();
+  std::string const buff = file_contents.str();
 
   const char *buff_start = buff.c_str();  ///< start of our text buffer
   const char *curr = buff_start;          ///< current read position

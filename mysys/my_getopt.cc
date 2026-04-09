@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,24 +30,27 @@
   @file mysys/my_getopt.cc
 */
 
-#include <errno.h>
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <cassert>
+#include <cerrno>
+#include <climits>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <string_view>
 #include <type_traits>
 
 #include "m_string.h"
-#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_default.h"
 #include "my_getopt.h"
 #include "my_inttypes.h"
 #include "my_io.h"
-#include "my_macros.h"
+#include "my_sys.h"
 #include "mysql/my_loglevel.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/strings/dtoa.h"
@@ -160,7 +163,7 @@ union ull_dbl {
 ulonglong getopt_double2ulonglong(double v) {
   union ull_dbl u;
   u.dbl = v;
-  static_assert(sizeof(ulonglong) >= sizeof(double), "");
+  static_assert(sizeof(ulonglong) >= sizeof(double));
   return u.ull;
 }
 
@@ -388,7 +391,7 @@ int my_handle_options2(int *argc, char ***argv,
          * instance name And for all other variable key_name will be 0.
          */
         if (*key_name) {
-          std::string tmp_name(opt_str, 0, length);
+          std::string const tmp_name(opt_str, 0, length);
 
           if (!is_key_cache_variable_suffix(tmp_name.c_str())) {
             opt_str = cur_arg;
@@ -746,13 +749,13 @@ static char *check_struct_option(char *cur_arg, char *key_name) {
      dot found, the option is not a struct option.
   */
   if ((equal_pos > dot_pos) && (space_pos > dot_pos)) {
-    size_t len = std::min(size_t(dot_pos - cur_arg), size_t(FN_REFLEN - 1));
+    size_t const len =
+        std::min(size_t(dot_pos - cur_arg), size_t(FN_REFLEN - 1));
     strmake(key_name, cur_arg, len);
     return ++dot_pos;
-  } else {
-    key_name[0] = 0;
-    return cur_arg;
   }
+  key_name[0] = 0;
+  return cur_arg;
 }
 
 /**
@@ -940,7 +943,7 @@ static int setval(const struct my_option *opts, void *value,
         if (err) {
           /* Accept an integer representation of the set */
           char *endptr;
-          const ulonglong arg = (ulonglong)strtol(argument, &endptr, 10);
+          const auto arg = (ulonglong)strtol(argument, &endptr, 10);
           if (*endptr || (arg >> 1) >= (1ULL << (opts->typelib->count - 1))) {
             res = EXIT_ARGUMENT_INVALID;
             goto ret;
@@ -1066,7 +1069,7 @@ LLorULL eval_num_suffix(const char *argument, int *error,
       num = -1 * num;
   }
 
-  unsigned long long ull_num = num;
+  unsigned long long const ull_num = num;
 
   const size_t num_input_bits = std::bitset<64>(ull_num).count();
 
@@ -1152,7 +1155,7 @@ template ulonglong eval_num_suffix<ulonglong>(const char *, int *,
 
 static longlong getopt_ll(const char *arg, bool set_maximum_value,
                           const my_option *optp, int *err) {
-  longlong num = eval_num_suffix<longlong>(arg, err, optp->name);
+  auto num = eval_num_suffix<longlong>(arg, err, optp->name);
   if (set_maximum_value && *err == 0 &&
       *static_cast<longlong *>(optp->value) > num) {
     *static_cast<longlong *>(optp->value) = num;
@@ -1199,7 +1202,7 @@ longlong getopt_ll_limit_value(longlong num, const struct my_option *optp,
   char buf1[255], buf2[255];
   const ulonglong block_size =
       (optp->block_size ? (ulonglong)optp->block_size : 1L);
-  const longlong max_of_type =
+  const auto max_of_type =
       (longlong)max_of_int_range(optp->var_type & GET_TYPE_MASK);
 
   if (num > 0 && ((ulonglong)num > (ulonglong)optp->max_value) &&
@@ -1560,10 +1563,20 @@ void my_print_help(const struct my_option *options) {
       const char *comment = optp->comment, *end = strend(comment);
 
       while ((uint)(end - comment) > comment_space) {
-        for (line_end = comment + comment_space; *line_end != ' '; line_end--) {
+        bool had_space;
+        // find the last space before the limit to break the comment on
+        for (line_end = comment + comment_space;
+             line_end > comment && *line_end != ' '; line_end--) {
         }
+        // if no space is found break at the limit - 1 (for the new line)
+        if (line_end == comment && *comment != ' ') {
+          line_end = comment + comment_space - 1;
+          had_space = false;
+        } else
+          had_space = true;
         for (; comment != line_end; comment++) putchar(*comment);
-        comment++; /* skip the space, as a newline will take it's place now */
+        if (had_space)
+          comment++; /* skip the space, as a newline will take it's place now */
         putchar('\n');
         for (col = 0; col < name_space; col++) putchar(' ');
       }

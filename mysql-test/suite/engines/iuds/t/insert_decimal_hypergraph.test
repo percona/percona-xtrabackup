@@ -1,0 +1,3 @@
+--source include/have_hypergraph.inc
+--source suite/engines/iuds/include/insert_decimal.inc
+--source include/disable_hypergraph.inc

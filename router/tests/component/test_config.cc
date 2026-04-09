@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -540,9 +540,8 @@ TEST_F(RouterConfigTest, RoutingRoutingStrategyRequired) {
                  "stating that it is required option.");
 
   const std::string mdc_section = mysql_harness::ConfigBuilder::build_section(
-      "routing:test", {{"bind_port", "6064"},
-                       {"destinations", "127.0.0.1:3060"},
-                       {"mode", "read-only"}});
+      "routing:test",
+      {{"bind_port", "6064"}, {"destinations", "127.0.0.1:3060"}});
 
   TempDirectory conf_dir("conf");
   auto default_section = get_DEFAULT_defaults();
@@ -619,6 +618,219 @@ TEST_F(RouterConfigTest, RoutingOptionDisabledUnsupported) {
                                 "'routing.disabled' is not supported",
                                 2s));
 }
+
+struct MRSConfigErrorParam {
+  MRSConfigErrorParam(
+      std::string ptitle,
+      std::vector<mysql_harness::ConfigBuilder::kv_type> poptions,
+      std::string pexpected_error_pattern)
+      : title(ptitle),
+        options(poptions),
+        expected_error_pattern(pexpected_error_pattern) {}
+
+  std::string title;
+  std::vector<mysql_harness::ConfigBuilder::kv_type> options;
+  std::string expected_error_pattern;
+};
+
+auto get_test_title(const ::testing::TestParamInfo<MRSConfigErrorParam> &info) {
+  return info.param.title;
+}
+
+class MRSConfigErrorTest
+    : public RouterComponentTest,
+      public ::testing::WithParamInterface<MRSConfigErrorParam> {};
+
+TEST_P(MRSConfigErrorTest, Check) {
+  const std::string mrs_section = mysql_harness::ConfigBuilder::build_section(
+      "mysql_rest_service", GetParam().options);
+
+  TempDirectory conf_dir("conf");
+  auto default_section = get_DEFAULT_defaults();
+  init_keyring(default_section, conf_dir.name(),
+               {{"mysql_user_mrs", "password", "secret"},
+                {"mysql_user_mrs_data_access", "password", "secret2"},
+                {"rest-user", "jwt_secret", "jwt-secret"}});
+
+  const auto routing_rw_section = mysql_harness::ConfigBuilder::build_section(
+      "routing:rw", {{"bind_port", "6064"},
+                     {"destinations", "127.0.0.1:3060"},
+                     {"routing_strategy", "round-robin"}});
+
+  const auto routing_ro_section = mysql_harness::ConfigBuilder::build_section(
+      "routing:ro", {{"bind_port", "6065"},
+                     {"destinations", "127.0.0.1:3061"},
+                     {"routing_strategy", "round-robin"}});
+
+  const auto routing_rw_x_section = mysql_harness::ConfigBuilder::build_section(
+      "routing:rwx", {{"bind_port", "6066"},
+                      {"destinations", "127.0.0.1:3060"},
+                      {"routing_strategy", "round-robin"},
+                      {"protocol", "x"}});
+
+  const auto routing_ro_x_section = mysql_harness::ConfigBuilder::build_section(
+      "routing:rox", {{"bind_port", "6067"},
+                      {"destinations", "127.0.0.1:3061"},
+                      {"routing_strategy", "round-robin"},
+                      {"protocol", "x"}});
+
+  const auto conf_file = create_config_file(
+      conf_dir.name(),
+      routing_rw_section + routing_ro_section + routing_rw_x_section +
+          routing_ro_x_section + mrs_section,
+      &default_section);
+
+  auto &router =
+      launch_router({"-c", conf_file}, EXIT_FAILURE, true, false, -1ms);
+
+  check_exit_code(router, EXIT_FAILURE);
+
+  EXPECT_TRUE(wait_log_contains(router, GetParam().expected_error_pattern, 2s));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Check, MRSConfigErrorTest,
+    ::testing::Values(
+        MRSConfigErrorParam(
+            "mysql_user_missing", {},
+            "main ERROR .* Configuration error: option mysql_user in "
+            "\\[mysql_rest_service\\] is required"),
+        MRSConfigErrorParam(
+            "mysql_user_empty", {{"mysql_user", ""}},
+            "main ERROR .* Configuration error: option "
+            "mysql_user in \\[mysql_rest_service\\] needs a value"),
+        MRSConfigErrorParam(
+            "mysql_user_not_in_keyring",
+            {{"mysql_user", "user_not_in_keying"},
+             {"mysql_read_write_route", "rw"},
+             {"router_id", "1"}},
+            "mysql_rest_service ERROR .* MySQL Server account: "
+            "'user_not_in_keying', set in configuration file must have a "
+            "password stored in `MySQLRouter's` keyring."),
+        MRSConfigErrorParam(
+            "mysql_user_data_access_not_in_keyring",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_user_data_access", "user_not_in_keying"},
+             {"mysql_read_write_route", "rw"},
+             {"router_id", "1"}},
+            "main ERROR .* Could not fetch value for 'user_not_in_keying' "
+            "from the keyring: (map::at.*|invalid map.*)"),
+        MRSConfigErrorParam("mysql_read_write_route_missing",
+                            {{"mysql_user", "mysql_user_mrs"}},
+                            "main ERROR .* Configuration error: option "
+                            "mysql_read_write_route in "
+                            "\\[mysql_rest_service\\] is required"),
+        MRSConfigErrorParam(
+            "mysql_read_write_route_does_not_exist",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "unknown"},
+             {"router_id", "1"}},
+            "main ERROR .* Error: Route name 'unknown' specified for "
+            "`mysql_read_write_route` option, doesn't exist or has unsupported "
+            "protocol."),
+        MRSConfigErrorParam("mysql_read_write_route_empty",
+                            {{"mysql_user", "mysql_user_mrs"},
+                             {"mysql_read_write_route", ""},
+                             {"router_id", "1"}},
+                            "main ERROR .* Configuration error: option "
+                            "mysql_read_write_route in "
+                            "\\[mysql_rest_service\\] needs a value"),
+        MRSConfigErrorParam(
+            "mysql_read_write_route_x_protocol",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rwx"},
+             {"router_id", "1"}},
+            "main ERROR .* Error: Route name 'rwx' specified for "
+            "`mysql_read_write_route` option, doesn't exist or has unsupported "
+            "protocol."),
+        MRSConfigErrorParam(
+            "mysql_read_only_route_does_not_exist",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rw"},
+             {"mysql_read_only_route", "unknown"},
+             {"router_id", "1"}},
+            "main ERROR .* Error: Route name 'unknown' specified for "
+            "`mysql_read_only_route` option, doesn't exist or has unsupported "
+            "protocol."),
+        MRSConfigErrorParam(
+            "mysql_read_only_route_x_protocol",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rw"},
+             {"mysql_read_only_route", "rox"},
+             {"router_id", "1"}},
+            "main ERROR .* Error: Route name 'rox' specified for "
+            "`mysql_read_only_route` option, doesn't exist or has unsupported "
+            "protocol."),
+        MRSConfigErrorParam(
+            "router_id_missing",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rw"}},
+            "main ERROR .* Configuration error: option router_id in "
+            "\\[mysql_rest_service\\] is required"),
+        MRSConfigErrorParam(
+            "router_id_empty",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rw"},
+             {"mysql_read_only_route", "ro"},
+             {"router_id", ""}},
+            "main ERROR .* Configuration error: option router_id in "
+            "\\[mysql_rest_service\\] needs a value"),
+        MRSConfigErrorParam(
+            "router_id_nan",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rw"},
+             {"mysql_read_only_route", "ro"},
+             {"router_id", "nan"}},
+            "main ERROR .* Configuration error: option router_id in "
+            "\\[mysql_rest_service\\] needs value between 0 and "
+            "18446744073709551615 inclusive, was 'nan'"),
+        MRSConfigErrorParam(
+            "metadata_refresh_interval_negative",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rw"},
+             {"mysql_read_only_route", "ro"},
+             {"router_id", "1"},
+             {"metadata_refresh_interval", "-1"}},
+            "main ERROR .* Configuration error: option "
+            "metadata_refresh_interval in \\[mysql_rest_service\\] needs value "
+            "between 0 and 1\\.79769e\\+308 inclusive, was '-1'"),
+        MRSConfigErrorParam("metadata_refresh_interval_0",
+                            {{"mysql_user", "mysql_user_mrs"},
+                             {"mysql_read_write_route", "rw"},
+                             {"mysql_read_only_route", "ro"},
+                             {"router_id", "1"},
+                             {"metadata_refresh_interval", "0"}},
+                            "main ERROR .* Error: `metadata_refresh_interval` "
+                            "option, must be greater than zero."),
+        MRSConfigErrorParam(
+            "metadata_refresh_interval_nan",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rw"},
+             {"mysql_read_only_route", "ro"},
+             {"router_id", "1"},
+             {"metadata_refresh_interval", "nan"}},
+            "Configuration error: option metadata_refresh_interval in "
+            "\\[mysql_rest_service\\] needs value between 0 and "
+            "1\\.79769e\\+308 inclusive, was 'nan'"),
+        MRSConfigErrorParam(
+            "metadata_refresh_interval_foo",
+            {{"mysql_user", "mysql_user_mrs"},
+             {"mysql_read_write_route", "rw"},
+             {"mysql_read_only_route", "ro"},
+             {"router_id", "1"},
+             {"metadata_refresh_interval", "foo"}},
+            "Configuration error: option metadata_refresh_interval in "
+            "\\[mysql_rest_service\\] needs value between 0 and "
+            "1\\.79769e\\+308 inclusive, was 'foo'"),
+        MRSConfigErrorParam("unknown_option",
+                            {{"mysql_user", "mysql_user_mrs"},
+                             {"mysql_read_write_route", "rw"},
+                             {"mysql_read_only_route", "ro"},
+                             {"router_id", "1"},
+                             {"unknown", "1"}},
+                            "main ERROR .* Error: option "
+                            "'mysql_rest_service.unknown' is not supported")),
+    get_test_title);
 
 int main(int argc, char *argv[]) {
   init_windows_sockets();

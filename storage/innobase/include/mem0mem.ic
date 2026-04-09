@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -108,6 +108,7 @@ static inline ulint mem_block_get_start(mem_block_t *block) {
 /** Checks that an object is a memory heap (or a block of it)
 @param[in]      block   Memory heap to check */
 static inline void mem_block_validate(const mem_block_t *block) {
+  ut_ad(block != nullptr);
   if (block->magic_n != MEM_BLOCK_MAGIC_N) {
     ib::fatal error(UT_LOCATION_HERE);
     error << "Memory block is invalid (correctness field value"
@@ -118,6 +119,9 @@ static inline void mem_block_validate(const mem_block_t *block) {
   }
 }
 
+MY_COMPILER_DIAGNOSTIC_PUSH()
+// gcc may warn about memset() into a region of size 0
+MY_COMPILER_GCC_DIAGNOSTIC_IGNORE("-Wstringop-overflow")
 /** Allocates and zero-fills n bytes of memory from a memory heap.
 @param[in]      heap    memory heap
 @param[in]      n       number of bytes; if the heap is allowed to grow into
@@ -128,6 +132,7 @@ static inline void *mem_heap_zalloc(mem_heap_t *heap, ulint n) {
   ut_ad(!(heap->type & MEM_HEAP_BTR_SEARCH));
   return (memset(mem_heap_alloc(heap, n), 0, n));
 }
+MY_COMPILER_DIAGNOSTIC_POP()
 
 /** Allocates n bytes of memory from a memory heap.
 @param[in]      heap    memory heap

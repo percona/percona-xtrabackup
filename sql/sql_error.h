@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,9 +34,12 @@
 #include "my_compiler.h"
 
 #include "my_inttypes.h"
+#include "my_temporal.h"
+
+#include "mysql/components/services/bits/my_err_bits.h"
+#include "mysql/components/services/bits/sql_bits.h"
 #include "mysql/strings/int2str.h"
 #include "mysql/strings/m_ctype.h"
-#include "mysql_com.h" /* MYSQL_ERRMSG_SIZE */
 #include "sql/sql_list.h"
 #include "sql/sql_plist.h" /* I_P_List */
 #include "sql_string.h"    /* String */
@@ -253,6 +256,7 @@ class ErrConvString {
   ErrConvString(double nr);
   ErrConvString(const my_decimal *nr);
   ErrConvString(const MYSQL_TIME *ltime, uint dec);
+  ErrConvString(Time_val time, uint dec);
 
   const char *ptr() const { return err_buffer; }
   size_t length() const { return buf_length; }
@@ -546,6 +550,18 @@ class Diagnostics_area {
 
  private:
   /**
+    In debug mode, assert that the status is not set, as required before setting
+    the status; unless the new status is DA_ERROR and m_overwrite_flag is set.
+    In case the assertion is raised, print an error message that includes the
+    previous status, the new status, the previous ER_* symbol (if any), and the
+    new ER_* symbol (if any).
+
+    @param new_status The new status we attempt to set.
+    @param new_errno The new mysql_errno we attempt to set, or 0 if not given.
+  */
+  void assert_not_set(enum_diagnostics_status new_status, int new_errno = 0);
+
+  /**
     Add a new SQL-condition to the current list and increment the respective
     counters.
 
@@ -724,6 +740,13 @@ void push_warning(THD *thd, uint code);
 void push_warning_printf(THD *thd, Sql_condition::enum_severity_level severity,
                          uint code, const char *format, ...)
     MY_ATTRIBUTE((format(printf, 4, 5)));
+
+/*
+  @see push_warning_printf
+*/
+void push_warning_vprintf(THD *thd, Sql_condition::enum_severity_level severity,
+                          uint code, const char *format, va_list args)
+    MY_ATTRIBUTE((format(printf, 4, 0)));
 
 /**
   Generates a warning that a feature is deprecated.

@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -199,29 +199,59 @@ static bool AddTableInfoToObject(Json_object *obj, const TABLE *table) {
   return error;
 }
 
-/*
-  The index information is displayed like this :
-
-  [<Prefix>] [COVERING] INDEX <index_operation>
-    ON table_alias USING index_name [ (<lookup_condition>) ]
-    [ OVER <range> [, <range>, ...] ]
-    [ (REVERSE) ]
-    [ WITH INDEX CONDITION: <pushed_idx_cond> ]
-
-  where <index_operation> =
-     {scan|skip scan|range scan|lookup|search|
-      skip scan for grouping|skip scan for deduplication}
-  where <Prefix> = {Single-row|Multi-range}
-*/
-static bool SetIndexInfoInObject(
-    string *str, const char *json_index_access_type, const char *prefix,
-    const TABLE &table, const KEY &key, uint n_key_columns,
-    const char *index_access_type, const string lookup_condition,
-    const string *ranges_text, unique_ptr<Json_array> range_arr, bool reverse,
-    Item *pushed_idx_cond, Json_object *obj) {
-  string idx_cond_str = pushed_idx_cond ? ItemToString(pushed_idx_cond) : "";
+/**
+ * Set index info for index-based table accesses in the JSON EXPLAIN object.
+ *
+ * The index information is displayed like this :
+ *
+ *     [<Prefix>] [COVERING] INDEX <index_operation>
+ *       ON table_alias USING index_name [ (<lookup_condition>) ]
+ *       [ OVER <range> [, <range>, ...] ]
+ *       [ (REVERSE) ]
+ *       [ WITH INDEX CONDITION: <pushed_idx_cond> ]
+ *
+ *     where <index_operation> =
+ *       {scan|skip scan|range scan|lookup|search|
+ *        skip scan for grouping|skip scan for deduplication}
+ *     where <Prefix> = {Single-row|Multi-range}
+ *
+ * @param[out] str Description of the index operation. Used in the TREE format
+ * and "operation" JSON field.
+ * @param path Pointer to the AccessPath object holding information about the
+ * index access.
+ * @param json_index_access_type Index access type for the JSON object.
+ * @param prefix Prefix for the index access description.
+ * @param table TABLE object with index access information.
+ * @param key The index used for this table access.
+ * @param index_access_type Name of index access type for index access
+ * description.
+ * @param index_lookup A pointer to a description of the index lookup, if the
+ * index access is an index lookup. Otherwise, nullptr.
+ * @param ranges_text Plain text description of ranges for range and skip scan.
+ * @param range_arr List of ranges for the JSON object.
+ * @param reverse Whether or not the scan is reverse.
+ * @param pushed_idx_cond Pushed index condition.
+ * @param obj The JSON object to add index info to.
+ * @returns false if error, true otherwise.
+ */
+static bool SetIndexInfoInObject(string *str, const AccessPath *path,
+                                 const char *json_index_access_type,
+                                 const char *prefix, const TABLE &table,
+                                 const KEY &key, const char *index_access_type,
+                                 const Index_lookup *index_lookup,
+                                 const string *ranges_text,
+                                 unique_ptr<Json_array> range_arr, bool reverse,
+                                 Item *pushed_idx_cond, Json_object *obj) {
+  const string idx_cond_str =
+      pushed_idx_cond ? ItemToString(pushed_idx_cond) : "";
+  const string lookup_condition{
+      index_lookup == nullptr
+          ? ""
+          : RefToString(*index_lookup, key,
+                        path->type == AccessPath::REF_OR_NULL)};
   string covering_index =
       string(IsCoveringIndexScan(key, table) ? "Covering index " : "Index ");
+
   bool error = false;
 
   if (prefix) covering_index[0] = tolower(covering_index[0]);
@@ -255,7 +285,9 @@ static bool SetIndexInfoInObject(
                                             table.file->explain_extra());
 
   unique_ptr<Json_array> key_columns(new (std::nothrow) Json_array());
+  unique_ptr<Json_array> lookup_references(new (std::nothrow) Json_array());
   KEY_PART_INFO *kp = key.key_part;
+  uint n_key_columns = get_used_key_parts(path);
 
   // When the KEY is over a hash field get_used_key_parts() reports the amount
   // of fields in the hash, while the hash field only corresponds to one
@@ -263,9 +295,27 @@ static bool SetIndexInfoInObject(
   for (uint i = 0; i < n_key_columns && i < key.actual_key_parts; i++, kp++) {
     error |= AddElementToArray<Json_string>(
         key_columns, get_field_name_or_expression(current_thd, kp->field));
+    // When there is an index lookup the lookup condition consists of a set of
+    // "key_column = value" conditions, where "value" can be any of a single
+    // column reference, a constant value, or a function on one or more columns.
+    // The "lookup_references" list maps 1-to-1 with "lookup_condition" and
+    // "key_columns" in this way, where constants and functions are represented
+    // as "const" and "func" respectively.
+    // This is the same list as "ref" in the JSONv1 EXPLAIN format, but the name
+    // "lookup_references" is more descriptive, and points to that these are the
+    // values referenced in "lookup_condition".
+    if (index_lookup != nullptr) {
+      error |= AddElementToArray<Json_string>(
+          lookup_references, index_lookup->key_copy[i] != nullptr
+                                 ? index_lookup->key_copy[i]->name()
+                                 : "const");
+    }
   }
   if (key_columns->size() > 0) {
     error |= obj->add_alias("key_columns", std::move(key_columns));
+  }
+  if (lookup_references->size() > 0) {
+    error |= obj->add_alias("lookup_references", std::move(lookup_references));
   }
 
   return error;
@@ -715,11 +765,10 @@ static bool ExplainIndexSkipScanAccessPath(Json_object *obj,
 
   // NOTE: Currently, index skip scan is always covering, but there's no
   // good reason why we cannot fix this limitation in the future.
-  return SetIndexInfoInObject(description, "index_skip_scan", nullptr, table,
-                              key_info, get_used_key_parts(path), "skip scan",
-                              /*lookup condition*/ "", &ranges,
-                              std::move(range_arr), /*reverse*/ false,
-                              /*push_condition*/ nullptr, obj);
+  return SetIndexInfoInObject(
+      description, path, "index_skip_scan", nullptr, table, key_info,
+      "skip scan", /*index_lookup=*/nullptr, &ranges, std::move(range_arr),
+      /*reverse*/ false, /*push_condition*/ nullptr, obj);
 }
 
 static bool ExplainGroupIndexSkipScanAccessPath(Json_object *obj,
@@ -756,13 +805,11 @@ static bool ExplainGroupIndexSkipScanAccessPath(Json_object *obj,
   // NOTE: Currently, group index skip scan is always covering, but there's no
   // good reason why we cannot fix this limitation in the future.
   error |= SetIndexInfoInObject(
-      description, "group_index_skip_scan", nullptr, table, key_info,
-      get_used_key_parts(path),
+      description, path, "group_index_skip_scan", nullptr, table, key_info,
       (param->min_max_arg_part ? "skip scan for grouping"
                                : "skip scan for deduplication"),
-      /*lookup condition*/ "", (!ranges.empty() ? &ranges : nullptr),
-      std::move(range_arr),
-      /*reverse*/ false, /*push_condition*/ nullptr, obj);
+      /*index_lookup*/ nullptr, (!ranges.empty() ? &ranges : nullptr),
+      std::move(range_arr), /*reverse*/ false, /*push_condition*/ nullptr, obj);
 
   return error;
 }
@@ -858,7 +905,6 @@ static unique_ptr<Json_object> ExplainQueryPlan(
     bool is_root_of_join) {
   string dml_desc;
   string access_type;
-  string query_type;
   unique_ptr<Json_object> obj = nullptr;
 
   /* Create a Json object for the SELECT path */
@@ -876,7 +922,6 @@ static unique_ptr<Json_object> ExplainQueryPlan(
         access_type = "insert_values";
         [[fallthrough]];
       case SQLCOM_INSERT_SELECT:
-        query_type = "insert";
         dml_desc = string("Insert into ") +
                    query_plan->get_lex()->insert_table_leaf->table->alias;
         break;
@@ -884,20 +929,14 @@ static unique_ptr<Json_object> ExplainQueryPlan(
         access_type = "replace_values";
         [[fallthrough]];
       case SQLCOM_REPLACE_SELECT:
-        query_type = "replace";
         dml_desc = string("Replace into ") +
                    query_plan->get_lex()->insert_table_leaf->table->alias;
         break;
       case SQLCOM_SELECT:
-        query_type = "select";
-        break;
       case SQLCOM_UPDATE:
       case SQLCOM_UPDATE_MULTI:
-        query_type = "update";
-        break;
       case SQLCOM_DELETE:
       case SQLCOM_DELETE_MULTI:
-        query_type = "delete";
         break;
       default:
         assert(false);
@@ -930,11 +969,27 @@ static unique_ptr<Json_object> ExplainQueryPlan(
     obj = std::move(dml_obj);
   }
 
-  if (!query_type.empty()) {
-    AddMemberToObject<Json_string>(obj, "query_type", query_type);
-  }
-
   return obj;
+}
+
+static void GetMaterializationInfo(const AccessPath *path,
+                                   const AccessPath **table_path,
+                                   double *subquery_cost) {
+  *subquery_cost = 0;
+  *table_path = nullptr;
+
+  switch (path->type) {
+    case AccessPath::MATERIALIZE:
+      *table_path = path->materialize().table_path;
+      *subquery_cost = path->materialize().subquery_cost;
+      break;
+    case AccessPath::TEMPTABLE_AGGREGATE:
+      *table_path = path->temptable_aggregate().table_path;
+      *subquery_cost = path->temptable_aggregate().subquery_path->cost();
+      break;
+    default:
+      break;
+  }
 }
 
 /** Append the various costs.
@@ -948,14 +1003,11 @@ static unique_ptr<Json_object> ExplainQueryPlan(
 static bool AddPathCosts(const AccessPath *path,
                          const AccessPath *materialized_path, Json_object *obj,
                          bool explain_analyze) {
-  const AccessPath *const table_path = path->type == AccessPath::MATERIALIZE
-                                           ? path->materialize().table_path
-                                           : nullptr;
-
-  double cost;
+  const AccessPath *table_path;
+  double cost, subquery_cost;
 
   /*
-    A MATERIALIZE AccessPath has a child path (called table_path)
+    A materialization AccessPath has a child path (called table_path)
     that iterates over the materialized rows.
     So codewise, table_path is a child of materialized_path, even if it is
     logically the parent, as it consumes the results from materialized_path.
@@ -983,16 +1035,19 @@ static bool AddPathCosts(const AccessPath *path,
     - For table_path, we show the cost of materialized_path, as this includes
       the cost of materialization, iteration and the descendants.
 
-    - For the MATERIALIZE AccessPath we show the cost of the descendants plus
-      the cost of materialization.
+    - For the materialization AccessPath we show the cost of the descendants
+      plus the cost of materialization.
   */
+
+  GetMaterializationInfo(path, &table_path, &subquery_cost);
+
   if (materialized_path == nullptr) {
     if (table_path == nullptr) {
       cost = std::max(0.0, path->cost());
     } else {
-      assert(path->materialize().subquery_cost >= 0.0);
-      cost = path->materialize().subquery_cost +
-             kMaterializeOneRowCost * path->num_output_rows();
+      // For the materialization AccessPath we show the cost of materialization
+      // plus the cost of the descendants, which is same as the init_cost().
+      cost = path->init_cost();
     }
   } else {
     assert(materialized_path->cost() >= 0.0);
@@ -1027,6 +1082,9 @@ static bool AddPathCosts(const AccessPath *path,
                                        path->type == AccessPath::MATERIALIZE
                                            ? path->materialize().subquery_rows
                                            : path->num_output_rows());
+    DBUG_EXECUTE_IF("print_ap_signature", {
+      error |= AddMemberToObject<Json_uint>(obj, "signature", path->signature);
+    });
   } /* if (path->num_output_rows() >= 0.0) */
 
   /* Add analyze figures */
@@ -1084,6 +1142,15 @@ class ColumnNameCollector {
   std::set<std::string> m_column_names;
 };
 }  // namespace
+
+/**
+   Return 'true' if 'path' does deduplication (typically in the context
+   if a semi-join to inner-join transformation.)
+*/
+static bool DoesDeduplicate(const AccessPath &path) {
+  return path.type == AccessPath::REMOVE_DUPLICATES ||
+         (path.type == AccessPath::SORT && path.sort().remove_duplicates);
+}
 
 /**
    Given a json object, update it's appropriate json fields according to the
@@ -1169,11 +1236,10 @@ static unique_ptr<Json_object> SetObjectMembers(
       assert(table.file->pushed_idx_cond == nullptr);
 
       const KEY &key = table.key_info[path->index_scan().idx];
-      error |= SetIndexInfoInObject(&description, "index_scan", nullptr, table,
-                                    key, get_used_key_parts(path), "scan",
-                                    /*lookup condition*/ "", /*range*/ nullptr,
-                                    nullptr, path->index_scan().reverse,
-                                    /*push_condition*/ nullptr, obj);
+      error |= SetIndexInfoInObject(
+          &description, path, "index_scan", nullptr, table, key, "scan",
+          /*index_lookup*/ nullptr, /*range*/ nullptr, nullptr,
+          path->index_scan().reverse, /*push_condition*/ nullptr, obj);
       error |= AddChildrenFromPushedCondition(table, children);
       break;
     }
@@ -1182,23 +1248,22 @@ static unique_ptr<Json_object> SetObjectMembers(
       assert(table.file->pushed_idx_cond == nullptr);
 
       const KEY &key = table.key_info[path->index_distance_scan().idx];
-      error |= SetIndexInfoInObject(
-          &description, "index_distance_scan", nullptr, table, key,
-          get_used_key_parts(path), "distance scan",
-          /*lookup condition*/ "", /*range*/ nullptr, nullptr, false,
-          /*push_condition*/ nullptr, obj);
+      error |= SetIndexInfoInObject(&description, path, "index_distance_scan",
+                                    nullptr, table, key, "distance scan",
+                                    /*index_lookup*/ nullptr,
+                                    /*range*/ nullptr, nullptr, false,
+                                    /*push_condition*/ nullptr, obj);
       error |= AddChildrenFromPushedCondition(table, children);
       break;
     }
     case AccessPath::REF: {
       const TABLE &table = *path->ref().table;
       const KEY &key = table.key_info[path->ref().ref->key];
-      error |= SetIndexInfoInObject(
-          &description, "index_lookup", nullptr, table, key,
-          get_used_key_parts(path), "lookup",
-          RefToString(*path->ref().ref, key, /*include_nulls=*/false),
-          /*ranges=*/nullptr, nullptr, path->ref().reverse,
-          table.file->pushed_idx_cond, obj);
+      error |=
+          SetIndexInfoInObject(&description, path, "index_lookup", nullptr,
+                               table, key, "lookup", path->ref().ref,
+                               /*ranges=*/nullptr, nullptr, path->ref().reverse,
+                               table.file->pushed_idx_cond, obj);
       error |= AddChildrenFromPushedCondition(table, children);
       break;
     }
@@ -1206,9 +1271,8 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->ref_or_null().table;
       const KEY &key = table.key_info[path->ref_or_null().ref->key];
       error |= SetIndexInfoInObject(
-          &description, "index_lookup", nullptr, table, key,
-          get_used_key_parts(path), "lookup",
-          RefToString(*path->ref_or_null().ref, key, /*include_nulls=*/true),
+          &description, path, "index_lookup", nullptr, table, key, "lookup",
+          path->ref_or_null().ref,
           /*ranges=*/nullptr, nullptr, false, table.file->pushed_idx_cond, obj);
       error |= AddChildrenFromPushedCondition(table, children);
       break;
@@ -1217,9 +1281,8 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->eq_ref().table;
       const KEY &key = table.key_info[path->eq_ref().ref->key];
       error |= SetIndexInfoInObject(
-          &description, "index_lookup", "Single-row", table, key,
-          get_used_key_parts(path), "lookup",
-          RefToString(*path->eq_ref().ref, key, /*include_nulls=*/false),
+          &description, path, "index_lookup", "Single-row", table, key,
+          "lookup", path->eq_ref().ref,
           /*ranges=*/nullptr, nullptr, false, table.file->pushed_idx_cond, obj);
       error |= AddChildrenFromPushedCondition(table, children);
       break;
@@ -1229,11 +1292,9 @@ static unique_ptr<Json_object> SetObjectMembers(
       assert(table.file->pushed_idx_cond == nullptr);
       const KEY &key = table.key_info[path->pushed_join_ref().ref->key];
       error |= SetIndexInfoInObject(
-          &description, "pushed_join_ref",
+          &description, path, "pushed_join_ref",
           path->pushed_join_ref().is_unique ? "Single-row" : nullptr, table,
-          key, get_used_key_parts(path), "lookup",
-          RefToString(*path->pushed_join_ref().ref, key,
-                      /*include_nulls=*/false),
+          key, "lookup", path->pushed_join_ref().ref,
           /*ranges=*/nullptr, nullptr,
           /*reverse=*/false, nullptr, obj);
       break;
@@ -1242,13 +1303,11 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->full_text_search().table;
       assert(table.file->pushed_idx_cond == nullptr);
       const KEY &key = table.key_info[path->full_text_search().ref->key];
-      error |=
-          SetIndexInfoInObject(&description, "full_text_search", "Full-text",
-                               table, key, get_used_key_parts(path), "search",
-                               RefToString(*path->full_text_search().ref, key,
-                                           /*include_nulls=*/false),
-                               /*ranges=*/nullptr, nullptr,
-                               /*reverse=*/false, nullptr, obj);
+      error |= SetIndexInfoInObject(&description, path, "full_text_search",
+                                    "Full-text", table, key, "search",
+                                    path->full_text_search().ref,
+                                    /*ranges=*/nullptr, nullptr,
+                                    /*reverse=*/false, nullptr, obj);
       break;
     }
     case AccessPath::CONST_TABLE: {
@@ -1265,9 +1324,8 @@ static unique_ptr<Json_object> SetObjectMembers(
       const TABLE &table = *path->mrr().table;
       const KEY &key = table.key_info[path->mrr().ref->key];
       error |= SetIndexInfoInObject(
-          &description, "multi_range_read", "Multi-range", table, key,
-          get_used_key_parts(path), "lookup",
-          RefToString(*path->mrr().ref, key, /*include_nulls=*/false),
+          &description, path, "multi_range_read", "Multi-range", table, key,
+          "lookup", path->mrr().ref,
           /*ranges=*/nullptr, nullptr, false, table.file->pushed_idx_cond, obj);
       error |= AddMemberToObject<Json_boolean>(obj, "multi_range_read", true);
       error |= AddChildrenFromPushedCondition(table, children);
@@ -1309,10 +1367,9 @@ static unique_ptr<Json_object> SetObjectMembers(
         error |= AddMemberToObject<Json_boolean>(obj, "multi_range_read", true);
       }
       error |= SetIndexInfoInObject(
-          &description, "index_range_scan", nullptr, table, key_info,
-          get_used_key_parts(path),
+          &description, path, "index_range_scan", nullptr, table, key_info,
           using_mrr ? "range scan (Multi-Range Read)" : "range scan",
-          /*lookup condition*/ "", &ranges, std::move(range_arr),
+          /*index_lookup*/ nullptr, &ranges, std::move(range_arr),
           path->index_range_scan().reverse, table.file->pushed_idx_cond, obj);
 
       error |= AddChildrenFromPushedCondition(table, children);
@@ -1341,6 +1398,10 @@ static unique_ptr<Json_object> SetObjectMembers(
       description = "Intersect rows sorted by row ID";
       for (AccessPath *child : *path->rowid_intersection().children) {
         children->push_back({child});
+      }
+      if (AccessPath *cpk_child = path->rowid_intersection().cpk_child;
+          cpk_child != nullptr) {
+        children->push_back({cpk_child});
       }
       break;
     }
@@ -1435,8 +1496,7 @@ static unique_ptr<Json_object> SetObjectMembers(
       if (predicate != nullptr &&
           predicate->expr->type == RelationalExpression::SEMIJOIN &&
           path->nested_loop_join().join_type == JoinType::INNER) {
-        if (path->nested_loop_join().outer->type ==
-            AccessPath::REMOVE_DUPLICATES) {
+        if (DoesDeduplicate(*path->nested_loop_join().outer)) {
           description.append(" (LooseScan)");
           error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
                                                   "loosescan");
@@ -1495,7 +1555,7 @@ static unique_ptr<Json_object> SetObjectMembers(
                                                 "firstmatch");
       }
       if (path->hash_join().rewrite_semi_to_inner) {
-        if (path->hash_join().outer->type == AccessPath::REMOVE_DUPLICATES) {
+        if (DoesDeduplicate(*path->hash_join().outer)) {
           description.append(" (LooseScan)");
           error |= AddMemberToObject<Json_string>(obj, "semijoin_strategy",
                                                   "loosescan");
@@ -1685,6 +1745,9 @@ static unique_ptr<Json_object> SetObjectMembers(
         } else if (path->aggregate().olap == CUBE_TYPE) {
           error |= AddMemberToObject<Json_boolean>(obj, "cube", true);
           description = "Group aggregate with cube: ";
+        } else if (path->aggregate().olap == GROUPING_SETS_TYPE) {
+          error |= AddMemberToObject<Json_boolean>(obj, "grouping sets", true);
+          description = "Group aggregate with grouping sets: ";
         } else {
           description = "Group aggregate: ";
         }
@@ -1718,8 +1781,14 @@ static unique_ptr<Json_object> SetObjectMembers(
     case AccessPath::TEMPTABLE_AGGREGATE: {
       error |= AddMemberToObject<Json_string>(obj, "access_type",
                                               "temp_table_aggregate");
-      ret_obj = AssignParentPath(path->temptable_aggregate().table_path,
-                                 nullptr, std::move(ret_obj), join);
+      // Old optimizer does not do cost estimation, so don't care about passing
+      // materialization path.
+      const AccessPath *materialization_path =
+          (current_thd->lex->using_hypergraph_optimizer() ? path : nullptr);
+
+      ret_obj =
+          AssignParentPath(path->temptable_aggregate().table_path,
+                           materialization_path, std::move(ret_obj), join);
       if (ret_obj == nullptr) return nullptr;
       description = "Aggregate using temporary table";
       children->push_back({path->temptable_aggregate().subquery_path});
@@ -1861,10 +1930,9 @@ static unique_ptr<Json_object> SetObjectMembers(
       description = "Remove duplicates from input grouped on ";
       unique_ptr<Json_array> group_items(new (std::nothrow) Json_array());
       if (group_items == nullptr) return nullptr;
-      for (int i = 0; i < path->remove_duplicates().group_items_size; ++i) {
-        string group_item =
-            ItemToString(path->remove_duplicates().group_items[i]);
-        if (i != 0) {
+      for (Item *item : path->remove_duplicates().group_items()) {
+        string group_item = ItemToString(item);
+        if (item != path->remove_duplicates().group_items().front()) {
           description += ", ";
         }
         description += group_item;
@@ -2114,6 +2182,29 @@ unique_ptr<Json_object> ExplainNoAccessPath(const THD::Query_plan *query_plan) {
   return ret_obj;
 }
 
+static std::string GetQueryType(THD::Query_plan const *query_plan) {
+  if (query_plan == nullptr) return "";
+  switch (query_plan->get_command()) {
+    case SQLCOM_INSERT:
+    case SQLCOM_INSERT_SELECT:
+      return "insert";
+    case SQLCOM_REPLACE:
+    case SQLCOM_REPLACE_SELECT:
+      return "replace";
+    case SQLCOM_SELECT:
+      return "select";
+    case SQLCOM_UPDATE:
+    case SQLCOM_UPDATE_MULTI:
+      return "update";
+    case SQLCOM_DELETE:
+    case SQLCOM_DELETE_MULTI:
+      return "delete";
+    default:
+      assert(false);
+      return "";
+  }
+}
+
 std::string PrintQueryPlan(THD *ethd, const THD *query_thd,
                            Query_expression *unit) {
   JOIN *join = nullptr;
@@ -2126,9 +2217,13 @@ std::string PrintQueryPlan(THD *ethd, const THD *query_thd,
     join = unit->first_query_block()->join;
 
   /* Create a Json object for the plan */
-  unique_ptr<Json_object> obj =
+  unique_ptr<Json_object> query_plan_obj =
       ExplainQueryPlan(path, &query_thd->query_plan, join, is_root_of_join);
+  if (query_plan_obj == nullptr) return "";
+
+  unique_ptr<Json_object> obj = create_dom_ptr<Json_object>();
   if (obj == nullptr) return "";
+  if (obj->add_alias("query_plan", std::move(query_plan_obj))) return "";
 
   // Append the (rewritten) query string, if any.
   // Skip this if applicable. See print_query_for_explain() comments.
@@ -2140,6 +2235,35 @@ std::string PrintQueryPlan(THD *ethd, const THD *query_thd,
         return "";
     }
   }
+
+  string query_type = GetQueryType(&query_thd->query_plan);
+  if (!query_type.empty()) {
+    AddMemberToObject<Json_string>(obj, "query_type", query_type);
+  }
+
+  /**
+   * To help identify the "shape" of the JSON output we add a version number
+   * on the format "Major.minor" that should be bumped according to these rules:
+   * Major: bumped when we make breaking changes between releases. This includes
+   *        removal or renaming of fields or access paths and changes in field
+   *        types, e.g. changing a string value to an array. Should be avoided.
+   * minor: bumped when we make additions to the format between releases,
+   *        e.g. add new fields for some access paths, add new access paths.
+   * Should be bumped at most once per release. Reset minor to 0 when Major is
+   * bumped.
+   * This version number is not related to the explain_json_format_version
+   * system variable, and is only referring to the sub-versioning of the JSONv2
+   * EXPLAIN format.
+   */
+  // Major and minor are ints and then converted to a string instead of just
+  // written directly as a string to make them easier to keep track of.
+  // Set to "2.0" in MySQL 9.2.0.
+  const uint8_t Major = 2;
+  const uint8_t minor = 0;
+  std::string explain_json_schema_version =
+      std::to_string(Major) + "." + std::to_string(minor);
+  AddMemberToObject<Json_string>(obj, "json_schema_version",
+                                 explain_json_schema_version);
 
   /*
     Output should be either in json format, or a tree format, depending on
@@ -2224,8 +2348,8 @@ string Explain_format_tree::ExplainJsonToString(Json_object *json) {
   vector<string> tokens_for_force_subplan;
   DBUG_EXECUTE_IF("subplan_tokens", token_ptr = &tokens_for_force_subplan;);
 #endif
-
-  this->ExplainPrintTreeNode(json, 0, &explain, token_ptr);
+  Json_dom *query_plan_json = json->get("query_plan");
+  this->ExplainPrintTreeNode(query_plan_json, 0, &explain, token_ptr);
   if (explain.empty()) return "";
 
   DBUG_EXECUTE_IF("subplan_tokens", {
@@ -2299,6 +2423,12 @@ void Explain_format_tree::ExplainPrintCosts(const Json_object *obj,
       stream << "  (cost=" << FormatNumberReadably(last_cost)
              << " rows=" << FormatNumberReadably(rows) << ")";
     }
+    DBUG_EXECUTE_IF("print_ap_signature", {
+      stream << " signature=("
+             << std::to_string(
+                    down_cast<Json_uint *>(obj->get("signature"))->value())
+             << ")";
+    });
 
     *explain += stream.str();
   }

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,28 +28,28 @@
 
 #include <string>
 
+#include "mysql/harness/destination.h"
 #include "mysql/harness/filesystem.h"  // Path
-#include "mysqlrouter/routing.h"       // RoutingStrategy, Mode
+#include "mysqlrouter/routing.h"       // RoutingStrategy
 #include "mysqlrouter/ssl_mode.h"
 #include "protocol/protocol.h"  // Protocol::Type
-#include "tcp_address.h"
 
 /**
  * route specific configuration.
  */
 class RoutingConfig {
  public:
-  Protocol::Type protocol{};               //!< protocol (classic, x)
-  std::string destinations;                //!< destinations
-  int bind_port{};                         //!< TCP port to bind to
-  mysql_harness::TCPAddress bind_address;  //!< IP address to bind to
+  Protocol::Type protocol{};                   //!< protocol (classic, x)
+  std::string destinations;                    //!< destinations
+  bool accept_connections{true};
+  int bind_port{};                             //!< TCP port to bind to
+  mysql_harness::TcpDestination bind_address;  //!< IP address to bind to
   mysql_harness::Path named_socket;  //!< unix domain socket path to bind to
   int connect_timeout{};             //!< connect-timeout in seconds
-  routing::RoutingStrategy routing_strategy{
-      routing::RoutingStrategy::kUndefined};  //!< routing strategy (next-avail,
-                                              //!< ...)
-  int max_connections{};                      //!< max connections allowed
-  unsigned long long max_connect_errors{};    //!< max connect errors
+  std::optional<routing::RoutingStrategy>
+      routing_strategy;                     //!< routing strategy
+  int max_connections{};                    //!< max connections allowed
+  unsigned long long max_connect_errors{};  //!< max connect errors
   unsigned int client_connect_timeout{};  //!< client connect timeout in seconds
   unsigned int net_buffer_length{};       //!< Size of buffer to receive packets
   unsigned int thread_stack_size{};       //!< thread stack size in kilobytes

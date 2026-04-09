@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,7 +55,7 @@ int heap_check_heap(HP_INFO *info, bool print_status) {
   uint key;
   ulong records = 0, deleted = 0, pos, next_block;
   HP_SHARE *share = info->s;
-  HP_INFO save_info = *info; /* Needed because scan_init */
+  HP_INFO const save_info = *info; /* Needed because scan_init */
   DBUG_TRACE;
 
   for (error = key = 0; key < share->keys; key++) {

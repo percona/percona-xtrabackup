@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
@@ -161,7 +161,7 @@ class Translate_array_validator
     if (0 == values.size() && !ignore_empty_array()) return false;
 
     for (const auto &value : values) {
-      Translate_to_type enum_value;
+      Translate_to_type enum_value{};
       if (!valid_convert_value(value, &enum_value)) {
         DBUG_LOG("debug", "invalid value: \"" << value << "\"");
         if (!ignore_unkown_text_values()) return false;

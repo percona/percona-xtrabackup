@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -345,11 +345,9 @@ int Bank::getBalanceForAccountType(const Uint32 accountType, Uint32 &balance) {
   }
 
   int eof;
-  int rows = 0;
   eof = pOp->nextResult();
 
   while (eof == 0) {
-    rows++;
     Uint32 a = accountTypeRec->u_32_value();
     Uint32 b = balanceRec->u_32_value();
 

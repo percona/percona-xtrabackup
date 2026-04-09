@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -47,6 +47,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0undo.h"
 #include "sql_thd_internal_api.h"
 #include "srv0mon.h"
+#include "srv0srv.h"
 #include "srv0start.h"
 #include "trx0rec.h"
 #include "trx0roll.h"
@@ -775,6 +776,46 @@ void trx_rollback_or_clean_recovered(
     ib::info(ER_IB_MSG_TRX_RECOVERY_ROLLBACK_COMPLETED);
   }
 }
+
+#ifdef XTRABACKUP
+void trx_rollback_recovered_prepared() {
+  ut_ad(srv_rollback_prepared_trx);
+
+  std::vector<trx_t *> prepared_trxs;
+
+  trx_sys_mutex_enter();
+  for (auto trx : trx_sys->rw_trx_list) {
+    if (trx->is_recovered &&
+        trx->state.load(std::memory_order_relaxed) == TRX_STATE_PREPARED) {
+      prepared_trxs.push_back(trx);
+    }
+  }
+  trx_sys_mutex_exit();
+
+  for (auto trx : prepared_trxs) {
+    /* Transition undo log states from PREPARED to ACTIVE on disk,
+    mirroring the server's trx_rollback_low() for TRX_STATE_PREPARED. */
+    if (trx->rsegs.m_redo.rseg != nullptr && trx_is_redo_rseg_updated(trx)) {
+      trx_undo_ptr_t *undo_ptr = &trx->rsegs.m_redo;
+      mtr_t mtr;
+      mtr.start();
+      trx->rsegs.m_redo.rseg->latch();
+      if (undo_ptr->insert_undo != nullptr) {
+        trx_undo_set_state_at_prepare(trx, undo_ptr->insert_undo, true, &mtr);
+      }
+      if (undo_ptr->update_undo != nullptr) {
+        trx_undo_gtid_set(trx, undo_ptr->update_undo, false);
+        trx_undo_set_state_at_prepare(trx, undo_ptr->update_undo, true, &mtr);
+      }
+      trx->rsegs.m_redo.rseg->unlatch();
+      mtr.commit();
+    }
+
+    trx_rollback_active(trx);
+    trx_free_for_background(trx);
+  }
+}
+#endif /* XTRABACKUP */
 
 /** Rollback or clean up any incomplete transactions which were
 encountered in crash recovery.  If the transaction already was

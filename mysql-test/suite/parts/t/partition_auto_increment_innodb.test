@@ -25,6 +25,9 @@
 ##### Storage engine to be tested
 let $engine= 'InnoDB';
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 #------------------------------------------------------------------------------#
 # Execute the tests to be applied to all storage engines
 --source suite/parts/inc/partition_auto_increment.inc
@@ -32,3 +35,6 @@ let $engine= 'InnoDB';
 #------------------------------------------------------------------------------#
 # Test export/import of tablespace with partitioned table for InnoDB
 --source suite/parts/inc/partition_auto_increment_import.inc
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

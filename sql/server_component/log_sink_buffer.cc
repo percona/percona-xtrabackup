@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -45,6 +45,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include "sql/log.h"
 #include "sql/psi_memory_key.h"  // key_memory_log_error_stack
 #include "sql/server_component/log_builtins_internal.h"
+#include "sql/server_component/mysql_timestamp_imp.h"
 
 /**
   Make sure only one instance of the buffered "writer" runs at a time.
@@ -310,8 +311,8 @@ void log_sink_buffer_flush(enum log_sink_buffer_flush_mode mode) {
 
       // Regenerate timestamp with the correct options.
       char local_time_buff[iso8601_size];
-      make_iso8601_timestamp(local_time_buff, now,
-                             iso8601_sysvar_logtimestamps);
+      Mysql_timestamp_imp::make_iso8601_timestamp(local_time_buff, now,
+                                                  iso8601_sysvar_logtimestamps);
       char *date = my_strndup(key_memory_log_error_stack, local_time_buff,
                               strlen(local_time_buff) + 1, MYF(0));
 

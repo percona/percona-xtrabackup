@@ -1680,3 +1680,33 @@ AND sum_number_of_bytes_alloc > 1000000;
 --echo $res
 
 DROP TABLE t;
+
+--echo #
+--echo # Bug#37057380: Wrong results with sorting or hash join reading
+--echo # from single-record index lookups
+--echo #
+
+CREATE TABLE t0(a0 INT);
+INSERT INTO t0 VALUES (1), (2);
+
+CREATE TABLE t1 (a1 INT);
+INSERT INTO t1 VALUES (1), (2), (1);
+
+CREATE TABLE t2 (pk2 INT PRIMARY KEY);
+INSERT INTO t2 VALUES (1), (2), (3);
+
+CREATE TABLE t3 (a3 INT, b3 INT, KEY (b3));
+INSERT INTO t3(b3) VALUES (1), (2), (3), (4);
+
+ANALYZE TABLE t0, t1, t2, t3;
+
+# This query used to give wrong results when BKA was enabled.
+--sorted_result
+SELECT * FROM t0, LATERAL (
+  SELECT *
+  FROM t1 JOIN t2 ON a1 = pk2
+          JOIN t3 ON pk2 = b3
+  WHERE a0 < 100 LIMIT 100
+) AS dt;
+
+DROP TABLE t0, t1, t2, t3;

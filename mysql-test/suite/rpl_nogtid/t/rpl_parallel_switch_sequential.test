@@ -46,7 +46,7 @@ let $slave_status= 0;
 let $trx= 0;
 let $alter= 0;
 let $i= 200; # with bigger value test times out on some PB hosts
---let $small_test=`SELECT @@replica_parallel_type='LOGICAL_CLOCK' OR $VALGRIND_TEST`
+--let $small_test=`SELECT $VALGRIND_TEST`
 if ($small_test)
 {
   # test may be slow on Valgrind or on MTS SUBMODE = LOGICAL CLOCK

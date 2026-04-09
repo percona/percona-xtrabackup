@@ -1,4 +1,4 @@
-// Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,8 @@
 /// (union, intersection, difference, symdifference).
 
 #include "sql/gis/so_utils.h"
+
+#include <utility>
 #include "sql/gis/equals_functor.h"
 #include "sql/gis/geometries.h"
 #include "sql/gis/geometries_cs.h"
@@ -38,7 +40,7 @@ namespace gis {
 template <typename MPt, typename MLs, typename MPy, typename GC>
 static void typed_remove_duplicates(double semi_major, double semi_minor,
                                     std::unique_ptr<Geometry> *g) {
-  Equals equals(semi_major, semi_minor);
+  Equals const equals(semi_major, semi_minor);
   switch (g->get()->type()) {
     case Geometry_type::kPoint:
     case Geometry_type::kLinestring:
@@ -56,7 +58,7 @@ static void typed_remove_duplicates(double semi_major, double semi_minor,
         }
         if (include) mpt->push_back(pt);
       }
-      g->reset(mpt.release());
+      *g = std::move(mpt);
       break;
     }
     case Geometry_type::kMultilinestring: {
@@ -71,7 +73,7 @@ static void typed_remove_duplicates(double semi_major, double semi_minor,
         }
         if (include) mls->push_back(ls);
       }
-      g->reset(mls.release());
+      *g = std::move(mls);
       break;
     }
     case Geometry_type::kMultipolygon: {
@@ -86,7 +88,7 @@ static void typed_remove_duplicates(double semi_major, double semi_minor,
         }
         if (include) mpy->push_back(py);
       }
-      g->reset(mpy.release());
+      *g = std::move(mpy);
       break;
     }
     case Geometry_type::kGeometrycollection: {
@@ -105,7 +107,7 @@ static void typed_remove_duplicates(double semi_major, double semi_minor,
         }
         if (include) gc->push_back(*g1_ptr);
       }
-      g->reset(gc.release());
+      *g = std::move(gc);
       break;
     }
     default: {
@@ -146,7 +148,7 @@ void narrow_geometry(std::unique_ptr<Geometry> *g) {
     case Geometry_type::kMultilinestring:
     case Geometry_type::kMultipolygon:
     case Geometry_type::kGeometrycollection: {
-      Geometrycollection *gc = down_cast<Geometrycollection *>(g->get());
+      auto *gc = down_cast<Geometrycollection *>(g->get());
       if (gc->size() == 1) {
         g->reset((*gc)[0].clone());
         gc = nullptr;

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -390,7 +390,7 @@ void NdbImportCsv::Input::do_init() {
  * Adjust counters at resume.  Argument is first range in old
  * rowmap.  Input file seek is done by caller.
  */
-void NdbImportCsv::Input::do_resume(Range range_in) {
+void NdbImportCsv::Input::do_resume(const Range &range_in) {
   m_startpos = range_in.m_endpos;
   m_startlineno = range_in.m_end + m_ignore_lines;
 }

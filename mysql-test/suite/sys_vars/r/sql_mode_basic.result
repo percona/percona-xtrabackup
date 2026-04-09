@@ -290,8 +290,8 @@ SET @@global.sql_mode = 3;
 SELECT @@global.sql_mode;
 @@global.sql_mode
 REAL_AS_FLOAT,PIPES_AS_CONCAT
-SET @@global.sql_mode = 8589934592;
-ERROR 42000: Variable 'sql_mode' can't be set to the value of '8589934592'
+SET @@global.sql_mode = cast(pow(2,34) as unsigned);
+ERROR 42000: Variable 'sql_mode' can't be set to the value of '17179869184'
 SET @@global.sql_mode = 0.4;
 ERROR 42000: Incorrect argument type to variable 'sql_mode'
 '#---------------------FN_DYNVARS_152_08----------------------#'

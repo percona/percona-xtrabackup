@@ -1,0 +1,7 @@
+#
+# Bug#35621833: mysqldump memory leaks
+#
+SET GLOBAL SORT_BUFFER_SIZE = 32768;
+# Test: should not leak memory
+SET GLOBAL SORT_BUFFER_SIZE = DEFAULT;
+# End of 9.3 tests

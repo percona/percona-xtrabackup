@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set global innodb_monitor_disable = All;
 select name, status from information_schema.innodb_metrics;
 name	status
@@ -737,3 +738,4 @@ LIKE 'buffer_page_written_index_leaf';
 NAME	COUNT
 buffer_page_written_index_leaf	NNNN
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

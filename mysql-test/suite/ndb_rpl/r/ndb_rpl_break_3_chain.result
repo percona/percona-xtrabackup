@@ -40,9 +40,9 @@ cluster2-bin.000001	#	Query	1	#	use `test`; create table t1(a int primary key, b
 cluster2-bin.000001	#	Query	2	#	BEGIN
 cluster2-bin.000001	#	Table_map	2	#	table_id: # (test.t1)
 cluster2-bin.000001	#	Table_map	2	#	table_id: # (mysql.ndb_apply_status)
-cluster2-bin.000001	#	Write_rows	2	#	table_id: #
-cluster2-bin.000001	#	Write_rows	1	#	table_id: #
-cluster2-bin.000001	#	Write_rows	2	#	table_id: # flags: STMT_END_F
+cluster2-bin.000001	#	Write_rows	2	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+cluster2-bin.000001	#	Write_rows	1	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+cluster2-bin.000001	#	Write_rows	2	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 cluster2-bin.000001	#	Query	2	#	COMMIT
 Cluster3 has insert and apply_status from Cluster1+2
 show variables like 'server_id';

@@ -1,25 +1,25 @@
-/*
-   Copyright (c) 2024, Oracle and/or its affiliates.
-
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License, version 2.0,
-   as published by the Free Software Foundation.
-
-   This program is also distributed with certain software (including
-   but not limited to OpenSSL) that is licensed under separate terms,
-   as designated in a particular file or component or in included license
-   documentation.  The authors of MySQL hereby grant you an additional
-   permission to link the program and your derivative works with the
-   separately licensed software that they have included with MySQL.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License, version 2.0, for more details.
-
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
+// Copyright (c) 2024, 2025, Oracle and/or its affiliates.
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License, version 2.0,
+// as published by the Free Software Foundation.
+//
+// This program is designed to work with certain software (including
+// but not limited to OpenSSL) that is licensed under separate terms,
+// as designated in a particular file or component or in included license
+// documentation.  The authors of MySQL hereby grant you an additional
+// permission to link the program and your derivative works with the
+// separately licensed software that they have either included with
+// the program or referenced in the documentation.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License, version 2.0, for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA.
 
 #include "applier_metrics.h"
 #include <chrono>
@@ -47,15 +47,14 @@ void Applier_metrics::reset() {
   m_order_commit_waited_time = 0;
 }
 
-void Applier_metrics::start_applier_timer() {
-  m_sum_applier_execution_time.start_timer();
+void Applier_metrics::store_last_applier_start() {
   auto now = std::chrono::system_clock::now().time_since_epoch();
   auto now_micros = std::chrono::duration_cast<std::chrono::microseconds>(now);
   m_last_applier_start_micros = now_micros.count();
 }
 
-void Applier_metrics::stop_applier_timer() {
-  m_sum_applier_execution_time.stop_timer();
+Time_based_metric_interface &Applier_metrics::get_sum_applier_execution_time() {
+  return m_sum_applier_execution_time;
 }
 
 int64_t Applier_metrics::get_last_applier_start_micros() const {
@@ -63,7 +62,7 @@ int64_t Applier_metrics::get_last_applier_start_micros() const {
 }
 
 int64_t Applier_metrics::get_total_execution_time() const {
-  return m_sum_applier_execution_time.get_sum_time_elapsed();
+  return m_sum_applier_execution_time.get_time();
 }
 
 void Applier_metrics::inc_transactions_committed_count(int64_t amount) {

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -205,7 +205,7 @@ class Pool {
     allocate(anInitSize);
   }
 
-  virtual ~Pool(void) {
+  virtual ~Pool() {
     for (int i = 0; i < theTop; ++i) delete theList[i];
 
     delete[] theList;
@@ -239,8 +239,8 @@ class Pool {
   }
 
  private:
-  Pool<T> &operator=(const Pool<T> &cp);
-  Pool(const Pool<T> &cp);
+  Pool<T> &operator=(const Pool<T> &cp) = delete;
+  Pool(const Pool<T> &cp) = delete;
 
   int theIncSize;
   int theTop;

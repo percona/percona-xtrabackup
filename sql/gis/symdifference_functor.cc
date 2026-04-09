@@ -1,4 +1,4 @@
-// Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -104,7 +104,7 @@ static auto symdifference_multipoint_linear_or_areal(const SymDifference &f,
                                                      Geometry2 g2) {
   std::unique_ptr<GCType> result = std::make_unique<GCType>();
   if (!g2->is_empty()) result->push_back(*g2);
-  for (auto p : *g1) {
+  for (const auto &p : *g1) {
     if (call_bg_disjoint(p, *g2, f)) result->push_back(p);
   }
   return result;
@@ -126,7 +126,7 @@ static auto symdifference_linear_areal(const SymDifference &f, Linear g1,
   call_bg_difference(*g1, *g2, *difference, f);
   std::unique_ptr<GCType> result = std::make_unique<GCType>();
   if (!g2->is_empty()) result->push_back(*g2);
-  for (auto ls : *difference) result->push_back(ls);
+  for (const auto &ls : *difference) result->push_back(ls);
   return result;
 }
 
@@ -142,13 +142,13 @@ std::unique_ptr<Geometry> symdifference_pointlike_geomcol(
   split_gc(g2, &mpt, &mls, &mpy);
   gc_union(f.semi_major(), f.semi_minor(), &mpt, &mls, &mpy);
 
-  std::unique_ptr<MptType> mpt_typed =
+  std::unique_ptr<MptType> const mpt_typed =
       std::make_unique<MptType>(*down_cast<MptType *>(mpt.get()));
 
   using GCType = typename std::decay<decltype(*g2)>::type;
   std::unique_ptr<GCType> result = std::make_unique<GCType>();
 
-  std::unique_ptr<MptType> mpt_result =
+  std::unique_ptr<MptType> const mpt_result =
       symdifference_pointlike_pointlike<MptType>(g1, mpt_typed.get());
 
   std::unique_ptr<MptType> mls_result = std::make_unique<MptType>();

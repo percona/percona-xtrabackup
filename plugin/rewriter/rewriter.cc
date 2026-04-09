@@ -1,4 +1,4 @@
-/*  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 
 #include <mysql/service_parser.h>
 #include <mysql/service_rules_table.h>
-#include <stddef.h>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -68,7 +68,7 @@ Rewriter::~Rewriter() = default;
 bool Rewriter::load_rule(MYSQL_THD thd, Persisted_rule *diskrule) {
   std::unique_ptr<Rule> memrule_ptr(new Rule);
   Rule *memrule = memrule_ptr.get();
-  Rule::Load_status load_status = memrule->load(thd, diskrule);
+  Rule::Load_status const load_status = memrule->load(thd, diskrule);
 
   switch (load_status) {
     case Rule::OK:
@@ -163,7 +163,7 @@ struct Refresh_callback_args {
 };
 
 extern "C" void *refresh_callback(void *p_args) {
-  Refresh_callback_args *args = pointer_cast<Refresh_callback_args *>(p_args);
+  auto *args = pointer_cast<Refresh_callback_args *>(p_args);
   (args->me->do_refresh)(args->session_thd);
   return nullptr;
 }

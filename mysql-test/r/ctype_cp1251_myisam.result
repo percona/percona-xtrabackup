@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CREATE TABLE t1 (
 e1 enum('ÿáúëêà'),
 e2 enum('ìëÿ)ªî')
@@ -159,6 +160,7 @@ t2	CREATE TABLE `t2` (
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t2;
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc
 #
 # End of Bug#54916
 #

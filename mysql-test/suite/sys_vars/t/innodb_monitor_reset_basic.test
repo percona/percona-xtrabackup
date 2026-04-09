@@ -1,5 +1,8 @@
 --source include/not_hypergraph.inc  # Depends on choosing very specific query plans.
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 # This is the test for Metrics Monitor Table feature.
 # Test the metrics monitor system's control system
 # and counter accuracy.
@@ -389,3 +392,5 @@ set global innodb_monitor_reset =0xe9;
 set global innodb_monitor_disable =0xed;
 
 --source include/innodb_monitor_restore.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

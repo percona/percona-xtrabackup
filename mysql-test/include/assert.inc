@@ -50,7 +50,7 @@
 #   See include/rpl/debug/show_debug_info.inc
 
 
---let $include_filename= assert.inc [$assert_text]
+--let $include_filename = assert.inc [$assert_text]
 --source include/begin_include_file.inc
 
 if ($rpl_debug)
@@ -64,10 +64,11 @@ if (!$assert_text)
   --die ERROR IN TEST: the mysqltest variable assert_text must be set
 }
 
---let $_assert_old_eval_expr= $eval_expr
---let $_assert_old_eval_result= $eval_result
---let $_assert_old_eval_no_result= $eval_no_result
---let $eval_expr= $assert_cond
+--let $_assert_old_eval_expr = $eval_expr
+--let $_assert_old_eval_result = $eval_result
+--let $_assert_old_eval_no_result = $eval_no_result
+--let $_assert_old_rpl_debug = $rpl_debug
+--let $eval_expr = $assert_cond
 --let $eval_escape = $assert_escape
 --source include/eval.inc
 
@@ -81,6 +82,11 @@ if (!$eval_result)
   if ($show_rpl_debug_info)
   {
     --source include/rpl/debug/show_debug_info.inc
+    # Print results of sub-statements.
+    --echo # Re-executing the condition to print intermediate results.
+    --let $rpl_debug = 1
+    --source include/eval.inc
+    --echo # End re-executing the condition to print intermediate results.
   }
   if ($assert_no_stop) {
     if (!$show_rpl_debug_info) {
@@ -97,11 +103,12 @@ if (!$eval_result)
   }
 }
 
---let $include_filename= assert.inc [$assert_text]
+--let $include_filename = assert.inc [$assert_text]
 --source include/end_include_file.inc
 
---let $assert_text=
---let $assert_cond=
---let $eval_expr= $_assert_old_eval_expr
---let $eval_result= $_assert_old_eval_result
---let $eval_no_result= $_assert_old_eval_no_result
+--let $assert_text =
+--let $assert_cond =
+--let $rpl_debug = $_assert_old_rpl_debug
+--let $eval_expr = $_assert_old_eval_expr
+--let $eval_result = $_assert_old_eval_result
+--let $eval_no_result = $_assert_old_eval_no_result

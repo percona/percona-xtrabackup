@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -27,8 +27,7 @@
 
 #include "plugin/x/src/xpl_regex.h"
 
-namespace xpl {
-namespace test {
+namespace xpl::test {
 
 struct Param_regex_match {
   bool expect;
@@ -111,5 +110,4 @@ Param_regex_match_groups regex_match_groups_param[] = {
 INSTANTIATE_TEST_SUITE_P(regex_match_groups_test, Regex_match_groups_test,
                          testing::ValuesIn(regex_match_groups_param));
 
-}  // namespace test
-}  // namespace xpl
+}  // namespace xpl::test

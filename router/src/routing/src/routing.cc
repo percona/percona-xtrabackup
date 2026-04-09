@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,8 @@
 #include <chrono>
 #include <string>
 
-#include "common.h"  // serial_comma
+#include "common.h"                     // serial_comma
+#include "mysql/harness/stdx/ranges.h"  // enumerate
 
 namespace routing {
 
@@ -61,18 +62,20 @@ std::string get_access_mode_name(AccessMode mode) noexcept {
 
 // keep in-sync with enum RoutingStrategy
 static const std::array kRoutingStrategyNames{
-    static_cast<const char *>(nullptr),
     "first-available",
     "next-available",
     "round-robin",
     "round-robin-with-fallback",
 };
 
-RoutingStrategy get_routing_strategy(const std::string &value) {
-  for (unsigned int i = 1; i < kRoutingStrategyNames.size(); ++i)
-    if (kRoutingStrategyNames[i] == value)
-      return static_cast<RoutingStrategy>(i);
-  return RoutingStrategy::kUndefined;
+stdx::expected<RoutingStrategy, std::error_code> get_routing_strategy(
+    std::string_view value) {
+  for (const auto [i, strategy_name] :
+       stdx::views::enumerate(kRoutingStrategyNames)) {
+    if (strategy_name == value) return static_cast<RoutingStrategy>(i);
+  }
+
+  return stdx::unexpected(make_error_code(std::errc::invalid_argument));
 }
 
 std::string get_routing_strategy_names(bool metadata_cache) {
@@ -97,10 +100,7 @@ std::string get_routing_strategy_names(bool metadata_cache) {
 
 std::string get_routing_strategy_name(
     RoutingStrategy routing_strategy) noexcept {
-  if (routing_strategy == RoutingStrategy::kUndefined)
-    return "<not set>";
-  else
-    return kRoutingStrategyNames[static_cast<int>(routing_strategy)];
+  return kRoutingStrategyNames[static_cast<int>(routing_strategy)];
 }
 
 RoutingBootstrapSectionType get_section_type_from_routing_name(

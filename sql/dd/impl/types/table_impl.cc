@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -786,6 +786,23 @@ Partition *Table_impl::get_partition(Object_id partition_id) {
     if (i->id() == partition_id) return i;
   }
 
+  return nullptr;
+}
+
+///////////////////////////////////////////////////////////////////////////
+Partition *Table_impl::get_leaf_partition(const std::string &part_name) {
+  return const_cast<Partition *>(
+      std::as_const(*this).get_leaf_partition(part_name));
+}
+
+const Partition *Table_impl::get_leaf_partition(
+    const std::string &part_name) const {
+  for (Partition *leaf : m_leaf_partitions) {
+    if (!my_strcasecmp(system_charset_info, leaf->name().c_str(),
+                       part_name.c_str())) {
+      return leaf;
+    }
+  }
   return nullptr;
 }
 

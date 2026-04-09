@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -184,6 +184,25 @@ class NdbEventOperation {
    */
   void setFilterAnyvalueMySQLNoReplicaUpdates();
 
+  /**
+     Activate data node filtering of rows, by setting the row slice factor this
+     event's slice id.
+
+     @param count The number of row groups, range [1,256]
+     @param id    The slice id of this event op, range [0,255]
+
+     @return      0 on success, -1 for invalid @id and @count
+  */
+  int setFilterRowSlice(Uint16 count, Uint16 id);
+
+  /**
+     Whether EventOperation should filter out potentially partial
+     data from epochs < the StartEpoch for this operation.
+
+     Automatically implied by mergeEvents.
+  */
+  void setFilterPreStartEpochs(bool flag);
+
   int isOverrun() const;
 
   /**
@@ -315,6 +334,16 @@ class NdbEventOperation {
    * and get the error.
    */
   bool isErrorEpoch(NdbDictionary::Event::TableEvent *error_type = nullptr);
+
+  /**
+   * Get first epoch value guaranteed to have all row change
+   * events for this event operation.
+   *
+   * Lower epochs may have a partial set of row change events.
+   *
+   * Only valid for executing EventOperations
+   */
+  Uint64 getStartEpoch() const;
 
 #ifndef DOXYGEN_SHOULD_SKIP_INTERNAL
   /** these are subject to change at any time */

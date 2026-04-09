@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -185,7 +185,7 @@ bool DB_restrictions::add(const Json_object &json_object) {
           const Json_string *priv = down_cast<const Json_string *>(priv_dom);
           const auto &itr = global_acls_map.find(priv->value());
           if (itr == global_acls_map.end()) return true;
-          priv_mask |= (1UL << itr->second);
+          priv_mask |= static_cast<Access_bitmask>(1UL << itr->second);
         }
         add(db_string->value(), priv_mask);
       }
@@ -1164,11 +1164,12 @@ void DB_restrictions_aggregator_global_revoke::aggregate(
 }
 
 /**
-  If grantee restrictions_list is not empty then check the following
-  - Don't allow revoke if grantor has same restrictions access on a
-    database which is present in grantee's restrictions_list as well.
-  - Check if grantee has same DB level privilege as well as
-    restriction list on the  database
+  If grantor's restrictions_list is not empty, check that grantee has matching
+  restrictions
+
+  If grantee restrictions_list is not empty then check if grantee has same
+  DB level privilege as well as restriction list on the database -
+  essentially nullfying the effect of the partial revoke
 
   @returns  Status  Moves the object in the appropriate status.
                     For instance :
@@ -1178,31 +1179,51 @@ void DB_restrictions_aggregator_global_revoke::aggregate(
 */
 Restrictions_aggregator::Status
 DB_restrictions_aggregator_global_revoke::validate_if_grantee_rl_not_empty() {
-  for (auto &grantee_rl_itr : m_grantee_rl.get()) {
-    Access_bitmask grantor_revokes;
-    if (m_grantor_rl.find(grantee_rl_itr.first.c_str(), grantor_revokes)) {
-      /*
-        Grantor cannot revoke the requested privileges from grantee which are
-        in former's restriction list.
-      */
-      if (grantor_revokes & grantee_rl_itr.second & m_requested_access) {
-        my_error(ER_DB_ACCESS_DENIED, MYF(0), m_grantor.user().c_str(),
-                 m_grantor.host().c_str(), grantee_rl_itr.first.c_str());
-        return (m_status = Status::Error);
-        break;
+  /*
+     Grantor cannot revoke the requested privileges from grantee which are
+     in grantor restriction list but not grantees restriction list.
+  */
+  if (!m_grantor_rl.is_empty()) {
+    for (auto &grantor_rl_itr : m_grantor_rl.get()) {
+      if (0 != (grantor_rl_itr.second & m_requested_access)) {
+        Access_bitmask grantee_revokes;
+        if (!m_grantee_rl.find(grantor_rl_itr.first.c_str(), grantee_revokes)) {
+          /*
+            Case 1: Grantee does not have restrictions on a schema where grantor
+            has some restrictions
+          */
+          my_error(ER_DB_ACCESS_DENIED, MYF(0), m_grantor.user().c_str(),
+                   m_grantor.host().c_str(), grantor_rl_itr.first.c_str());
+          return (m_status = Status::Error);
+        } else {
+          /*
+            Case 2: Both, grantor and grantee have some restrictions on a
+            schema. However, grantor has some more restrictions than grantee.
+          */
+          if (0 !=
+              (grantor_rl_itr.second & ~grantee_revokes & m_requested_access)) {
+            my_error(ER_DB_ACCESS_DENIED, MYF(0), m_grantor.user().c_str(),
+                     m_grantor.host().c_str(), grantor_rl_itr.first.c_str());
+            return (m_status = Status::Error);
+          }
+        }
       }
     }
+  }
+
+  /*
+    Verify DB level privilege consistency
+
+    Enforce that grantee does not have both, restrictions and DB level
+    grants involving same set of privileges for any given database.
+  */
+  for (auto &grantee_rl_itr : m_grantee_rl.get()) {
     Access_bitmask grantee_db_access =
         get_grantee_db_access(grantee_rl_itr.first.c_str());
-    /*
-      Check if grantee has same DB level privilege as well as
-      restriction list on the  database
-    */
     if (check_db_access_and_restrictions_collision(
             grantee_db_access, grantee_rl_itr.second,
             grantee_rl_itr.first.c_str())) {
       return (m_status = Status::Error);
-      break;
     }
   }
   return (m_status = Status::Validated);

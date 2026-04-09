@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,12 +31,12 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <unordered_map>
-#include <variant>
 #include <vector>
 
 #include "basic_protocol_splicer.h"
 #include "connection.h"  // MySQLRoutingConnectionBase
+#include "mysql/harness/destination.h"
+#include "mysql/harness/destination_endpoint.h"
 #include "mysql/harness/net_ts/executor.h"
 #include "mysql/harness/net_ts/timer.h"
 #include "mysqlrouter/channel.h"
@@ -50,6 +50,7 @@
 #include "sql_exec_context.h"
 #include "trace_span.h"
 #include "tracer.h"
+#include "transport_constraints.h"
 
 class MysqlRoutingClassicConnectionBase
     : public MySQLRoutingConnectionBase,
@@ -59,15 +60,11 @@ class MysqlRoutingClassicConnectionBase
   //
   // use ::create() instead.
   MysqlRoutingClassicConnectionBase(
-      MySQLRoutingContext &context, RouteDestination *route_destination,
+      MySQLRoutingContext &context, DestinationManager *destination_manager,
       std::unique_ptr<ConnectionBase> client_connection,
       std::unique_ptr<RoutingConnectionBase> client_routing_connection,
       std::function<void(MySQLRoutingConnectionBase *)> remove_callback)
       : MySQLRoutingConnectionBase{context, std::move(remove_callback)},
-        route_destination_{route_destination},
-        destinations_{route_destination_ != nullptr
-                          ? route_destination_->destinations()
-                          : Destinations{}},
         client_conn_{std::move(client_connection),
                      std::move(client_routing_connection),
                      context.source_ssl_mode(),
@@ -77,7 +74,10 @@ class MysqlRoutingClassicConnectionBase
         read_timer_{client_conn_.connection()->io_ctx()},
         connect_timer_{client_conn_.connection()->io_ctx()},
         wait_for_my_writes_{context.wait_for_my_writes()},
-        wait_for_my_writes_timeout_{context.wait_for_my_writes_timeout()} {}
+        wait_for_my_writes_timeout_{context.wait_for_my_writes_timeout()},
+        destination_manager_{destination_manager} {
+    client_address(client_conn_.connection()->endpoint());
+  }
 
  public:
   using ClientSideConnection =
@@ -89,11 +89,7 @@ class MysqlRoutingClassicConnectionBase
   //
   template <typename... Args>
   [[nodiscard]] static std::shared_ptr<MysqlRoutingClassicConnectionBase>
-  create(
-      // clang-format off
-      Args &&... args) {
-    // clang-format on
-
+  create(Args &&...args) {
     // can't use make_unique<> here as the constructor is private.
     return std::shared_ptr<MysqlRoutingClassicConnectionBase>(
         new MysqlRoutingClassicConnectionBase(std::forward<Args>(args)...));
@@ -121,13 +117,11 @@ class MysqlRoutingClassicConnectionBase
     return client_conn().native_handle();
   }
 
-  std::string get_client_address() const override {
-    return client_conn().endpoint();
+  DestinationManager *destination_manager() const {
+    return destination_manager_;
   }
 
-  std::string get_server_address() const override {
-    return server_conn().endpoint();
-  }
+  routing_guidelines::Session_info get_session_info();
 
   void disconnect() override;
 
@@ -275,62 +269,73 @@ class MysqlRoutingClassicConnectionBase
 
   virtual void stash_server_conn();
 
-  std::string get_destination_id() const override {
+  std::optional<mysql_harness::Destination> get_destination_id()
+      const override {
     return expected_server_mode() == mysqlrouter::ServerMode::ReadOnly
                ? read_only_destination_id()
                : read_write_destination_id();
   }
 
-  void destination_id(const std::string &id) {
+  void destination_id(const std::optional<mysql_harness::Destination> &id) {
     expected_server_mode() == mysqlrouter::ServerMode::ReadOnly
         ? read_only_destination_id(id)
         : read_write_destination_id(id);
   }
 
-  std::string read_only_destination_id() const override {
+  std::optional<mysql_harness::Destination> read_only_destination_id()
+      const override {
     return ro_destination_id_;
   }
 
-  void read_only_destination_id(const std::string &destination_id) {
+  void read_only_destination_id(
+      const std::optional<mysql_harness::Destination> &destination_id) {
     ro_destination_id_ = destination_id;
   }
 
-  std::string read_write_destination_id() const override {
+  std::optional<mysql_harness::Destination> read_write_destination_id()
+      const override {
     return rw_destination_id_;
   }
-  void read_write_destination_id(const std::string &destination_id) {
+  void read_write_destination_id(
+      const std::optional<mysql_harness::Destination> &destination_id) {
     rw_destination_id_ = destination_id;
   }
 
-  std::optional<net::ip::tcp::endpoint> destination_endpoint() const override {
+  std::optional<mysql_harness::DestinationEndpoint> destination_endpoint()
+      const override {
     return expected_server_mode() == mysqlrouter::ServerMode::ReadOnly
                ? read_only_destination_endpoint()
                : read_write_destination_endpoint();
   }
 
-  void destination_endpoint(const std::optional<net::ip::tcp::endpoint> &ep) {
+  void destination_endpoint(
+      const std::optional<mysql_harness::DestinationEndpoint> &ep) {
     expected_server_mode() == mysqlrouter::ServerMode::ReadOnly
         ? read_only_destination_endpoint(ep)
         : read_write_destination_endpoint(ep);
   }
 
-  std::optional<net::ip::tcp::endpoint> read_only_destination_endpoint()
-      const override {
+  std::optional<mysql_harness::DestinationEndpoint>
+  read_only_destination_endpoint() const override {
     return ro_destination_endpoint_;
   }
   void read_only_destination_endpoint(
-      const std::optional<net::ip::tcp::endpoint> &ep) {
+      const std::optional<mysql_harness::DestinationEndpoint> &ep) {
     ro_destination_endpoint_ = ep;
   }
 
-  std::optional<net::ip::tcp::endpoint> read_write_destination_endpoint()
-      const override {
+  std::optional<mysql_harness::DestinationEndpoint>
+  read_write_destination_endpoint() const override {
     return rw_destination_endpoint_;
   }
 
   void read_write_destination_endpoint(
-      const std::optional<net::ip::tcp::endpoint> &ep) {
+      const std::optional<mysql_harness::DestinationEndpoint> &ep) {
     rw_destination_endpoint_ = ep;
+  }
+
+  void set_destination(std::unique_ptr<Destination> destination) {
+    destination_ = std::move(destination);
   }
 
   /**
@@ -393,17 +398,13 @@ class MysqlRoutingClassicConnectionBase
               dest_ssl_mode() == SslMode::kAsClient));
   }
 
-  /// set if the server-connection requires TLS
-  void requires_tls(bool v) { requires_tls_ = v; }
+  void expected_server_transport_constraints(TransportConstraints val) {
+    expected_server_transport_constraints_ = val;
+  }
 
-  /// get if the server-connection requires TLS
-  bool requires_tls() const { return requires_tls_; }
-
-  /// set if the server-connection requires a client cert
-  void requires_client_cert(bool v) { requires_client_cert_ = v; }
-
-  /// get if the server-connection requires a client cert
-  bool requires_client_cert() const { return requires_client_cert_; }
+  TransportConstraints expected_server_transport_constraints() const {
+    return expected_server_transport_constraints_;
+  }
 
   void some_state_changed(bool v) { some_state_changed_ = v; }
 
@@ -436,9 +437,6 @@ class MysqlRoutingClassicConnectionBase
     wait_for_my_writes_timeout_ = timeout;
   }
 
-  RouteDestination *destinations() { return route_destination_; }
-  Destinations &current_destinations() { return destinations_; }
-
   void collation_connection_maybe_dirty(bool val) {
     collation_connection_maybe_dirty_ = val;
   }
@@ -463,18 +461,28 @@ class MysqlRoutingClassicConnectionBase
     return trx_state_;
   }
 
- private:
-  RouteDestination *route_destination_;
-  Destinations destinations_;
+  void wait_until_completed() override {
+    is_completed_.wait([](auto ready) { return ready == true; });
+  }
 
+  void completed() override {
+    is_completed_.serialize_with_cv([](auto &ready, auto &cv) {
+      ready = true;
+      cv.notify_all();
+    });
+  }
+
+ private:
   ClientSideConnection client_conn_;
   ServerSideConnection server_conn_;
 
-  std::string rw_destination_id_;  // read-write destination-id
-  std::string ro_destination_id_;  // read-only destination-id
+  std::optional<mysql_harness::Destination>
+      rw_destination_id_;  // read-write destination-id
+  std::optional<mysql_harness::Destination>
+      ro_destination_id_;  // read-only destination-id
 
-  std::optional<net::ip::tcp::endpoint> rw_destination_endpoint_;
-  std::optional<net::ip::tcp::endpoint> ro_destination_endpoint_;
+  std::optional<mysql_harness::DestinationEndpoint> rw_destination_endpoint_;
+  std::optional<mysql_harness::DestinationEndpoint> ro_destination_endpoint_;
 
   /**
    * client side handshake isn't finished yet.
@@ -488,9 +496,8 @@ class MysqlRoutingClassicConnectionBase
 
   bool collation_connection_maybe_dirty_{false};
 
-  bool requires_tls_{true};
-
-  bool requires_client_cert_{false};
+  TransportConstraints expected_server_transport_constraints_{
+      TransportConstraints::Constraint::kPlaintext};
 
  public:
   ExecutionContext &execution_context() { return exec_ctx_; }
@@ -506,6 +513,18 @@ class MysqlRoutingClassicConnectionBase
 
  private:
   Tracer tracer_{false};
+
+  std::string get_routing_source() const override {
+    return destination_->route_name();
+  }
+
+  void set_routing_source(std::string name) override {
+    destination_->set_route_name(std::move(name));
+  }
+
+  routing_guidelines::Server_info get_server_info() const override {
+    return destination_->get_server_info();
+  }
 
  public:
   net::steady_timer &read_timer() { return read_timer_; }
@@ -549,6 +568,8 @@ class MysqlRoutingClassicConnectionBase
 
   bool diagnostic_area_changed_{};
 
+  std::unique_ptr<Destination> destination_;
+
   FromEither recv_from_either_{FromEither::None};
 
   // events for router.trace.
@@ -585,6 +606,10 @@ class MysqlRoutingClassicConnectionBase
   std::chrono::seconds wait_for_my_writes_timeout_;
 
   bool has_transient_error_at_connect_{false};
+
+  WaitableMonitor<bool> is_completed_{false};
+
+  DestinationManager *destination_manager_;
 };
 
 #endif

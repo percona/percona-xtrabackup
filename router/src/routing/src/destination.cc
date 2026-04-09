@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,18 +25,11 @@
 
 #include "destination.h"
 
-#include <algorithm>  // remove_if
 #include <mutex>      // lock_guard
 #include <stdexcept>  // out_of_range
-#include <system_error>
 
-#include "destination_error.h"
-#include "mysqlrouter/routing.h"
-#include "tcp_address.h"
-
-using mysql_harness::TCPAddress;
-
-// class DestinationNodesStateNotifier
+#include "mysql/harness/destination.h"
+#include "mysql/harness/string_utils.h"  //ieq
 
 AllowedNodesChangeCallbacksListIterator
 DestinationNodesStateNotifier::register_allowed_nodes_change_callback(
@@ -99,63 +92,18 @@ void DestinationNodesStateNotifier::
   query_quarantined_destinations_callback_ = nullptr;
 }
 
-// class RouteDestination
+bool DestinationNodesStateNotifier::is_dynamic() { return false; }
 
-void RouteDestination::add(const TCPAddress dest) {
-  auto dest_end = destinations_.end();
-
-  auto compare = [&dest](TCPAddress &other) { return dest == other; };
-
-  if (std::find_if(destinations_.begin(), dest_end, compare) == dest_end) {
-    std::lock_guard<std::mutex> lock(mutex_update_);
-    destinations_.push_back(dest);
-  }
+std::string DestinationNodesStateNotifier::get_dynamic_plugin_name() {
+  return {};
 }
 
-void RouteDestination::add(const std::string &address, uint16_t port) {
-  add(TCPAddress(address, port));
-}
+mysqlrouter::ServerMode Destination::server_mode() const {
+  if (mysql_harness::ieq(server_info_.member_role, "PRIMARY"))
+    return mysqlrouter::ServerMode::ReadWrite;
+  else if (mysql_harness::ieq(server_info_.member_role, "SECONDARY") ||
+           mysql_harness::ieq(server_info_.member_role, "READ_REPLICA"))
+    return mysqlrouter::ServerMode::ReadOnly;
 
-void RouteDestination::remove(const std::string &address, uint16_t port) {
-  TCPAddress to_remove(address, port);
-  std::lock_guard<std::mutex> lock(mutex_update_);
-
-  auto func_same = [&to_remove](TCPAddress a) {
-    return (a.address() == to_remove.address() && a.port() == to_remove.port());
-  };
-  destinations_.erase(
-      std::remove_if(destinations_.begin(), destinations_.end(), func_same),
-      destinations_.end());
-}
-
-TCPAddress RouteDestination::get(const std::string &address, uint16_t port) {
-  TCPAddress needle(address, port);
-  for (auto &it : destinations_) {
-    if (it == needle) {
-      return it;
-    }
-  }
-  throw std::out_of_range("Destination " + needle.str() + " not found");
-}
-
-size_t RouteDestination::size() noexcept { return destinations_.size(); }
-
-void RouteDestination::clear() {
-  if (destinations_.empty()) {
-    return;
-  }
-  std::lock_guard<std::mutex> lock(mutex_update_);
-  destinations_.clear();
-}
-
-std::vector<mysql_harness::TCPAddress> RouteDestination::get_destinations()
-    const {
-  return destinations_;
-}
-
-void RouteDestination::start(const mysql_harness::PluginFuncEnv *) {}
-
-std::optional<Destinations> RouteDestination::refresh_destinations(
-    const Destinations &) {
-  return std::nullopt;
+  return mysqlrouter::ServerMode::Unavailable;
 }

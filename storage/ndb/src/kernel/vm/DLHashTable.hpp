@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -190,11 +190,11 @@ class DLMHashTable {
 
 template <typename P, typename M>
 inline DLMHashTable<P, M>::DLMHashTable(P &_pool)
-    : mask(0), hashValues(NULL), thePool(_pool) {}
+    : mask(0), hashValues(nullptr), thePool(_pool) {}
 
 template <typename P, typename M>
 inline DLMHashTable<P, M>::~DLMHashTable() {
-  if (hashValues != NULL) delete[] hashValues;
+  if (hashValues != nullptr) delete[] hashValues;
 }
 
 template <typename P, typename M>
@@ -202,7 +202,7 @@ inline bool DLMHashTable<P, M>::setSize(Uint32 size) {
   Uint32 i = 1;
   while (i < size) i *= 2;
 
-  if (hashValues != NULL) {
+  if (hashValues != nullptr) {
     /*
       If setSize() is called twice with different size values then this is
       most likely a bug.
@@ -250,9 +250,9 @@ inline bool DLMHashTable<P, M>::first(Iterator &iter) const {
     iter.curr.i = hashValues[i];
     iter.curr.p = thePool.getPtr(iter.curr.i);
     return true;
-  } else {
-    iter.curr.i = RNIL;
   }
+  iter.curr.i = RNIL;
+
   return false;
 }
 
@@ -279,10 +279,9 @@ inline bool DLMHashTable<P, M>::next(Iterator &iter) const {
       iter.curr.i = hashValues[i];
       iter.curr.p = thePool.getPtr(iter.curr.i);
       return true;
-    } else {
-      iter.curr.setNull();
-      return false;
     }
+    iter.curr.setNull();
+    return false;
   }
 
   iter.curr.i = M::nextHash(*iter.curr.p);
@@ -503,8 +502,8 @@ class DLHashTable
       : DLMHashTable<P, DLHashTableDefaultMethods<typename P::Type, U>>(p) {}
 
  private:
-  DLHashTable(const DLHashTable &);
-  DLHashTable &operator=(const DLHashTable &);
+  DLHashTable(const DLHashTable &) = delete;
+  DLHashTable &operator=(const DLHashTable &) = delete;
 };
 
 #undef JAM_FILE_ID

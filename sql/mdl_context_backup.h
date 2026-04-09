@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 
+#include "my_char_traits.h"
 #include "sql/malloc_allocator.h"
 #include "sql/mdl.h"
 
@@ -47,7 +48,8 @@ class MDL_context_backup_manager {
   /**
     Key for uniquely identifying MDL_context in the MDL_context_backup map.
   */
-  typedef std::basic_string<uchar> MDL_context_backup_key;
+  using MDL_context_backup_key =
+      std::basic_string<uchar, my_char_traits<uchar>>;
 
   class MDL_context_backup;
 

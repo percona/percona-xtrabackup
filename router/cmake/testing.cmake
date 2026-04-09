@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -124,6 +124,9 @@ FUNCTION(_ADD_TEST_FILE FILE)
 
   ADD_DEPENDENCIES(mysqlrouter_all ${test_target})
 
+  # ZSTD_generateSequences generates -Werror=alloc-size-larger-than=
+  DOWNGRADE_STRINGOP_WARNINGS(${test_target})
+
   FOREACH(libtarget ${TEST_LIB_DEPENDS})
     #add_dependencies(${test_target} ${libtarget})
     TARGET_LINK_LIBRARIES(${test_target} ${libtarget})
@@ -150,7 +153,9 @@ FUNCTION(_ADD_TEST_FILE FILE)
     STRING_APPEND(TEST_ENV_PREFIX ";WITH_VALGRIND=1;VALGRIND_EXE=${VALGRIND}")
   ENDIF()
 
-  IF(WITH_ASAN)
+  # For Visual Studio: AddressSanitizer: ERROR: expected '=' in ASAN_OPTIONS
+  # Our asan.supp is empty anyways, and LSAN is not supported on Windows.
+  IF(WITH_ASAN AND NOT WIN32_VS)
     STRING_APPEND(TEST_ENV_PREFIX
       ";ASAN_OPTIONS=suppressions=${CMAKE_SOURCE_DIR}/mysql-test/asan.supp")
     STRING_APPEND(TEST_ENV_PREFIX

@@ -1,4 +1,4 @@
-/*  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -849,7 +849,7 @@ false  on success
 true   on failure
 */
 bool Srv_session::open() {
-  char stack_start;
+  char stack_start = 0;
   DBUG_TRACE;
 
   DBUG_PRINT("info", ("Session=%p  THD=%p  DA=%p", this, m_thd, &m_da));

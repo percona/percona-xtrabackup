@@ -1,0 +1,121 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Show that content_set uses global-config directory-index
+#
+## II. Show that content_set uses service-config directory-index
+#
+## III. Show that content_set uses content_set-config directory-index
+#
+## IV. Show that content_file ignores directory-index, redirection and static content file
+#
+## V. Verify how directory-index works
+#
+# 1. Two content files exist, first one is used
+# 2. First content file does not exist, use second one
+# 3. No content files could be reached
+# 4. Default static content is used as directory index.
+# 5. Directory index defined in reverse order to which Content Files are defined.
+# 6. Last of the Content Files defined as directory index.
+# 7. Not existing Content Files in the middle of directory index list.
+# 8. Not existing Content Files in the end of directory index list.
+# 9. Check redirection with path lacking a '/' at the end
+#
+
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{"directoryIndexDirective":["second.html"]}';
+# Registred SERVICE at path: /svc1
+# Registred CONTENT_SET at path: /svc1/sch
+# Registred CONTENT_FILE at path: /svc1/sch/first.html
+# Registred CONTENT_FILE at path: /svc1/sch/second.html
+# Registred SERVICE at path: /svc2
+# Registred CONTENT_SET at path: /svc2/sch
+# Registred CONTENT_FILE at path: /svc2/sch/first.html
+# Registred CONTENT_FILE at path: /svc2/sch/second.html
+# Registred SERVICE at path: /svc3
+# Registred CONTENT_SET at path: /svc3/sch
+SET @my_content_set=@content_set_id;
+# Registred CONTENT_FILE at path: /svc3/sch/first.html
+SET @my_content_file=@content_file_id;
+# Registred CONTENT_FILE at path: /svc3/sch/second.html
+# Registred CONTENT_FILE at path: /svc3/sch/third.html
+# Registred DB_SCHEMA at path: /svc3/basic_schema
+# Registred DB_OBJECT at path: /svc3/basic_schema/obj
+#
+# I
+GET /svc1/sch/
+second file
+OK
+#
+# II
+GET /svc2/sch/
+first file
+OK
+#
+# III
+GET /svc3/sch/
+first file
+OK
+#
+# IV
+GET /svc3/sch/first.html
+first file
+OK
+#
+# V.1
+GET /svc3/sch/
+first file
+OK
+#
+# V.2
+GET /svc3/sch/
+second file
+OK
+#
+# V.3
+GET /svc3/sch/
+<HTML><HEAD>
+<TITLE>404 Not Found</TITLE>
+</HEAD><BODY>
+<H1>Not Found</H1>
+</BODY></HTML>
+
+OK
+#
+# V.4
+GET /svc3/sch/
+some page
+OK
+#
+# V.5
+GET /svc3/sch/
+second file
+OK
+#
+# V.6
+GET /svc3/sch/
+third file
+OK
+#
+# V.7
+GET /svc3/sch/
+third file
+OK
+#
+# V.8
+GET /svc3/sch/
+third file
+OK
+#
+# V.9
+GET /svc3/sch
+
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

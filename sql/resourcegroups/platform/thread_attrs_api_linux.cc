@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,11 +22,11 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <sched.h>
-#include <stdint.h>
-#include <string.h>
 #include <sys/resource.h>
 #include <syscall.h>
 #include <unistd.h>
+#include <cstdint>
+#include <cstring>
 
 #include <linux/capability.h>
 #include <vector>
@@ -37,11 +37,11 @@
 #include "thread_attrs_api.h"
 
 #include "my_dbug.h"  // DBUG_*
+#include "mysql/components/library_mysys/my_system.h"
 #include "mysql/components/services/log_builtins.h"
 #include "mysqld_error.h"
 
-namespace resourcegroups {
-namespace platform {
+namespace resourcegroups::platform {
 
 bool is_platform_supported() { return true; }
 
@@ -56,7 +56,7 @@ bool bind_to_cpu(cpu_id_t cpu_id, my_thread_os_id_t thread_id) {
 
   CPU_ZERO(&cpu_set);
   CPU_SET(cpu_id, &cpu_set);
-  int rc = ::sched_setaffinity(thread_id, sizeof(cpu_set), &cpu_set);
+  int const rc = ::sched_setaffinity(thread_id, sizeof(cpu_set), &cpu_set);
   if (rc != 0) {
     char errbuf[MYSQL_ERRMSG_SIZE];
     LogErr(ERROR_LEVEL, ER_RES_GRP_SET_THR_AFFINITY_FAILED, thread_id, cpu_id,
@@ -80,7 +80,7 @@ bool bind_to_cpus(const std::vector<cpu_id_t> &cpu_ids,
 
   CPU_ZERO(&cpu_set);
   for (const auto &cpu_id : cpu_ids) CPU_SET(cpu_id, &cpu_set);
-  int rc = ::sched_setaffinity(thread_id, sizeof(cpu_set), &cpu_set);
+  int const rc = ::sched_setaffinity(thread_id, sizeof(cpu_set), &cpu_set);
   if (rc != 0) {
     char errbuf[MYSQL_ERRMSG_SIZE];
     LogErr(ERROR_LEVEL, ER_RES_GRP_SET_THR_AFFINITY_FAILED, thread_id,
@@ -98,7 +98,7 @@ bool unbind_thread(my_thread_os_id_t thread_id) {
   cpu_set_t cpu_set;
 
   CPU_ZERO(&cpu_set);
-  uint32_t num_cpus = num_vcpus_using_config();
+  uint32_t num_cpus = my_num_vcpus();
   if (num_cpus == 0) {
     char errbuf[MYSQL_ERRMSG_SIZE];
     LogErr(ERROR_LEVEL, ER_RES_GRP_THD_UNBIND_FROM_CPU_FAILED, thread_id,
@@ -114,7 +114,7 @@ bool unbind_thread(my_thread_os_id_t thread_id) {
                   assert(num_cpus > 1););
   for (cpu_id_t cpu_id = 0; cpu_id < num_cpus; ++cpu_id)
     CPU_SET(cpu_id, &cpu_set);
-  int rc = sched_setaffinity(thread_id, sizeof(cpu_set), &cpu_set);
+  int const rc = sched_setaffinity(thread_id, sizeof(cpu_set), &cpu_set);
   if (rc != 0) {
     char errbuf[MYSQL_ERRMSG_SIZE];
     LogErr(ERROR_LEVEL, ER_RES_GRP_THD_UNBIND_FROM_CPU_FAILED, thread_id,
@@ -151,31 +151,6 @@ bool set_thread_priority(int priority, my_thread_os_id_t thread_id) {
   return false;
 }
 
-uint32_t num_vcpus_using_affinity() {
-  uint32_t num_vcpus = 0;
-
-#ifdef HAVE_PTHREAD_GETAFFINITY_NP
-  cpu_set_t set;
-
-  if (pthread_getaffinity_np(pthread_self(), sizeof(set), &set) == 0)
-    num_vcpus = CPU_COUNT(&set);
-#endif  // HAVE_PTHREAD_GETAFFINITY_NP
-
-  return num_vcpus;
-}
-
-uint32_t num_vcpus_using_config() {
-  cpu_id_t num_vcpus = 0;
-
-#ifdef _SC_NPROCESSORS_ONLN
-  num_vcpus = sysconf(_SC_NPROCESSORS_ONLN);
-#elif defined(_SC_NPROCESSORS_CONF)
-  num_vcpus = sysconf(_SC_NPROCESSORS_CONF);
-#endif
-
-  return num_vcpus;
-}
-
 bool can_thread_priority_be_set() {
   if (geteuid() == 0) return true;
 
@@ -193,5 +168,4 @@ bool can_thread_priority_be_set() {
   LogErr(ERROR_LEVEL, ER_RES_GRP_FAILED_TO_DETERMINE_NICE_CAPABILITY);
   return false;
 }
-}  // namespace platform
-}  // namespace resourcegroups
+}  // namespace resourcegroups::platform

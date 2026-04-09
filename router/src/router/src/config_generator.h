@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -35,8 +35,9 @@
 #include <string>
 #include <vector>
 
-#include "auto_cleaner.h"
+#include "mysql/harness/auto_cleaner.h"
 #include "mysql/harness/filesystem.h"
+#include "mysqlrouter/accounts_cleaner.h"
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/datatypes.h"
 #include "mysqlrouter/keyring_info.h"
@@ -44,7 +45,6 @@
 #include "mysqlrouter/sys_user_operations.h"
 #include "mysqlrouter/uri.h"
 #include "random_generator.h"
-#include "tcp_address.h"
 #include "unique_ptr.h"
 
 namespace mysql_harness {
@@ -60,7 +60,13 @@ struct ClusterInfo;
 
 class ConfigGenerator {
  public:
+  enum class TargetType { InnoDBCluster, Standalone };
+
+  using AutoCleaner = mysql_harness::AutoCleaner;
+  using AccountsCleaner = mysqlrouter::MySQLAccountsCleaner;
+
   ConfigGenerator(
+      AutoCleaner &auto_cleaner, AccountsCleaner &accounts_cleaner,
       std::ostream &out_stream = std::cout, std::ostream &err_stream = std::cerr
 #ifndef _WIN32
       ,
@@ -74,37 +80,43 @@ class ConfigGenerator {
    * This function does a lot of initialisation before bootstrap starts making
    * changes.
    *
-   * @param server_url server to bootstrap from
-   * @param bootstrap_options bootstrap options
-   *
-   * @throws std::runtime_error
+   * @throws std::runtime_error TODO
    */
-  void init(const std::string &server_url,
-            const std::map<std::string, std::string> &bootstrap_options);
+  void init(const std::map<std::string, std::string> &bootstrap_options,
+            const mysqlrouter::URI &uri, mysqlrouter::MySQLSession *session,
+            int connect_timeout, int read_timeout);
 
-  /** @brief logs warning and returns false if SSL mode is set to PREFERRED and
-   *         SSL is not being used, true otherwise
+  void check_target(const std::map<std::string, std::string> &bootstrap_options,
+                    bool allow_no_metadata = false);
+
+  /** @brief logs warning and returns false if SSL mode is set to PREFERRED
+   * and SSL is not being used, true otherwise
    *
    * @param options map of commandline options
    *
-   * @returns false if SSL mode is set to PREFERRED and SSL is not being used,
-   *          true otherwise
+   * @returns false if SSL mode is set to PREFERRED and SSL is not being
+   * used, true otherwise
    *
-   * @throws std::runtime_error
+   * @throws std::runtime_error On error.
    */
   bool warn_on_no_ssl(const std::map<std::string, std::string> &options);
+
+  std::string config_file_path_for_directory(const std::string &directory);
+  bool needs_bootstrap(const std::string &config_file_path);
 
   void bootstrap_system_deployment(
       const std::string &program_name, const std::string &config_file_path,
       const std::string &state_file_path,
       const std::map<std::string, std::string> &options,
       const std::map<std::string, std::vector<std::string>> &multivalue_options,
+      const std::map<std::string, std::string> &config_cmdline_options,
       const std::map<std::string, std::string> &default_paths);
 
   void bootstrap_directory_deployment(
       const std::string &program_name, const std::string &directory,
       const std::map<std::string, std::string> &options,
       const std::map<std::string, std::vector<std::string>> &multivalue_options,
+      const std::map<std::string, std::string> &config_cmdline_options,
       const std::map<std::string, std::string> &default_paths);
 
   void set_keyring_info(const KeyringInfo &keyring_info) {
@@ -112,6 +124,8 @@ class ConfigGenerator {
   }
 
   void set_plugin_folder(const std::string &val) { plugin_folder_ = val; }
+
+  bool is_standalone_target() const { return !schema_version_; }
 
   struct Options {
     struct Endpoint {
@@ -174,6 +188,7 @@ class ConfigGenerator {
     // only relevant for ClusterSet
     std::string target_cluster;
     std::string target_cluster_by_name;
+    std::string local_cluster;
   };
 
   void set_file_owner(
@@ -210,29 +225,13 @@ class ConfigGenerator {
                        const std::string &bootstrap_socket);
 
   /**
-   * init() calls this to connect to metadata server; sets mysql_ (connection)
-   * object.
-   *
-   * @param u parsed server URL (--bootstrap|-B argument)
-   * @param bootstrap_socket bootstrap (unix) socket (--bootstrap-socket
-   * argumenent)
-   * @param bootstrap_options bootstrap command-line options
-   *
-   * @throws std::runtime_error
-   * @throws std::logic_error
-   */
-  void connect_to_metadata_server(
-      const URI &u, const std::string &bootstrap_socket,
-      const std::map<std::string, std::string> &bootstrap_options);
-
-  /**
    * init() calls this to set GR-related member fields.
    *
    * @param u parsed server URL (--bootstrap|-B argument)
    * @param bootstrap_socket bootstrap (unix) socket (--bootstrap-socket
    * argumenent)
    *
-   * @throws TODO
+   * @throws exception TODO
    */
   void init_gr_data(const URI &u, const std::string &bootstrap_socket);
 
@@ -242,6 +241,7 @@ class ConfigGenerator {
     std::string username;
     uint16_t rw_x_port{0};
     uint16_t ro_x_port{0};
+    std::string local_cluster_name;
   };
 
   Options fill_options(const std::map<std::string, std::string> &user_options,
@@ -268,8 +268,9 @@ class ConfigGenerator {
       const mysql_harness::Path &state_file_path, const std::string &name,
       const std::map<std::string, std::string> &options,
       const std::map<std::string, std::vector<std::string>> &multivalue_options,
+      const std::map<std::string, std::string> &config_cmdline_options,
       const std::map<std::string, std::string> &default_paths,
-      bool directory_deployment, AutoCleaner &auto_clean);
+      bool directory_deployment);
 
   std::tuple<std::string> try_bootstrap_deployment(
       uint32_t &router_id, std::string &username, std::string &password,
@@ -300,18 +301,6 @@ class ConfigGenerator {
       const std::map<std::string, std::string> &default_paths,
       const std::map<std::string, std::string> &user_options,
       const Options &options);
-
-  /** @brief Deletes Router accounts just created
-   *
-   * This method runs as a cleanup after something goes wrong.  Its purpose is
-   * to undo CREATE USER [IF NOT EXISTS] for accounts that got created during
-   * bootstrap.  Note that it will drop only those accounts which did not exist
-   * prior to bootstrap (it may be a subset of account names passed to
-   * CREATE USER [IF NOT EXISTS]).  If it is not able to determine what this
-   * (sub)set is, it will not drop anything - instead it will advise user on
-   * how to clean those up manually.
-   */
-  void undo_create_user_for_new_accounts() noexcept;
 
   /** @brief Finds all hostnames given on command-line
    *
@@ -418,9 +407,6 @@ class ConfigGenerator {
 
   void give_grants_to_users(const std::string &new_accounts);
 
-  std::string make_account_list(const std::string username,
-                                const std::set<std::string> &hostnames);
-
   ExistingConfigOptions get_options_from_config_if_it_exists(
       const std::string &config_file_path,
       const mysqlrouter::ClusterInfo &cluster_info, bool forcing_overwrite);
@@ -429,14 +415,12 @@ class ConfigGenerator {
 
   bool backup_config_file_if_different(
       const mysql_harness::Path &config_path, const std::string &new_file_path,
-      const std::map<std::string, std::string> &options,
-      AutoCleaner *auto_cleaner = nullptr);
+      const std::map<std::string, std::string> &options, bool clean);
 
   void set_keyring_info_real_paths(std::map<std::string, std::string> &options,
                                    const mysql_harness::Path &path);
 
   void store_credentials_in_keyring(
-      AutoCleaner &auto_clean,
       const std::map<std::string, std::string> &user_options,
       uint32_t router_id, const std::string &username,
       const std::string &password, Options &options);
@@ -445,14 +429,10 @@ class ConfigGenerator {
                                           uint32_t router_id);
 
   void init_keyring_and_master_key(
-      AutoCleaner &auto_clean,
       const std::map<std::string, std::string> &user_options,
       uint32_t router_id);
 
   void init_keyring_file(uint32_t router_id, bool create_if_needed = true);
-
-  static void set_ssl_options(
-      MySQLSession *sess, const std::map<std::string, std::string> &options);
 
   void ensure_router_id_is_ours(uint32_t &router_id,
                                 const std::string &hostname_override);
@@ -473,16 +453,13 @@ class ConfigGenerator {
    *
    * @param[in] user_options Key/value map of bootstrap config options.
    * @param[in] default_paths Map of predefined default paths.
-   * @param[in,out] auto_cleaner Automatic file cleanup object that guarantees
-   * file cleanup if bootstrap fails at any point.
    *
    * @throws std::runtime_error Data directory contains some certificate files
    * but Router certificate and/or key is missing.
    */
   void prepare_ssl_certificate_files(
       const std::map<std::string, std::string> &user_options,
-      const std::map<std::string, std::string> &default_paths,
-      AutoCleaner *auto_cleaner) const;
+      const std::map<std::string, std::string> &default_paths) const;
 
   /**
    * @brief Check if datadir directory contains only files that are allowed
@@ -499,7 +476,10 @@ class ConfigGenerator {
       const mysql_harness::Directory &dir) const;
 
  private:
-  std::unique_ptr<MySQLSession> mysql_;
+  URI target_uri_;
+  std::string bootstrap_socket_;
+
+  MySQLSession *mysql_;
   std::unique_ptr<ClusterMetadata> metadata_;
   int connect_timeout_;
   int read_timeout_;
@@ -519,15 +499,6 @@ class ConfigGenerator {
   std::ostream &out_stream_;
   std::ostream &err_stream_;
 
-  struct UndoCreateAccountList {
-    enum {
-      kNotSet = 1,  // =1 is not a requirement, just defensive programming
-      kAllAccounts,
-      kNewAccounts
-    } type = kNotSet;
-    std::string accounts;
-  } undo_create_account_list_;
-
   const struct TLS_filenames {
     std::string ca_key{"ca-key.pem"};
     std::string ca_cert{"ca.pem"};
@@ -535,11 +506,15 @@ class ConfigGenerator {
     std::string router_cert{"router-cert.pem"};
   } tls_filenames_;
 
+  AutoCleaner &auto_cleaner_;
+  AccountsCleaner &accounts_cleaner_;
+
 #ifndef _WIN32
   SysUserOperationsBase *sys_user_operations_;
 #endif
 
-  mysqlrouter::MetadataSchemaVersion schema_version_;
+  // metadata schema version if not standalone
+  std::optional<mysqlrouter::MetadataSchemaVersion> schema_version_;
 
   std::string plugin_folder_;
 };

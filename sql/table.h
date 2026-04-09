@@ -1,7 +1,7 @@
 #ifndef TABLE_INCLUDED
 #define TABLE_INCLUDED
 
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,6 +48,7 @@
 #include "sql/auth/auth_acls.h"        // Access_bitmask
 #include "sql/dd/types/foreign_key.h"  // dd::Foreign_key::enum_rule
 #include "sql/enum_query_type.h"       // enum_query_type
+#include "sql/json_duality_view/dml.h"
 #include "sql/key.h"
 #include "sql/key_spec.h"
 #include "sql/mdl.h"  // MDL_wait_for_subgraph
@@ -89,6 +90,7 @@ class Json_diff_vector;
 class Json_seekable_path;
 class Json_wrapper;
 class MaterializedPathCache;
+class Name_string;
 class Opt_hints_qb;
 class Opt_hints_table;
 class Query_result_union;
@@ -111,6 +113,7 @@ enum enum_stats_auto_recalc : int;
 enum Value_generator_source : short;
 enum row_type : int;
 struct AccessPath;
+struct BytesPerTableRow;
 struct COND_EQUAL;
 struct HA_CREATE_INFO;
 struct LEX;
@@ -138,6 +141,10 @@ class Sql_check_constraint_share;
 using Sql_check_constraint_share_list =
     Mem_root_array<Sql_check_constraint_share>;
 
+namespace jdv {
+class Content_tree_node;
+}  // namespace jdv
+
 typedef Mem_root_array_YY<LEX_CSTRING> Create_col_name_list;
 
 typedef int64 query_id_t;
@@ -149,6 +156,8 @@ bool assert_ref_count_is_locked(const TABLE_SHARE *);
 bool assert_invalid_dict_is_locked(const TABLE *);
 
 bool assert_invalid_stats_is_locked(const TABLE *);
+
+[[nodiscard]] const Table_ref *jdv_root_base_table(const Table_ref *);
 
 #define store_record(A, B) \
   memcpy((A)->B, (A)->record[0], (size_t)(A)->s->reclength)
@@ -287,6 +296,9 @@ class View_creation_ctx : public Default_object_creation_ctx {
 class Item_rollup_group_item;
 
 struct ORDER {
+  ORDER() {}
+  explicit ORDER(Item *grouped_expr) : item_initial(grouped_expr) {}
+
   /// @returns true if item pointer is same as original
   bool is_item_original() const { return item[0] == item_initial; }
 
@@ -668,6 +680,7 @@ typedef I_P_List<
     Wait_for_flush_list;
 
 typedef struct Table_share_foreign_key_info {
+  LEX_CSTRING fk_name;
   LEX_CSTRING referenced_table_db;
   LEX_CSTRING referenced_table_name;
   /**
@@ -677,15 +690,29 @@ typedef struct Table_share_foreign_key_info {
   LEX_CSTRING unique_constraint_name;
   dd::Foreign_key::enum_rule update_rule, delete_rule;
   uint columns;
+
   /**
-    Arrays with names of referencing columns of the FK.
+    Array with names of referencing columns of the FK.
   */
-  LEX_CSTRING *column_name;
+  LEX_CSTRING *referencing_column_names;
+
+  /**
+    Array with names of referenced columns of the FK.
+  */
+  LEX_CSTRING *referenced_column_names;
 } TABLE_SHARE_FOREIGN_KEY_INFO;
 
 typedef struct Table_share_foreign_key_parent_info {
+  /**
+    Since referenced_column_names and referencing_column_names are already
+    stored in TABLE_SHARE_FOREIGN_KEY_INFO, we avoid duplicating them here and
+    only add fk_name, allowing check_all_child_fk_ref() to use fk_name to
+    retrieve the column details from the child table share
+  */
+  LEX_CSTRING fk_name;
   LEX_CSTRING referencing_table_db;
   LEX_CSTRING referencing_table_name;
+
   dd::Foreign_key::enum_rule update_rule, delete_rule;
 } TABLE_SHARE_FOREIGN_KEY_PARENT_INFO;
 
@@ -933,6 +960,8 @@ struct TABLE_SHARE {
   bool db_low_byte_first{false}; /* Portable row format */
   bool crashed{false};
   bool is_view{false};
+  /// Materialized view, materialized directly by a storage engine
+  bool is_mv_se_materialized{false};
   bool m_open_in_progress{false}; /* True: alloc'ed, false: def opened */
   mysql::binlog::event::Table_id table_map_id; /* for row-based replication */
 
@@ -1671,6 +1700,10 @@ struct TABLE {
   Table_ref *pos_in_locked_tables{nullptr};
   ORDER *group{nullptr};
   const char *alias{nullptr};  ///< alias or table name
+
+  /* foreign key name for which handle is open */
+  const char *open_for_fk_name{nullptr};
+
   uchar *null_flags{nullptr};  ///< Pointer to the null flags of record[0]
   uchar *null_flags_saved{
       nullptr};  ///< Saved null_flags while null_row is true
@@ -1964,6 +1997,11 @@ struct TABLE {
  private:
   /// Cost model object for operations on this table
   Cost_model_table m_cost_model;
+
+  /// Estimate for the amount of data to read per row fetched from this table.
+  /// The estimate is only calculated when using the hypergraph optimizer.
+  const BytesPerTableRow *m_bytes_per_row{nullptr};
+
 #ifndef NDEBUG
   /**
     Internal tmp table sequential number. Increased in the order of
@@ -2223,6 +2261,14 @@ struct TABLE {
     Return the cost model object for this table.
   */
   const Cost_model_table *cost_model() const { return &m_cost_model; }
+
+  /// Set the estimate for the number of bytes to read per row in this table.
+  void set_bytes_per_row(const BytesPerTableRow *bytes_per_row) {
+    m_bytes_per_row = bytes_per_row;
+  }
+
+  /// Get the estimate for the number of bytes to read per row in this table.
+  const BytesPerTableRow *bytes_per_row() const { return m_bytes_per_row; }
 
   /**
     Bind all the table's value generator columns in all the forms:
@@ -2581,6 +2627,12 @@ enum enum_view_algorithm {
   VIEW_ALGORITHM_UNDEFINED = 0,
   VIEW_ALGORITHM_TEMPTABLE = 1,
   VIEW_ALGORITHM_MERGE = 2
+};
+
+enum class enum_view_type {
+  UNDEFINED,
+  SQL_VIEW,          // Traditional SQL VIEW
+  JSON_DUALITY_VIEW  // JSON Duality view
 };
 
 #define VIEW_SUID_INVOKER 0
@@ -3167,6 +3219,11 @@ class Table_ref {
   /// Return true if this represents a named view or a derived table
   bool is_view_or_derived() const { return derived != nullptr; }
 
+  /// Return true if this represents a non-materialized view or a derived table
+  bool is_non_materialized_view_or_derived() const {
+    return is_view_or_derived() && !is_mv_se_available();
+  }
+
   /// Return true if this represents a table function
   bool is_table_function() const { return table_function != nullptr; }
   /**
@@ -3226,7 +3283,10 @@ class Table_ref {
     during execution. The hypergraph optimizer does not care about const tables,
     so such tables are not executed during optimization time when it is active.
   */
-  bool materializable_is_const() const;
+  bool materializable_is_const(THD *thd) const;
+
+  /// @returns true if this is a derived table containing a stored function.
+  bool has_stored_program() const;
 
   /// Return true if this is a derived table or view that is merged
   bool is_merged() const { return effective_algorithm == VIEW_ALGORITHM_MERGE; }
@@ -3525,6 +3585,10 @@ class Table_ref {
   */
   const Table_ref *updatable_base_table() const {
     const Table_ref *tbl = this;
+    // For JDVs we return the root (outermost) base table
+    if (tbl->is_json_duality_view()) {
+      return jdv_root_base_table(tbl);
+    }
     assert(tbl->is_updatable() && !tbl->is_multiple_tables());
     while (tbl->is_view_or_derived()) {
       tbl = tbl->merge_underlying_list;
@@ -3767,6 +3831,19 @@ class Table_ref {
  private:
   LEX *view{nullptr}; /* link on VIEW lex for merging */
 
+  /// m_mv_se_materialized true indicates that the view is a materialized view
+  /// that is materialized by a storage engine directly.
+  bool m_mv_se_materialized{false};
+  /// m_mv_se_name is the name of the storage engine that might do the
+  /// materialization.
+  LEX_CSTRING m_mv_se_name{.str = nullptr, .length = 0};
+  /// m_mv_se_available indicates that the current Table_ref is using
+  /// the materialized view. A Table_ref can be a materialized view (as
+  /// indicated by m_mv_se_materialized), which is determined by its definition,
+  /// yet the materialization might not be used during the current lifetime of
+  /// this object, if the SE does not make it available for some reason.
+  bool m_mv_se_available{false};
+
  public:
   /// Array of selected expressions from a derived table or view.
   Field_translator *field_translation{nullptr};
@@ -3842,6 +3919,28 @@ class Table_ref {
     Prefer to use is_updatable() during preparation and optimization.
   */
   ulonglong updatable_view{0};  ///< VIEW can be updated
+
+  bool is_mv_se_available() const { return m_mv_se_available; }
+
+  void set_mv_se_available(bool mv_available) {
+    m_mv_se_available = mv_available;
+  }
+
+  bool is_mv_se_materialized() const { return m_mv_se_materialized; }
+
+  void set_mv_se_materialized(bool is_mv) { m_mv_se_materialized = is_mv; }
+
+  const LEX_CSTRING &get_mv_se_name() const { return m_mv_se_name; }
+
+  void set_mv_se_name(const char *engine_name) {
+    m_mv_se_name.str = engine_name;
+    m_mv_se_name.length = strlen(engine_name);
+  }
+
+  void set_mv_se_name(const LEX_CSTRING &engine_name) {
+    m_mv_se_name = engine_name;
+  }
+
   /**
       @brief The declared algorithm, if this is a view.
       @details One of
@@ -3919,6 +4018,12 @@ class Table_ref {
   /// stop PS caching
   bool cacheable_table{false};
   /**
+    Used to store foreign key name to identify correct table handle from
+    thd->open_tables during find_fk_table_from_open_tables() call
+  */
+  const char *open_for_fk_name{nullptr};
+
+  /**
      Specifies which kind of table should be open for this element
      of table list.
   */
@@ -3994,6 +4099,12 @@ class Table_ref {
   // True, If this is a system view
   bool is_system_view{false};
 
+  /// If view, then type of a view.
+  enum_view_type view_type{enum_view_type::UNDEFINED};
+
+  /// If json duality view, then represents duality view content tree node.
+  jdv::Content_tree_node *jdv_content_tree{nullptr};
+
   /*
     Set to 'true' if this is a DD table being opened in the context of a
     dictionary operation. Note that when 'false', this may still be a DD
@@ -4047,6 +4158,16 @@ class Table_ref {
   }
   void set_derived_column_names(const Create_col_name_list *d) {
     m_derived_column_names = d;
+  }
+
+  /**
+   * @brief  If view, then check if view is JSON duality view.
+   *
+   * @return true   If view is JSON duality view.
+   * @return false  Otherwise.
+   */
+  bool is_json_duality_view() const {
+    return (view_type == enum_view_type::JSON_DUALITY_VIEW);
   }
 
  private:
@@ -4358,7 +4479,7 @@ void update_create_info_from_table(HA_CREATE_INFO *info, TABLE *form);
 Ident_name_check check_db_name(const char *name, size_t length);
 Ident_name_check check_and_convert_db_name(LEX_STRING *db,
                                            bool preserve_lettercase);
-bool check_column_name(const char *name);
+bool check_column_name(const Name_string &namestring);
 Ident_name_check check_table_name(const char *name, size_t length);
 int rename_file_ext(const char *from, const char *to, const char *ext);
 char *get_field(MEM_ROOT *mem, Field *field);

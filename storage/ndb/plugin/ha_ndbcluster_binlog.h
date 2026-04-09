@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -152,3 +152,10 @@ void ndbcluster_binlog_retrieve_sync_pending_objects(
  @return pending objects count
 */
 unsigned int ndbcluster_binlog_get_sync_pending_objects_count();
+
+/**
+  @brief Get the number of mysql servers participating in the
+         NDB schema distribution protocol
+  @return participant count
+ */
+int ndbcluster_binlog_get_schema_participant_count(THD *, SHOW_VAR *, char *);

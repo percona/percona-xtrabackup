@@ -517,7 +517,6 @@ analyze table t1;
 select * from t1 where cast('01-02-03' as date) member of (f1->"$");
 explain select * from t1 where cast('01-02-03' as date) member of (f1->"$");
 
---skip_if_hypergraph  # Produces different warnings for hypergraph.
 select * from t1 force index(i1) where cast('01-01-12' as date) member of (f1->"$");
 --skip_if_hypergraph  # Produces different warnings for hypergraph.
 update t1 set f1=
@@ -982,7 +981,6 @@ CREATE TABLE C1 (
   pk int(11) NOT NULL AUTO_INCREMENT KEY,
   col_int int(11) DEFAULT NULL) ;
 INSERT INTO C1 VALUES (1,2);
---skip_if_hypergraph  # Errors out on a different row, changing the error text.
 --error ER_INVALID_JSON_TEXT_IN_PARAM
 SELECT SUM( DISTINCT table1.col_int ) AS field1,
   MAX( table1.col_int ) AS field3
@@ -2077,4 +2075,37 @@ SET @@optimizer_switch="mrr_cost_based=off";
 --eval $query
 
 SET @@optimizer_switch=@save_opt;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#37436310 - Performance issue with Multi-Valued Index and ORDER BY DESC LIMIT
+--echo # (Reads more data than expected)
+--echo #
+
+CREATE TABLE t1 (
+ id INT NOT NULL AUTO_INCREMENT,
+ ids json NOT NULL,
+ PRIMARY KEY (`id`),
+ KEY mx_ids_id ((CAST(json_extract(ids,_utf8mb4'$[*]') AS SIGNED ARRAY)),id)
+);
+
+INSERT INTO `t1` VALUES (1,'[10]');
+INSERT INTO `t1` VALUES (2,'[10]');
+INSERT INTO `t1` VALUES (3,'[20]');
+INSERT INTO `t1` VALUES (4,'[30]');
+INSERT INTO `t1` VALUES (5,'[40]');
+INSERT INTO `t1` VALUES (6,'[50]');
+INSERT INTO `t1` VALUES (7,'[50]');
+INSERT INTO `t1` VALUES (8,'[50]');
+
+ANALYZE TABLE t1;
+FLUSH STATUS;
+
+SELECT * FROM t1 WHERE 30 MEMBER OF (ids->'$[*]') AND id < 7 ORDER BY id DESC;
+
+--skip_if_hypergraph # Bug#37543247 Missing optimization in hypergraph in case of multi-valued index
+SHOW STATUS LIKE 'Handler_read%';
+
+SELECT /*+ INDEX(t1 mx_ids_id) */ * FROM t1 WHERE 50 MEMBER OF (ids->'$[*]') AND id > 5 ORDER BY id DESC;
+
 DROP TABLE t1;

@@ -6,9 +6,13 @@ Note	####	Storing MySQL user name or password information in the connection meta
 delete from mysql.user where user=_binary'rpl_ignore_grant';
 delete from mysql.db where user=_binary'rpl_ignore_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 delete from mysql.user where user=_binary'rpl_ignore_grant';
 delete from mysql.db where user=_binary'rpl_ignore_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user rpl_ignore_grant@localhost;
 grant select on *.* to rpl_ignore_grant@localhost;
 grant drop on test.* to rpl_ignore_grant@localhost;
@@ -33,7 +37,11 @@ authentication_string<>_binary''
 delete from mysql.user where user=_binary'rpl_ignore_grant';
 delete from mysql.db where user=_binary'rpl_ignore_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 delete from mysql.user where user=_binary'rpl_ignore_grant';
 delete from mysql.db where user=_binary'rpl_ignore_grant';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/deinit.inc

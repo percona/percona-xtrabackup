@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -81,11 +81,13 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
                        # command, which is probably not what you want
                        # (except for mysqld.lib which is used by plugins).
     EXCLUDE_FROM_ALL   # add target, but do not build it by default
-    EXCLUDE_FROM_PGO   # add target, but do not build for FPROFILE_GENERATE
+    EXCLUDE_FROM_GCOV  # Skip target for ENABLE_GCOV
+    EXCLUDE_FROM_PGO   # Skip target for FPROFILE_GENERATE
     SKIP_INSTALL       # do not install it
     SKIP_TCMALLOC      # do not link with tcmalloc
     )
   SET(EXECUTABLE_ONE_VALUE_KW
+    ADD_GCOV_TEST      # add unit test if ENABLE_GCOV, sets SKIP_INSTALL
     ADD_TEST           # add unit test, sets SKIP_INSTALL
     COMPONENT
     DESTINATION        # install destination, defaults to ${INSTALL_BINDIR}
@@ -111,6 +113,10 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
     IF(FPROFILE_GENERATE)
       RETURN()
     ENDIF()
+  ENDIF()
+
+  IF(ENABLE_GCOV AND ARG_EXCLUDE_FROM_GCOV)
+    RETURN()
   ENDIF()
 
   SET(target ${target_arg})
@@ -143,6 +149,12 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
   ENDIF()
 
   SET_PATH_TO_CUSTOM_SSL_FOR_APPLE(${target})
+
+  # Create it anyways if we are running GCOV.
+  IF(ENABLE_GCOV AND ARG_ADD_GCOV_TEST)
+    SET(ARG_ADD_TEST ${ARG_ADD_GCOV_TEST})
+    UNSET(ARG_EXCLUDE_FROM_ALL)
+  ENDIF()
 
   IF(ARG_DEPENDENCIES)
     ADD_DEPENDENCIES(${target} ${ARG_DEPENDENCIES})
@@ -212,6 +224,10 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
     MACOS_ADD_DEVELOPER_ENTITLEMENTS(${target})
   ENDIF()
 
+  IF(APPLE)
+    TARGET_LINK_OPTIONS(${target} PRIVATE LINKER:-no_warn_duplicate_libraries)
+  ENDIF()
+
   IF(WIN32_CLANG AND WITH_ASAN)
     TARGET_LINK_LIBRARIES(${target}
       "${ASAN_LIB_DIR}/clang_rt.asan-x86_64.lib"
@@ -271,6 +287,9 @@ FUNCTION(MYSQL_ADD_EXECUTABLE target_arg)
       SET(COMP COMPONENT Client)
     ENDIF()
     ADD_INSTALL_RPATH_FOR_OPENSSL(${target})
+    IF(ADD_INSTALL_RPATH_FOR_ICU)
+      ADD_INSTALL_RPATH(${target} "\$ORIGIN/../${INSTALL_PRIV_LIBDIR}")
+    ENDIF()
     MYSQL_INSTALL_TARGET(${target} DESTINATION ${ARG_DESTINATION} ${COMP})
   ENDIF()
 ENDFUNCTION()

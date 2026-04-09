@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -257,17 +257,6 @@ bool mlog_open_and_write_index(mtr_t *mtr, const byte *rec,
 @return parsed record end, NULL if not a complete record */
 const byte *mlog_parse_index(const byte *ptr, const byte *end_ptr,
                              dict_index_t **index);
-
-/** Parses a log record written by mlog_open_and_write_index in version <= 8027.
-This function should never be changed and should be removed once recovery from
-mysql-8.0.27 is not needed anymore.
-@param[in]  ptr      buffer
-@param[in]  end_ptr  buffer end
-@param[in]  comp     true=compact row format
-@param[out] index    own: dummy index
-@return parsed record end, NULL if not a complete record */
-const byte *mlog_parse_index_8027(const byte *ptr, const byte *end_ptr,
-                                  bool comp, dict_index_t **index);
 
 /** Insert, update, and maybe other functions may use this value to define an
 extra mlog buffer size for variable size data */

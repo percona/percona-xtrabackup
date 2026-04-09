@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,9 +34,8 @@
 
 #include "my_config.h"
 
-#include <errno.h>
-#include <string.h>
-#ifdef SYS_SOCKET_H
+#include <cstring>
+#ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
 #endif
 #ifdef HAVE_UNISTD_H
@@ -48,7 +47,7 @@
 #if defined(_WIN32)
 #include "mysys/mysys_priv.h"
 #endif
-#include "mysql/service_mysql_alloc.h"
+#include "mysql/service_mysql_alloc.h"  // IWYU pragma: keep
 
 #ifndef MAIN
 
@@ -133,7 +132,7 @@ bool my_gethwaddr(uchar *to) {
       /* Get HW address, break if not 0 */
       if (ioctl(fd, SIOCGIFHWADDR, &ifr) >= 0) {
         memcpy(to, &ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
-        if (memcmp(to, zero_array, ETHER_ADDR_LEN)) {
+        if (memcmp(to, zero_array, ETHER_ADDR_LEN) != 0) {
           res = 0;
           break;
         }

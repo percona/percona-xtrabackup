@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -280,7 +280,7 @@ class EventBufData_hash {
     };
   };
 
-  void append(const Pos hpos);
+  void append(Pos hpos);
   EventBufData *search(Pos &hpos, NdbEventOperationImpl *op,
                        const LinearSectionPtr ptr[3]);
 
@@ -362,6 +362,8 @@ class Gci_container {
     GC_CHANGE_CNT = 0x4  // Change m_total_buckets
     ,
     GC_OUT_OF_MEMORY = 0x8  // Not enough event buffer memory to buffer data
+    ,
+    GC_CLUSTER_FAILURE = 0x10  // Cluster failure in this epoch
   };
 
   NdbEventBuffer *m_event_buffer;  // Owner
@@ -523,7 +525,7 @@ class NdbEventOperationImpl : public NdbEventOperation {
   NdbEventOperation::State getState();
 
   int execute();
-  int execute_nolock();
+  int execute_nolock(Uint64 &setup_epoch);
   int stop();
   NdbRecAttr *getValue(const char *colName, char *aValue, int n);
   NdbRecAttr *getValue(const NdbColumnImpl *, char *aValue, int n);
@@ -547,6 +549,9 @@ class NdbEventOperationImpl : public NdbEventOperation {
                           const LinearSectionPtr ptr[3]);
 
   NdbDictionary::Event::TableEvent getEventType2();
+
+  Uint64 getStartEpoch() const;
+  void setStartEpoch(Uint64 startEpoch);
 
   void print();
 
@@ -576,6 +581,13 @@ class NdbEventOperationImpl : public NdbEventOperation {
                                      * else same as in EventImpl
                                      */
   Uint32 m_oid;
+
+  bool m_filterPreStartEpochs;
+
+  /* Consistent start position
+   * Epochs >= m_start_epoch are consistent
+   */
+  Uint64 m_start_epoch;
 
   /*
     when parsed gci > m_stop_gci it is safe to drop operation
@@ -652,7 +664,7 @@ class NdbEventOperationImpl : public NdbEventOperation {
 
 class EventBufferManager {
  public:
-  EventBufferManager(const Ndb *const m_ndb);
+  EventBufferManager(const Ndb *m_ndb);
   ~EventBufferManager() {}
 
  private:
@@ -822,13 +834,13 @@ class NdbEventBuffer {
   void init_gci_containers();
 
   // accessed from the "receive thread"
-  int insertDataL(NdbEventOperationImpl *op, const SubTableData *const sdata,
+  int insertDataL(NdbEventOperationImpl *op, const SubTableData *sdata,
                   Uint32 len, const LinearSectionPtr ptr[3]);
-  void execSUB_GCP_COMPLETE_REP(const SubGcpCompleteRep *const, Uint32 len,
+  void execSUB_GCP_COMPLETE_REP(const SubGcpCompleteRep *, Uint32 len,
                                 int complete_cluster_failure = 0);
-  void execSUB_START_CONF(const SubStartConf *const, Uint32 len);
-  void execSUB_STOP_CONF(const SubStopConf *const, Uint32 len);
-  void execSUB_STOP_REF(const SubStopRef *const, Uint32 len);
+  void execSUB_START_CONF(const SubStartConf *, Uint32 len);
+  void execSUB_STOP_CONF(const SubStopConf *, Uint32 len);
+  void execSUB_STOP_REF(const SubStopRef *, Uint32 len);
 
   void complete_outof_order_gcis();
 
@@ -882,9 +894,9 @@ class NdbEventBuffer {
   EventBufData *alloc_data();
   EventBufDataHead *alloc_data_main();
   int alloc_mem(EventBufData *data, const LinearSectionPtr ptr[3]);
-  int copy_data(const SubTableData *const sdata, Uint32 len,
+  int copy_data(const SubTableData *sdata, Uint32 len,
                 const LinearSectionPtr ptr[3], EventBufData *data);
-  int merge_data(const SubTableData *const sdata, Uint32 len,
+  int merge_data(const SubTableData *sdata, Uint32 len,
                  const LinearSectionPtr ptr[3], EventBufData *data);
   int get_main_data(Gci_container *bucket, EventBufData_hash::Pos &hpos,
                     EventBufData *blob_data);
@@ -1003,7 +1015,7 @@ class NdbEventBuffer {
   NdbMutex *m_add_drop_mutex;
 
   inline Gci_container *find_bucket(Uint64 gci) {
-    Uint32 pos = (Uint32)(gci & ACTIVE_GCI_MASK);
+    auto pos = (Uint32)(gci & ACTIVE_GCI_MASK);
     Gci_container *bucket = ((Gci_container *)(m_active_gci.getBase())) + pos;
     if (likely(gci == bucket->m_gci)) return bucket;
 
@@ -1025,7 +1037,7 @@ class NdbEventBuffer {
 
   Uint16 find_sub_data_stream_number(Uint16 sub_data_stream);
   void crash_on_invalid_SUB_GCP_COMPLETE_REP(const Gci_container *bucket,
-                                             const SubGcpCompleteRep *const rep,
+                                             const SubGcpCompleteRep *rep,
                                              Uint32 replen, Uint32 remcnt,
                                              Uint32 repcnt) const;
 

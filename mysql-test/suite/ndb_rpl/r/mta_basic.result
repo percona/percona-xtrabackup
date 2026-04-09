@@ -16,12 +16,6 @@ select @@ndb_log_transaction_dependency;
 select @@replica_parallel_workers;
 @@replica_parallel_workers
 4
-# 2. Using LOGICAL_CLOCK for parallel type
-select @@replica_parallel_type;
-@@replica_parallel_type
-LOGICAL_CLOCK
-Warnings:
-Warning	1287	'@@replica_parallel_type' is deprecated and will be removed in a future release.
 [connection master]
 CREATE TABLE t1 (
 a INT PRIMARY KEY

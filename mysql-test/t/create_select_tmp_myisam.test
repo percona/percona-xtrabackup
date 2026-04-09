@@ -11,6 +11,9 @@
 # This does not work for RBR yet.
 --source include/rpl/force_binlog_format_statement.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --disable_query_log
 CALL mtr.add_suppression("Unsafe statement written to the binary log using statement format since BINLOG_FORMAT = STATEMENT");
 --enable_query_log
@@ -29,3 +32,5 @@ select * from t2;
 drop table t1;
 
 --source include/rpl/restore_default_binlog_format.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

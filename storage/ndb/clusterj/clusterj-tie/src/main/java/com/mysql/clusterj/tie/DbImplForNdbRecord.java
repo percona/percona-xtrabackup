@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+ *  Copyright (c) 2012, 2025, Oracle and/or its affiliates.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License, version 2.0,
@@ -34,10 +34,7 @@ import com.mysql.clusterj.ClusterJFatalInternalException;
 import com.mysql.clusterj.ClusterJUserException;
 
 import com.mysql.clusterj.core.store.ClusterTransaction;
-
-import com.mysql.clusterj.core.util.I18NHelper;
-import com.mysql.clusterj.core.util.Logger;
-import com.mysql.clusterj.core.util.LoggerFactoryService;
+import com.mysql.clusterj.core.store.Db;
 
 import com.mysql.ndbjtie.ndbapi.Ndb;
 import com.mysql.ndbjtie.ndbapi.NdbErrorConst;
@@ -54,94 +51,35 @@ import com.mysql.ndbjtie.ndbapi.NdbDictionary.Dictionary;
  * implementation needed to implement the life cycle of the Ndb. In particular, it omits the
  * buffer manager and partition key scratch buffer used in the standard DbImpl.
  */
-class DbImplForNdbRecord implements com.mysql.clusterj.core.store.Db {
-
-    /** My message translator */
-    static final I18NHelper local = I18NHelper.getInstance(DbImplForNdbRecord.class);
-
-    /** My logger */
-    static final Logger logger = LoggerFactoryService.getFactory()
-            .getInstance(DbImplForNdbRecord.class);
-
-    /** The Ndb instance that this instance is wrapping */
-    private Ndb ndb;
-
-    /** The ndb error detail buffer */
-    private ByteBuffer errorBuffer;
-
-    /** The NdbDictionary for this Ndb */
-    private Dictionary ndbDictionary;
+class DbImplForNdbRecord extends DbImplCore implements Db {
 
     /** The ClusterConnection */
     private ClusterConnectionImpl clusterConnection;
 
-    /** This db is closing */
-    private boolean closing = false;
+    /** The DbFactory */
+    final DbFactoryImpl parentFactory;
 
-    public DbImplForNdbRecord(ClusterConnectionImpl clusterConnection, Ndb ndb) {
-        this.clusterConnection = clusterConnection;
-        this.ndb = ndb;
+    public DbImplForNdbRecord(DbFactoryImpl factory, Ndb ndb) {
+        super(ndb, 1);
+        this.parentFactory = factory;
+        this.clusterConnection = factory.connectionImpl;
         this.errorBuffer = this.clusterConnection.byteBufferPoolForDBImplError.borrowBuffer();
-        int returnCode = ndb.init(1);
-        handleError(returnCode, ndb);
-        ndbDictionary = ndb.getDictionary();
+        handleInitError();
         handleError(ndbDictionary, ndb);
     }
 
-    public void assertNotClosed(String where) {
-        if (closing || ndb == null) {
-            throw new ClusterJUserException(local.message("ERR_Db_Is_Closing", where));
-        }
-    }
-
-    protected void closing() {
-        closing = true;
-    }
-
     public void close() {
-        this.clusterConnection.byteBufferPoolForDBImplError.returnBuffer(this.errorBuffer);
+        clusterConnection.byteBufferPoolForDBImplError.returnBuffer(this.errorBuffer);
         Ndb.delete(ndb);
-        clusterConnection.close(this);
+        parentFactory.closeDb(this);
     }
 
     public com.mysql.clusterj.core.store.Dictionary getDictionary() {
         throw new ClusterJFatalInternalException(local.message("ERR_Implementation_Should_Not_Occur"));
     }
 
-    public Dictionary getNdbDictionary() {
-        return ndbDictionary;
-    }
-
     public ClusterTransaction startTransaction() {
         throw new ClusterJFatalInternalException(local.message("ERR_Implementation_Should_Not_Occur"));
-    }
-
-    protected void handleError(int returnCode, Ndb ndb) {
-        if (returnCode == 0) {
-            return;
-        } else {
-            NdbErrorConst ndbError = ndb.getNdbError();
-            String detail = getNdbErrorDetail(ndbError);
-            Utility.throwError(returnCode, ndbError, detail);
-        }
-    }
-
-    protected void handleError(Object object, Ndb ndb) {
-        if (object != null) {
-            return;
-        } else {
-            NdbErrorConst ndbError = ndb.getNdbError();
-            String detail = getNdbErrorDetail(ndbError);
-            Utility.throwError(null, ndbError, detail);
-        }
-    }
-
-    public boolean isRetriable(ClusterJDatastoreException ex) {
-        throw new ClusterJFatalInternalException(local.message("ERR_Implementation_Should_Not_Occur"));
-    }
-
-    public String getNdbErrorDetail(NdbErrorConst ndbError) {
-        return ndb.getNdbErrorDetail(ndbError, errorBuffer, errorBuffer.capacity());
     }
 
     public NdbTransaction enlist(String tableName, List<KeyPart> keyParts) {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "sql/dd/cache/multi_map_base.h"
 
-#include <assert.h>
+#include <cassert>
 
 #include "sql/dd/impl/cache/cache_element.h"        // Cache_element
 #include "sql/dd/types/abstract_table.h"            // Abstract_table
@@ -37,8 +37,7 @@
 #include "sql/dd/types/spatial_reference_system.h"  // Spatial_reference_system
 #include "sql/dd/types/tablespace.h"                // Tablespace
 
-namespace dd {
-namespace cache {
+namespace dd::cache {
 
 // Helper function to remove the mapping of a single element.
 template <typename T>
@@ -80,5 +79,4 @@ template class Multi_map_base<Schema>;
 template class Multi_map_base<Spatial_reference_system>;
 template class Multi_map_base<Tablespace>;
 
-}  // namespace cache
-}  // namespace dd
+}  // namespace dd::cache

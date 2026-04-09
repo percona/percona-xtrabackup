@@ -1,0 +1,6 @@
+--source include/not_windows.inc
+--source include/have_router_bootstrap.inc
+
+exec $MYSQLROUTER_BOOTSTRAP --help;
+
+# Cleanup

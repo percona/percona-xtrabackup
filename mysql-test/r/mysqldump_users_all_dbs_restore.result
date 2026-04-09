@@ -1,0 +1,22 @@
+#
+# WL#15658: Make mysqldump dump logical ACL statements
+#
+include/rpl/set_gtid_mode_off.inc
+# Init: create a user and a role
+CREATE USER wl15658_user@localhost;
+CREATE ROLE wl15658_role@localhost;
+CREATE USER wl15658_anoter@localhost;
+GRANT SELECT ON *.* TO wl15658_user@localhost;
+GRANT UPDATE ON mysql.* TO wl15658_user@localhost;
+GRANT FLUSH_STATUS ON *.* TO wl15658_user@localhost;
+GRANT wl15658_role@localhost TO wl15658_user@localhost;
+CREATE TABLE wl15658_table(a INT);
+# dump all data
+# restore all data
+# Cleanup
+DROP USER wl15658_anoter@localhost;
+DROP USER wl15658_user@localhost;
+DROP ROLE wl15658_role@localhost;
+DROP TABLE wl15658_table;
+# End if 9.3 tests
+include/rpl/set_gtid_mode_on.inc

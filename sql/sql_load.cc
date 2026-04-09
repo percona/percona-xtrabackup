@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,8 @@
 /* Copy data from a text file to table */
 
 #include "sql/sql_load.h"
+#include "my_sqlcommand.h"
+#include "sql/sql_rename.h"
 
 #include <fcntl.h>
 #include <limits.h>
@@ -87,6 +89,8 @@
 #include "sql/sql_class.h"
 #include "sql/sql_data_change.h"
 #include "sql/sql_error.h"
+#include "sql/sql_exchange.h"
+#include "sql/sql_foreign_key_constraint.h"
 #include "sql/sql_insert.h"  // check_that_all_fields_are_given_values,
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
@@ -350,6 +354,63 @@ bool Sql_cmd_load_table::validate_table_for_bulk_load(
   return false;
 }
 
+bool Sql_cmd_load_table::rename_table_for_incremental_bulk_load(
+    THD *thd, const std::string &schema_name, const std::string &old_table_name,
+    const std::string &new_table_name) {
+  close_thread_tables(thd);
+
+  Table_ref old_table_ref{};
+  old_table_ref.table_name = old_table_name.c_str();
+  old_table_ref.table_name_length = old_table_name.length();
+  old_table_ref.db = schema_name.c_str();
+  old_table_ref.db_length = schema_name.length();
+  old_table_ref.alias = old_table_ref.table_name;
+  Table_ref new_table_ref{};
+  new_table_ref.table_name = new_table_name.c_str();
+  new_table_ref.table_name_length = new_table_name.length();
+  new_table_ref.db = schema_name.c_str();
+  new_table_ref.db_length = schema_name.length();
+  new_table_ref.alias = new_table_ref.table_name;
+  new_table_ref.next_local = nullptr;
+  old_table_ref.next_local = &new_table_ref;
+
+  return mysql_rename_tables(thd, &old_table_ref);
+}
+
+bool Sql_cmd_load_table::duplicate_table_for_bulk_load(
+    THD *thd, std::string &temp_name, const std::string &schema_name,
+    Table_ref *new_table_ref) {
+  auto *original_table_ref = thd->lex->query_tables;
+  temp_name = original_table_ref->table->file
+                  ->bulk_load_generate_temporary_table_name();
+
+  new_table_ref->table_name = temp_name.c_str();
+  new_table_ref->table_name_length = temp_name.length();
+  new_table_ref->db = schema_name.c_str();
+  new_table_ref->db_length = schema_name.length();
+  new_table_ref->alias = new_table_ref->table_name;
+  HA_CREATE_INFO info;
+  info.init_create_options_from_share(original_table_ref->table->s, 0);
+
+  new_table_ref->open_strategy = Table_ref::OPEN_FOR_CREATE;
+  MDL_REQUEST_INIT(&new_table_ref->mdl_request, MDL_key::TABLE,
+                   new_table_ref->db, new_table_ref->table_name, MDL_EXCLUSIVE,
+                   MDL_TRANSACTION);
+
+  if (lock_table_names(thd, new_table_ref, nullptr,
+                       thd->variables.lock_wait_timeout, 0)) {
+    return true;
+  }
+  close_thread_tables(thd);
+  original_table_ref->table = nullptr;
+  thd->lex->create_info = &info;
+  thd->lex->sql_command = SQLCOM_CREATE_TABLE;
+  auto res = mysql_create_like_table(thd, new_table_ref, original_table_ref,
+                                     &info, MYSQL_OPEN_HAS_MDL_LOCK, true);
+  thd->lex->sql_command = SQLCOM_LOAD;
+  return res;
+}
+
 /**
   Execute BULK LOAD DATA
   @param thd Current thread.
@@ -370,9 +431,9 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
 
   Table_ref *table_ref = thd->lex->query_tables;
 
+  uint counter;
   // Acquire MDL lock on table, BACKUP_LOCK and GLOBAL lock objects.
-  if (lock_table_names(thd, table_ref, nullptr,
-                       thd->variables.lock_wait_timeout, 0)) {
+  if (open_tables(thd, &table_ref, &counter, 0)) {
     return true;
   }
 
@@ -396,91 +457,11 @@ bool Sql_cmd_load_table::execute_bulk(THD *thd) {
     return true;
   }
 
-  uint counter;
-  if (open_tables(thd, &table_ref, &counter, MYSQL_OPEN_HAS_MDL_LOCK)) {
-    return true;
-  }
-
   handlerton *hton = nullptr;
   if (validate_table_for_bulk_load(thd, table_ref, table_def, &hton)) {
     return true;
   }
 
-  /*
-    We need to close the table and reset the table_ref so that it can be used
-    to re-open the table after truncate.
-  */
-  close_thread_tables(thd);
-  tdc_remove_table(thd, TDC_RT_REMOVE_ALL, table_ref->db, table_ref->table_name,
-                   false);
-  table_ref->table = nullptr;
-
-  bool success = false;
-  // Actions needed to cleanup before leaving scope.
-  auto cleanup_guard = create_scope_guard([&]() {
-    THD_STAGE_INFO(thd, stage_end);
-    close_thread_tables(thd);
-    // End transaction
-    if (success) {
-      success = !(trans_commit_stmt(thd) || trans_commit_implicit(thd));
-    }
-    if (!success) {
-      trans_rollback_stmt(thd);
-      trans_rollback_implicit(thd);
-      tdc_remove_table(thd, TDC_RT_REMOVE_ALL, table_ref->db,
-                       table_ref->table_name, false);
-    }
-    // Post DDL action for truncate. */
-    if (hton != nullptr && hton->post_ddl) {
-      hton->post_ddl(thd);
-    }
-  });
-
-  /*
-    We start bulk ingestion by truncating the table. We then continue the same
-    transaction loading data and finishing with a commit or rollback.
-    1. At this point the table is validated to not have any user data. It is
-       thus safe to truncate.
-    2. Truncate command creates a new space for the data to be loaded and the
-       atomicity guarantee is provided by the truncate DDL log.
-       a. Commit (Success case): Old tablespace is removed and we have the new
-          one loaded with user data. The new space id is committed in DD SE
-          private data.
-       b. Rollback (Unsuccessful case): New tablespace with partially loaded
-          data is removed and old tablespace remains. Rollback brings back the
-          old tablespace ID in DD SE private data. Cached objects are removed.
-  */
-  if (truncate_table_for_bulk_load(thd, table_ref, table_def)) {
-    my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: Truncate failed");
-    return true;
-  }
-
-  /*
-    Open the table after truncate. Here we open the destination table, on which
-    we already have an exclusive metadata lock.
-  */
-  if (open_tables(thd, &table_ref, &counter, MYSQL_OPEN_HAS_MDL_LOCK)) {
-    return true;
-  }
-
-  size_t affected_rows = 0;
-  if (!bulk_driver_service(thd, table_ref->table, affected_rows)) {
-    return true;
-  }
-
-  success = true;
-  char ok_message[512];
-  snprintf(
-      ok_message, sizeof(ok_message), ER_THD(thd, ER_LOAD_INFO),
-      static_cast<long>(affected_rows), 0L, 0L,
-      static_cast<long>(thd->get_stmt_da()->current_statement_cond_count()));
-
-  my_ok(thd, affected_rows, 0LL, ok_message);
-  return false;
-}
-
-bool Sql_cmd_load_table::bulk_driver_service(THD *thd, const TABLE *table,
-                                             size_t &affected_rows) {
   Bulk_source src = Bulk_source::LOCAL;
 
   switch (m_bulk_source) {
@@ -495,27 +476,6 @@ bool Sql_cmd_load_table::bulk_driver_service(THD *thd, const TABLE *table,
     case LOAD_SOURCE_FILE:
       src = Bulk_source::LOCAL;
       break;
-  }
-
-  std::string lowercase(m_compression_algorithm_string.str,
-                        m_compression_algorithm_string.length);
-
-  std::transform(lowercase.begin(), lowercase.end(), lowercase.begin(),
-                 ::tolower);
-  Bulk_compression_algorithm compression_algorithm =
-      Bulk_compression_algorithm::NONE;
-  if (m_compression_algorithm_string.length == 0) {
-    compression_algorithm = Bulk_compression_algorithm::NONE;
-  } else if (lowercase == "zstd") {
-    compression_algorithm = Bulk_compression_algorithm::ZSTD;
-  } else {
-    std::stringstream ss;
-    ss << "Invalid compression algorithm: "
-       << std::string(m_compression_algorithm_string.str,
-                      m_compression_algorithm_string.length);
-    my_error(ER_WRONG_USAGE, MYF(0), "LOAD DATA with BULK Algorithm",
-             ss.str().c_str());
-    return false;
   }
 
   std::string file_name_arg(m_exchange.file_name);
@@ -558,6 +518,205 @@ bool Sql_cmd_load_table::bulk_driver_service(THD *thd, const TABLE *table,
     }
   }
 
+  Table_ref new_table_ref{};
+  Table_ref *new_table_ref_ptr = &new_table_ref;
+
+  std::string original_name = table_ref->table_name;
+  std::string temp_name{};
+  std::string schema_name(table_ref->table->s->db.str,
+                          table_ref->table->s->db.length);
+  Disable_binlog_guard disable_binlog(thd);
+
+  bool success = false;
+  bool new_table_opened = false;
+  // Actions needed to cleanup before leaving scope.
+  auto cleanup_guard = create_scope_guard([&]() {
+    THD_STAGE_INFO(thd, stage_end);
+    if (m_non_empty_table && success && !info.m_is_dryrun) {
+      auto final_temp_name =
+          table_ref->table->file->bulk_load_generate_temporary_table_name();
+      Table_ref final_table_ref{};
+      final_table_ref.table_name = final_temp_name.c_str();
+      final_table_ref.table_name_length = final_temp_name.length();
+      final_table_ref.db = schema_name.c_str();
+      final_table_ref.db_length = schema_name.length();
+      MDL_REQUEST_INIT(&final_table_ref.mdl_request, MDL_key::TABLE,
+                       final_table_ref.db, final_table_ref.table_name,
+                       MDL_EXCLUSIVE, MDL_TRANSACTION);
+      if (lock_table_names(thd, &final_table_ref, nullptr,
+                           thd->variables.lock_wait_timeout, 0)) {
+        success = false;
+      } else {
+        // mysql_create_like_table  opens the table under the hood so we close
+        // it here for now.
+        rename_table_for_incremental_bulk_load(thd, schema_name, original_name,
+                                               final_temp_name);
+        rename_table_for_incremental_bulk_load(thd, schema_name, temp_name,
+                                               original_name);
+
+        Table_ref old_table_ref;
+
+        old_table_ref.table_name = final_temp_name.c_str();
+        old_table_ref.table_name_length = final_temp_name.length();
+        old_table_ref.db = schema_name.c_str();
+        old_table_ref.db_length = schema_name.length();
+        old_table_ref.alias = old_table_ref.table_name;
+        close_thread_tables(thd);
+        mysql_rm_table(thd, &old_table_ref, false, false);
+      }
+    }
+
+    close_thread_tables(thd);
+    // End transaction
+    if (success) {
+      success = !(trans_commit_stmt(thd) || trans_commit_implicit(thd));
+    }
+    if (!success) {
+      trans_rollback_stmt(thd);
+      trans_rollback_implicit(thd);
+    }
+    tdc_remove_table(thd, TDC_RT_REMOVE_ALL, table_ref->db,
+                     table_ref->table_name, false);
+    if (m_non_empty_table && !info.m_is_dryrun) {
+      tdc_remove_table(thd, TDC_RT_REMOVE_ALL, new_table_ref.db,
+                       new_table_ref.table_name, false);
+    }
+
+    // Post DDL action for truncate (and rename, create and remove tables during
+    // incremental bulk load). */
+    if (hton != nullptr && hton->post_ddl) {
+      hton->post_ddl(thd);
+    }
+  });
+
+  if (!table_ref->table->file->is_table_empty()) {
+    m_non_empty_table = true;
+  }
+
+  if (m_non_empty_table && !info.m_is_dryrun) {
+    if (duplicate_table_for_bulk_load(thd, temp_name, schema_name,
+                                      &new_table_ref)) {
+      my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: Duplicate table failed");
+      success = false;
+      return false;
+    }
+  }
+
+  /*
+    We need to close the table and reset the table_ref so that it can be
+    used to re-open the table after truncate.
+  */
+  close_thread_tables(thd);
+  tdc_remove_table(thd, TDC_RT_REMOVE_ALL, table_ref->db, table_ref->table_name,
+                   false);
+  table_ref->table = nullptr;
+  if (m_non_empty_table && !info.m_is_dryrun) {
+    tdc_remove_table(thd, TDC_RT_REMOVE_ALL, new_table_ref.db,
+                     new_table_ref.table_name, false);
+    new_table_ref.table = nullptr;
+  }
+
+  /*
+    We start bulk ingestion by truncating the table. We then continue the same
+    transaction loading data and finishing with a commit or rollback.
+    1. At this point the table is validated to not have any user data. It is
+       thus safe to truncate.
+    2. Truncate command creates a new space for the data to be loaded and the
+       atomicity guarantee is provided by the truncate DDL log.
+       a. Commit (Success case): Old tablespace is removed and we have the new
+          one loaded with user data. The new space id is committed in DD SE
+          private data.
+       b. Rollback (Unsuccessful case): New tablespace with partially loaded
+          data is removed and old tablespace remains. Rollback brings back the
+          old tablespace ID in DD SE private data. Cached objects are removed.
+  */
+  if (!m_non_empty_table &&
+      truncate_table_for_bulk_load(thd, table_ref, table_def)) {
+    my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: Truncate failed");
+    success = false;
+    return true;
+  }
+
+  /*
+  Open the table after truncate. Here we open the destination table, on which
+  we already have an exclusive metadata lock.
+  */
+  if (open_tables(thd, &table_ref, &counter, MYSQL_OPEN_HAS_MDL_LOCK)) {
+    my_error(ER_INTERNAL_ERROR, MYF(0), "BULK LOAD: open_tables failed");
+    success = false;
+    return true;
+  }
+
+  if (m_non_empty_table && !info.m_is_dryrun) {
+    new_table_opened = !open_tables(thd, &new_table_ref_ptr, &counter,
+                                    MYSQL_OPEN_HAS_MDL_LOCK);
+    if (!new_table_opened) {
+      my_error(ER_INTERNAL_ERROR, MYF(0),
+               "BULK LOAD: open_tables failed on duplicate table");
+      success = false;
+      return true;
+    }
+  }
+
+  size_t affected_rows = 0;
+  if (!m_non_empty_table && !bulk_driver_service(thd, table_ref->table, nullptr,
+                                                 info, src, affected_rows)) {
+    my_error(ER_INTERNAL_ERROR, MYF(0),
+             "BULK LOAD: bulk_driver_service failed");
+    success = false;
+    return true;
+  }
+
+  if (m_non_empty_table) {
+    auto *duplicate_table =
+        info.m_is_dryrun ? nullptr : new_table_ref_ptr->table;
+    if (!bulk_driver_service(thd, table_ref->table, duplicate_table, info, src,
+                             affected_rows)) {
+      my_error(ER_INTERNAL_ERROR, MYF(0),
+               "BULK LOAD: bulk_driver_service failed");
+      success = false;
+      return true;
+    }
+  }
+
+  success = true;
+  char ok_message[512];
+  snprintf(
+      ok_message, sizeof(ok_message), ER_THD(thd, ER_LOAD_INFO),
+      static_cast<long>(affected_rows), 0L, 0L,
+      static_cast<long>(thd->get_stmt_da()->current_statement_cond_count()));
+
+  my_ok(thd, affected_rows, 0LL, ok_message);
+
+  return false;
+}
+
+bool Sql_cmd_load_table::bulk_driver_service(THD *thd, const TABLE *sql_table,
+                                             const TABLE *duplicate_table,
+                                             const Bulk_load_file_info &info,
+                                             Bulk_source src,
+                                             size_t &affected_rows) {
+  std::string lowercase(m_compression_algorithm_string.str,
+                        m_compression_algorithm_string.length);
+
+  std::transform(lowercase.begin(), lowercase.end(), lowercase.begin(),
+                 ::tolower);
+  Bulk_compression_algorithm compression_algorithm =
+      Bulk_compression_algorithm::NONE;
+  if (m_compression_algorithm_string.length == 0) {
+    compression_algorithm = Bulk_compression_algorithm::NONE;
+  } else if (lowercase == "zstd") {
+    compression_algorithm = Bulk_compression_algorithm::ZSTD;
+  } else {
+    std::stringstream ss;
+    ss << "Invalid compression algorithm: "
+       << std::string(m_compression_algorithm_string.str,
+                      m_compression_algorithm_string.length);
+    my_error(ER_WRONG_USAGE, MYF(0), "LOAD DATA with BULK Algorithm",
+             ss.str().c_str());
+    return false;
+  }
+
   my_h_service svc = nullptr;
 
   if (srv_registry->acquire("bulk_load_driver", &svc)) {
@@ -565,18 +724,30 @@ bool Sql_cmd_load_table::bulk_driver_service(THD *thd, const TABLE *table,
     return false;
   }
 
+  DEBUG_SYNC(thd, "bulk_load_inuse");
+
   auto load_driver = reinterpret_cast<SERVICE_TYPE(bulk_load_driver) *>(svc);
 
   auto load_handle = load_driver->create_bulk_loader(
-      thd, thd->thread_id(), table, src,
-      m_exchange.cs ? m_exchange.cs : thd->variables.collation_database);
+      thd, thd->thread_id(), sql_table, duplicate_table, src,
+      (m_exchange.file_info.cs != nullptr) ? m_exchange.file_info.cs
+                                           : thd->variables.collation_database);
 
   /* Set schema, table, file name string options. */
-  std::string schema_name(table->s->db.str, table->s->db.length);
+  std::string schema_name(sql_table->s->db.str, sql_table->s->db.length);
   load_driver->set_string(load_handle, Bulk_string::SCHEMA_NAME, schema_name);
 
-  std::string table_name(table->s->table_name.str, table->s->table_name.length);
-  load_driver->set_string(load_handle, Bulk_string::TABLE_NAME, table_name);
+  std::string original_table_name(sql_table->s->table_name.str,
+                                  sql_table->s->table_name.length);
+  load_driver->set_string(load_handle, Bulk_string::SQL_TABLE_NAME,
+                          original_table_name);
+
+  if (duplicate_table != nullptr) {
+    std::string duplicate_table_name{duplicate_table->s->table_name.str,
+                                     duplicate_table->s->table_name.length};
+    load_driver->set_string(load_handle, Bulk_string::DUPLICATE_TABLE_NAME,
+                            duplicate_table_name);
+  }
 
   load_driver->set_string(load_handle, Bulk_string::FILE_PREFIX,
                           info.m_file_prefix);
@@ -605,6 +776,10 @@ bool Sql_cmd_load_table::bulk_driver_service(THD *thd, const TABLE *table,
   /* Set boolean options. */
   load_driver->set_condition(load_handle, Bulk_condition::ORDERED_DATA,
                              m_ordered_data);
+
+  /* Set boolean options. */
+  load_driver->set_condition(load_handle, Bulk_condition::NON_EMPTY_TABLE,
+                             m_non_empty_table);
   load_driver->set_condition(load_handle, Bulk_condition::OPTIONAL_ENCLOSE,
                              m_exchange.field.opt_enclosed);
   load_driver->set_condition(load_handle, Bulk_condition::DRYRUN,
@@ -618,7 +793,7 @@ bool Sql_cmd_load_table::bulk_driver_service(THD *thd, const TABLE *table,
   load_driver->set_size(load_handle, Bulk_size::COUNT_ROW_SKIP,
                         m_exchange.skip_lines);
   load_driver->set_size(load_handle, Bulk_size::COUNT_COLUMNS,
-                        table->s->fields);
+                        sql_table->s->fields);
   load_driver->set_size(load_handle, Bulk_size::MEMORY, m_memory_size);
 
   /* Set escape and enclosing character options */
@@ -716,6 +891,11 @@ bool Sql_cmd_load_table::execute_inner(THD *thd,
           ?  // derived tables not allowed
           table_list->updatable_base_table()
           : nullptr;
+
+  if (table_list->is_json_duality_view()) {
+    my_error(ER_JDV_CANNOT_BE_USED_WITH, MYF(0), table_list->alias, "LOAD");
+    return true;
+  }
 
   if (insert_table_ref == nullptr ||
       check_key_in_view(thd, table_list, insert_table_ref)) {
@@ -980,7 +1160,8 @@ bool Sql_cmd_load_table::execute_inner(THD *thd,
 
   READ_INFO read_info(
       file, tot_length,
-      m_exchange.cs ? m_exchange.cs : thd->variables.collation_database,
+      (m_exchange.file_info.cs != nullptr) ? m_exchange.file_info.cs
+                                           : thd->variables.collation_database,
       *field_term, *m_exchange.line.line_start, *m_exchange.line.line_term,
       *enclosed, info.escape_char, m_is_local_file, is_fifo);
   if (read_info.error) {
@@ -999,8 +1180,8 @@ bool Sql_cmd_load_table::execute_inner(THD *thd,
   thd->check_for_truncated_fields = CHECK_FIELD_WARN;
   thd->num_truncated_fields = 0L;
   /* Skip lines if there is a line terminator */
-  if (m_exchange.line.line_term->length() &&
-      m_exchange.filetype != FILETYPE_XML) {
+  if (m_exchange.line.line_term->length() != 0 &&
+      m_exchange.file_info.filetype != FILETYPE_XML) {
     /* m_exchange.skip_lines needs to be preserved for logging */
     while (skip_lines > 0) {
       skip_lines--;
@@ -1019,7 +1200,7 @@ bool Sql_cmd_load_table::execute_inner(THD *thd,
       table->file->ha_start_bulk_insert((ha_rows)0);
     table->copy_blobs = true;
 
-    if (m_exchange.filetype == FILETYPE_XML) /* load xml */
+    if (m_exchange.file_info.filetype == FILETYPE_XML) /* load xml */
       error =
           read_xml_field(thd, info, insert_table_ref, read_info, skip_lines);
     else if (!field_term->length() && !enclosed->length())
@@ -1330,6 +1511,15 @@ bool Sql_cmd_load_table::read_fixed_length(THD *thd, COPY_INFO &info,
       goto continue_loop;
     }
 
+    if (use_sql_fk_checks_for_table(thd, table)) {
+      if (check_all_parent_fk_ref(thd, table, enum_fk_dml_type::FK_INSERT)) {
+        if (thd->is_error()) return true;
+        // continue when IGNORE clause is used.
+        read_info.next_line();
+        goto continue_loop;
+      }
+    }
+
     err = write_record(thd, table, &info, nullptr);
     if (err) return true;
 
@@ -1571,6 +1761,15 @@ bool Sql_cmd_load_table::read_sep_field(THD *thd, COPY_INFO &info,
       goto continue_loop;
     }
 
+    if (use_sql_fk_checks_for_table(thd, table)) {
+      if (check_all_parent_fk_ref(thd, table, enum_fk_dml_type::FK_INSERT)) {
+        if (thd->is_error()) return true;
+        // continue when IGNORE clause is used.
+        read_info.next_line();
+        goto continue_loop;
+      }
+    }
+
     err = write_record(thd, table, &info, nullptr);
     if (err) return true;
     /*
@@ -1750,6 +1949,14 @@ bool Sql_cmd_load_table::read_xml_field(THD *thd, COPY_INFO &info,
       if (thd->is_error()) return true;
       // continue when IGNORE clause is used.
       goto continue_loop;
+    }
+
+    if (use_sql_fk_checks_for_table(thd, table)) {
+      if (check_all_parent_fk_ref(thd, table, enum_fk_dml_type::FK_INSERT)) {
+        if (thd->is_error()) return true;
+        // continue when IGNORE clause is used.
+        goto continue_loop;
+      }
     }
 
     if (write_record(thd, table, &info, nullptr)) return true;
@@ -2583,12 +2790,21 @@ found_eof:
   return true;
 }
 
+/** Check if the given string is made up of whitespace characters only.
+@param[in]  s   the input string to be checked
+@return true iff s is made up of whitespace characters */
+static inline bool is_whitespace(const std::string &s) {
+  return s.empty() || std::find_if(s.begin(), s.end(), [](unsigned char c) {
+                        return !std::isspace(c);
+                      }) == s.end();
+}
+
 bool Sql_cmd_load_table::execute(THD *thd) {
   LEX *const lex = thd->lex;
   bool need_file_acl = false;
 
   if (m_is_bulk_operation) {
-    if (m_exchange.filetype == FILETYPE_XML) {
+    if (m_exchange.file_info.filetype == FILETYPE_XML) {
       my_error(ER_WRONG_USAGE, MYF(0), "LOAD XML", "BULK Algorithm");
       return true;
     }
@@ -2623,6 +2839,12 @@ bool Sql_cmd_load_table::execute(THD *thd) {
                "IGNORE clause");
       return true;
     }
+    if (is_whitespace(m_exchange.file_name)) {
+      my_error(ER_WRONG_USAGE, MYF(0), "LOAD DATA with BULK Algorithm",
+               "filename is empty/has only whitespace characters.");
+      return true;
+    }
+
     /* We need FILE_ACL only if the data source files are in server. */
     need_file_acl = (m_bulk_source == LOAD_SOURCE_FILE);
 
@@ -2634,7 +2856,7 @@ bool Sql_cmd_load_table::execute(THD *thd) {
     }
     if (m_bulk_source == LOAD_SOURCE_URL) {
       my_error(ER_WRONG_USAGE, MYF(0), "LOAD DATA without BULK Algorithm",
-               "URL source");
+               "URI/URL source");
       return true;
     }
     if (m_compression_algorithm_string.length != 0) {

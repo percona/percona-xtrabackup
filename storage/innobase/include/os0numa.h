@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -42,6 +42,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef os0numa_h
 #define os0numa_h
 
+#include "mysql/components/library_mysys/my_system.h"  // my_num_vcpus
 #include "univ.i"
 
 #ifdef HAVE_LIBNUMA
@@ -148,11 +149,7 @@ inline int os_numa_num_configured_cpus() {
 
   return (n_cpus);
 #else
-  /* Consider
-  boost::thread::hardware_concurrency() or
-  std::thread::hardware_concurrency() (C++11) */
-  ut_error;
-  return (-1);
+  return my_num_vcpus();
 #endif
 }
 

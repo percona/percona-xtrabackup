@@ -1,4 +1,4 @@
--- Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+-- Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License, version 2.0,
@@ -31,8 +31,6 @@ set @is_mysql_encrypted = (select ENCRYPTION from information_schema.INNODB_TABL
 -- Tables below are NOT treated as DD tables by MySQL server yet.
 
 SET FOREIGN_KEY_CHECKS= 1;
-
-# Added sql_mode elements and making it as SET, instead of ENUM
 
 set default_storage_engine=InnoDB;
 
@@ -335,7 +333,7 @@ SET @cmd = "CREATE TABLE IF NOT EXISTS procs_priv
   Db char(64) binary DEFAULT '' NOT NULL,
   User char(32) binary DEFAULT '' NOT NULL,
   Routine_name char(64) COLLATE utf8mb3_general_ci DEFAULT '' NOT NULL,
-  Routine_type enum('FUNCTION','PROCEDURE') NOT NULL,
+  Routine_type enum('FUNCTION','PROCEDURE','LIBRARY') NOT NULL,
   Grantor varchar(288) DEFAULT '' NOT NULL,
   Proc_priv set('Execute','Alter Routine','Grant') COLLATE utf8mb3_general_ci DEFAULT '' NOT NULL,
   Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -204,7 +204,6 @@ int runTestMaxTransaction(NDBT_Context *ctx, NDBT_Step *step) {
 }
 
 int runTestMaxOperations(NDBT_Context *ctx, NDBT_Step *step) {
-  Uint32 l = 1;
   int result = NDBT_OK;
   int maxOpsLimit = 1;
   const NdbDictionary::Table *pTab = ctx->getTab();
@@ -320,8 +319,6 @@ int runTestMaxOperations(NDBT_Context *ctx, NDBT_Step *step) {
     }
 
     hugoOps.closeTransaction(pNdb);
-
-    l++;
   }
   maxOpsLimit = lower_max_ops;
   ndbout << "Found max operations limit " << maxOpsLimit << endl;

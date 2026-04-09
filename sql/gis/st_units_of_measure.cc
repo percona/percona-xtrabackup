@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -118,8 +118,7 @@ collation_unordered_map<std::string, Unit> units() {
 bool get_conversion_factor(const std::string &unit, double *conversion_factor) {
   assert(conversion_factor);
   collation_unordered_map<std::string, Unit> unit_table = units();
-  collation_unordered_map<std::string, Unit>::iterator unit_it =
-      unit_table.find(unit);
+  auto unit_it = unit_table.find(unit);
   if (unit_it == unit_table.end()) {
     my_error(ER_UNIT_NOT_FOUND, myf(0), unit.c_str());
     return true;

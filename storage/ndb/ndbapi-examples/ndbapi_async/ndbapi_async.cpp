@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,10 +55,10 @@
 
 #include <mysql.h>
 #include <mysqld_error.h>
-#include <stdlib.h>
-#include <string.h>
 #include <NdbApi.hpp>
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <thread>
 
@@ -109,7 +109,7 @@ typedef struct transaction_t {
   NdbTransaction *conn;
   int used;
 
-  transaction_t() : conn(NULL), used(0) {}
+  transaction_t() : conn(nullptr), used(0) {}
 } transaction_t;
 
 /**
@@ -156,7 +156,7 @@ int permErrors = 0;
 
 void closeTransaction(async_callback_t *cb) {
   cb->ndb->closeTransaction(transaction[cb->transaction].conn);
-  transaction[cb->transaction].conn = 0;
+  transaction[cb->transaction].conn = nullptr;
   transaction[cb->transaction].used = 0;
 }
 
@@ -164,7 +164,7 @@ void closeTransaction(async_callback_t *cb) {
  * Callback executed when transaction has return from NDB
  */
 static void callback(int result, NdbTransaction *trans, void *aObject) {
-  async_callback_t *cbData = (async_callback_t *)aObject;
+  auto *cbData = (async_callback_t *)aObject;
   if (result < 0) {
     /**
      * Error: Temporary or permanent?
@@ -197,7 +197,7 @@ void asynchExitHandler(Ndb *m_ndb) {
 /* returns true if is recoverable (temporary),
  *  false if it is an  error that is permanent.
  */
-bool asynchErrorHandler(NdbTransaction *trans, Ndb *ndb) {
+bool asynchErrorHandler(NdbTransaction *trans, Ndb * /*ndb*/) {
   NdbError error = trans->getNdbError();
   switch (error.status) {
     case NdbError::Success:
@@ -252,14 +252,14 @@ int populate(Ndb *myNdb, int data, async_callback_t *cbData) {
   NdbOperation *myNdbOperation;  // For operations
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_async");
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
-  async_callback_t *cb = NULL;
+  async_callback_t *cb = nullptr;
   int current = 0;
   for (int i = 0; i < 1024; i++) {
     if (transaction[i].used == 0) {
       current = i;
-      if (cbData == 0) {
+      if (cbData == nullptr) {
         /**
          * We already have a callback
          * This is an absolutely new transaction
@@ -282,12 +282,12 @@ int populate(Ndb *myNdb, int data, async_callback_t *cbData) {
       break;
     }
   }
-  if (cb == NULL) return -1;
+  if (cb == nullptr) return -1;
 
   int retries = 0;
   while (retries < MAX_RETRIES) {
     transaction[current].conn = myNdb->startTransaction();
-    if (transaction[current].conn == NULL) {
+    if (transaction[current].conn == nullptr) {
       /**
        * no transaction to close since conn == null
        */
@@ -296,10 +296,10 @@ int populate(Ndb *myNdb, int data, async_callback_t *cbData) {
       continue;
     }
     myNdbOperation = transaction[current].conn->getNdbOperation(myTable);
-    if (myNdbOperation == NULL) {
+    if (myNdbOperation == nullptr) {
       if (asynchErrorHandler(transaction[current].conn, myNdb)) {
         myNdb->closeTransaction(transaction[current].conn);
-        transaction[current].conn = 0;
+        transaction[current].conn = nullptr;
         milliSleep(10);
         retries++;
         continue;
@@ -318,7 +318,7 @@ int populate(Ndb *myNdb, int data, async_callback_t *cbData) {
         myNdbOperation->setValue("COLOR", blue) < 0) {
       if (asynchErrorHandler(transaction[current].conn, myNdb)) {
         myNdb->closeTransaction(transaction[current].conn);
-        transaction[current].conn = 0;
+        transaction[current].conn = nullptr;
         retries++;
         milliSleep(10);
         continue;
@@ -409,7 +409,7 @@ void ndb_run_async_inserts(const char *connectstring) {
    * Do some insert transactions.
    */
   for (int i = 0; i < 1234; i++) {
-    while (populate(myNdb, i, 0) <
+    while (populate(myNdb, i, nullptr) <
            0)  // <0, no space on free list. Sleep and try again.
       milliSleep(10);
   }

@@ -29,6 +29,9 @@ if (`select locate('mrr', @@optimizer_switch) > 0`)
 # Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
 --source include/no_protocol.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --let $support_native_partitioning= 0
 
 --source suite/opt_trace/include/bugs.inc
@@ -82,3 +85,5 @@ WHERE t1.vc IN ( 'AVZPQ' )
       OR t1.i1 IS NULL AND t1.pk >= 9;
 
 DROP TABLE t1, t2;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

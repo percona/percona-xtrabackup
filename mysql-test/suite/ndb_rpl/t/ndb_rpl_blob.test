@@ -17,13 +17,13 @@ insert into t1 values(1, repeat('abc',10));
 insert into t1 values(2, repeat('def',200));
 insert into t1 values(3, repeat('ghi',3000));
 
-select 'M', a, sha1(b) from t1
+select 'M', a, sha2(b,256) from t1
 order by a;
 
 --sync_slave_with_master
 --sleep 5
 --connection slave
-select 'S', a, sha1(b) from t1
+select 'S', a, sha2(b,256) from t1
 order by a;
 --connection master
 
@@ -31,13 +31,13 @@ update t1 set b = repeat('xyz',3000) where a = 1;
 delete from t1 where a = 2;
 update t1 set b = concat(b,'xyz') where a = 3;
 
-select 'M', a, sha1(b) from t1
+select 'M', a, sha2(b,256) from t1
 order by a;
 
 --sync_slave_with_master
 --sleep 5
 --connection slave
-select 'S', a, sha1(b) from t1
+select 'S', a, sha2(b,256) from t1
 order by a;
 
 --connection master
@@ -83,13 +83,13 @@ insert into t1 values (
 insert into t1 values (
   9, repeat(@s2,427), NULL, NULL, NULL);
 
-select 'M', a, sha1(b), c, sha1(d), sha1(e)
+select 'M', a, sha2(b,256), c, sha2(d,256), sha2(e,256)
 from t1 order by a;
 
 --sync_slave_with_master
 --sleep 5
 --connection slave
-select 'S', a, sha1(b), c, sha1(d), sha1(e)
+select 'S', a, sha2(b,256), c, sha2(d,256), sha2(e,256)
 from t1 order by a;
 
 --connection master
@@ -132,13 +132,13 @@ insert into t1 values ('t','t111111111111',
 insert into t1 values ('t','t1111111111111',
   'ghi',repeat(@s2,1000),31,32,33,34,35);
 
-select 'M', db, name, sha1(query), node_id, epoch, id, version, type
+select 'M', db, name, sha2(query,256), node_id, epoch, id, version, type
 from t1 order by db, name;
 
 --sync_slave_with_master
 --sleep 5
 --connection slave
-select 'S', db, name, sha1(query), node_id, epoch, id, version, type
+select 'S', db, name, sha2(query,256), node_id, epoch, id, version, type
 from t1 order by db, name;
 
 --connection master

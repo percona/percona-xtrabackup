@@ -1,0 +1,95 @@
+#####################################################################
+# With sql_log_bin=0, data events are not sent to the binlog injector
+#####################################################################
+SET sql_log_bin=0;
+CREATE TABLE t1 (a INT PRIMARY KEY, b BLOB, lb LONGBLOB, lt LONGTEXT) ENGINE = NDB;
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+INSERT INTO t1 VALUES (1, repeat('!', 4096), repeat('@', 65536), repeat('lorem', 65536)),
+(2, repeat('#', 4096), repeat('$', 65536), repeat('ipsum', 65536));
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+# No more than 4096 bytes of event data was received
+DROP TABLE t1;
+SET sql_log_bin=1;
+#####################################################################
+# With log-replica-updates=OFF, data events are filtered out and thus
+# updates applied by a replica server are not sent to the injector.
+#####################################################################
+include/rpl/init.inc [topology=3->2]
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+include/rpl/connect.inc [creating server.1]
+include/rpl/connect.inc [creating replica]
+include/rpl/connect.inc [creating source]
+[connection server.1]
+SELECT @@log_replica_updates;
+@@log_replica_updates
+0
+# Save Server.1 start counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+[connection replica]
+# Save Replica start counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+[connection source]
+CREATE TABLE t1 (a INT PRIMARY KEY, b BLOB, mb MEDIUMBLOB) ENGINE = NDB;
+INSERT INTO t1 VALUES (1, repeat(0x41, 8192), repeat(0x42, 65536)),
+(2, repeat(0x43, 8192), repeat(0x44, 65536)),
+(3, repeat(0x45, 8192), repeat(0x46, 65536)),
+(4, repeat(0x47, 8192), repeat(0x48, 65536));
+[connection replica]
+SELECT LENGTH(b), LENGTH(mb) FROM t1;
+LENGTH(b)	LENGTH(mb)
+8192	65536
+8192	65536
+8192	65536
+8192	65536
+[connection server.1]
+# Save Server.1 end counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+# No row event data was received
+[connection replica]
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+# All row event data was received
+[connection source]
+DROP TABLE t1;
+include/rpl/deinit.inc
+#####################################################################
+# With binlog slices, data events are split among the subscribers
+# according to the slice id they have subscribed to. Only data
+# that is for the subscriber to write to binlog can be received by
+# said subscriber.
+#####################################################################
+CREATE TABLE mysql.ndb_replication(
+db VARBINARY(63),
+table_name VARBINARY(63),
+server_id INT UNSIGNED,
+binlog_type INT UNSIGNED,
+conflict_fn VARBINARY(128),
+binlog_row_slice_count INT UNSIGNED,
+binlog_row_slice_id INT UNSIGNED,
+PRIMARY KEY USING HASH(db, table_name, server_id)
+) ENGINE = NDB;
+INSERT INTO mysql.ndb_replication VALUES ("test", "t1", 1, 3, NULL, 2, 0);
+INSERT INTO mysql.ndb_replication VALUES ("test", "t1", 2, 3, NULL, 2, 1);
+SELECT * FROM mysql.ndb_replication ORDER BY server_id;
+db	table_name	server_id	binlog_type	conflict_fn	binlog_row_slice_count	binlog_row_slice_id
+test	t1	1	3	NULL	2	0
+test	t1	2	3	NULL	2	1
+CREATE TABLE t1 (a INT PRIMARY KEY, data VARBINARY(2048)) ENGINE = NDB;
+# Save Server.1 start counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+# Save Server.2 start counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @start_event_bytes;
+# Insert data and verify
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+1000
+# Save Server.1 end counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+# Save Server.2 end counter
+SELECT variable_value FROM performance_schema.global_status WHERE variable_name = 'Ndb_api_event_bytes_count_injector' INTO @end_event_bytes;
+# Build up some data to assert byte distribution 
+# Server 2 event data was balanced out
+# Server 1 event data was balanced out
+DROP TABLE t1;
+DROP TABLE mysql.ndb_replication;

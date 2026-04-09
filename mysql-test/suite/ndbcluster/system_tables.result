@@ -1,0 +1,13 @@
+#
+# BUG#37413657 System tables never stored in NDB
+#
+ALTER TABLE mysql.user ENGINE = NDB;
+ERROR HY000: Storage engine 'ndbcluster' does not support system tables. [mysql.user]
+ALTER TABLE mysql.db ENGINE = NDB;
+ERROR HY000: Storage engine 'ndbcluster' does not support system tables. [mysql.db]
+ALTER TABLE mysql.tables_priv ENGINE = NDB;
+ERROR HY000: Storage engine 'ndbcluster' does not support system tables. [mysql.tables_priv]
+ALTER TABLE mysql.columns_priv ENGINE = NDB;
+ERROR HY000: Storage engine 'ndbcluster' does not support system tables. [mysql.columns_priv]
+ALTER TABLE mysql.proxies_priv ENGINE = NDB;
+ERROR HY000: Storage engine 'ndbcluster' does not support system tables. [mysql.proxies_priv]

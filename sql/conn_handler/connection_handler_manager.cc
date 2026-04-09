@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 
 #include "sql/conn_handler/connection_handler_manager.h"
 
-#include <assert.h>
+#include <cassert>
 #include <ctime>
 #include <new>
 
@@ -291,8 +291,7 @@ int my_connection_handler_set(Connection_handler_functions *chf,
   assert(chf != nullptr && tef != nullptr);
   if (chf == nullptr || tef == nullptr) return 1;
 
-  Plugin_connection_handler *conn_handler =
-      new (std::nothrow) Plugin_connection_handler(chf);
+  auto *conn_handler = new (std::nothrow) Plugin_connection_handler(chf);
   if (conn_handler == nullptr) return 1;
 
   Connection_handler_manager::get_instance()->load_connection_handler(

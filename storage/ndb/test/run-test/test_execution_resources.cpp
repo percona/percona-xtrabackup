@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,7 @@
 #include <utility>
 #include <vector>
 
-bool TestExecutionResources::registerExecutable(std::string exe,
+bool TestExecutionResources::registerExecutable(const std::string &exe,
                                                 bool isRequired) {
   if (m_resources.find(exe) != m_resources.end()) {
     return false;
@@ -43,7 +43,8 @@ bool TestExecutionResources::registerExecutable(std::string exe,
   return true;
 }
 
-bool TestExecutionResources::registerLibrary(std::string lib, bool isRequired) {
+bool TestExecutionResources::registerLibrary(const std::string &lib,
+                                             bool isRequired) {
   if (m_resources.find(lib) != m_resources.end()) {
     return false;
   }
@@ -54,7 +55,7 @@ bool TestExecutionResources::registerLibrary(std::string lib, bool isRequired) {
   return true;
 }
 
-bool TestExecutionResources::setRequired(std::string resource) {
+bool TestExecutionResources::setRequired(const std::string &resource) {
   auto it = m_resources.find(resource);
   if (it == m_resources.end()) {
     return false;
@@ -92,7 +93,7 @@ bool TestExecutionResources::setPath(Resource &resource, int prefix,
 
   const bool setFolder = (resource.type == Resource::Type::Lib);
   std::string path = find_path(resource.name, prefix, setFolder);
-  if (path != "") {
+  if (!path.empty()) {
     resource.paths[prefix] = path;
     return true;
   }
@@ -108,8 +109,8 @@ bool TestExecutionResources::setPath(Resource &resource, int prefix,
   return ok;
 }
 
-std::string TestExecutionResources::find_path(std::string name, int prefix,
-                                              bool returnFolder) {
+std::string TestExecutionResources::find_path(const std::string &name,
+                                              int prefix, bool returnFolder) {
   for (auto &folder : m_search_path) {
     std::string path = std::string(m_prefixes[prefix]) + "/" + folder;
     std::string fullResourcePath = path + "/" + name;
@@ -121,7 +122,7 @@ std::string TestExecutionResources::find_path(std::string name, int prefix,
   return {};
 }
 
-void TestExecutionResources::reportNonRequired(std::string exe,
+void TestExecutionResources::reportNonRequired(const std::string &exe,
                                                const char *prefix,
                                                std::vector<std::string> *msgs) {
   if (msgs == nullptr) return;
@@ -130,7 +131,8 @@ void TestExecutionResources::reportNonRequired(std::string exe,
   msgs->push_back(std::move(msg));
 }
 
-void TestExecutionResources::reportRequired(std::string exe, const char *prefix,
+void TestExecutionResources::reportRequired(const std::string &exe,
+                                            const char *prefix,
                                             std::vector<std::string> *msgs) {
   if (msgs == nullptr) return;
 
@@ -138,7 +140,8 @@ void TestExecutionResources::reportRequired(std::string exe, const char *prefix,
   msgs->push_back(std::move(msg));
 }
 
-std::string TestExecutionResources::getPath(std::string name, int prefix) {
+std::string TestExecutionResources::getPath(const std::string &name,
+                                            int prefix) {
   require(isValidPrefix(prefix));
 
   const auto resource = m_resources.find(name);

@@ -389,7 +389,7 @@ engine=ndb charset=utf8mb3;
 insert into t1 values (1, repeat(_utf8mb3 0xe288ab6474, 200));
 --error ER_DUP_ENTRY
 insert into t1 values (2, repeat(_utf8mb3 0xe288ab6474, 200));
-select a, sha1(b) from t1;
+select a, sha2(b,256) from t1;
 
 # perl -e 'print pack("H2000","e288ab6474"x200)' | sha1sum
 

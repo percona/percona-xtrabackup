@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET sql_mode = 'traditional';
 
 #------------------------------------------------------------------
@@ -198,3 +199,4 @@ a1	a2
 2876543	20111098
 DROP TRIGGER t1_bu;
 DROP TABLE t1, t2;
+include/rpl/set_gtid_mode_on.inc

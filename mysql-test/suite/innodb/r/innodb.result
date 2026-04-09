@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2,t3,t4;
 drop database if exists mysqltest;
 CREATE TABLE bug58912 (a BLOB, b TEXT, PRIMARY KEY(a(1))) ENGINE=InnoDB;
@@ -1862,7 +1863,7 @@ variable_value
 {checked_valid}
 SELECT sum(variable_value) - @innodb_rows_deleted_orig FROM performance_schema.global_status WHERE LOWER(variable_name) like 'innodb%_rows_deleted';
 sum(variable_value) - @innodb_rows_deleted_orig
-1830
+1846
 SELECT sum(variable_value) - @innodb_rows_inserted_orig FROM performance_schema.global_status WHERE LOWER(variable_name) like 'innodb%_rows_inserted';
 sum(variable_value) - @innodb_rows_inserted_orig
 2733
@@ -3476,3 +3477,4 @@ drop function f1;
 SET @@global.log_bin_trust_function_creators= @old_log_bin_trust_function_creators;
 Warnings:
 Warning	1287	'@@log_bin_trust_function_creators' is deprecated and will be removed in a future release.
+include/rpl/set_gtid_mode_on.inc

@@ -1,0 +1,51 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/sakila-schema.sql
+--source ../include/schema/sakila-data.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=sakila
+--let $mrs_add_schema_path=/sakila
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/city1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=country
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--let $mrs_add_db_object_join_columns=country
+--source ../include/mrs/db_object/add_join_flat.inc
+
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/city2
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=country
+--let $mrs_add_db_object_join_subobj=country
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--source ../include/mrs/db_object/add_join_subobj.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port
+
+--exec $MRS_CLIENT_ARGS --path /svc/sakila/city1/1 --wait-until-status 60
+--exec $MRS_CLIENT_ARGS --path /svc/sakila/city2/1 --wait-until-status 60
+
+# Cleanup
+DROP SCHEMA sakila;
+--source ../include/mrs/cleanup.inc

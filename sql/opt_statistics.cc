@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,8 @@
 
 #include "sql/opt_statistics.h"
 
-#include <assert.h>
 #include <algorithm>
+#include <cassert>
 
 #include "my_base.h"
 
@@ -77,9 +77,9 @@ rec_per_key_t guess_rec_per_key(const TABLE *const table, const KEY *const key,
     rec_per_key_all = key->records_per_key(key->user_defined_key_parts - 1);
   else {
     if (key->actual_flags & HA_NOSAME)
-      rec_per_key_all = 1.0f;  // Unique index
+      rec_per_key_all = 1.0F;  // Unique index
     else {
-      rec_per_key_all = 10.0f;  // Non-unique index
+      rec_per_key_all = 10.0F;  // Non-unique index
 
       /*
         Assume the index contains at least ten unique values. Need to
@@ -87,14 +87,14 @@ rec_per_key_t guess_rec_per_key(const TABLE *const table, const KEY *const key,
         empty table we assume records per key is 1.
       */
       rec_per_key_all =
-          std::min(rec_per_key_all, max(rec_per_key_t(table_rows) / 10, 1.0f));
+          std::min(rec_per_key_all, max(rec_per_key_t(table_rows) / 10, 1.0F));
     }
   }
 
   rec_per_key_t rec_per_key;
 
   // rec_per_key estimate for first key part (1% of records)
-  const rec_per_key_t rec_per_key_first = table_rows * 0.01f;
+  const rec_per_key_t rec_per_key_first = table_rows * 0.01F;
 
   if (rec_per_key_first < rec_per_key_all) {
     rec_per_key = rec_per_key_all;
@@ -108,7 +108,7 @@ rec_per_key_t guess_rec_per_key(const TABLE *const table, const KEY *const key,
     } else {
       // Single column index
       if (key->actual_flags & HA_NOSAME)
-        rec_per_key = 1.0f;  // Unique index
+        rec_per_key = 1.0F;  // Unique index
       else
         rec_per_key = rec_per_key_first;  // Non-unique index
     }

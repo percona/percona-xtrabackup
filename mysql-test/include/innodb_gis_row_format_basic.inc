@@ -13,7 +13,7 @@ eval CREATE TABLE t1 (
   spatial_point point NOT NULL SRID 0,
   PRIMARY KEY(id),
   SPATIAL KEY (spatial_point)
-) ROW_FORMAT=$row_format ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8_bin;
+) ROW_FORMAT=$row_format ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 
 INSERT INTO t1 (c2, c1, c3, spatial_poINT) VALUES
   ('y', 's', 'j', ST_GeomFromText('POINT(167 74)')),
@@ -404,12 +404,10 @@ INSERT INTO t1 (c2, c1, c3, spatial_point) VALUES
   ('m', 'u', 'p', ST_GeomFromText('POINT(1192 1181)'));
 ROLLBACK;
 
---skip_if_hypergraph  # Returns zero because of bug#36361834.
 SELECT COUNT(*) FROM t1;
 UPDATE t1 SET spatial_point = ST_GeomFromText('POINT(123 456)') WHERE id < 2000;
 SET @g1 = ST_GeomFromText('Polygon((123 456, 123 678, 456 678,456 456,123 456))');
 DELETE FROM t1 WHERE MBRContains(@g1, t1.spatial_point);
---skip_if_hypergraph  # Returns zero because of bug#36361834.
 SELECT COUNT(*) FROM t1;
 
 DROP TABLE t1;

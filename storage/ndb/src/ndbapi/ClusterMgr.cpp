@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,7 +52,6 @@
 
 #include <mgmapi.h>
 #include <mgmapi_config_parameters.h>
-#include <EventLogger.hpp>
 #include <mgmapi_configuration.hpp>
 
 #if 0
@@ -67,8 +66,6 @@
 int global_flag_skip_invalidate_cache = 0;
 int global_flag_skip_waiting_for_clean_cache = 0;
 // #define DEBUG_REG
-
-extern EventLogger *g_eventLogger;
 
 // Just a C wrapper for threadMain
 extern "C" void *runClusterMgr_C(void *me) {
@@ -317,7 +314,7 @@ void ClusterMgr::threadMain() {
   signal.theTrace = 0;
   signal.theLength = ApiRegReq::SignalLength;
 
-  ApiRegReq *req = CAST_PTR(ApiRegReq, signal.getDataPtrSend());
+  auto *req = CAST_PTR(ApiRegReq, signal.getDataPtrSend());
   req->ref = numberToRef(API_CLUSTERMGR, theFacade.ownId());
   req->version = NDB_VERSION;
   req->mysql_version = NDB_MYSQL_VERSION_D;
@@ -369,8 +366,7 @@ void ClusterMgr::threadMain() {
       m_cluster_state = CS_waiting_for_first_connect;
     }
 
-    NodeFailRep *nodeFailRep =
-        CAST_PTR(NodeFailRep, nodeFail_signal.getDataPtrSend());
+    auto *nodeFailRep = CAST_PTR(NodeFailRep, nodeFail_signal.getDataPtrSend());
     Uint32 theAllNodes[NodeBitmask::Size];
     nodeFailRep->noOfNodes = 0;
     NodeBitmask::clear(theAllNodes);
@@ -388,7 +384,7 @@ void ClusterMgr::threadMain() {
 
       if (!theNode.defined) continue;
 
-      if (theNode.is_connected() == false) {
+      if (!theNode.is_connected()) {
         theFacade.startConnecting(nodeId);
         continue;
       }
@@ -524,7 +520,7 @@ void ClusterMgr::trp_deliver_signal(const NdbApiSignal *sig,
 
     case GSN_ALTER_TABLE_REP: {
       if (theFacade.m_globalDictCache == nullptr) break;
-      const AlterTableRep *rep = (const AlterTableRep *)theData;
+      const auto *rep = (const AlterTableRep *)theData;
       theFacade.m_globalDictCache->lock();
       theFacade.m_globalDictCache->alter_table_rep(
           (const char *)ptr[0].p, rep->tableId, rep->tableVersion,
@@ -588,10 +584,10 @@ void ClusterMgr::trp_deliver_signal(const NdbApiSignal *sig,
     default:
       break;
   }
-  return;
 }
 
-ClusterMgr::Node::Node() : hbFrequency(0), hbCounter(0), processInfoSent(0) {}
+ClusterMgr::Node::Node()
+    : hbFrequency(0), hbCounter(0), processInfoSent(false) {}
 
 /**
  * recalcMinDbVersion
@@ -696,7 +692,7 @@ void ClusterMgr::sendProcessInfoReport(NodeId nodeId) {
   signal.theTrace = 0;
   signal.theLength = ProcessInfoRep::SignalLength;
 
-  ProcessInfoRep *report = CAST_PTR(ProcessInfoRep, signal.getDataPtrSend());
+  auto *report = CAST_PTR(ProcessInfoRep, signal.getDataPtrSend());
   m_process_info->buildProcessInfoReport(report);
 
   const char *uri_path = m_process_info->getUriPath();
@@ -720,7 +716,7 @@ void ClusterMgr::sendProcessInfoReport(NodeId nodeId) {
  ******************************************************************************/
 
 void ClusterMgr::execAPI_REGREQ(const Uint32 *theData) {
-  const ApiRegReq *const apiRegReq = (const ApiRegReq *)&theData[0];
+  const auto *const apiRegReq = (const ApiRegReq *)&theData[0];
   const NodeId nodeId = refToNode(apiRegReq->ref);
 
 #ifdef DEBUG_REG
@@ -745,12 +741,9 @@ void ClusterMgr::execAPI_REGREQ(const Uint32 *theData) {
     node.m_info.m_version = apiRegReq->version;
     node.m_info.m_mysql_version = apiRegReq->mysql_version;
 
-    if (getMajor(node.m_info.m_version) < getMajor(NDB_VERSION) ||
-        getMinor(node.m_info.m_version) < getMinor(NDB_VERSION)) {
-      node.compatible = false;
-    } else {
-      node.compatible = true;
-    }
+    node.compatible =
+        !(getMajor(node.m_info.m_version) < getMajor(NDB_VERSION) ||
+          getMinor(node.m_info.m_version) < getMinor(NDB_VERSION));
   }
 
   NdbApiSignal signal(numberToRef(API_CLUSTERMGR, theFacade.ownId()));
@@ -759,7 +752,7 @@ void ClusterMgr::execAPI_REGREQ(const Uint32 *theData) {
   signal.theTrace = 0;
   signal.theLength = ApiRegConf::SignalLength;
 
-  ApiRegConf *const conf = CAST_PTR(ApiRegConf, signal.getDataPtrSend());
+  auto *const conf = CAST_PTR(ApiRegConf, signal.getDataPtrSend());
   conf->qmgrRef = numberToRef(API_CLUSTERMGR, theFacade.ownId());
   conf->version = NDB_VERSION;
   conf->mysql_version = NDB_MYSQL_VERSION_D;
@@ -784,8 +777,7 @@ void ClusterMgr::execAPI_REGREQ(const Uint32 *theData) {
 
 void ClusterMgr::execAPI_REGCONF(const NdbApiSignal *signal,
                                  const LinearSectionPtr ptr[]) {
-  const ApiRegConf *apiRegConf =
-      CAST_CONSTPTR(ApiRegConf, signal->getDataPtr());
+  const auto *apiRegConf = CAST_CONSTPTR(ApiRegConf, signal->getDataPtr());
   const NodeId nodeId = refToNode(apiRegConf->qmgrRef);
 
 #ifdef DEBUG_REG
@@ -888,7 +880,7 @@ void ClusterMgr::execAPI_REGCONF(const NdbApiSignal *signal,
 }
 
 void ClusterMgr::execAPI_REGREF(const Uint32 *theData) {
-  const ApiRegRef *ref = (const ApiRegRef *)theData;
+  const auto *ref = (const ApiRegRef *)theData;
 
   const NodeId nodeId = refToNode(ref->ref);
 
@@ -995,7 +987,7 @@ void ClusterMgr::execDUMP_STATE_ORD(const NdbApiSignal *signal,
         }
         ptr[i].sz = sec_len;
       }
-      Uint32 *dummy_data = new Uint32[sec_max_len];
+      auto *dummy_data = new Uint32[sec_max_len];
       for (Uint32 i = 0; i < sec_max_len; i++) {
         dummy_data[i] = fill_word;
       }
@@ -1052,13 +1044,12 @@ void ClusterMgr::execDUMP_STATE_ORD(const NdbApiSignal *signal,
 
 void ClusterMgr::execNF_COMPLETEREP(const NdbApiSignal *signal,
                                     const LinearSectionPtr ptr[3]) {
-  const NFCompleteRep *nfComp =
-      CAST_CONSTPTR(NFCompleteRep, signal->getDataPtr());
+  const auto *nfComp = CAST_CONSTPTR(NFCompleteRep, signal->getDataPtr());
   const NodeId nodeId = nfComp->failedNodeId;
   assert(nodeId > 0 && nodeId < MAX_NODES);
 
   trp_node &node = theNodes[nodeId];
-  if (node.nfCompleteRep == false) {
+  if (!node.nfCompleteRep) {
     node.nfCompleteRep = true;
     theFacade.for_each(this, signal, ptr);
   }
@@ -1205,7 +1196,7 @@ void ClusterMgr::reportDisconnected(NodeId nodeId) {
    */
   if (theFacade.m_poll_owner != this) unlock();
 
-  if (node_failrep == false) {
+  if (!node_failrep) {
     /**
      * Inform API
      *
@@ -1219,7 +1210,7 @@ void ClusterMgr::reportDisconnected(NodeId nodeId) {
     signal.theLength = NodeFailRep::SignalLengthLong;
     signal.m_noOfSections = 1;
 
-    NodeFailRep *rep = CAST_PTR(NodeFailRep, signal.getDataPtrSend());
+    auto *rep = CAST_PTR(NodeFailRep, signal.getDataPtrSend());
     Uint32 theAllNodes[NodeBitmask::Size];
     rep->failNo = 0;
     rep->masterNodeId = 0;
@@ -1235,7 +1226,7 @@ void ClusterMgr::reportDisconnected(NodeId nodeId) {
 
 void ClusterMgr::execNODE_FAILREP(const NdbApiSignal *sig,
                                   const LinearSectionPtr ptr[]) {
-  const NodeFailRep *rep = CAST_CONSTPTR(NodeFailRep, sig->getDataPtr());
+  const auto *rep = CAST_CONSTPTR(NodeFailRep, sig->getDataPtr());
   NodeBitmask mask;
   if (sig->getLength() == NodeFailRep::SignalLengthLong_v1) {
     mask.assign(NodeBitmask::Size, rep->theAllNodes);
@@ -1253,7 +1244,7 @@ void ClusterMgr::execNODE_FAILREP(const NdbApiSignal *sig,
   signal.theLength = NodeFailRep::SignalLengthLong;
   signal.m_noOfSections = 1;
 
-  NodeFailRep *copy = CAST_PTR(NodeFailRep, signal.getDataPtrSend());
+  auto *copy = CAST_PTR(NodeFailRep, signal.getDataPtrSend());
   copy->failNo = 0;
   copy->masterNodeId = 0;
   copy->noOfNodes = 0;
@@ -1269,7 +1260,7 @@ void ClusterMgr::execNODE_FAILREP(const NdbApiSignal *sig,
     bool connected = theNode.is_connected();
     set_node_dead(theNode);
 
-    if (node_failrep == false) {
+    if (!node_failrep) {
       theNode.m_node_fail_rep = true;
       NodeBitmask::set(theAllNodes, i);
       copy->noOfNodes++;
@@ -1296,7 +1287,7 @@ void ClusterMgr::execNODE_FAILREP(const NdbApiSignal *sig,
     signal.theTrace = 0;
     signal.theLength = NFCompleteRep::SignalLength;
 
-    NFCompleteRep *rep = CAST_PTR(NFCompleteRep, signal.getDataPtrSend());
+    auto *rep = CAST_PTR(NFCompleteRep, signal.getDataPtrSend());
     rep->blockNo = 0;
     rep->nodeId = getOwnNodeId();
     rep->unused = 0;
@@ -1304,7 +1295,7 @@ void ClusterMgr::execNODE_FAILREP(const NdbApiSignal *sig,
 
     for (Uint32 i = 1; i < MAX_NODES; i++) {
       trp_node &theNode = theNodes[i];
-      if (theNode.defined && theNode.nfCompleteRep == false) {
+      if (theNode.defined && !theNode.nfCompleteRep) {
         rep->failedNodeId = i;
         execNF_COMPLETEREP(&signal, nullptr);
       }
@@ -1710,7 +1701,7 @@ void ArbitMgr::sendSignalToQmgr(ArbitSignal &aSignal) {
   signal.theTrace = 0;
   signal.theLength = ArbitSignalData::SignalLength;
 
-  ArbitSignalData *sd = CAST_PTR(ArbitSignalData, signal.getDataPtrSend());
+  auto *sd = CAST_PTR(ArbitSignalData, signal.getDataPtrSend());
 
   sd->sender = numberToRef(API_CLUSTERMGR, m_clusterMgr.getOwnNodeId());
   sd->code = aSignal.data.code;

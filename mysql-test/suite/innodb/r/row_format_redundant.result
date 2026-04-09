@@ -1,3 +1,4 @@
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 #
 # Bug#21644827 - FTS, ASSERT !SRV_READ_ONLY_MODE || M_IMPL.M_LOG_MODE ==
 #                MTR_LOG_NO_REDO

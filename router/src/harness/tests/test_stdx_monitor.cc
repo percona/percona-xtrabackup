@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -62,7 +62,7 @@ class MoveOnly {
  * Monitor with a trivial type.
  */
 TEST(Monitor, trivial) {
-  Monitor<int> m{1};
+  Monitor<int> const m{1};
 
   EXPECT_EQ(1, m([](auto &v) { return v; }));
 }
@@ -71,7 +71,7 @@ TEST(Monitor, trivial) {
  * Monitor with a move-only type.
  */
 TEST(Monitor, move_only) {
-  Monitor<MoveOnly<int>> m{1};
+  Monitor<MoveOnly<int>> const m{1};
 
   EXPECT_EQ(1, m([](auto &v) { return v.value(); }));
 }
@@ -80,7 +80,7 @@ TEST(Monitor, move_only) {
  * Monitor with a MoveOnly<unique_ptr<int>> type.
  */
 TEST(Monitor, move_only_unique_ptr) {
-  Monitor<MoveOnly<std::unique_ptr<int>>> m{std::make_unique<int>(1)};
+  Monitor<MoveOnly<std::unique_ptr<int>>> const m{std::make_unique<int>(1)};
 
   EXPECT_EQ(1, m([](auto &v) { return *v.value(); }));
 }
@@ -89,7 +89,7 @@ TEST(Monitor, move_only_unique_ptr) {
  * Monitor with a unique_ptr type.
  */
 TEST(Monitor, unique_ptr) {
-  Monitor<std::unique_ptr<int>> m{std::make_unique<int>(1)};
+  Monitor<std::unique_ptr<int>> const m{std::make_unique<int>(1)};
 
   EXPECT_EQ(1, m([](auto &v) { return *v; }));
 }

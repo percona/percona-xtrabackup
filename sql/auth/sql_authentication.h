@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 #include <openssl/rsa.h>
 #include <stddef.h>
 #include <sys/types.h>
+#include <vector>
 
 #include "lex_string.h"
 #include "my_thread_local.h"    // my_thread_id
@@ -167,7 +168,11 @@ class Cached_authentication_plugins {
  public:
   static const LEX_CSTRING cached_plugins_names[(uint)PLUGIN_LAST];
   static void optimize_plugin_compare_by_pointer(LEX_CSTRING *plugin);
-
+  /**
+    List of cached plugins that are active (loaded and enabled)
+    @sa @ref decoy_user
+  */
+  std::vector<cached_plugins_enum> enabled_plugins;
   /**
     Compare given plugin against one of the cached ones
 

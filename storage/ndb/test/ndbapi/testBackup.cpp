@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -915,8 +915,6 @@ int runVerifyUndoData(NDBT_Context *ctx, NDBT_Step *step) {
   int records = ctx->getNumRecords();
   Ndb *pNdb = GETNDB(step);
   int count = 0;
-  int num = 5;
-  if (records - 5 < 0) num = 1;
 
   const NdbDictionary::Table *tab =
       GETNDB(step)->getDictionary()->getTable(ctx->getTab()->getName());
@@ -2017,6 +2015,171 @@ int runCheckPrintout(NDBT_Context *ctx, NDBT_Step *step) {
   return result;
 }
 
+int restartDataNodes(NDBT_Context *ctx, NDBT_Step *step) {
+  NdbRestarter restarter;
+  int res = NDBT_OK;
+  const int loops = ctx->getNumLoops();
+
+  for (int l = 0; l < loops; l++) {
+    const bool initial = (rand() % 2 == 1);
+    const bool abort = (rand() % 2 == 1);
+    const int nodeId = restarter.getNode(NdbRestarter::NS_RANDOM);
+
+    g_err << "Restarting data node " << nodeId << " initial " << initial
+          << " abort " << abort << endl;
+
+    if (restarter.restartOneDbNode(nodeId, initial, false, abort, false) !=
+        NDBT_OK) {
+      g_err << "Restart request failed." << endl;
+      res = NDBT_FAILED;
+      break;
+    }
+
+    if (restarter.waitClusterStarted() != NDBT_OK) {
+      g_err << "Wait for recovery failed." << endl;
+      res = NDBT_FAILED;
+      break;
+    }
+  }
+
+  ctx->stopTest();
+
+  return res;
+}
+
+int runBackupsUntilStopped(NDBT_Context *ctx, NDBT_Step *step) {
+  int res = NDBT_OK;
+  NdbBackup backup;
+  backup.set_default_encryption_password(
+      ctx->getProperty("BACKUP_PASSWORD", (char *)NULL), -1);
+  int consecutiveFailCount = 0;
+
+  while (!ctx->isTestStopped()) {
+    unsigned backup_id = 0;
+    if (backup.start(backup_id) != NDBT_OK) {
+      g_err << "Failed to start backup " << endl;
+      consecutiveFailCount++;
+      if (consecutiveFailCount < 20) {
+        NdbSleep_SecSleep(1);
+        continue;
+      }
+      g_err << "Too many consecutive failures" << endl;
+      res = NDBT_FAILED;
+      ctx->stopTest();
+      break;
+    }
+    consecutiveFailCount = 0;
+    g_err << "Started backup " << backup_id << endl;
+
+    NdbSleep_MilliSleep(100);
+
+    g_err << "Clearing out backups" << endl;
+    clearOldBackups(ctx, step);
+  }
+
+  return res;
+}
+
+int createCopy(NDBT_Context *ctx, NDBT_Step *step,
+               NdbDictionary::Object::PartitionBalance bal) {
+  Ndb *pNdb = GETNDB(step);
+  NdbDictionary::Dictionary *pDict = pNdb->getDictionary();
+
+  NdbDictionary::Table copy(*NDBT_Tables::getTable(ctx->getTableName(0)));
+
+  copy.setName("COPYT");
+  copy.setDefaultNoPartitionsFlag(true);
+  copy.setFragmentType(NdbDictionary::Object::FragAllLarge);
+  copy.setPartitionBalance(bal);
+  if (pDict->createTable(copy) != 0) {
+    ndbout << pDict->getNdbError() << endl;
+    return NDBT_FAILED;
+  }
+  return NDBT_OK;
+}
+
+/**
+ * Check that the order of BACKUP_FRAGMENT_CONF and BACKUP_FRAGMENT_REF
+ * signal arrival at the master node does not affect the data node's
+ * normal behavior.
+ */
+int runBackupFragmentConsistency(NDBT_Context *ctx, NDBT_Step *step) {
+  NdbBackup backup;
+  backup.set_default_encryption_password(
+      ctx->getProperty("BACKUP_PASSWORD", (char *)NULL), -1);
+  Ndb *pNdb = GETNDB(step);
+  NdbDictionary::Dictionary *pDict = pNdb->getDictionary();
+  NdbRestarter res(nullptr, &ctx->m_cluster_connection);
+
+  int master = res.getNode(NdbRestarter::NS_MASTER);
+  int node = res.getNode(NdbRestarter::NS_NON_MASTER);
+  int num_ldm = res.getNumLdmThreads(node);
+  if (num_ldm < 2) {
+    ctx->stopTest();
+    g_err << "The test needs at least 2 LDM threads; only " << num_ldm
+          << " configured" << endl;
+    return NDBT_SKIPPED;
+  }
+
+  // New table, with twice the number of fragments, ensuring at least two
+  // fragments per LDM instance.
+  if (createCopy(ctx, step,
+                 NdbDictionary::Object::PartitionBalance_ForRAByLDM) !=
+      NDBT_OK) {
+    return NDBT_FAILED;
+  }
+
+  g_err << "Victim node is: " << node << endl;
+  /**
+   * Send EI 10057 to delay BACKUP_FRAGMENT_REQ for some fragment in the
+   * target node.
+   * Abort the backup of the next fragment(s) of same table that would be
+   * done in the same node.
+   */
+  if (res.insertErrorInNode(node, 10057)) {
+    g_err << "Cannot insert error 10057 in master" << endl;
+    pDict->dropTable("COPYT");
+    return NDBT_FAILED;
+  }
+
+  unsigned backupId = 0;
+  if (backup.start(backupId, 1, 0, 1) == -1) {
+    g_err << "Failed to start backup nowait" << endl;
+    res.insertErrorInAllNodes(0);
+    pDict->dropTable("COPYT");
+    return NDBT_FAILED;
+  }
+
+  if (res.waitClusterStarted() != 0) {
+    res.insertErrorInAllNodes(0);
+    pDict->dropTable("COPYT");
+    return NDBT_FAILED;
+  }
+  pDict->dropTable("COPYT");
+
+  g_err << "Checking that master is still alive" << endl;
+  int newMaster = res.getNode(NdbRestarter::NS_MASTER);
+  if (newMaster != master) {
+    g_err << "Master node crashed during backup" << endl;
+    res.insertErrorInAllNodes(0);
+    return NDBT_FAILED;
+  }
+
+  res.insertErrorInAllNodes(0);
+
+  /**
+   * Run one more backup to confirm that all backup resources are cleaned.
+   */
+  if (backup.start(backupId, 1, 0, 1) == -1) {
+    g_err << "Failed to start backup nowait" << endl;
+    res.insertErrorInAllNodes(0);
+    pDict->dropTable("COPYT");
+    return NDBT_FAILED;
+  }
+
+  return NDBT_OK;
+}
+
 NDBT_TESTSUITE(testBackup);
 TESTCASE("BackupOne",
          "Test that backup and restore works on one table \n"
@@ -2301,6 +2464,24 @@ TESTCASE("CheckBackupCompletedPrintout",
   INITIALIZER(clearOldBackups);
   INITIALIZER(runLoadTable);
   STEP(runCheckPrintout);
+  FINALIZER(runClearTable);
+}
+
+TESTCASE("BackupDuringRestart", "Test that backups succeed during restarts") {
+  INITIALIZER(clearOldBackups);
+  INITIALIZER(runLoadTable);
+  STEP(restartDataNodes);
+  STEP(runBackupsUntilStopped);
+  FINALIZER(runClearTable);
+}
+
+TESTCASE("BackupFragmentConsistency",
+         "Test fragment backup consistency when the arrival order of"
+         "BACKUP_FRAGMENT_CONF and BACKUP_FRAGMENT_REF signals at the master"
+         "node is altered") {
+  INITIALIZER(clearOldBackups);
+  INITIALIZER(runLoadTable);
+  STEP(runBackupFragmentConsistency);
   FINALIZER(runClearTable);
 }
 

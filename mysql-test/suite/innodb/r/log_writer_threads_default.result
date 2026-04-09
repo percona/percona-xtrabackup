@@ -1,0 +1,38 @@
+# restart:--skip-log-bin --debug=+d,innodb_simulate_vcpus_equals_4
+# Binlog Disabled
+SELECT @@log_bin;
+@@log_bin
+0
+# Default of innodb_log_writer_threads is OFF when system has 4 or fewer vcpus
+SELECT @@innodb_log_writer_threads;
+@@innodb_log_writer_threads
+OFF
+# restart:--skip-log-bin --debug=+d,innodb_simulate_vcpus_equals_32
+# Binlog Disabled
+SELECT @@log_bin;
+@@log_bin
+0
+# Default of innodb_log_writer_threads is ON when system has more than 4 vcpus
+SELECT @@innodb_log_writer_threads;
+@@innodb_log_writer_threads
+ON
+# restart:--log-bin=binlog --debug=+d,innodb_simulate_vcpus_equals_4
+# Binlog Enabled
+SELECT @@log_bin;
+@@log_bin
+1
+# Default of innodb_log_writer_threads is OFF when system has fewer than 32 vcpus
+SELECT @@innodb_log_writer_threads;
+@@innodb_log_writer_threads
+OFF
+# restart:--log-bin=binlog --debug=+d,innodb_simulate_vcpus_equals_32
+# Binlog Enabled
+SELECT @@log_bin;
+@@log_bin
+1
+# Default of innodb_log_writer_threads is ON when system has 32 or more vcpus
+SELECT @@innodb_log_writer_threads;
+@@innodb_log_writer_threads
+ON
+# Cleanup
+# restart

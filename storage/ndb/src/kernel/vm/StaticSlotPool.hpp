@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -139,12 +139,13 @@ inline Slot *StaticSlotPool::getPtr(Uint32 i, Uint32 slot_size) const {
   Slot *p = reinterpret_cast<Slot *>(&page->m_data[page_index * slot_size]);
   if (unlikely(!Magic::match(p->m_magic, Slot::TYPE_ID))) {
     g_eventLogger->info(
-        "Magic::match failed in %s: "
+        "Magic::match failed in StaticSlotPool::getPtr: "
         "type_id %08x rg %u tid %u: "
         "slot_size %u: ptr.i %u: ptr.p %p: "
+        "page_number %u: page_index %u: "
         "magic %08x expected %08x",
-        __func__, Slot::TYPE_ID, GET_RG(Slot::TYPE_ID), GET_TID(Slot::TYPE_ID),
-        slot_size, page_index, p, p->m_magic, Magic::make(Slot::TYPE_ID));
+        Slot::TYPE_ID, GET_RG(Slot::TYPE_ID), GET_TID(Slot::TYPE_ID), slot_size,
+        i, p, page_number, page_index, p->m_magic, Magic::make(Slot::TYPE_ID));
     require(Magic::match(p->m_magic, Slot::TYPE_ID));
   }
   return p;

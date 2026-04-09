@@ -22,9 +22,6 @@ perl mysql-test-run.pl --exclude-platform=_el7-|_solaris11- --force --timer    -
 perl mysql-test-run.pl --timer  --force  --comment=innodb_4k --vardir=var-innodb-4k  --suite=innodb_undo,innodb_zip,innodb --initialize=--innodb-page-size=4k --no-skip --max-test-fail=30
 perl mysql-test-run.pl --timer  --force  --comment=innodb_64k --vardir=var-innodb-64k  --suite=innodb_undo,innodb_zip,innodb --initialize=--innodb-page-size=64k --no-skip --max-test-fail=30
 
-# Additional modes for rpl. Single-Threaded Applier
-perl mysql-test-run.pl --timer  --force  --comment=rpl_binlog_n_mix_STA --vardir=var-sta-rpl-binlog-n_mix --mysqld=--binlog-format=mixed  --mysqld=--replica-parallel-workers=0 --suite=rpl,rpl_gtid,rpl_nogtid --no-skip --max-test-fail=30
-
 # Run the suites that are not part of the default - funcs_1, funcs_2, stress, jp, nist
 perl mysql-test-run.pl --force --timer --testcase-timeout=60     --comment=funcs1  --vardir=var-funcs1 --suite=funcs_1 --no-skip --max-test-fail=30
 perl mysql-test-run.pl --force --timer --testcase-timeout=60     --comment=funcs2  --vardir=var-funcs2 --suite=funcs_2 --no-skip --max-test-fail=30
@@ -33,7 +30,7 @@ perl mysql-test-run.pl --force --timer     --comment=jp --vardir=var-jp --suite=
 perl mysql-test-run.pl --force --timer     --comment=nist  --vardir=var-nist --suite=nist --no-skip
 
 # Run the bulk_load test suite that is not part of the default
-perl mysql-test-run.pl --force --timer --comment=bulk --vardir=var-bulk --suite=bulk_load --no-skip
+perl mysql-test-run.pl --force --timer --comment=bulk --vardir=var-bulk --suite=bulk_load
 
 # Engine independent tests
 
@@ -41,5 +38,10 @@ perl mysql-test-run.pl --timer --force     --comment=eits-tests-myisam-engine  -
 perl mysql-test-run.pl --timer --force   --comment=eits-tests-innodb-engine  --vardir=var-stmt-eits-tests-innodb-engine --suite=engines/iuds,engines/funcs  --mysqld=--default-storage-engine=innodb --no-skip
 
 # Group Replication
-perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication_ssl_mode_required --vardir=var-group_replication_ssl_mode_required --suite=group_replication --mysqld=--loose-group_replication_ssl_mode=REQUIRED
+perl mysql-test-run.pl --timer --force --parallel=6 --comment=group_replication --vardir=var-group_replication --suite=group_replication
 
+# Connection Control component
+perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=component_connection_control-big  --vardir=var-component_connection_control-big --suite=component_connection_control --no-skip
+
+# Connection Control plugin
+perl mysql-test-run.pl --debug-server --force --timer --big-test --testcase-timeout=60     --comment=connection_control-big  --vardir=var-connection_control-big --suite=connection_control --no-skip

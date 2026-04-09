@@ -1,0 +1,50 @@
+CREATE USER account1@'%' IDENTIFIED BY 'pwd1';
+CREATE USER account2@'%' IDENTIFIED BY 'pwd2';
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Create service and MySQL authentication application,
+##    that is not locked just to existing accounts:
+#
+# 1. verify that MySQL internal auth-app is configured,
+# 2. verify that Router "meta-data" MySQL account can't be used with may be used with the auth-app,
+# 3. verify that Router "user-data" MySQL account can't be used with may be used with the auth-app.
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+# Registred DB_OBJECT at path: /svc/basic/tab
+# Registred AUTH APP at path: /svc
+
+#
+# I.1
+GET /svc/authentication/authApps
+[
+    {
+        "name": "default authentication1",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# I.2
+GET /svc/authentication/login
+{"message":"Unauthorized","status":401}
+OK
+
+#
+# I.3
+GET /svc/authentication/login
+{"message":"Unauthorized","status":401}
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;
+DROP USER account1@'%';
+DROP USER account2@'%';

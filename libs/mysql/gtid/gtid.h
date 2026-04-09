@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,6 @@
 #include "mysql/gtid/global.h"
 #include "mysql/gtid/tsid.h"
 #include "mysql/serialization/archive_binary.h"
-#include "mysql/utils/nodiscard.h"
 
 /// @addtogroup GroupLibsMysqlGtid
 /// @{
@@ -129,7 +128,7 @@ class Gtid {
    * @return Number of bytes read from the buffer or 0 in case decoding is not
    * possible
    */
-  [[NODISCARD]] virtual std::size_t decode_gtid_tagged(const unsigned char *buf,
+  [[nodiscard]] virtual std::size_t decode_gtid_tagged(const unsigned char *buf,
                                                        std::size_t buf_len);
 
   /**

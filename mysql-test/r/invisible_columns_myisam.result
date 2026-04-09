@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #------------------------------------------------------------------------
 # Test case to verify table creation with only INVISIBLE columns.
 #------------------------------------------------------------------------
@@ -901,3 +902,4 @@ DROP TABLE t1, t2;
 CREATE TABLE t1(a INT, my_row_id INT);
 CREATE TABLE t2(a INT, my_row_id INT INVISIBLE);
 DROP TABLE t1, t2;
+include/rpl/set_gtid_mode_on.inc

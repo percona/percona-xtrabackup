@@ -1,0 +1,54 @@
+!include include/default_mysqld.cnf
+
+#
+# Config file for CRUND testing
+#
+[cluster_config.1]
+ndbd=,
+ndb_mgmd=
+mysqld=
+ndbapi=,,,,,,,,,
+
+[mysqld]
+ndbcluster
+ndb-wait-connected=30
+ndb-wait-setup=120
+local-infile=true
+skip-log-bin
+skip-log-replica-updates
+
+[cluster_config.mysqld.1.1]
+NodeId=49
+Dedicated=1
+
+#
+# Some of these values could be varied for benchmark testing ...
+# e.g. SpinMethod, ThreadConfig, etc.
+#
+[cluster_config]
+DataMemory=1024M
+Diskless=1
+MaxNoOfConcurrentTransactions=65536
+MaxNoOfConcurrentOperations=65536
+FragmentLogFileSize=64M
+NoOfFragmentLogFiles=16
+MaxNoOfConcurrentScans=500
+MaxNoOfOrderedIndexes = 150
+LongMessageBuffer = 64M
+TimeBetweenWatchDogCheck=30000
+SpinMethod=CostBasedSpinning
+ODirect= 1
+
+[mysqld.1.1]
+ndb-nodeid=49
+ndb-batch-size=1000000
+ndb-use-exact-count=0
+ndb-index-stat-enable=0
+ndb-force-send=1
+
+[ENV]
+NDB_CONNECTSTRING = @mysql_cluster.1.ndb_connectstring
+MASTER_MYPORT     = @mysqld.1.1.port
+MTR_NDBMTD= 1
+
+

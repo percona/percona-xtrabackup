@@ -11,6 +11,8 @@ GRANT EXECUTE ON FUNCTION `B30896461`.`testFn` TO b30896461_test1@localhost;
 GRANT SELECT ON test.* TO b30896461_test1@localhost;
 GRANT SELECT ON test.* TO b30896461_test2@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT `B30896461`.`testFn`();
 `B30896461`.`testFn`()
 1

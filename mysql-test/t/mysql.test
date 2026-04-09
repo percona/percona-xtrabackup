@@ -15,7 +15,7 @@ create table t1(a int);
 insert into t1 values(1);
 
 # Test delimiters
---exec $MYSQL test 2>&1 < "./t/mysql_delimiter.sql"
+--exec $MYSQL test --commands 2>&1 < "./t/mysql_delimiter.sql"
 
 --disable_query_log
 # Test delimiter : supplied on the command line
@@ -26,10 +26,10 @@ select "Test delimiter :; from command line" as "_";
 --exec $MYSQL test --delimiter=":;" -e "select * from t1:;"
 # Test 'go' command (vertical output) \G
 select "Test 'go' command(vertical output) \G" as "_";
---exec $MYSQL test -e "select * from t1\G"
+--exec $MYSQL test --commands -e "select * from t1\G"
 # Test 'go' command \g
 select "Test  'go' command \g" as "_";
---exec $MYSQL test -e "select * from t1\g"
+--exec $MYSQL test --commands -e "select * from t1\g"
 --enable_query_log
 drop table t1;
 
@@ -82,14 +82,14 @@ drop table t1;
 
 create table t1(a int, b varchar(255), c int);
 --exec $MYSQL test -e "desc t1"
---exec $MYSQL test -e "desc t1\g"
+--exec $MYSQL test --commands -e "desc t1\g"
 drop table t1;
 
 #
 # Bug#21042  	mysql client segfaults on importing a mysqldump export
 #
 --error 1
---exec $MYSQL test -e "connect verylongdatabasenamethatshouldblowthe256byteslongbufferincom_connectfunctionxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxendcccccccdxxxxxxxxxxxxxxxxxkskskskskkskskskskskskskskskskkskskskskkskskskskskskskskskend" 2>&1
+--exec $MYSQL test --commands -e "connect verylongdatabasenamethatshouldblowthe256byteslongbufferincom_connectfunctionxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxkxendcccccccdxxxxxxxxxxxxxxxxxkskskskskkskskskskskskskskskskkskskskskkskskskskskskskskskend" 2>&1
 
 #
 # Bug #20432: mysql client interprets commands in comments
@@ -118,7 +118,7 @@ drop table t1;
 
 # client comment recognized, but parameter missing => error
 --exec echo "use"         >  $file
---exec $MYSQL              < $file 2>&1
+--exec $MYSQL --commands  < $file 2>&1
 
 --remove_file $file
 
@@ -127,8 +127,8 @@ drop table t1;
 #
 --let $file1 = $MYSQLTEST_VARDIR/tmp/bug20328_1.result
 --let $file2 = $MYSQLTEST_VARDIR/tmp/bug20328_2.result
---exec $MYSQL -e "help" > $file1
---exec $MYSQL -e "help " > $file2
+--exec $MYSQL --commands -e "help" > $file1
+--exec $MYSQL --commands -e "help " > $file2
 --diff_files $file1 $file2
 --remove_file $file1
 --remove_file $file2
@@ -190,39 +190,39 @@ drop table t17583;
 #
 #
 --echo Test connect without db- or host-name => reconnect
---exec $MYSQL test -e "\r" 2>&1
---exec $MYSQL test -e "connect" 2>&1
+--exec $MYSQL test --commands -e "\r" 2>&1
+--exec $MYSQL test --commands -e "connect" 2>&1
 
 --echo Test connect with dbname only => new dbname, old hostname
---exec $MYSQL test -e "\r test" 2>&1
---exec $MYSQL test -e "connect test" 2>&1
---exec $MYSQL test -e "\rtest" 2>&1
+--exec $MYSQL test --commands -e "\r test" 2>&1
+--exec $MYSQL test --commands -e "connect test" 2>&1
+--exec $MYSQL test --commands -e "\rtest" 2>&1
 --error 1
---exec $MYSQL test -e "connecttest" 2>&1
+--exec $MYSQL test --commands -e "connecttest" 2>&1
 
 --echo Test connect with _invalid_ dbname only => new invalid dbname, old hostname
 --error 1
---exec $MYSQL test -e "\r invalid" 2>&1
+--exec $MYSQL test --commands -e "\r invalid" 2>&1
 --error 1
---exec $MYSQL test -e "connect invalid" 2>&1
+--exec $MYSQL test --commands -e "connect invalid" 2>&1
 
 --echo Test connect with dbname + hostname
---exec $MYSQL test -e "\r test localhost" 2>&1
---exec $MYSQL test -e "connect test localhost" 2>&1
+--exec $MYSQL test --commands -e "\r test localhost" 2>&1
+--exec $MYSQL test --commands -e "connect test localhost" 2>&1
 
 --echo Test connect with dbname + _invalid_ hostname
 # Mask the errno of the error message
 --replace_regex /\([-0-9]*\)/(errno)/
 --error 1
---exec $MYSQL test -e "\r test invalid_hostname" 2>&1
+--exec $MYSQL test --commands -e "\r test invalid_hostname" 2>&1
 --replace_regex /\([-0-9]*\)/(errno)/
 --error 1
---exec $MYSQL test -e "connect test invalid_hostname" 2>&1
+--exec $MYSQL test --commands -e "connect test invalid_hostname" 2>&1
 
 --echo The commands reported in the bug report
 --replace_regex /\([-0-9]*\)/(errno)/
 --error 1
---exec $MYSQL test -e "\r\r\n\r\n cyril\ has\ found\ a\ bug\ :)XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" 2>&1
+--exec $MYSQL test --commands -e "\r\r\n\r\n cyril\ has\ found\ a\ bug\ :)XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" 2>&1
 
 #--replace_regex /\([-0-9]*\)/(errno)/
 #--error 1
@@ -230,12 +230,12 @@ drop table t17583;
 
 --echo Too long dbname
 --error 1
---exec $MYSQL test -e "\r test_really_long_dbnamexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx localhost" 2>&1
+--exec $MYSQL test --commands -e "\r test_really_long_dbnamexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx localhost" 2>&1
 
 --echo Too long hostname
 --replace_regex /\([-0-9]*\)/(errno)/
 --error 1
---exec $MYSQL test -e "\r  test cyrils_superlonghostnameXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" 2>&1
+--exec $MYSQL test --commands -e "\r  test cyrils_superlonghostnameXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" 2>&1
 
 
 #
@@ -351,8 +351,8 @@ remove_file $MYSQLTEST_VARDIR/tmp/bug31060.sql;
 #
 --replace_regex /\([-0-9]*\)/(errno)/
 --error 1
---exec $MYSQL --default-character-set=binary test -e "CONNECT test invalid_hostname" 2>&1
---exec $MYSQL --default-character-set=binary test -e "DELIMITER //" 2>&1
+--exec $MYSQL --default-character-set=binary test --commands -e "CONNECT test invalid_hostname" 2>&1
+--exec $MYSQL --default-character-set=binary test --commands -e "DELIMITER //" 2>&1
 
 --echo End of 5.0 tests
 
@@ -478,7 +478,7 @@ CREATE TABLE t2 (i INT);
 EOF
 
 CREATE DATABASE connected_db;
---exec $MYSQL --one-database connected_db < $MYSQLTEST_VARDIR/tmp/one_db.sql
+--exec $MYSQL --commands --one-database connected_db < $MYSQLTEST_VARDIR/tmp/one_db.sql
 SHOW TABLES IN connected_db;
 SHOW TABLES IN test;
 USE test;
@@ -495,7 +495,7 @@ USE test1;
 CREATE TABLE connected_db.t1 (i INT);
 EOF
 
---exec $MYSQL --one-database test < $MYSQLTEST_VARDIR/tmp/one_db.sql
+--exec $MYSQL --commands --one-database test < $MYSQLTEST_VARDIR/tmp/one_db.sql
 SHOW TABLES IN test;
 SHOW TABLES IN test1;
 DROP DATABASE test1;
@@ -520,7 +520,7 @@ CREATE TABLE t3 (i INT);
 EOF
 
 CREATE DATABASE connected_db;
---exec $MYSQL --one-database connected_db < $MYSQLTEST_VARDIR/tmp/one_db.sql
+--exec $MYSQL --commands --one-database connected_db < $MYSQLTEST_VARDIR/tmp/one_db.sql
 SHOW TABLES IN connected_db;
 SHOW TABLES IN test;
 DROP TABLE test.t1;
@@ -576,10 +576,10 @@ CREATE TABLE `table_in_connected_db`(i INT);
 EOF
 
 CREATE DATABASE connected_db;
---exec $MYSQL --one-database connected_db < $MYSQLTEST_VARDIR/tmp/one_db_1.sql
+--exec $MYSQL --commands --one-database connected_db < $MYSQLTEST_VARDIR/tmp/one_db_1.sql
 SHOW TABLES IN connected_db;
 --echo
---exec $MYSQL --one-database connected_db < $MYSQLTEST_VARDIR/tmp/one_db_2.sql
+--exec $MYSQL --commands --one-database connected_db < $MYSQLTEST_VARDIR/tmp/one_db_2.sql
 SHOW TABLES IN connected_db;
 DROP DATABASE connected_db;
 
@@ -628,9 +628,9 @@ DROP DATABASE wl6797;
 EOF
 
 --error 1
---exec $MYSQL < $MYSQLTEST_VARDIR/tmp/WL6797.sql 2>&1
+--exec $MYSQL --commands < $MYSQLTEST_VARDIR/tmp/WL6797.sql 2>&1
 --remove_file $MYSQLTEST_VARDIR/tmp/WL6797.sql
---exec $MYSQL < $MYSQLTEST_VARDIR/tmp/WL6797_cleanup.sql 2>&1
+--exec $MYSQL --commands < $MYSQLTEST_VARDIR/tmp/WL6797_cleanup.sql 2>&1
 --remove_file $MYSQLTEST_VARDIR/tmp/WL6797_cleanup.sql
 
 
@@ -667,7 +667,7 @@ DROP USER bug21464621;
 --echo #
 
 --let $file = $MYSQLTEST_VARDIR/tmp/wl13038.out
---exec $MYSQL --binary-as-hex -e "\s" 2>&1 > $file
+--exec $MYSQL --commands --binary-as-hex -e "\s" 2>&1 > $file
 --let $assert_text=check the output of mysql for the binary-as-hex mark in mysql status
 --let $assert_file=$file
 --let $assert_select="Binary data as.*Hexadecimal"
@@ -686,7 +686,7 @@ DROP USER bug21464621;
 --echo #
 
 --let $file = $MYSQLTEST_VARDIR/tmp/b32092739.out
---exec $MYSQL -e "help" 2>&1 > $file
+--exec $MYSQL --commands -e "help" 2>&1 > $file
 --let $assert_text= look for query_attributes in help
 --let $assert_file= $file
 --let $assert_select= query_attributes[\t ]*Sets string parameters
@@ -769,14 +769,34 @@ remove_file $MYSQLTEST_VARDIR/tmp/bug35290350.sql;
 
 --echo # Test "system": Must return an error
 --error 1
---exec $MYSQL test -e "system ls;" 2>&1
+--exec $MYSQL --commands test -e "system ls;" 2>&1
 
 --echo # Test "!": Must return an error
 --error 1
---exec $MYSQL test -e "\\! ls" 2>&1
+--exec $MYSQL --commands test -e "\\! ls" 2>&1
 
 --echo # Test "system": Must pass
---exec $MYSQL test --system-command -e "system echo Hello World;" 2>&1
+--exec $MYSQL --commands test --system-command -e "system echo Hello World;" 2>&1
+
+--echo #
+--echo # Bug#37510263: Contribution: Report third decimal place for milliseconds
+--echo #
+--exec $MYSQL test -e "SELECT 12" --verbose --verbose --verbose > $MYSQLTEST_VARDIR/tmp/bug37510263.output
+
+--let $assert_text=Find 3 digits post-decimal
+--let $assert_file=$MYSQLTEST_VARDIR/tmp/bug37510263.output
+--let $assert_select=1 row in set .[0-9]+\.[0-9]{3} sec.
+--let $assert_count=1
+--source include/assert_grep.inc
+
+--remove_file $MYSQLTEST_VARDIR/tmp/bug37510263.output
+
+--echo #
+--echo # Bug#37765445:  Mysql client confused if an extra semicolon is used with "use database;;" 
+--echo #
+
+--echo # Test: should not produce an error
+--exec $MYSQL test -e "use test;;"
 
 --echo
 --echo End of tests

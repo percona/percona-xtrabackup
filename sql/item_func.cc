@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -102,6 +102,7 @@
 #include "sql/debug_sync.h"      // DEBUG_SYNC
 #include "sql/derror.h"          // ER_THD
 #include "sql/error_handler.h"   // Internal_error_handler
+#include "sql/hash.h"
 #include "sql/item.h"            // Item_json
 #include "sql/item_cmpfunc.h"    // get_datetime_value
 #include "sql/item_json_func.h"  // get_json_wrapper
@@ -119,15 +120,16 @@
 #include "sql/resourcegroups/resource_group_basic_types.h"
 #include "sql/resourcegroups/resource_group_mgr.h"
 #include "sql/rpl_gtid.h"
-#include "sql/rpl_mi.h"       // Master_info
-#include "sql/rpl_msr.h"      // channel_map
-#include "sql/rpl_rli.h"      // Relay_log_info
-#include "sql/sp.h"           // sp_setup_routine
-#include "sql/sp_head.h"      // sp_name
-#include "sql/sp_pcontext.h"  // sp_variable
-#include "sql/sql_array.h"    // just to keep clang happy
-#include "sql/sql_audit.h"    // audit_global_variable
-#include "sql/sql_base.h"     // Internal_error_handler_holder
+#include "sql/rpl_mi.h"           // Master_info
+#include "sql/rpl_msr.h"          // channel_map
+#include "sql/rpl_rli.h"          // Relay_log_info
+#include "sql/sp.h"               // sp_setup_routine
+#include "sql/sp_head.h"          // sp_name
+#include "sql/sp_instr_inline.h"  // inline_stored_function
+#include "sql/sp_pcontext.h"      // sp_variable
+#include "sql/sql_array.h"        // just to keep clang happy
+#include "sql/sql_audit.h"        // audit_global_variable
+#include "sql/sql_base.h"         // Internal_error_handler_holder
 #include "sql/sql_bitmap.h"
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_cmd.h"
@@ -140,7 +142,7 @@
 #include "sql/sql_load.h"       // Sql_cmd_load_table
 #include "sql/sql_optimizer.h"  // JOIN
 #include "sql/sql_parse.h"      // check_stack_overrun
-#include "sql/sql_show.h"       // append_identifier
+#include "sql/sql_show.h"       // append_identifier_*
 #include "sql/sql_time.h"       // TIME_from_longlong_packed
 #include "sql/strfunc.h"        // find_type
 #include "sql/system_variables.h"
@@ -745,6 +747,21 @@ void Item_func::update_used_tables() {
   }
 }
 
+void Item_func::raise_temporal_overflow(const char *type_name) {
+  THD *thd = current_thd;
+  char buf[256];
+  String str(buf, sizeof(buf), system_charset_info);
+  str.length(0);
+  print(thd, &str, QT_NO_DATA_EXPANSION);
+  str.append('\0');
+  push_warning_printf(
+      thd, Sql_condition::SL_WARNING, ER_TEMPORAL_FUNCTION_OVERFLOW,
+      ER_THD(thd, ER_TEMPORAL_FUNCTION_OVERFLOW), type_name, str.ptr());
+  if (!thd->is_error()) {
+    null_value = true;
+  }
+}
+
 void Item_func::print(const THD *thd, String *str,
                       enum_query_type query_type) const {
   str->append(func_name());
@@ -760,6 +777,25 @@ void Item_func::print_args(const THD *thd, String *str, uint from,
     args[i]->print(thd, str, query_type);
   }
 }
+
+uint64_t Item_func::hash_args(bool commutative) const {
+  uint64_t hash = 0;
+  for (uint i = 0; i < arg_count; i++) {
+    if (commutative) {
+      hash = CombineCommutativeSigs(args[i]->hash(), hash);
+    } else {
+      hash = CombineNonCommutativeSigs(hash, args[i]->hash());
+    }
+  }
+  return hash;
+}
+
+uint64_t Item_func::hash(bool commutative_args) {
+  return CombineNonCommutativeSigs(HashCString(func_name()),
+                                   hash_args(commutative_args));
+}
+
+uint64_t Item_func::hash() { return Item_func::hash(false); }
 
 void Item_func::print_op(const THD *thd, String *str,
                          enum_query_type query_type) const {
@@ -1703,7 +1739,7 @@ String *Item_func_numhybrid::val_str(String *str) {
     }
     case INT_RESULT: {
       const longlong nr = int_op();
-      if (null_value) return nullptr; /* purecov: inspected */
+      if (null_value || current_thd->is_error()) return error_str();
       str->set_int(nr, unsigned_flag, collation.collation);
       break;
     }
@@ -1739,6 +1775,8 @@ double Item_func_numhybrid::val_real() {
       my_decimal decimal_value, *val;
       double result;
       if (!(val = decimal_op(&decimal_value))) return 0.0;  // null is set
+      my_decimal_round(E_DEC_FATAL_ERROR, val, decimals, /*truncate=*/false,
+                       val);
       my_decimal2double(E_DEC_FATAL_ERROR, val, &result);
       return result;
     }
@@ -1818,6 +1856,10 @@ my_decimal *Item_func_numhybrid::val_decimal(my_decimal *decimal_value) {
   switch (hybrid_type) {
     case DECIMAL_RESULT:
       val = decimal_op(decimal_value);
+      if (val != nullptr && val->frac > decimals) {
+        my_decimal_round(E_DEC_FATAL_ERROR, val, decimals, /*truncate=*/false,
+                         val);
+      }
       break;
     case INT_RESULT: {
       const longlong result = int_op();
@@ -1854,37 +1896,41 @@ my_decimal *Item_func_numhybrid::val_decimal(my_decimal *decimal_value) {
   return val;
 }
 
-bool Item_func_numhybrid::get_date(MYSQL_TIME *ltime,
-                                   my_time_flags_t fuzzydate) {
+bool Item_func_numhybrid::val_date(Date_val *date, my_time_flags_t flags) {
+  return val_datetime(date, flags);
+}
+
+bool Item_func_numhybrid::val_datetime(Datetime_val *dt,
+                                       my_time_flags_t flags) {
   assert(fixed);
   switch (data_type()) {
     case MYSQL_TYPE_DATE:
     case MYSQL_TYPE_DATETIME:
     case MYSQL_TYPE_TIMESTAMP:
-      return date_op(ltime, fuzzydate);
+      return datetime_op(dt, flags);
     case MYSQL_TYPE_TIME:
-      return get_date_from_time(ltime);
+      return get_datetime_from_time(dt);
     case MYSQL_TYPE_YEAR:
-      return get_date_from_int(ltime, fuzzydate);
+      return get_datetime_from_int(dt, flags);
     default:
-      return Item::get_date_from_non_temporal(ltime, fuzzydate);
+      return Item::get_datetime_from_non_temporal(dt, flags);
   }
 }
 
-bool Item_func_numhybrid::get_time(MYSQL_TIME *ltime) {
+bool Item_func_numhybrid::val_time(Time_val *time) {
   assert(fixed);
   switch (data_type()) {
     case MYSQL_TYPE_TIME:
-      return time_op(ltime);
+      return time_op(time);
     case MYSQL_TYPE_DATE:
-      return get_time_from_date(ltime);
+      return get_time_from_date(time);
     case MYSQL_TYPE_DATETIME:
     case MYSQL_TYPE_TIMESTAMP:
-      return get_time_from_datetime(ltime);
+      return get_time_from_datetime(time);
     case MYSQL_TYPE_YEAR:
-      return get_time_from_int(ltime);
+      return get_time_from_int(time);
     default:
-      return Item::get_time_from_non_temporal(ltime);
+      return Item::get_time_from_non_temporal(time);
   }
 }
 
@@ -1901,32 +1947,30 @@ bool Item_typecast_signed::resolve_type(THD *thd) {
   return args[0]->propagate_type(thd, MYSQL_TYPE_LONGLONG, false, true);
 }
 
-static longlong val_int_from_str(Item *item, bool unsigned_flag,
-                                 bool *null_value) {
-  /*
-    For a string result, we must first get the string and then convert it
-    to a longlong
-  */
+static bool val_int_from_str(Item *item, bool unsigned_flag, longlong *value) {
+  // First evaluate the string and then convert it to a longlong
   StringBuffer<MAX_FIELD_WIDTH> tmp;
   const String *res = item->val_str(&tmp);
-  *null_value = item->null_value;
-  if (*null_value) return 0;
+  if (res == nullptr) return true;
+  if (item->null_value) return true;
 
   const size_t length = res->length();
   const char *start = res->ptr();
   const char *end = start + length;
-  return longlong_from_string_with_check(res->charset(), start, end,
-                                         unsigned_flag);
+  *value = longlong_from_string_with_check(res->charset(), start, end,
+                                           static_cast<int>(unsigned_flag));
+  return false;  // NOTE: warnings are never checked by callers
 }
 
 longlong Item_typecast_signed::val_int() {
-  longlong value;
+  longlong value{0};
 
   if (args[0]->cast_to_int_type() != STRING_RESULT || args[0]->is_temporal()) {
     value = args[0]->val_int();
     null_value = args[0]->null_value;
   } else {
-    value = val_int_from_str(args[0], unsigned_flag, &null_value);
+    (void)val_int_from_str(args[0], unsigned_flag, &value);
+    null_value = args[0]->null_value;
   }
 
 #ifndef NDEBUG
@@ -1974,7 +2018,8 @@ longlong Item_typecast_unsigned::val_int() {
     value = args[0]->val_int();
     null_value = args[0]->null_value;
   } else {
-    value = val_int_from_str(args[0], unsigned_flag, &null_value);
+    (void)val_int_from_str(args[0], unsigned_flag, &value);
+    null_value = args[0]->null_value;
   }
 
   assert(!null_value || is_nullable());
@@ -1984,7 +2029,9 @@ longlong Item_typecast_unsigned::val_int() {
 }
 
 String *Item_typecast_decimal::val_str(String *str) {
-  my_decimal tmp_buf, *tmp = val_decimal(&tmp_buf);
+  my_decimal tmp_buf;
+  my_decimal *tmp = val_decimal(&tmp_buf);
+  if (tmp == nullptr) return nullptr;
   if (null_value) return nullptr;
   my_decimal2string(E_DEC_FATAL_ERROR, tmp, str);
   return str;
@@ -2007,13 +2054,15 @@ longlong Item_typecast_decimal::val_int() {
 }
 
 my_decimal *Item_typecast_decimal::val_decimal(my_decimal *dec) {
-  my_decimal tmp_buf, *tmp = args[0]->val_decimal(&tmp_buf);
-  bool sign;
   uint precision;
+  my_decimal tmp_buf;
+  my_decimal *tmp = args[0]->val_decimal(&tmp_buf);
+  null_value = args[0]->null_value;
+  if (tmp == nullptr) return nullptr;
 
-  if ((null_value = args[0]->null_value)) return nullptr;
+  if (null_value) return nullptr;
   my_decimal_round(E_DEC_FATAL_ERROR, tmp, decimals, false, dec);
-  sign = dec->sign();
+  bool sign = dec->sign();
   if (unsigned_flag) {
     if (sign) {
       my_decimal_set_zero(dec);
@@ -2048,6 +2097,16 @@ void Item_typecast_decimal::print(const THD *thd, String *str,
   str->append_ulonglong(decimals);
   str->append(')');
   str->append(')');
+}
+
+uint64_t Item_typecast_decimal::hash() {
+  const uint precision =
+      my_decimal_length_to_precision(max_length, decimals, unsigned_flag);
+  return CombineNonCommutativeSigs(
+      HashString("func_cast_decimal"),
+      CombineNonCommutativeSigs(
+          args[0]->hash(), CombineNonCommutativeSigs(HashNumber(precision),
+                                                     HashNumber(decimals))));
 }
 
 void Item_typecast_decimal::add_json_info(Json_object *obj) {
@@ -2092,13 +2151,16 @@ longlong Item_func::val_int_from_real() {
   }
 }
 
-bool Item_typecast_real::get_date(MYSQL_TIME *ltime,
-                                  my_time_flags_t fuzzydate) {
-  return my_double_to_datetime_with_warn(val_real(), ltime, fuzzydate);
+bool Item_typecast_real::val_date(Date_val *date, my_time_flags_t flags) {
+  return val_datetime(date, flags);
 }
 
-bool Item_typecast_real::get_time(MYSQL_TIME *ltime) {
-  return my_double_to_time_with_warn(val_real(), ltime);
+bool Item_typecast_real::val_datetime(Datetime_val *dt, my_time_flags_t flags) {
+  return my_double_to_datetime_with_warn(val_real(), dt, flags);
+}
+
+bool Item_typecast_real::val_time(Time_val *time) {
+  return my_double_to_time_with_warn(val_real(), time);
 }
 
 my_decimal *Item_typecast_real::val_decimal(my_decimal *decimal_value) {
@@ -3925,14 +3987,19 @@ bool Item_func_min_max::cmp_datetimes(longlong *value) {
   return false;
 }
 
-bool Item_func_min_max::cmp_times(longlong *value) {
-  longlong res = 0;
+bool Item_func_min_max::cmp_times(Time_val *value) {
+  Time_val result;
   for (uint i = 0; i < arg_count; i++) {
-    const longlong tmp = args[i]->val_time_temporal();
+    Time_val time;
+    if (args[i]->val_time(&time)) {
+      if (current_thd->is_error()) return true;
+    }
     if ((null_value = args[i]->null_value)) return true;
-    if (i == 0 || (tmp < res) == m_is_least_func) res = tmp;
+    if (i == 0 || (time.compare(result) < 0) == m_is_least_func) {
+      result = time;
+    }
   }
-  *value = res;
+  *value = result;
   return false;
 }
 
@@ -3996,27 +4063,28 @@ String *Item_func_min_max::str_op(String *str) {
   return res;
 }
 
-bool Item_func_min_max::date_op(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) {
+bool Item_func_min_max::datetime_op(Datetime_val *dt, my_time_flags_t flags) {
   assert(fixed);
   longlong result = 0;
   if (cmp_datetimes(&result)) return true;
-  TIME_from_longlong_packed(ltime, data_type(), result);
+  TIME_from_longlong_packed(dt, data_type(), result);
   int warnings;
-  return check_date(*ltime, non_zero_date(*ltime), fuzzydate, &warnings);
+  return check_date(*dt, non_zero_date(*dt), flags, &warnings);
 }
 
-bool Item_func_min_max::time_op(MYSQL_TIME *ltime) {
+bool Item_func_min_max::time_op(Time_val *time) {
   assert(fixed);
   longlong result = 0;
   if (compare_as_dates()) {
     if (cmp_datetimes(&result)) return true;
-    TIME_from_longlong_packed(ltime, data_type(), result);
-    datetime_to_time(ltime);
+    MYSQL_TIME mtime;
+    TIME_from_longlong_packed(&mtime, data_type(), result);
+    datetime_to_time(&mtime);
+    *time = Time_val{mtime};
     return false;
   }
 
-  if (cmp_times(&result)) return true;
-  TIME_from_longlong_time_packed(ltime, result);
+  if (cmp_times(time)) return true;
   return false;
 }
 
@@ -4111,23 +4179,32 @@ my_decimal *Item_func_min_max::val_decimal(my_decimal *dec) {
   return Item_func_numhybrid::val_decimal(dec);
 }
 
-bool Item_rollup_group_item::get_date(MYSQL_TIME *ltime,
-                                      my_time_flags_t fuzzydate) {
+bool Item_rollup_group_item::val_date(Date_val *date, my_time_flags_t flags) {
   assert(fixed);
   if (rollup_null()) {
     null_value = true;
     return true;
   }
-  return (null_value = args[0]->get_date(ltime, fuzzydate));
+  return (null_value = args[0]->val_date(date, flags));
 }
 
-bool Item_rollup_group_item::get_time(MYSQL_TIME *ltime) {
+bool Item_rollup_group_item::val_datetime(Datetime_val *dt,
+                                          my_time_flags_t flags) {
   assert(fixed);
   if (rollup_null()) {
     null_value = true;
     return true;
   }
-  return (null_value = args[0]->get_time(ltime));
+  return (null_value = args[0]->val_datetime(dt, flags));
+}
+
+bool Item_rollup_group_item::val_time(Time_val *time) {
+  assert(fixed);
+  if (rollup_null()) {
+    null_value = true;
+    return true;
+  }
+  return (null_value = args[0]->val_time(time));
 }
 
 double Item_rollup_group_item::val_real() {
@@ -4200,6 +4277,13 @@ void Item_rollup_group_item::print(const THD *thd, String *str,
   snprintf(buf, sizeof(buf), "%d", m_min_rollup_level);
   str->append(buf);
   str->append(')');
+}
+
+uint64_t Item_rollup_group_item::hash() {
+  return CombineNonCommutativeSigs(
+      HashCString(func_name()),
+      CombineNonCommutativeSigs(hash_args(false),
+                                HashNumber(m_min_rollup_level)));
 }
 
 bool Item_rollup_group_item::eq_specific(const Item *item) const {
@@ -4873,7 +4957,7 @@ bool udf_handler::get_arguments() {
 double udf_handler::val_real(bool *null_value) {
   assert(is_initialized());
   is_null = 0;
-  if (get_arguments()) {
+  if (u_d->type != UDFTYPE_AGGREGATE && get_arguments()) {
     *null_value = true;
     return 0.0;
   }
@@ -4890,7 +4974,7 @@ double udf_handler::val_real(bool *null_value) {
 longlong udf_handler::val_int(bool *null_value) {
   assert(is_initialized());
   is_null = 0;
-  if (get_arguments()) {
+  if (u_d->type != UDFTYPE_AGGREGATE && get_arguments()) {
     *null_value = true;
     return 0LL;
   }
@@ -4915,7 +4999,7 @@ String *udf_handler::val_str(String *str, String *save_str) {
   DBUG_TRACE;
   assert(is_initialized());
 
-  if (get_arguments()) return nullptr;
+  if (u_d->type != UDFTYPE_AGGREGATE && get_arguments()) return nullptr;
   Udf_func_string func = reinterpret_cast<Udf_func_string>(u_d->func);
 
   if ((res_length = str->alloced_length()) <
@@ -4949,7 +5033,7 @@ my_decimal *udf_handler::val_decimal(bool *null_value, my_decimal *dec_buf) {
 
   assert(is_initialized());
 
-  if (get_arguments()) {
+  if (u_d->type != UDFTYPE_AGGREGATE && get_arguments()) {
     *null_value = true;
     return nullptr;
   }
@@ -4970,17 +5054,24 @@ void udf_handler::clear() {
   is_null = 0;
   Udf_func_clear func = u_d->func_clear;
   func(&initid, &is_null, &error);
+  assert(is_null == 0);
+  assert(error == 0);
 }
 
-void udf_handler::add(bool *null_value) {
+bool udf_handler::add(bool *null_value) {
   assert(is_initialized());
+  assert(error == 0 || error == 1);
   if (get_arguments()) {
     *null_value = true;
-    return;
+    return static_cast<bool>(error);
   }
   Udf_func_add func = u_d->func_add;
   func(&initid, &f_args, &is_null, &error);
-  *null_value = (bool)(is_null || error);
+  assert(is_null == 0 || is_null == 1);
+  assert(error == 0 || error == 1);
+  *null_value = static_cast<bool>(is_null);
+
+  return static_cast<bool>(error);
 }
 
 /**
@@ -5236,7 +5327,7 @@ longlong Item_source_pos_wait::val_int() {
       return 0;
     }
 
-    mi = channel_map.get_mi(channel_str->ptr());
+    mi = channel_map.get_mi(channel_str->c_ptr_safe());
 
   } else {
     if (channel_map.get_num_instances() > 1) {
@@ -5850,27 +5941,39 @@ longlong Item_func_benchmark::val_int() {
     return 0;
   }
 
+  const int result_type = args[1]->result_type();
+
   null_value = false;
-  for (ulonglong loop = 0; loop < loop_count && !thd->killed; loop++) {
-    switch (args[1]->result_type()) {
-      case REAL_RESULT:
+  switch (result_type) {
+    case REAL_RESULT:
+      for (ulonglong loop = 0; loop < loop_count && !thd->killed; loop++) {
         (void)args[1]->val_real();
-        break;
-      case INT_RESULT:
+        if (thd->is_error()) return error_int();
+      }
+      break;
+    case INT_RESULT:
+      for (ulonglong loop = 0; loop < loop_count && !thd->killed; loop++) {
         (void)args[1]->val_int();
-        break;
-      case STRING_RESULT:
+        if (thd->is_error()) return error_int();
+      }
+      break;
+    case STRING_RESULT:
+      for (ulonglong loop = 0; loop < loop_count && !thd->killed; loop++) {
         (void)args[1]->val_str(&tmp);
-        break;
-      case DECIMAL_RESULT:
+        if (thd->is_error()) return error_int();
+      }
+      break;
+    case DECIMAL_RESULT:
+      for (ulonglong loop = 0; loop < loop_count && !thd->killed; loop++) {
         (void)args[1]->val_decimal(&tmp_decimal);
-        break;
-      case ROW_RESULT:
-      default:
-        // This case should never be chosen
-        assert(0);
-        return 0;
-    }
+        if (thd->is_error()) return error_int();
+      }
+      break;
+    case ROW_RESULT:
+    default:
+      // This case should never be chosen
+      assert(false);
+      return 0;
   }
   return 0;
 }
@@ -6130,7 +6233,7 @@ bool Item_func_set_user_var::resolve_type(THD *thd) {
 // static
 user_var_entry *user_var_entry::create(THD *thd, const Name_string &name,
                                        const CHARSET_INFO *cs) {
-  if (check_column_name(name.ptr())) {
+  if (check_column_name(name)) {
     my_error(ER_ILLEGAL_USER_VAR, MYF(0), name.ptr());
     return nullptr;
   }
@@ -6563,6 +6666,11 @@ void Item_func_set_user_var::print(const THD *thd, String *str,
   str->append(STRING_WITH_LEN("("));
   print_assignment(thd, str, query_type);
   str->append(STRING_WITH_LEN(")"));
+}
+uint64_t Item_func_set_user_var::hash() {
+  return CombineNonCommutativeSigs(
+      HashCString("set_user_var"),
+      CombineNonCommutativeSigs(HashCString(name.ptr()), args[0]->hash()));
 }
 
 bool Item_func_set_user_var::send(Protocol *protocol, String *str_arg) {
@@ -7063,6 +7171,11 @@ void Item_func_get_user_var::print(const THD *thd, String *str,
   str->append(')');
 }
 
+uint64_t Item_func_get_user_var::hash() {
+  return CombineNonCommutativeSigs(HashCString("get_user_var"),
+                                   HashCString(name.ptr()));
+}
+
 bool Item_func_get_user_var::eq_specific(const Item *item) const {
   const Item_func_get_user_var *other =
       down_cast<const Item_func_get_user_var *>(item);
@@ -7084,8 +7197,8 @@ bool Item_user_var_as_out_param::fix_fields(THD *thd, Item **ref) {
   assert(!fixed);
 
   assert(thd->lex->sql_command == SQLCOM_LOAD);
-  auto exchange_cs =
-      down_cast<Sql_cmd_load_table *>(thd->lex->m_sql_cmd)->m_exchange.cs;
+  const auto *exchange_cs = down_cast<Sql_cmd_load_table *>(thd->lex->m_sql_cmd)
+                                ->m_exchange.file_info.cs;
   /*
     Let us set the same collation which is used for loading
     of fields in LOAD DATA INFILE.
@@ -7145,6 +7258,10 @@ void Item_user_var_as_out_param::print(const THD *thd, String *str,
   append_identifier(thd, str, name.ptr(), name.length());
 }
 
+uint64_t Item_user_var_as_out_param::hash() {
+  return CombineNonCommutativeSigs(HashCString("@"), HashCString(name.ptr()));
+}
+
 Item_func_get_system_var::Item_func_get_system_var(
     const System_variable_tracker &var_tracker, enum_var_type scope)
     : var_scope{scope}, cache_present{0}, var_tracker{var_tracker} {
@@ -7195,6 +7312,9 @@ bool Item_func_get_system_var::resolve_type(THD *) {
 void Item_func_get_system_var::print(const THD *, String *str,
                                      enum_query_type) const {
   str->append(item_name);
+}
+uint64_t Item_func_get_system_var::hash() {
+  return HashCString(item_name.ptr());
 }
 
 Audit_global_variable_get_event::Audit_global_variable_get_event(
@@ -7280,7 +7400,8 @@ longlong Item_func_get_system_var::val_int() {
       if (!null_value)
         cached_llval = longlong_from_string_with_check(
             cached_strval.charset(), cached_strval.c_ptr(),
-            cached_strval.c_ptr() + cached_strval.length(), unsigned_flag);
+            cached_strval.c_ptr() + cached_strval.length(),
+            static_cast<int>(unsigned_flag));
       else
         cached_llval = 0;
       cache_present |= GET_SYS_VAR_CACHE_LONG;
@@ -7322,11 +7443,12 @@ longlong Item_func_get_system_var::val_int() {
       case SHOW_LEX_STRING: {
         String *str_val = val_str(nullptr);
         // Treat empty strings as NULL, like val_real() does.
-        if (str_val && str_val->length())
+        if (str_val && str_val->length()) {
           cached_llval = longlong_from_string_with_check(
               system_charset_info, str_val->c_ptr(),
-              str_val->c_ptr() + str_val->length(), unsigned_flag);
-        else {
+              str_val->c_ptr() + str_val->length(),
+              static_cast<int>(unsigned_flag));
+        } else {
           null_value = true;
           cached_llval = 0;
         }
@@ -7789,7 +7911,7 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref) {
     }
   }
   return agg_item_collations_for_comparison(cmp_collation, func_name(), args,
-                                            arg_count, 0);
+                                            arg_count);
 }
 
 void Item_func_match::update_used_tables() {
@@ -7942,6 +8064,14 @@ void Item_func_match::print(const THD *thd, String *str,
   else if (flags & FT_EXPAND)
     str->append(STRING_WITH_LEN(" with query expansion"));
   str->append(STRING_WITH_LEN("))"));
+}
+
+uint64_t Item_func_match::hash() {
+  uint64_t hash = CombineNonCommutativeSigs(
+      HashCString("func_match_against"),
+      CombineNonCommutativeSigs(Item_func::hash(), against->hash()));
+  hash = CombineNonCommutativeSigs(hash, HashNumber(flags));
+  return hash;
 }
 
 void Item_func_match::add_json_info(Json_object *obj) {
@@ -8307,14 +8437,19 @@ double Item_func_sp::val_real() {
   return sp_result_field->val_real();
 }
 
-bool Item_func_sp::get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) {
+bool Item_func_sp::val_date(Date_val *date, my_time_flags_t flags) {
   if (execute() || null_value) return true;
-  return sp_result_field->get_date(ltime, fuzzydate);
+  return sp_result_field->val_date(date, flags);
 }
 
-bool Item_func_sp::get_time(MYSQL_TIME *ltime) {
+bool Item_func_sp::val_datetime(Datetime_val *dt, my_time_flags_t flags) {
   if (execute() || null_value) return true;
-  return sp_result_field->get_time(ltime);
+  return sp_result_field->val_datetime(dt, flags);
+}
+
+bool Item_func_sp::val_time(Time_val *time) {
+  if (execute() || null_value) return true;
+  return sp_result_field->val_time(time);
 }
 
 my_decimal *Item_func_sp::val_decimal(my_decimal *dec_buf) {
@@ -8365,6 +8500,8 @@ bool Item_func_sp::val_json(Json_wrapper *result) {
 
 bool Item_func_sp::execute() {
   THD *thd = current_thd;
+
+  assert(!thd->lex->is_explain() || thd->lex->is_explain_analyze);
 
   Internal_error_handler_holder<View_error_handler, Table_ref> view_handler(
       thd, m_name_resolution_ctx->view_error_handler,
@@ -8506,7 +8643,7 @@ bool Item_func_sp::sp_check_access(THD *thd) {
   DBUG_TRACE;
   assert(m_sp);
   if (check_routine_access(thd, EXECUTE_ACL, m_sp->m_db.str, m_sp->m_name.str,
-                           false, false))
+                           Acl_type::FUNCTION, false))
     return true;
 
   return false;
@@ -8537,8 +8674,9 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
         thd, m_name_resolution_ctx->view_error_handler,
         m_name_resolution_ctx->view_error_handler_arg);
 
-    const bool res = check_routine_access(thd, EXECUTE_ACL, m_name->m_db.str,
-                                          m_name->m_name.str, false, false);
+    const bool res =
+        check_routine_access(thd, EXECUTE_ACL, m_name->m_db.str,
+                             m_name->m_name.str, Acl_type::FUNCTION, false);
     thd->set_security_context(save_security_ctx);
 
     if (res) return res;
@@ -8550,6 +8688,72 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
     which is called from Item_func::fix_fields().
   */
   if (init_result_field(thd)) return true;
+
+  const bool needs_inlining = sp_inl::needs_stored_function_inlining(thd);
+
+  if (needs_inlining || thd->lex->is_view_context_analysis()) {
+    /*
+      If we don't need stored function inlining, here we check privileges of the
+      stored routine only during view creation, in order to validate the view.
+      A runtime check is performed in Item_func_sp::execute(), and this method
+      is not called during context analysis. Notice, that during view creation
+      we do not infer into stored routine bodies and do not check privileges of
+      its statements, which would probably be a good idea especially if the view
+      has SQL SECURITY DEFINER and the used stored procedure has SQL SECURITY
+      DEFINER.
+      When we require stored function inlining the check in execute is
+      not performed so we check it here.
+    */
+    if (sp_check_access(thd)) return true;
+    /*
+      Try to set and restore the security context to see whether it's valid
+    */
+    Security_context *save_security_context;
+    if (m_sp->set_security_ctx(thd, &save_security_context)) {
+      return true;
+    }
+    m_sp->m_security_ctx.restore_security_context(thd, save_security_context);
+  }
+
+  /*
+    This is the entry point for stored function inlining. Currently it's done
+    only for the secondary engine and for a subset of stored functions (see
+    sp_inl::can_inline_stored_function).
+  */
+  if (needs_inlining) {
+    std::unordered_set<sp_head *> used_sp_functions;
+    auto guard = create_scope_guard([this, &used_sp_functions] {
+      m_sp->m_recursion_level = 0;
+      for (auto used_sp : used_sp_functions) {
+        used_sp->m_recursion_level = 0;
+      }
+    });
+
+    if (!sp_inl::can_inline_stored_function(thd, m_sp, arg_count)) {
+      return true;
+    }
+    Mem_root_array<sp_inl::sp_inline_instr *> *prepared_inline_instrs =
+        sp_inl::prepare(thd, m_sp, used_sp_functions);
+
+    if (prepared_inline_instrs == nullptr) {
+      return true;
+    }
+
+    Item *inlined_expression =
+        sp_inl::inline_stored_function(thd, prepared_inline_instrs, args,
+                                       arg_count, m_sp, m_name_resolution_ctx);
+    if (inlined_expression == nullptr) {
+      return true;
+    }
+
+    if (!inlined_expression->fixed &&
+        inlined_expression->fix_fields(thd, &inlined_expression)) {
+      return true;
+    }
+    inlined_expression->item_name.set(item_name.ptr(), item_name.length());
+    *ref = inlined_expression;
+    return false;
+  }
 
   sp_pcontext *sp_ctx = m_sp->get_root_parsing_context();
 
@@ -8573,27 +8777,6 @@ bool Item_func_sp::fix_fields(THD *thd, Item **ref) {
         return true;
     }
   }
-
-  if (thd->lex->is_view_context_analysis()) {
-    /*
-      Here we check privileges of the stored routine only during view
-      creation, in order to validate the view.  A runtime check is
-      performed in Item_func_sp::execute(), and this method is not
-      called during context analysis.  Notice, that during view
-      creation we do not infer into stored routine bodies and do not
-      check privileges of its statements, which would probably be a
-      good idea especially if the view has SQL SECURITY DEFINER and
-      the used stored procedure has SQL SECURITY DEFINER.
-    */
-    if (sp_check_access(thd)) return true;
-    /*
-      Try to set and restore the security context to see whether it's valid
-    */
-    Security_context *save_security_context;
-    if (m_sp->set_security_ctx(thd, &save_security_context)) return true;
-    m_sp->m_security_ctx.restore_security_context(thd, save_security_context);
-  }
-
   // Cleanup immediately, thus execute() will always attach to the routine.
   cleanup();
 
@@ -8950,7 +9133,15 @@ longlong Item_func_can_access_routine::val_int() {
   type_ptr->c_ptr_safe();
   definer_ptr->c_ptr_safe();
 
-  const bool is_procedure = (strcmp(type_ptr->ptr(), "PROCEDURE") == 0);
+  enum_sp_type sp_type{};
+  if (strcmp(type_ptr->ptr(), "PROCEDURE") == 0)
+    sp_type = enum_sp_type::PROCEDURE;
+  else if (strcmp(type_ptr->ptr(), "FUNCTION") == 0)
+    sp_type = enum_sp_type::FUNCTION;
+  else if (strcmp(type_ptr->ptr(), "LIBRARY") == 0)
+    sp_type = enum_sp_type::LIBRARY;
+  else
+    assert(false);
 
   // Skip INFORMATION_SCHEMA database
   if (is_infoschema_db(schema_name_ptr->ptr()) ||
@@ -8985,9 +9176,12 @@ longlong Item_func_can_access_routine::val_int() {
 
   if (check_full_access) {
     return full_access ? 1 : 0;
-  } else if (!full_access && !has_partial_view_routine_access(
-                                 thd, schema_name_ptr->ptr(),
-                                 routine_name_ptr->ptr(), is_procedure)) {
+  }
+  assert(sp_type == enum_sp_type::PROCEDURE ||
+         sp_type == enum_sp_type::FUNCTION || sp_type == enum_sp_type::LIBRARY);
+  if (!full_access && !has_partial_view_routine_access(
+                          thd, schema_name_ptr->ptr(), routine_name_ptr->ptr(),
+                          enum_sp_type_to_acl_type(sp_type))) {
     return 0;
   }
 
@@ -9174,7 +9368,7 @@ longlong Item_func_can_access_column::val_int() {
                    &grant_info.privilege, nullptr, false, true))
     return 0;
 
-  const uint col_access =
+  const Access_bitmask col_access =
       get_column_grant(thd, &grant_info, schema_name_ptr->ptr(),
                        table_name_ptr->ptr(), column_name_ptr->ptr()) &
       COL_ACLS;

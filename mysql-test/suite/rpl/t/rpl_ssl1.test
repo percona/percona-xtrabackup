@@ -19,7 +19,7 @@ create table t1 (t int);
 STOP REPLICA;
 --source include/rpl/wait_for_replica_to_stop.inc
 --replace_column 2 ####
-CHANGE REPLICATION SOURCE to SOURCE_USER='replssl',SOURCE_PASSWORD='';
+CHANGE REPLICATION SOURCE to SOURCE_USER='replssl',SOURCE_PASSWORD='', SOURCE_SSL=0;
 START REPLICA;
 
 #showing that replication don't work
@@ -160,7 +160,7 @@ CHANGE REPLICATION SOURCE TO
  SOURCE_SSL_CERT='',
  SOURCE_SSL_KEY='',
  SOURCE_SSL_VERIFY_SERVER_CERT=0,
- SOURCE_SSL=0,
+ SOURCE_SSL=1,
  SOURCE_TLS_VERSION='';
 
 --let $rpl_only_running_threads= 1

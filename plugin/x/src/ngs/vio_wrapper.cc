@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -55,9 +55,9 @@ void Vio_wrapper::set_timeout_in_ms(const Direction direction,
   // To get the millisecond resolution, we need to duplicate the logic
   // from "vio_timeout".
 
-  bool old_mode = m_vio->write_timeout < 0 && m_vio->read_timeout < 0;
+  bool const old_mode = m_vio->write_timeout < 0 && m_vio->read_timeout < 0;
 
-  int which = direction == Direction::k_write ? 1 : 0;
+  int const which = direction == Direction::k_write ? 1 : 0;
 
   if (which)
     m_vio->write_timeout = timeout_ms;
@@ -87,7 +87,7 @@ xpl::Connection_type Vio_wrapper::get_type() const {
 
 sockaddr_storage *Vio_wrapper::peer_addr(std::string *address, uint16_t *port) {
   address->resize(256);
-  char *buffer = &(*address)[0];
+  char *buffer = address->data();
 
   buffer[0] = 0;
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -876,6 +876,8 @@ AccessPath *CreateNestedLoopAccessPath(THD *thd, AccessPath *outer,
   path->nested_loop_join().outer = outer;
   path->nested_loop_join().inner = inner;
   path->nested_loop_join().join_type = join_type;
+  path->has_group_skip_scan =
+      outer->has_group_skip_scan || inner->has_group_skip_scan;
   if (join_type == JoinType::ANTI || join_type == JoinType::SEMI) {
     // This does not make sense as an optimization for anti- or semijoins.
     path->nested_loop_join().pfs_batch_mode = false;
@@ -962,6 +964,8 @@ AccessPath *CreateBKAAccessPath(THD *thd, JOIN *join, AccessPath *outer_path,
   // Will be set later if we get a weedout access path as parent.
   path->bka_join().store_rowids = false;
   path->bka_join().tables_to_get_rowid_for = 0;
+  path->has_group_skip_scan =
+      outer_path->has_group_skip_scan || inner_path->has_group_skip_scan;
 
   return path;
 }
@@ -1572,7 +1576,7 @@ static void RecalculateTablePathCost(THD *thd, AccessPath *path,
       path->set_init_cost(child.init_cost());
 
       const FilterCost filterCost =
-          EstimateFilterCost(current_thd, path->num_output_rows(),
+          EstimateFilterCost(thd, path->num_output_rows(),
                              path->filter().condition, &outer_query_block);
 
       path->set_cost(child.cost() +
@@ -1598,11 +1602,11 @@ static void RecalculateTablePathCost(THD *thd, AccessPath *path,
       break;
 
     case AccessPath::STREAM:
-      EstimateStreamCost(path);
+      EstimateStreamCost(thd, path);
       break;
 
     case AccessPath::MATERIALIZE:
-      EstimateMaterializeCost(current_thd, path);
+      EstimateMaterializeCost(thd, path);
       break;
 
     case AccessPath::WINDOW:
@@ -1621,10 +1625,10 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
   AccessPath *bottom_of_table_path = nullptr;
   // For EXPLAIN, we recalculate the cost to reflect the new order of
   // AccessPath objects.
-  const bool explain = current_thd->lex->is_explain();
+  const bool explain = thd->lex->is_explain();
   Prealloced_array<AccessPath *, 4> ancestor_paths{PSI_NOT_INSTRUMENTED};
 
-  const auto scan_functor = [&bottom_of_table_path, &ancestor_paths, path,
+  const auto scan_functor = [&bottom_of_table_path, &ancestor_paths, thd, path,
                              explain](AccessPath *sub_path, const JOIN *) {
     switch (sub_path->type) {
       case AccessPath::TABLE_SCAN:
@@ -1639,7 +1643,7 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
         // We found our real bottom.
         path->materialize().table_path = sub_path;
         if (explain) {
-          EstimateMaterializeCost(current_thd, path);
+          EstimateMaterializeCost(thd, path);
         }
         return true;
       case AccessPath::SAMPLE_SCAN: /* LCOV_EXCL_LINE */
@@ -1661,7 +1665,7 @@ AccessPath *MoveCompositeIteratorsFromTablePath(
       return bottom_of_table_path;
     }
     if (explain) {
-      EstimateMaterializeCost(current_thd, path);
+      EstimateMaterializeCost(thd, path);
     }
 
     // This isn't strictly accurate, but helps propagate information
@@ -2319,6 +2323,8 @@ static AccessPath *CreateHashJoinAccessPath(
   path->hash_join().store_rowids = false;
   path->hash_join().rewrite_semi_to_inner = false;
   path->hash_join().tables_to_get_rowid_for = 0;
+  path->has_group_skip_scan =
+      probe_path->has_group_skip_scan || build_path->has_group_skip_scan;
 
   SetCostOnHashJoinAccessPath(*thd->cost_model(), qep_tab->position(), path);
 
@@ -3121,7 +3127,7 @@ void JOIN::create_access_paths() {
   assert(m_root_access_path == nullptr);
 
   AccessPath *path = create_root_access_path_for_join();
-  path = attach_access_paths_for_having_and_limit(path);
+  path = attach_access_paths_for_having_qualify_limit(path);
   path = attach_access_path_for_update_or_delete(path);
 
   m_root_access_path = path;
@@ -3302,8 +3308,7 @@ AccessPath *JOIN::create_root_access_path_for_join() {
 
       ORDER *order = create_order_from_distinct(
           thd, ref_items[qep_tab->ref_item_slice], desired_order, select_list,
-          /*skip_aggregates=*/false, /*convert_bit_fields_to_long=*/false,
-          &all_order_fields_used);
+          /*skip_aggregates=*/false, &all_order_fields_used);
       if (order == nullptr) {
         // Only const fields.
         limit_1_for_dup_filesort = true;
@@ -3489,15 +3494,20 @@ AccessPath *JOIN::create_root_access_path_for_join() {
   return path;
 }
 
-AccessPath *JOIN::attach_access_paths_for_having_and_limit(
+AccessPath *JOIN::attach_access_paths_for_having_qualify_limit(
     AccessPath *path) const {
-  // Attach HAVING and LIMIT if needed.
+  // Attach HAVING, QUALIFY, LIMIT and OFFSET if needed.
   // NOTE: We can have HAVING even without GROUP BY, although it's not very
   // useful.
   // We don't currently bother with materializing subqueries
   // in HAVING, as they should be rare.
   if (having_cond != nullptr) {
     path = add_filter_access_path(thd, path, having_cond, query_block);
+  }
+
+  if (Item *qualify_cond = query_block->qualify_cond();
+      qualify_cond != nullptr) {
+    path = add_filter_access_path(thd, path, qualify_cond, query_block);
   }
 
   Query_expression *const qe = query_expression();
@@ -3541,12 +3551,11 @@ void JOIN::create_access_paths_for_index_subquery() {
       path = NewMaterializedTableFunctionAccessPath(thd, first_qep_tab->table(),
                                                     tl->table_function, path);
     } else {
-      path = GetAccessPathForDerivedTable(thd, first_qep_tab,
-                                          first_qep_tab->access_path());
+      path = GetAccessPathForDerivedTable(thd, first_qep_tab, path);
     }
   }
 
-  path = attach_access_paths_for_having_and_limit(path);
+  path = attach_access_paths_for_having_qualify_limit(path);
   m_root_access_path = path;
 }
 
@@ -4403,8 +4412,8 @@ static bool replace_embedded_rollup_references_with_tmp_fields(
   if (!item->has_grouping_set_dep()) {
     return false;
   }
-  const auto replace_functor = [thd, item, fields](Item *sub_item, Item *,
-                                                   unsigned) -> ReplaceResult {
+  const auto replace_functor = [thd, item,
+                                fields](Item *sub_item) -> ReplaceResult {
     if (!is_rollup_group_wrapper(sub_item)) {
       return {ReplaceResult::KEEP_TRAVERSING, nullptr};
     }
@@ -4549,8 +4558,7 @@ bool replace_contents_of_rollup_wrappers_with_tmp_fields(THD *thd,
                                                          Query_block *select,
                                                          Item *item_arg) {
   return WalkAndReplace(
-      thd, item_arg,
-      [thd, select](Item *item, Item *, unsigned) -> ReplaceResult {
+      thd, item_arg, [thd, select](Item *item) -> ReplaceResult {
         if (!is_rollup_group_wrapper(item)) {
           return {ReplaceResult::KEEP_TRAVERSING, nullptr};
         }

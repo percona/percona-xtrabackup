@@ -11,6 +11,9 @@
 # Remove manifest file for mysqld binary
 --source include/keyring_tests/helper/binary_remove_manifest.inc
 
+# restore global files (needs COMPONENT_DIR and COMPONENT_NAME)
+--source include/keyring_tests/helper/restore_global_files_once.inc
+
 # Restart server without manifest file
 --source include/keyring_tests/helper/cleanup_server_with_manifest.inc
 --echo # ----------------------------------------------------------------------

@@ -57,31 +57,38 @@ while ($mysql_errno)
 }
 
 if ($SECONDARY_ENGINE_TEST) {
-  --let $secondary_engine_bootstrap = query_get_value($SECONDARY_ENGINE_BOOTSTRAP_QUERY, Value, 1)
-  if ( $secondary_engine_bootstrap == ON ) {
-    --let $counter = 300
-    --let $secondary_engine_status = OFFLINE
+  if(!$SKIP_SECONDARY_ENGINE_BOOTSTRAP_WAIT_ON_MYSQLD_RESTART) {
+    --let $secondary_engine_bootstrap = query_get_value($SECONDARY_ENGINE_BOOTSTRAP_QUERY, Value, 1)
+    if ( $secondary_engine_bootstrap == ON ) {
+      --let $counter = 300
+      --let $secondary_engine_status = OFFLINE
 
-    while ($secondary_engine_status == OFFLINE) {
-      --let $secondary_engine_status = query_get_value($SECONDARY_ENGINE_STATUS_QUERY, Value, 1)
-      --dec $counter
+      while ($secondary_engine_status == OFFLINE) {
+        --let $secondary_engine_status = query_get_value($SECONDARY_ENGINE_STATUS_QUERY, Value, 1)
+        --dec $counter
 
-      if (!$counter) {
-        --die Secondary engine server is not running or it is not bootstrapped
+        if (!$counter) {
+          --die Secondary engine server is not running or it is not bootstrapped
+        }
+
+        --sleep 0.1
       }
 
       --sleep 0.1
-    }
 
-    --sleep 0.1
-
-    # Wait till the tables get loaded into secondary engine
-    --perl
-    my $wait_file= "$ENV{MYSQLTEST_VARDIR}/tmp/wait_until_load";
-    while (-e $wait_file) {
-      select(undef, undef, undef, (100 / 1000));
+      # Wait till the tables get loaded into secondary engine
+      --perl
+      my $wait_file= "$ENV{MYSQLTEST_VARDIR}/tmp/wait_until_load";
+      while (-e $wait_file) {
+        select(undef, undef, undef, (100 / 1000));
+      }
+      EOF
     }
-    EOF
+  }
+
+  if($SECONDARY_ENGINE_PLUGIN_PERSISTENCE_ENABLED) {
+    --let $wait_condition= $SECONDARY_ENGINE_PLUGIN_PERSISTENCE_WAIT_QUERY
+    --source include/wait_condition_or_abort.inc
   }
 }
 

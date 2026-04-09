@@ -1,5 +1,5 @@
 /*****************************************************************************
-Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -61,12 +61,14 @@ bool Instant_ddl_impl<Table>::is_instant_add_drop_possible(
 
   /* Get the maximum size of a valid rec in current table */
   size_t current_max_size;
-  bool res = dict_index_validate_max_rec_size(
-      dict_table, index, true, page_rec_max, page_ptr_max, current_max_size);
+  const bool res = dict_index_validate_max_rec_size(
+      dict_table, index, page_rec_max, page_ptr_max, current_max_size);
 
   if (res) {
     /* Table is already in a state where possible row size can go beyond
     permissible size limit. Don't allow INSTANT ADD */
+    ib::error(ER_IB_INSTANT_ADD_DROP_COLUMN_NOT_ALLOWED,
+              dict_table->name.m_name, current_max_size, page_rec_max);
     return false;
   }
 
@@ -100,6 +102,8 @@ bool Instant_ddl_impl<Table>::is_instant_add_drop_possible(
     current_max_size += field_max_size;
     if (current_max_size > page_rec_max) {
       /* Don't allow INSTANT ADD */
+      ib::error(ER_IB_INSTANT_ADD_NOT_POSSIBLE, cols_to_add.size(),
+                dict_table->name.m_name, current_max_size, page_rec_max);
       return false;
     }
   }

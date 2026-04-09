@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -57,6 +57,9 @@ void pfs_set_metadata_lock_status_vc(PSI_metadata_lock *lock,
 
 void pfs_set_metadata_lock_duration_vc(PSI_metadata_lock *lock,
                                        opaque_mdl_duration mdl_duration);
+
+void pfs_set_metadata_lock_type_vc(PSI_metadata_lock *lock,
+                                   opaque_mdl_type mdl_type);
 
 void pfs_destroy_metadata_lock_vc(PSI_metadata_lock *lock);
 

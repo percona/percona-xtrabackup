@@ -1,0 +1,304 @@
+# Verify redirection links generated different authentication application
+# 
+# The test assigns different "authentication application", to services
+# that have differen protocols and host configured.
+# Redirection "to and back" to external authentication servers, should
+# try to build full redirection link using service protocol and its host.
+# If host is empty, then client providen data should be used.
+#
+#
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v3_or_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+create user mrsuser@'%' identified by 'S3kre7';
+grant all on *.* to mrsuser@'%';
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Create three service with the same name but hosts: <EMPTY>, HTTPHOST,HTTPS,
+--echo #     also those secrives should only allow https or http protocol depending on its host-name.
+--echo #     Each service should have three auth-app assigned: Facebook, Google, MySQL auth-app.
+--echo #
+--echo # 1. verify that REST resources use proto://host for those service that had non-empty host configured.
+--echo #
+--echo ## II. Mark  service resources that should requires authentication.
+--echo #
+--echo # 1. verify that all servies: /svc, HTTPHOST/svc, HTTPSHOST/svc use three auth-apps
+--echo # 2. verify that Oauth2 facebook uses full link to MRS server in facebok redirection
+--echo #    (in all cases: unknown host, httphost, httpshost). In case of unknow host, MRS should use
+--echo #    client providen host.
+--echo # 3. verify that Oauth2 google uses full link to MRS server in facebok redirection
+--echo #    (in all cases: unknown host, httphost, httpshost).In case of unknow host, MRS should use
+--echo #    client providen host.
+--echo # 4. verify that MYSQL auth-app uses relative redirection links in all cases (without proto://host)
+--echo #
+--echo ## II. If changes done to `service_has_auth_app` are detected (test should be moved
+--echo ##     to schema-monitor test suite in futute).
+--echo #
+--echo # 1. verify that fourth service can use old auth_apps (added in other refresh cycle).
+--echo #
+--echo #
+
+
+create database host_tests;
+create table host_tests.table1(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+create table host_tests.table2(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+create table host_tests.table3(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into host_tests.table1 values(1, "TABLE1");
+insert into host_tests.table2 values(2, "TABLE2");
+insert into host_tests.table3 values(3, "TABLE3");
+
+
+--source ../include/mrs/start_object_definition.inc
+
+############################
+## Create Services
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_protocol="HTTPS"
+--source ../include/mrs/service/add.inc
+SET @service_id1=@service_id;
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name="HTTPHOST"
+--let $mrs_add_service_protocol="HTTP"
+--source ../include/mrs/service/add.inc
+SET @service_id2=@service_id;
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name="HTTPSHOST"
+--let $mrs_add_service_protocol="HTTPS"
+--source ../include/mrs/service/add.inc
+SET @service_id3=@service_id;
+
+--let $mrs_add_service_path="/update"
+--let $mrs_add_service_protocol="HTTPS"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+SET @service_id4=@service_id;
+
+############################
+## Create db_schemas
+
+--let $mrs_add_schema=host_tests
+--let $mrs_add_schema_path=/hostTests
+--let $mrs_service_id_sql_variable=@service_id1
+--source ../include/mrs/db_schema/add.inc
+SET @schema_id1=@schema_id;
+
+--let $mrs_add_schema=host_tests
+--let $mrs_add_schema_path=/hostTests
+--let $mrs_service_id_sql_variable=@service_id2
+--source ../include/mrs/db_schema/add.inc
+SET @schema_id2=@schema_id;
+
+--let $mrs_add_schema=host_tests
+--let $mrs_add_schema_path=/hostTests
+--let $mrs_service_id_sql_variable=@service_id3
+--source ../include/mrs/db_schema/add.inc
+SET @schema_id3=@schema_id;
+
+############################
+## Create db_objects
+
+--let $mrs_schema_id_sql_variable=@schema_id1
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id2
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id3
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+############################
+## Create auth_apps
+
+--let $mrs_sql_id_variable=@auth_app_mysql
+--let $mrs_add_auth_app=mysql
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_auth_app=g
+--let $mrs_add_auth_vendor=Google
+--let $mrs_add_auth_service=/svc
+--let $mrs_add_auth_client_id="c1"
+--let $mrs_add_auth_client_secret="s1"
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_auth_app=f
+--let $mrs_add_auth_vendor=Facebook
+--let $mrs_add_auth_service=/svc
+--let $mrs_add_auth_client_id="c1"
+--let $mrs_add_auth_client_secret="s1"
+--source ../include/mrs/auth_app/add.inc
+
+# We can't test MRS handler without additional implementation,
+# it should do exactly the same redirection as MYSQL auth-app.
+#--let $mrs_add_auth_app=mrs
+#--let $mrs_add_auth_vendor=MRS
+#--let $mrs_add_auth_service=/svc
+#--let $mrs_add_auth_client_id="c1"
+#--let $mrs_add_auth_client_secret="s1"
+#--source ../include/mrs/auth_app/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo
+--echo #
+--echo # I.1
+
+--let $mrs_client_arg_path='/svc/hostTests/tab'
+--let $mrs_client_arg_json_pointer=/items/*/links/*/href
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/hostTests/tab'
+--let $mrs_client_arg_request_header_host='HTTPHOST'
+--let $mrs_client_arg_json_pointer=/items/*/links/*/href
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/hostTests/tab'
+--let $mrs_client_arg_request_header_host='HTTPSHOST'
+--let $mrs_client_arg_json_pointer=/items/*/links/*/href
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.1
+UPDATE `mysql_rest_service_metadata`.`db_schema` SET requires_auth=1;
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $mrs_client_arg_path='/svc/hostTests/tab'
+--let $mrs_client_arg_expected_status=Unauthorized
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/authentication/authApps'
+--let $mrs_client_arg_request_header_host='NotMatchingHost'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/authentication/authApps'
+--let $mrs_client_arg_request_header_host='HTTPHOST'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/authentication/authApps'
+--let $mrs_client_arg_request_header_host='HTTPSHOST'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.2
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=g'
+--let $mrs_client_arg_request_header_host='NotMatchingHost'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=g'
+--let $mrs_client_arg_request_header_host='HTTPHOST'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=g'
+--let $mrs_client_arg_request_header_host='HTTPSHOST'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.3
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=f'
+--let $mrs_client_arg_request_header_host='NotMatchingHost'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=f'
+--let $mrs_client_arg_request_header_host='HTTPHOST'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=f'
+--let $mrs_client_arg_request_header_host='HTTPSHOST'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.4
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=mysql'
+--let $mrs_client_arg_request_header_host='NotMatchingHost'
+--let $mrs_client_arg_request_header_authorization='Basic bXJzdXNlcjpTM2tyZTc='
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=mysql'
+--let $mrs_client_arg_request_header_host='HTTPHOST'
+--let $mrs_client_arg_request_header_authorization='Basic bXJzdXNlcjpTM2tyZTc='
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+
+--replace_regex /^Date.*/Date -> %DATE%/ /^Set-Cookie.*/Set-Cookie -> %COOKIE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=mysql'
+--let $mrs_client_arg_request_header_host='HTTPSHOST'
+--let $mrs_client_arg_request_header_authorization='Basic bXJzdXNlcjpTM2tyZTc='
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=RAW
+--let $mrs_client_arg_display=header,result
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.1
+
+INSERT INTO `mysql_rest_service_metadata`.`service_has_auth_app`(service_id,auth_app_id) VALUES(@service_id4, @auth_app_mysql);
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $mrs_client_arg_path='/update/authentication/authApps'
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+DROP SCHEMA host_tests;
+drop user mrsuser@'%';
+--source ../include/mrs/cleanup.inc

@@ -1,0 +1,750 @@
+# DB `basic_schema` - created
+
+
+## I. Create servcices that:
+## *  service A, that has nothing under it and no authApp assigned
+## *  service B, that has nothing under it and one authApp assigned
+## *  service C, that has nothing under it and two authApps assigned
+## *  service D, that has db_object and no authApp assigned
+## *  service E, that has db_object and one authApp assigned
+## *  service F, that has db_object and two authApps assigned
+## *  service G, that has db_object+requires_auth and no authApp assigned
+## *  service H, that has db_object+requires_auth and one authApp assigned
+## *  service I, that has db_object+requires_auth and two authApps assigned
+#
+# 1. Verify that under all services, endpoint /authentication/authApps exists and returns
+#    specific number of authApps in a array (WL#16694 - TSFR_2_1).
+# 2. Verify that under all services, endpoint /authentication/completed exists and returns
+#    valid http page.
+# 3. Verify that under all services, endpoint /authentication/login
+# 4. Verify that under all services, endpoint /authentication/logout
+# 5. Verify that under all services, endpoint /authentication/user
+# 6. Verify that under all services, endpoint /authentication/status
+#
+#
+## II. Remove auth-app (WL#16694 - TSFR_2_3).
+# 1. Remove 'f_one-of-two' auth-app, from service "f" (verify /authentication/authApps)
+# 2. Remove all auth-apps, from service "f" (verify /authentication/authApps)
+#
+## III. Remove auth-app (WL#16693 - TSFR_2_2_1).
+# 1. Remove 'c_one-of-two' auth-app, from service "c" (verify /authentication/authApps)
+# 2. Remove all auth-apps, from service "c" (verify /authentication/authApps)
+
+
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+#
+# I.1
+# Registred SERVICE at path: /a
+# Registred SERVICE at path: /b
+# Registred AUTH APP at path: /b
+# Registred SERVICE at path: /c
+# Registred AUTH APP at path: /c
+# Registred AUTH APP at path: /c
+# Registred SERVICE at path: /d
+# Registred DB_SCHEMA at path: /d/sch
+# Registred DB_OBJECT at path: /d/sch/t
+# Registred SERVICE at path: /e
+# Registred DB_SCHEMA at path: /e/sch
+# Registred DB_OBJECT at path: /e/sch/t
+# Registred AUTH APP at path: /e
+# Registred SERVICE at path: /f
+# Registred DB_SCHEMA at path: /f/sch
+# Registred DB_OBJECT at path: /f/sch/t
+# Registred AUTH APP at path: /f
+# Registred AUTH APP at path: /f
+# Registred SERVICE at path: /g
+# Registred DB_SCHEMA at path: /g/sch
+# Registred DB_OBJECT at path: /g/sch/t
+# Registred SERVICE at path: /h
+# Registred DB_SCHEMA at path: /h/sch
+# Registred DB_OBJECT at path: /h/sch/h
+# Registred AUTH APP at path: /h
+# Registred SERVICE at path: /i
+# Registred DB_SCHEMA at path: /i/sch
+# Registred DB_OBJECT at path: /i/sch/t
+# Registred AUTH APP at path: /i
+# Registred AUTH APP at path: /i
+
+#
+# I.1
+GET /a/authentication/authApps
+[]
+OK
+GET /b/authentication/authApps
+[
+    {
+        "name": "b_one",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /c/authentication/authApps
+Ok(200)
+GET /d/authentication/authApps
+[]
+OK
+GET /e/authentication/authApps
+[
+    {
+        "name": "e_one",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /f/authentication/authApps
+Ok(200)
+GET /g/authentication/authApps
+[]
+OK
+GET /h/authentication/authApps
+[
+    {
+        "name": "h_one",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /i/authentication/authApps
+Ok(200)
+
+#
+# I.2
+GET /a/authentication/completed
+Ok(200)
+GET /b/authentication/completed
+Ok(200)
+GET /c/authentication/completed
+Ok(200)
+GET /d/authentication/completed
+Ok(200)
+GET /e/authentication/completed
+Ok(200)
+GET /f/authentication/completed
+Ok(200)
+GET /g/authentication/completed
+Ok(200)
+GET /h/authentication/completed
+Ok(200)
+GET /i/authentication/completed
+Ok(200)
+
+#
+# I.3
+GET /a/authentication/login
+
+OK
+GET /b/authentication/login
+
+OK
+GET /c/authentication/login
+
+OK
+GET /c/authentication/login?app=c_one-of-two
+
+OK
+GET /d/authentication/login
+
+OK
+GET /e/authentication/login
+
+OK
+GET /f/authentication/login
+
+OK
+GET /f/authentication/login?app=f_one-of-two
+
+OK
+GET /g/authentication/login
+
+OK
+GET /h/authentication/login
+
+OK
+GET /i/authentication/login
+
+OK
+GET /i/authentication/login?app=i_one-of-two
+
+OK
+
+#
+# I.4
+POST /a/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /b/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /c/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /d/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /e/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /f/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /g/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /h/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /i/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+
+#
+# I.5
+GET /a/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /b/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /c/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /d/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /e/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /f/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /g/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /h/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /i/authentication/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# I.6
+GET /a/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /b/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /c/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /d/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /e/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /f/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /g/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /h/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /i/authentication/status
+{
+    "status": "unauthorized"
+}
+OK
+
+#
+# II.1
+# Removed AUTH APP at path: 
+GET /f/authentication/authApps
+[
+    {
+        "name": "f_two-of-two",
+        "vendorId": "0x30000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# II.2
+# Removed AUTH APP at path: 
+GET /f/authentication/authApps
+[]
+OK
+
+#
+# III.1
+# Removed AUTH APP at path: 
+GET /c/authentication/authApps
+[
+    {
+        "name": "c_two-of-two",
+        "vendorId": "0x30000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# III.2
+# Removed AUTH APP at path: 
+GET /c/authentication/authApps
+[]
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;
+
+
+## I. Create servcices that:
+## *  service A, that has nothing under it and no authApp assigned
+## *  service B, that has nothing under it and one authApp assigned
+## *  service C, that has nothing under it and two authApps assigned
+## *  service D, that has db_object and no authApp assigned
+## *  service E, that has db_object and one authApp assigned
+## *  service F, that has db_object and two authApps assigned
+## *  service G, that has db_object+requires_auth and no authApp assigned
+## *  service H, that has db_object+requires_auth and one authApp assigned
+## *  service I, that has db_object+requires_auth and two authApps assigned
+#
+# 1. Verify that under all services, endpoint /custom/authApps exists and returns
+#    specific number of authApps in a array (WL#16694 - TSFR_2_1).
+# 2. Verify that under all services, endpoint /custom/completed exists and returns
+#    valid http page.
+# 3. Verify that under all services, endpoint /custom/login
+# 4. Verify that under all services, endpoint /custom/logout
+# 5. Verify that under all services, endpoint /custom/user
+# 6. Verify that under all services, endpoint /custom/status
+#
+#
+## II. Remove auth-app (WL#16694 - TSFR_2_3).
+# 1. Remove 'f_one-of-two' auth-app, from service "f" (verify /custom/authApps)
+# 2. Remove all auth-apps, from service "f" (verify /custom/authApps)
+#
+## III. Remove auth-app (WL#16693 - TSFR_2_2_1).
+# 1. Remove 'c_one-of-two' auth-app, from service "c" (verify /authentication/authApps)
+# 2. Remove all auth-apps, from service "c" (verify /authentication/authApps)
+
+
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+#
+# I.1
+# Registred SERVICE at path: /a
+# Registred SERVICE at path: /b
+# Registred AUTH APP at path: /b
+# Registred SERVICE at path: /c
+# Registred AUTH APP at path: /c
+# Registred AUTH APP at path: /c
+# Registred SERVICE at path: /d
+# Registred DB_SCHEMA at path: /d/sch
+# Registred DB_OBJECT at path: /d/sch/t
+# Registred SERVICE at path: /e
+# Registred DB_SCHEMA at path: /e/sch
+# Registred DB_OBJECT at path: /e/sch/t
+# Registred AUTH APP at path: /e
+# Registred SERVICE at path: /f
+# Registred DB_SCHEMA at path: /f/sch
+# Registred DB_OBJECT at path: /f/sch/t
+# Registred AUTH APP at path: /f
+# Registred AUTH APP at path: /f
+# Registred SERVICE at path: /g
+# Registred DB_SCHEMA at path: /g/sch
+# Registred DB_OBJECT at path: /g/sch/t
+# Registred SERVICE at path: /h
+# Registred DB_SCHEMA at path: /h/sch
+# Registred DB_OBJECT at path: /h/sch/h
+# Registred AUTH APP at path: /h
+# Registred SERVICE at path: /i
+# Registred DB_SCHEMA at path: /i/sch
+# Registred DB_OBJECT at path: /i/sch/t
+# Registred AUTH APP at path: /i
+# Registred AUTH APP at path: /i
+
+#
+# I.1
+GET /a/custom/authApps
+[]
+OK
+GET /b/custom/authApps
+[
+    {
+        "name": "b_one",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /c/custom/authApps
+Ok(200)
+GET /d/custom/authApps
+[]
+OK
+GET /e/custom/authApps
+[
+    {
+        "name": "e_one",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /f/custom/authApps
+Ok(200)
+GET /g/custom/authApps
+[]
+OK
+GET /h/custom/authApps
+[
+    {
+        "name": "h_one",
+        "vendorId": "0x31000000000000000000000000000000"
+    }
+]
+OK
+GET /i/custom/authApps
+Ok(200)
+
+#
+# I.2
+GET /a/custom/completed
+Ok(200)
+GET /b/custom/completed
+Ok(200)
+GET /c/custom/completed
+Ok(200)
+GET /d/custom/completed
+Ok(200)
+GET /e/custom/completed
+Ok(200)
+GET /f/custom/completed
+Ok(200)
+GET /g/custom/completed
+Ok(200)
+GET /h/custom/completed
+Ok(200)
+GET /i/custom/completed
+Ok(200)
+
+#
+# I.3
+GET /a/custom/login
+
+OK
+GET /b/custom/login
+
+OK
+GET /c/custom/login
+
+OK
+GET /c/custom/login?app=c_one-of-two
+
+OK
+GET /d/custom/login
+
+OK
+GET /e/custom/login
+
+OK
+GET /f/custom/login
+
+OK
+GET /f/custom/login?app=f_one-of-two
+
+OK
+GET /g/custom/login
+
+OK
+GET /h/custom/login
+
+OK
+GET /i/custom/login
+
+OK
+GET /i/custom/login?app=i_one-of-two
+
+OK
+
+#
+# I.4
+POST /a/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /b/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /c/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /d/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /e/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /f/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /g/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /h/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /i/custom/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+
+#
+# I.5
+GET /a/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /b/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /c/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /d/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /e/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /f/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /g/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /h/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /i/custom/user
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+
+#
+# I.6
+GET /a/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /b/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /c/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /d/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /e/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /f/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /g/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /h/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+GET /i/custom/status
+{
+    "status": "unauthorized"
+}
+OK
+
+#
+# II.1
+# Removed AUTH APP at path: 
+GET /f/custom/authApps
+[
+    {
+        "name": "f_two-of-two",
+        "vendorId": "0x30000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# II.2
+# Removed AUTH APP at path: 
+GET /f/custom/authApps
+[]
+OK
+
+#
+# III.1
+# Removed AUTH APP at path: 
+GET /c/custom/authApps
+[
+    {
+        "name": "c_two-of-two",
+        "vendorId": "0x30000000000000000000000000000000"
+    }
+]
+OK
+
+#
+# III.2
+# Removed AUTH APP at path: 
+GET /c/custom/authApps
+[]
+OK
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,12 +29,12 @@
 #include "plugin/semisync/semisync.h"
 
 /**
-   The extension class for the slave of semi-synchronous replication
+   The extension class for the replica of semi-synchronous replication
 */
-class ReplSemiSyncSlave : public ReplSemiSyncBase {
+class ReplSemiSyncReplica : public ReplSemiSyncBase {
  public:
-  ReplSemiSyncSlave() : slave_enabled_(false) {}
-  ~ReplSemiSyncSlave() = default;
+  ReplSemiSyncReplica() : replica_enabled_(false) {}
+  ~ReplSemiSyncReplica() = default;
 
   void setTraceLevel(unsigned long trace_level) { trace_level_ = trace_level; }
 
@@ -43,28 +43,28 @@ class ReplSemiSyncSlave : public ReplSemiSyncBase {
    */
   int initObject();
 
-  bool getSlaveEnabled() { return slave_enabled_; }
-  void setSlaveEnabled(bool enabled) { slave_enabled_ = enabled; }
+  bool getReplicaEnabled() { return replica_enabled_; }
+  void setReplicaEnabled(bool enabled) { replica_enabled_ = enabled; }
 
-  /* A slave reads the semi-sync packet header and separate the metadata
+  /* A replica reads the semi-sync packet header and separate the metadata
    * from the payload data.
    *
    * Input:
    *  header      - (IN)  packet header pointer
    *  total_len   - (IN)  total packet length: metadata + payload
-   *  need_reply  - (IN)  whether the master is waiting for the reply
+   *  need_reply  - (IN)  whether the source is waiting for the reply
    *  payload     - (IN)  payload: the replication event
    *  payload_len - (IN)  payload length
    *
    * Return:
    *  0: success;  non-zero: error
    */
-  int slaveReadSyncHeader(const char *header, unsigned long total_len,
-                          bool *need_reply, const char **payload,
-                          unsigned long *payload_len);
+  int replicaReadSyncHeader(const char *header, unsigned long total_len,
+                            bool *need_reply, const char **payload,
+                            unsigned long *payload_len);
 
-  /* A slave replies to the master indicating its replication process.  It
-   * indicates that the slave has received all events before the specified
+  /* A replica replies to the source indicating its replication process.  It
+   * indicates that the replica has received all events before the specified
    * binlog position.
    *
    * Input:
@@ -75,20 +75,20 @@ class ReplSemiSyncSlave : public ReplSemiSyncBase {
    * Return:
    *  0: success;  non-zero: error
    */
-  int slaveReply(MYSQL *mysql, const char *binlog_filename,
-                 my_off_t binlog_filepos);
+  int replicaReply(MYSQL *mysql, const char *binlog_filename,
+                   my_off_t binlog_filepos);
 
-  int slaveStart(Binlog_relay_IO_param *param);
-  int slaveStop(Binlog_relay_IO_param *param);
+  int replicaStart(Binlog_relay_IO_param *param);
+  int replicaStop(Binlog_relay_IO_param *param);
 
  private:
   /* True when initObject has been called */
   bool init_done_ = false;
-  bool slave_enabled_ = false;  /* semi-sycn is enabled on the slave */
-  MYSQL *mysql_reply = nullptr; /* connection to send reply */
+  bool replica_enabled_ = false; /* semi-sync is enabled on the replica */
+  MYSQL *mysql_reply = nullptr;  /* connection to send reply */
 };
 
-/* System and status variables for the slave component */
+/* System and status variables for the replica component */
 extern bool rpl_semi_sync_replica_enabled;
 extern unsigned long rpl_semi_sync_replica_trace_level;
 extern char rpl_semi_sync_replica_status;

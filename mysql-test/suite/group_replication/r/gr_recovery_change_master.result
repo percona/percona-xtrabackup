@@ -10,6 +10,8 @@ CREATE USER 'manish'@'%' IDENTIFIED BY 'rpl';
 GRANT REPLICATION SLAVE ON *.* TO 'manish'@'%';
 GRANT GROUP_REPLICATION_STREAM ON *.* TO 'manish'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET sql_log_bin=1;
 include/start_and_bootstrap_group_replication.inc
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
@@ -32,6 +34,8 @@ CREATE USER 'manish'@'%' IDENTIFIED BY 'rpl';
 GRANT REPLICATION SLAVE ON *.* TO 'manish'@'%';
 GRANT GROUP_REPLICATION_STREAM ON *.* TO 'manish'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET sql_log_bin=1;
 include/start_group_replication.inc
 # Ensuring the the two members are online.

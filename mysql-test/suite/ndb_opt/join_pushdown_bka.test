@@ -107,4 +107,4 @@ eval $query;
 
 DROP TABLE f,p;
 
-set @@global.optimizer_switch=default;
+set @@global.optimizer_switch='batched_key_access=off';

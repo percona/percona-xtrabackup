@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 // Implements
 #include "storage/ndb/plugin/ndb_sync_pending_objects_table.h"
 
-#include <assert.h>
+#include <cassert>
 #include <cstdint>
 #include <cstring>  // std::strlen
 
@@ -38,15 +38,15 @@ static unsigned long long ndb_pending_objects_row_count() {
 
 static PSI_table_handle *ndb_pending_objects_open_table(PSI_pos **pos) {
   // Constructs a table object and returns an opaque pointer
-  auto row_pos = reinterpret_cast<uint32_t **>(pos);
+  auto *row_pos = reinterpret_cast<uint32_t **>(pos);
   /*
     Creates an instance of the table. Note that this is deallocated during the
     table close which is implemented in the base class. See the
     ndb_pfs_close_table() function in ndb_pfs_table.cc
   */
-  Ndb_sync_pending_objects_table *table = new Ndb_sync_pending_objects_table();
+  auto *table = new Ndb_sync_pending_objects_table();
   *row_pos = table->get_position_address();
-  PSI_table_handle *handle = reinterpret_cast<PSI_table_handle *>(table);
+  auto *handle = reinterpret_cast<PSI_table_handle *>(table);
   return handle;
 }
 
@@ -85,11 +85,12 @@ int Ndb_sync_pending_objects_table::read_column_value(PSI_field *field,
   switch (index) {
     case 0: /* SCHEMA_NAME: Name of the schema */
       pfscol_string->set_varchar_utf8mb4(
-          field, obj.m_schema_name == "" ? nullptr : obj.m_schema_name.c_str());
+          field,
+          obj.m_schema_name.empty() ? nullptr : obj.m_schema_name.c_str());
       break;
     case 1: /* NAME: Object name */
       pfscol_string->set_varchar_utf8mb4(
-          field, obj.m_name == "" ? nullptr : obj.m_name.c_str());
+          field, obj.m_name.empty() ? nullptr : obj.m_name.c_str());
       break;
     case 2: /* TYPE */
       // type + 1 since index 0 is used for empty strings in enum

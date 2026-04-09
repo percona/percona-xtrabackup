@@ -1,3 +1,4 @@
+FLUSH STATUS;
 SET @@GLOBAL.internal_tmp_mem_storage_engine = TempTable;
 CREATE TABLE t_int (c INT);
 CREATE TABLE t_char (c CHAR(20));

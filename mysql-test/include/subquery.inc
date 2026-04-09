@@ -1139,7 +1139,7 @@ drop table t1,t2;
 #
 create table t1 (a int);
 insert into t1 values (1);
-explain select benchmark(1000, (select a from t1 where a=sha(rand())));
+explain select benchmark(1000, (select a from t1 where a=sha2(rand(),256)));
 drop table t1;
 
 

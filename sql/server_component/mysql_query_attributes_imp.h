@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -51,6 +51,9 @@ class mysql_query_attributes_imp {
   // is null methods
   static DEFINE_BOOL_METHOD(isnull_get, (mysqlh_query_attributes_iterator iter,
                                          bool *out_null));
+  // mysql_first_query_attribute methods
+  static DEFINE_BOOL_METHOD(get_first_name_data,
+                            (const char **name_buffer, size_t *name_length));
 };
 
 #endif /* MYSQL_QUERY_ATTRIBUTES_IMP_H */

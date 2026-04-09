@@ -1056,10 +1056,10 @@ varchar(255) character set ucs2 not null);
 Warnings:
 Warning	1287	'ucs2' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 insert into `bug20536` (`id`,`name`) values (1, _latin1 x'7465737431'), (2, "'test\\_2'");
-select sha1(name) from bug20536;
-sha1(name)
-e0b52f38deddb9f9e8d5336b153592794cb49baf
-677d4d505355eb5b0549b865fcae4b7f0c28aef5
+select sha2(name,256) from bug20536;
+sha2(name,256)
+c146cca453c7849605ec71093c77c553190c5ee6715c4a09fa6129c2b0f5267a
+1041fd036f5ec71753e673499f424fdc7b79aacf7dd20b7371b8b8189c15cfdd
 select make_set(3, name, upper(name)) from bug20536;
 make_set(3, name, upper(name))
 test1,TEST1
@@ -1896,24 +1896,14 @@ t1	CREATE TABLE `t1` (
   `c1` varchar(3) CHARACTER SET ucs2 DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
-select sha('a'), hex(sha('a'));
-sha('a')	hex(sha('a'))
-3106600e0327ca77371f2526df794ed84322585c	0033003100300036003600300030006500300033003200370063006100370037003300370031006600320035003200360064006600370039003400650064003800340033003200320035003800350063
-create table t1 as select sha('a') as c1;
+select sha2('a',224), hex(sha2('a',224));
+sha2('a',224)	hex(sha2('a',224))
+d95baf2bf68a013f316b01dc606dce2c7c2b5647e7c436fb41e4a886	00640039003500620061006600320062006600360038006100300031003300660033003100360062003000310064006300360030003600640063006500320063003700630032006200350036003400370065003700630034003300360066006200340031006500340061003800380036
+create table t1 as select sha2('a',224) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(40) CHARACTER SET ucs2 DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-drop table t1;
-select sha1('a'), hex(sha1('a'));
-sha1('a')	hex(sha1('a'))
-3106600e0327ca77371f2526df794ed84322585c	0033003100300036003600300030006500300033003200370063006100370037003300370031006600320035003200360064006600370039003400650064003800340033003200320035003800350063
-create table t1 as select sha1('a') as c1;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` varchar(40) CHARACTER SET ucs2 DEFAULT NULL
+  `c1` varchar(56) CHARACTER SET ucs2 DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(cast('-1' as signed)));
@@ -3991,14 +3981,6 @@ drop function f1;
 #
 # Bug#54668 User variable assignments get wrong type
 #
-SET @ST_X=sha('a');
-SELECT charset(@ST_X), collation(@ST_X);
-charset(@ST_X)	collation(@ST_X)
-ucs2	ucs2_general_ci
-SET @ST_X=sha1('a');
-SELECT charset(@ST_X), collation(@ST_X);
-charset(@ST_X)	collation(@ST_X)
-ucs2	ucs2_general_ci
 SET @ST_X=ST_astext(point(1,2));
 SELECT charset(@ST_X), collation(@ST_X);
 charset(@ST_X)	collation(@ST_X)

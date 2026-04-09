@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -418,6 +418,16 @@ SplittingAllowedParser::parse() {
     return Allowed::Always;
   } else if (accept(BINLOG_SYM)) {
     return Allowed::Always;
+  } else if (accept(END_OF_INPUT)) {
+    // - empty string
+    // - ignored whitespace
+    // - comments
+    return Allowed::Always;
+  } else if (accept(';')) {
+    if (accept(END_OF_INPUT)) {
+      // a empty statement;
+      return Allowed::Always;
+    }
   }
 
   // - HANDLER

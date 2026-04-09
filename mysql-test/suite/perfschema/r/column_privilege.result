@@ -10,6 +10,8 @@ to 'pfs_user_5'@localhost;
 grant UPDATE(enabled) on performance_schema.setup_instruments
 to 'pfs_user_5'@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 select thread_id from performance_schema.events_waits_current;
 select thread_id, event_id from performance_schema.events_waits_current;
 update performance_schema.setup_instruments set enabled='YES';
@@ -25,4 +27,6 @@ ERROR 42000: UPDATE command denied to user 'pfs_user_5'@'localhost' for column '
 REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'pfs_user_5'@localhost;
 DROP USER 'pfs_user_5'@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 UPDATE performance_schema.setup_instruments SET enabled = 'YES', timed = 'YES';

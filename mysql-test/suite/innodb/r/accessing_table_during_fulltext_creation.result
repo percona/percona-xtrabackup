@@ -1,0 +1,27 @@
+CREATE TABLE t1 (c1 INT, c2 TEXT);
+INSERT INTO t1 VALUES (1, "one"), (2, "two"), (3, "three");
+SET DEBUG_SYNC = 'alter_table_inplace_after_lock_downgrade SIGNAL downgraded WAIT_FOR can_go';
+CREATE FULLTEXT INDEX ind ON t1 ( c2 );;
+SET DEBUG_SYNC = 'now WAIT_FOR downgraded';
+SELECT * FROM t1;
+c1	c2
+1	one
+2	two
+3	three
+SET DEBUG_SYNC = 'now SIGNAL can_go';
+Warnings:
+Warning	124	InnoDB rebuilding table to add column FTS_DOC_ID
+DROP TABLE t1;
+call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
+CREATE TABLE t1 (c1 INT, c2 TEXT);
+ALTER TABLE t1 DISCARD TABLESPACE;
+SET DEBUG_SYNC = 'alter_table_inplace_after_lock_downgrade SIGNAL downgraded WAIT_FOR can_go';
+CREATE FULLTEXT INDEX ind ON t1 ( c2 );;
+SET DEBUG_SYNC = 'now WAIT_FOR downgraded';
+SELECT * FROM t1;
+ERROR HY000: Tablespace is discarded for table, 't1'
+SET DEBUG_SYNC = 'now SIGNAL can_go';
+Warnings:
+Warning	124	InnoDB rebuilding table to add column FTS_DOC_ID
+Warning	1814	InnoDB: Tablespace is discarded for table, 't1'
+DROP TABLE t1;

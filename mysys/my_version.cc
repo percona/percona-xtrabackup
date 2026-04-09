@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cassert>
+#include <cctype>
+#include <cstddef>
 #include <string>
 
 /* Clone-related macros to parse version strings and determine if clone
@@ -109,7 +110,8 @@ static ParseArray parse_version_string(std::string version, bool &is_valid) {
  @param ver2 version2 string
  @return true if cloning is allowed between ver1 and ver2, false otherwise
  */
-bool are_versions_clone_compatible(std::string ver1, std::string ver2) {
+bool are_versions_clone_compatible(const std::string &ver1,
+                                   const std::string &ver2) {
   if (ver1 == ver2) {
     return true;
   }

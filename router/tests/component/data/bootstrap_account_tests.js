@@ -15,10 +15,16 @@ console.log(inst() + "----- JS INIT START -----\n\n");
 
 var common_stmts = require("common_statements");
 
+if (mysqld.global.router_id === undefined) {
+  mysqld.global.router_id = 1;
+}
+
 var options = {
   cluster_type: "gr",
   gr_id: mysqld.global.gr_id,
   router_version: mysqld.global.router_version,
+  innodb_cluster_name: "test",
+  router_id: mysqld.global.router_id,
 };
 
 var common_responses = common_stmts.prepare_statement_responses(
@@ -39,6 +45,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_start_transaction",
       "router_commit",
       "router_clusterset_present",
+      "get_routing_guidelines_version",
 
       // account verification
       "router_select_metadata_v2_gr_account_verification",
@@ -54,11 +61,13 @@ var common_responses_regex = common_stmts.prepare_statement_responses_regex(
       "router_grant_on_pfs_db",            //   > overwritten by most tests
       "router_grant_on_routers",           //  /
       "router_grant_on_v2_routers",        // /
+      "router_grant_on_router_stats",
       "router_check_auth_plugin",
       "router_update_routers_in_metadata",
       "router_update_router_options_in_metadata",
       "router_select_router_id",
       "router_select_config_defaults_stored_gr_cluster",
+      "router_update_local_cluster_in_metadata",
     ],
     options);
 

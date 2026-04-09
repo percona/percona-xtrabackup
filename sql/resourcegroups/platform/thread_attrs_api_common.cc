@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,7 @@
 
 #include "sql/resourcegroups/platform/thread_attrs_api.h"
 
-namespace resourcegroups {
-namespace platform {
+namespace resourcegroups::platform {
 bool is_valid_thread_priority(int priority) {
   return (priority >= -20 && priority <= 19);
 }
@@ -34,11 +33,4 @@ bool is_valid_thread_priority(int priority) {
 int min_thread_priority_value() { return -20; }
 
 int max_thread_priority_value() { return 19; }
-
-uint32_t num_vcpus() {
-  uint32_t nprocs = num_vcpus_using_affinity();
-  if (nprocs == 0) nprocs = num_vcpus_using_config();
-  return nprocs;
-}
-}  // namespace platform
-}  // namespace resourcegroups
+}  // namespace resourcegroups::platform

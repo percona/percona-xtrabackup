@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,7 +21,8 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-# This file includes Windows specific hacks, mostly around compiler flags
+# This file contains our preferred compiler/linker flags for
+# Visual Studio and clang on Windows.
 
 INCLUDE (CheckCSourceCompiles)
 INCLUDE (CheckCXXSourceCompiles)
@@ -38,6 +39,8 @@ IF(MY_COMPILER_IS_CLANG)
   SET(CMAKE_INCLUDE_SYSTEM_FLAG_C "/imsvc ")
   SET(CMAKE_INCLUDE_SYSTEM_FLAG_CXX "/imsvc ")
   ADD_DEFINITIONS(-DWIN32_CLANG)
+ELSE()
+  SET(WIN32_VS 1)
 ENDIF()
 
 # avoid running system checks by using pre-cached check results
@@ -67,6 +70,13 @@ ELSE()
       "Clean the build dir and rebuild using -G \"${CMAKE_GENERATOR} Win64\"")
   ENDIF()
 ENDIF()
+
+FUNCTION(FORCE_CMAKE_COMPILER_FLAG FLAG_VAR PATTERN)
+  IF(${FLAG_VAR} MATCHES ${PATTERN})
+    RETURN()
+  ENDIF()
+  SET(${FLAG_VAR} "${PATTERN} ${${FLAG_VAR}}" PARENT_SCOPE)
+ENDFUNCTION()
 
 # Target Windows 7 / Windows Server 2008 R2 or later, i.e _WIN32_WINNT_WIN7
 ADD_DEFINITIONS(-D_WIN32_WINNT=0x0601)
@@ -114,6 +124,7 @@ IF(MSVC)
   # Remove the /RTC1 debug compiler option that cmake includes by default for
   # MSVC as its significantly slows MTR testing and rarely detects bugs.
   IF (NOT WIN_DEBUG_RTC)
+    STRING(REPLACE "/RTC1"  "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
     STRING(REPLACE "/RTC1"  "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
   ENDIF()
 
@@ -127,13 +138,7 @@ IF(MSVC)
      "${CMAKE_${type}_LINKER_FLAGS_RELEASE} /debug")
   ENDFOREACH()
 
-  # For release types Debug Release RelWithDebInfo (but not MinSizeRel):
-  # - Choose C++ exception handling:
-  #     If /EH is not specified, the compiler will catch structured and
-  #     C++ exceptions, but will not destroy C++ objects that will go out of
-  #     scope as a result of the exception.
-  #     /EHsc catches C++ exceptions only and tells the compiler to assume that
-  #     extern C functions never throw a C++ exception.
+  # For all configuration types
   # - Choose debugging information:
   #     /Z7
   #     Used for non-PGO builds, as it embeds debug information in .obj
@@ -173,42 +178,60 @@ IF(MSVC)
   # RELWITHDEBINFO /MD  /Zi /O2  /Ob1 /DNDEBUG
   # RELEASE        /MD      /O2  /Ob2 /DNDEBUG
   # MINSIZEREL     /MD      /O1  /Ob1 /DNDEBUG
-  FOREACH(flag
-      CMAKE_C_FLAGS_MINSIZEREL
-      CMAKE_C_FLAGS_RELEASE    CMAKE_C_FLAGS_RELWITHDEBINFO
-      CMAKE_C_FLAGS_DEBUG      CMAKE_C_FLAGS_DEBUG_INIT
-      CMAKE_CXX_FLAGS_MINSIZEREL
-      CMAKE_CXX_FLAGS_RELEASE  CMAKE_CXX_FLAGS_RELWITHDEBINFO
-      CMAKE_CXX_FLAGS_DEBUG    CMAKE_CXX_FLAGS_DEBUG_INIT)
-    IF(LINK_STATIC_RUNTIME_LIBRARIES)
-      STRING(REPLACE "/MD"  "/MT" "${flag}" "${${flag}}")
-    ENDIF()
-    IF(FPROFILE_GENERATE OR FPROFILE_USE)
-      STRING(REPLACE "/ZI"  "/Zi" "${flag}" "${${flag}}")
-    ELSE()
-      STRING(REPLACE "/Zi"  "/Z7" "${flag}" "${${flag}}")
-      STRING(REPLACE "/ZI"  "/Z7" "${flag}" "${${flag}}")
-    ENDIF()
-    IF (NOT WIN_DEBUG_NO_INLINE)
-      STRING(REPLACE "/Ob0"  "/Ob1" "${flag}" "${${flag}}")
-    ENDIF()
-    SET("${flag}" "${${flag}} /EHsc")
-    # Due to a bug in VS2019 we need the full paths of files in error messages
-    # See bug #30255096 for details
-    SET("${flag}" "${${flag}} /FC")
+  FOREACH(config DEBUG RELWITHDEBINFO RELEASE MINSIZEREL)
+    FOREACH(lang C CXX)
+      SET(flag "CMAKE_${lang}_FLAGS_${config}")
+      IF(LINK_STATIC_RUNTIME_LIBRARIES)
+        STRING(REPLACE "/MD"  "/MT" "${flag}" "${${flag}}")
+      ENDIF()
+      IF(FPROFILE_GENERATE OR FPROFILE_USE)
+        STRING(REPLACE "/ZI"  "/Zi" "${flag}" "${${flag}}")
+      ELSE()
+        STRING(REPLACE "/Zi"  "/Z7" "${flag}" "${${flag}}")
+        STRING(REPLACE "/ZI"  "/Z7" "${flag}" "${${flag}}")
+      ENDIF()
+      IF (NOT WIN_DEBUG_NO_INLINE)
+        STRING(REPLACE "/Ob0"  "/Ob1" "${flag}" "${${flag}}")
+      ENDIF()
+    ENDFOREACH()
   ENDFOREACH()
 
+  # cmake will initialize with:
+  # CMAKE_CXX_FLAGS  /DWIN32 /D_WINDOWS /GR /EHsc
+  # /GR: enable RTTI, it is now ON by default, so no need to set it.
+
+  # Ensure that these are always set for CMAKE_<lang>_FLAGS.
+  # This allows e.g. this for clang on win:
+  #   cmake . DCMAKE_CXX_FLAGS=-Wzero-as-null-pointer-constant
+  # rather than the full
+  #   cmake . -DCMAKE_CXX_FLAGS=
+  #      "/DWIN32 /D_WINDOWS /GR /EHsc -Wzero-as-null-pointer-constant"
+  FORCE_CMAKE_COMPILER_FLAG(CMAKE_C_FLAGS "/DWIN32")
+  FORCE_CMAKE_COMPILER_FLAG(CMAKE_CXX_FLAGS "/DWIN32")
+  FORCE_CMAKE_COMPILER_FLAG(CMAKE_C_FLAGS "/D_WINDOWS")
+  FORCE_CMAKE_COMPILER_FLAG(CMAKE_CXX_FLAGS "/D_WINDOWS")
+
+  # We PREPEND some flags here, in order to see them first on the command line.
+
+  # We have always built with the cmake default /W3
+  # With CMP0092 = NEW, we need to set it ourselves.
+  STRING_PREPEND(CMAKE_C_FLAGS "/W3 ")
+  STRING_PREPEND(CMAKE_CXX_FLAGS "/W3 ")
+
+  # Full path of source code file in diagnostics
+  STRING_PREPEND(CMAKE_C_FLAGS "/FC ")
+  STRING_PREPEND(CMAKE_CXX_FLAGS "/FC ")
+
+  # /EHsc catches C++ exceptions only and tells the compiler to assume that
+  # extern C functions never throw a C++ exception.
+  FORCE_CMAKE_COMPILER_FLAG(CMAKE_CXX_FLAGS "/EHsc")
+
   # Turn on c++20 mode explicitly so that using c++23 features is disabled.
-  FOREACH(flag
-      CMAKE_CXX_FLAGS_MINSIZEREL
-      CMAKE_CXX_FLAGS_RELEASE  CMAKE_CXX_FLAGS_RELWITHDEBINFO
-      CMAKE_CXX_FLAGS_DEBUG    CMAKE_CXX_FLAGS_DEBUG_INIT
-      )
-    SET("${flag}" "${${flag}} /std:c++20")
-  ENDFOREACH()
+  STRING_PREPEND(CMAKE_CXX_FLAGS "/std:c++20 ")
 
   OPTION(WIN_INCREMENTAL_LINK "Enable incremental linking on Windows" OFF)
 
+  # The cmake default is /INCREMENTAL for Debug/RelWithDebInfo
   FOREACH(type EXE SHARED MODULE)
     FOREACH(config DEBUG RELWITHDEBINFO RELEASE MINSIZEREL)
       SET(flag "CMAKE_${type}_LINKER_FLAGS_${config}")

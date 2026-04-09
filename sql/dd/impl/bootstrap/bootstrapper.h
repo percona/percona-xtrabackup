@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -232,16 +232,6 @@ bool store_plugin_IS_table_metadata(THD *thd);
   @param thd    Thread context
 */
 bool setup_dd_objects_and_collations(THD *thd);
-
-/**
-  This function is used in case of crash during upgrade.
-  It tries to initialize dictionary and calls DDSE_dict_recover.
-  InnoDB should do the recovery and empty undo log. Upgrade
-  process will do the cleanup and exit.
-
-  @param thd    Thread context.
-*/
-void recover_innodb_upon_upgrade(THD *thd);
 
 /**
   Initialize InnoDB for

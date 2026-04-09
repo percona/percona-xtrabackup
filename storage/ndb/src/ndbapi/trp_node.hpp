@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,7 +52,7 @@ struct trp_node {
     assert(defined);
     m_connected = connected;
   }
-  bool is_connected(void) const {
+  bool is_connected() const {
     const bool connected = m_connected;
     // Must be defined if connected
     assert(!connected || (connected && defined));
@@ -64,7 +64,7 @@ struct trp_node {
     m_api_reg_conf = confirmed;
   }
 
-  bool is_confirmed(void) const {
+  bool is_confirmed() const {
     const bool confirmed = m_api_reg_conf;
     assert(!confirmed || (confirmed && is_connected()));
     return confirmed;

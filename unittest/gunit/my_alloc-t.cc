@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
-#include <stddef.h>
 #include <sys/types.h>
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -208,7 +208,7 @@ TEST_F(MyAllocTest, CheckErrorReporting) {
   m_root.set_max_capacity(100);
   EXPECT_EQ(nullptr, m_root.Alloc(1000));
   m_root.set_error_for_capacity_exceeded(true);
-  Mock_global_error_handler error_handler(EE_CAPACITY_EXCEEDED);
+  Mock_global_error_handler const error_handler(EE_CAPACITY_EXCEEDED);
   EXPECT_NE(nullptr, m_root.Alloc(1000));
   EXPECT_EQ(1, error_handler.handle_called());
 
@@ -301,7 +301,7 @@ TEST_F(MyAllocTest, ArrayAllocInitialization) {
 
   // Initialize from rvalue. (Verifies that a bug, which made it only initialize
   // the first element correctly, is fixed.)
-  std::string *string_array1 = alloc.ArrayAlloc<std::string>(
+  auto *string_array1 = alloc.ArrayAlloc<std::string>(
       10, std::string("abcdefghijklmnopqrstuvwxyz"));
   ASSERT_NE(nullptr, string_array1);
   for (int i = 0; i < 10; ++i) {
@@ -311,9 +311,9 @@ TEST_F(MyAllocTest, ArrayAllocInitialization) {
 
   // Should be allowed to create an array of a class which is not
   // copy-constructible.
-  auto uptr_array1 = alloc.ArrayAlloc<std::unique_ptr<int>>(10);
+  auto *uptr_array1 = alloc.ArrayAlloc<std::unique_ptr<int>>(10);
   ASSERT_NE(nullptr, uptr_array1);
-  auto uptr_array2 = alloc.ArrayAlloc<std::unique_ptr<int>>(10, nullptr);
+  auto *uptr_array2 = alloc.ArrayAlloc<std::unique_ptr<int>>(10, nullptr);
   ASSERT_NE(nullptr, uptr_array2);
   for (int i = 0; i < 10; ++i) {
     EXPECT_EQ(nullptr, uptr_array1[i]);

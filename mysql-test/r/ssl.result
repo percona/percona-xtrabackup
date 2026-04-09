@@ -1937,8 +1937,8 @@ companynr	fld3	sum(price)
 select t2.companynr,count(*),min(fld3),max(fld3),sum(price),avg(price) from t2,t3 where t3.companynr >= 30 and t3.companynr <= 58 and t3.t2nr = t2.fld1 and 1+1=2 group by t2.companynr;
 companynr	count(*)	min(fld3)	max(fld3)	sum(price)	avg(price)
 00	1	Omaha	Omaha	5987435	5987435.0000
-37	83	Abraham	Wotan	1908978016	22999735.1325
 36	1	dubbed	dubbed	28357832	28357832.0000
+37	83	Abraham	Wotan	1908978016	22999735.1325
 50	2	scribbled	tapestry	68012775	34006387.5000
 select t3.companynr+0,t3.t2nr,fld3,sum(price) from t3,t2 where t2.fld1 = t3.t2nr and t3.companynr = 37 group by 1,t3.t2nr,fld3,fld3,fld3,fld3,fld3 order by fld1;
 t3.companynr+0	t2nr	fld3	sum(price)

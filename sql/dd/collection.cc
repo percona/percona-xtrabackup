@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -131,7 +131,7 @@ bool Collection<T>::restore_items(Parent_item *parent,
 
   assert(empty());
 
-  std::unique_ptr<Object_key> key_holder(key);
+  std::unique_ptr<Object_key> const key_holder(key);
 
   std::unique_ptr<Raw_record_set> rs;
   if (table->open_record_set(key, rs)) return true;
@@ -170,7 +170,7 @@ bool Collection<T>::restore_items(Parent_item *parent,
   */
   rs.reset();
 
-  for (auto item : m_items) {
+  for (auto *item : m_items) {
     if (item->restore_children(otx) || item->validate()) {
       clear_all_items();
       return true;
@@ -228,7 +228,7 @@ bool Collection<T>::drop_items(Open_dictionary_tables_ctx *otx,
   DBUG_TRACE;
 
   // Make sure key gets deleted
-  std::unique_ptr<Object_key> key_holder(key);
+  std::unique_ptr<Object_key> const key_holder(key);
 
   if (empty()) return false;
 

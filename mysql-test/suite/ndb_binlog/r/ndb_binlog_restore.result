@@ -36,8 +36,8 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
 binlog.000001	#	Table_map	#	#	table_id: # (mysql.ndb_apply_status)
-binlog.000001	#	Write_rows	#	#	table_id: #
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Query	#	#	COMMIT
 binlog.000001	#	Query	#	#	use `test`; create table binlogmarker (a int) engine=ndb
 drop table binlogmarker, t1;

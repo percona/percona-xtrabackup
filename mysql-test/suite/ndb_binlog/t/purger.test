@@ -12,6 +12,9 @@
 
 --source include/have_ndb.inc
 
+# Turn on autocommit to isolate test from MySQL config
+SET autocommit=1;
+
 RESET BINARY LOGS AND GTIDS;
 
 --echo # Find physical binlog file name format as it varies between platforms

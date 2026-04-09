@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 #include <mysql/components/component_implementation.h>
 #include <mysql/components/service_implementation.h>
 #include <mysql/components/services/mysql_string.h>
-#include <stdio.h>
+#include <cstdio>
 
 #include "m_string.h"  // strlen
 #include "my_inttypes.h"
@@ -70,11 +70,11 @@ mysql_service_status_t test_string_service_init() {
   if (!(test_text = (char *)malloc(MAX_BUFFER_LENGTH + 1))) {
     WRITE_LOG("%s\n", "Allcoate buffer failed. Stopped test execution.");
     return (true);
-  } else {
-    for (int i = 0; i < MAX_BUFFER_LENGTH / TEST_TEXT_LIT_LENGTH; i++) {
-      strcpy(&test_text[i * TEST_TEXT_LIT_LENGTH], test_text_lit);
-    }
   }
+  for (int i = 0; i < MAX_BUFFER_LENGTH / TEST_TEXT_LIT_LENGTH; i++) {
+    strcpy(&test_text[i * TEST_TEXT_LIT_LENGTH], test_text_lit);
+  }
+
   WRITE_LOG("%s\n", test_text);
 
   if (mysql_service_mysql_string_factory->create(&out_string)) {

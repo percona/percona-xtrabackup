@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,15 +55,15 @@ const unsigned long long GcsPacketTest::SMALL_PAYLOAD_LEN =
 
 TEST_F(GcsPacketTest, PacketInit) {
   const char content[] = "OLA123";
-  unsigned int content_len = sizeof(content);
+  unsigned int const content_len = sizeof(content);
 
   /*
    Simulate a message that was prepared by an upper layer such as group
    replication.
    */
-  Gcs_member_identifier origin(std::string("luis"));
-  Gcs_message msg(origin, new Gcs_message_data(0, content_len));
-  Cargo_type cargo = Cargo_type::CT_INTERNAL_STATE_EXCHANGE;
+  Gcs_member_identifier const origin(std::string("luis"));
+  Gcs_message const msg(origin, new Gcs_message_data(0, content_len));
+  Cargo_type const cargo = Cargo_type::CT_INTERNAL_STATE_EXCHANGE;
   msg.get_message_data().append_to_payload((const unsigned char *)content,
                                            content_len);
 
@@ -71,8 +71,8 @@ TEST_F(GcsPacketTest, PacketInit) {
    Create an internal gcs message that will be eventually delivered to
    the group communication layer.
    */
-  Gcs_message_data &msg_data = msg.get_message_data();
-  unsigned long long payload_length = msg_data.get_encode_size();
+  Gcs_message_data const &msg_data = msg.get_message_data();
+  unsigned long long const payload_length = msg_data.get_encode_size();
 
   bool packet_ok;
   Gcs_packet p;

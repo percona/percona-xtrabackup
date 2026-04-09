@@ -1,0 +1,126 @@
+--echo # Bug#37324137: mysql error when optimize table and update
+--echo #
+--echo # Virtual generated columns which are not part of any index
+--echo # are not serialized into undo log. And also there should
+--echo # not be any attempt to deserialize them from it. Following
+--echo # tests make sure that it works in case of table rebuild.
+--echo # They run concurrent operations that impact all records
+--echo # in table like OPTIMIZE and UPDATE.
+--echo #
+
+--source include/have_debug.inc
+--source include/have_debug_sync.inc
+--source include/count_sessions.inc
+
+show global variables like "innodb_sort_buffer_size";
+
+connect(conn1,localhost,root,,);
+connect(conn2,localhost,root,,);
+connect(conn3,localhost,root,,);
+
+connection default;
+--disable_query_log
+CREATE TABLE t1 (
+  id INT DEFAULT NULL,
+  b TEXT,
+  c VARCHAR(15) GENERATED ALWAYS AS (substr(b,1,1)) VIRTUAL,
+  KEY key_a (id)
+) ROW_FORMAT=REDUNDANT;
+
+CREATE TABLE t2 (
+  id INT,
+  b VARCHAR(1000),
+  c VARCHAR(20) GENERATED ALWAYS AS (concat(id, substr(b, 0, 10))) VIRTUAL,
+  d VARCHAR(15) GENERATED ALWAYS AS (substr(b,1,1)) VIRTUAL,
+  KEY key_a_c(id, c)
+);
+
+CREATE TABLE t3 (
+  id INT,
+  b VARCHAR(1000),
+  c VARCHAR(20) GENERATED ALWAYS AS (concat(id, substr(b, 0, 10))) VIRTUAL,
+  d VARCHAR(15) GENERATED ALWAYS AS (substr(b,1,1)) VIRTUAL,
+  e INT GENERATED ALWAYS AS (id+123) VIRTUAL,
+  f INT GENERATED ALWAYS AS (e+123) VIRTUAL,
+  KEY idx_a_c_e(id, c, e)
+);
+
+let $i=0;
+while ($i < 1000)
+{
+  eval INSERT INTO `t1`(id, b) VALUES($i, repeat("a",1000));
+  eval INSERT INTO `t2`(id, b) VALUES($i, repeat("a",1000));
+  eval INSERT INTO `t3`(id, b) VALUES($i, repeat("a",1000));
+  inc $i;
+}
+--enable_query_log
+
+--echo # Running concurrent optimize and update on table with one virtual column
+--echo # that is not part of any index.
+connection conn1;
+SET debug_sync = 'alter_table_update_log signal send_concurrent WAIT_FOR concurrent_done';
+--send OPTIMIZE TABLE t1
+connection conn2;
+SET debug_sync = 'now wait_for send_concurrent';
+UPDATE t1 SET id = id + 1;
+SET debug_sync = 'now signal concurrent_done';
+connection conn1;
+reap;
+SELECT id, c FROM t1 ORDER BY id LIMIT 100;
+
+
+--echo # Running concurrent optimize and update on table with two virtual columns.
+--echo # One that is not part of any index and one that is.
+connection conn1;
+SET debug_sync = 'alter_table_update_log signal send_concurrent WAIT_FOR concurrent_done';
+--send OPTIMIZE TABLE t2
+connection conn2;
+SET debug_sync = 'now wait_for send_concurrent';
+UPDATE t2 SET id = id + 1;
+SET debug_sync = 'now signal concurrent_done';
+connection conn1;
+reap;
+SELECT id, c, d FROM t2 ORDER BY id LIMIT 100;
+
+
+
+--echo # Running concurrent optimize and update on table with four virtual columns.
+--echo # Two that are not part of any index and two are.
+connection conn1;
+SET debug_sync = 'alter_table_update_log signal send_concurrent WAIT_FOR concurrent_done';
+--send OPTIMIZE TABLE t3
+connection conn2;
+SET debug_sync = 'now wait_for send_concurrent';
+UPDATE t3 SET id = id + 1;
+connection conn3;
+UPDATE t3 SET id = id + 2;
+SET debug_sync = 'now signal concurrent_done';
+connection conn1;
+reap;
+SELECT id, c, d, e, f FROM t3 ORDER BY id LIMIT 100;
+
+
+
+--echo # Running concurrent table rebuild with alter and update on table.
+connection conn1;
+SET debug_sync = 'alter_table_update_log signal send_concurrent WAIT_FOR concurrent_done';
+--send ALTER TABLE t1 ADD PRIMARY KEY (id)
+connection conn2;
+SET debug_sync = 'now wait_for send_concurrent';
+UPDATE t1 SET id = id + 10000;
+SET debug_sync = 'now signal concurrent_done';
+connection conn1;
+reap;
+SELECT id FROM t1 ORDER BY id LIMIT 50;
+
+
+
+# teardown
+disconnect conn3;
+disconnect conn2;
+disconnect conn1;
+connection default;
+
+DROP TABLE t3;
+DROP TABLE t2;
+DROP TABLE t1;

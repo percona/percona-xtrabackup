@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,16 +30,15 @@
   @file mysys/mf_format.cc
 */
 
-#include <string.h>
 #include <sys/types.h>
 #include <algorithm>
+#include <cassert>
 #include <cstring>
 
 #include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_io.h"
-#include "my_macros.h"
 #include "my_sys.h"
 #include "nulls.h"
 #include "strmake.h"

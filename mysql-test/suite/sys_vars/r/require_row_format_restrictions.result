@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Step 0. Create some tables for testing
 CREATE TABLE t1 (c1 INT) Engine=InnoDB;
@@ -60,3 +61,4 @@ DROP TEMPORARY TABLE temp2;
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
+include/rpl/set_gtid_mode_on.inc

@@ -204,7 +204,7 @@ CAST(ST_GEOMFROMTEXT('POINT(1 1)') AS DOUBLE)
 # Casting geometry to JSON must return JSON-string.
 SELECT CAST(ST_GEOMFROMTEXT('POINT(1 1)') AS JSON);
 CAST(ST_GEOMFROMTEXT('POINT(1 1)') AS JSON)
-{"type": "Point", "coordinates": [1.0, 1.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
 #
 ####################################################################
 # Requirement F-2:                                                 #

@@ -59,9 +59,9 @@ ERROR 42000: You have an error in your SQL syntax; check the manual that corresp
 ALTER USER foo@localhost COMMENT;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1
 ALTER USER u4@sdasd ATTRIBUTE '{}';
-ERROR HY000: Operation ALTER USER failed for 'u4'@'sdasd'
+ERROR HY000: Operation ALTER USER failed for 'u4'@'sdasd' (User account does not exist)
 ALTER USER fff@asdasd COMMENT '';
-ERROR HY000: Operation ALTER USER failed for 'fff'@'asdasd'
+ERROR HY000: Operation ALTER USER failed for 'fff'@'asdasd' (User account does not exist)
 ALTER USER USER() COMMENT 'test';
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'COMMENT 'test'' at line 1
 CREATE USER foo2@localhost IDENTIFIED BY 'foo' COMMENT 'xxx';
@@ -187,3 +187,24 @@ DROP USER u1@localhost, u2@localhost;
 CREATE USER u1@localhost ATTRIBUTE "this is a string";
 ERROR HY000: The user attribute must be a valid JSON object
 SET GLOBAL partial_revokes=@org_partial_revokes;
+#
+# Bug#31067575: NULL JSON IS NOT HANDLED PROPERLY FOR BLANK KEY
+#
+CREATE USER b31067575@localhost;
+ALTER USER b31067575@localhost ATTRIBUTE '{ "": null }';
+# Test: should produce an empty JSON element
+SELECT ATTRIBUTE FROM INFORMATION_SCHEMA.USER_ATTRIBUTES WHERE user='b31067575';
+ATTRIBUTE
+{}
+ALTER USER b31067575@localhost ATTRIBUTE '{ "": "abc" }';
+# Test: should produce an 1 blank key JSON element w/ value
+SELECT ATTRIBUTE FROM INFORMATION_SCHEMA.USER_ATTRIBUTES WHERE user='b31067575';
+ATTRIBUTE
+{"": "abc"}
+ALTER USER b31067575@localhost ATTRIBUTE '{ "": null }';
+# Test: should again produce an empty JSON element
+SELECT ATTRIBUTE FROM INFORMATION_SCHEMA.USER_ATTRIBUTES WHERE user='b31067575';
+ATTRIBUTE
+{}
+DROP USER b31067575@localhost;
+# End of tests

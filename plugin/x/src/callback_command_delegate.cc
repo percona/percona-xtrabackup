@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +25,10 @@
 
 #include "plugin/x/src/callback_command_delegate.h"
 
-#include <stddef.h>
+#include <cstddef>
 
 #include <string>
+#include <utility>
 
 #include "plugin/x/src/ngs/memory.h"
 #include "plugin/x/src/xpl_log.h"
@@ -85,7 +86,7 @@ Callback_command_delegate::Field_value::~Field_value() {
 Callback_command_delegate::Row_data::~Row_data() { clear(); }
 
 void Callback_command_delegate::Row_data::clear() {
-  for (auto f : fields) ngs::free_object(f);
+  for (auto *f : fields) ngs::free_object(f);
 
   fields.clear();
 }
@@ -107,7 +108,7 @@ Callback_command_delegate::Row_data::operator=(const Row_data &other) {
 void Callback_command_delegate::Row_data::clone_fields(const Row_data &other) {
   fields.reserve(other.fields.size());
 
-  for (auto f : other.fields) {
+  for (auto *f : other.fields) {
     this->fields.push_back(f ? ngs::allocate_object<Field_value>(*f) : nullptr);
   }
 }
@@ -117,12 +118,14 @@ Callback_command_delegate::Callback_command_delegate()
 
 Callback_command_delegate::Callback_command_delegate(
     Start_row_callback start_row, End_row_callback end_row)
-    : m_start_row(start_row), m_end_row(end_row), m_current_row(nullptr) {}
+    : m_start_row(std::move(start_row)),
+      m_end_row(std::move(end_row)),
+      m_current_row(nullptr) {}
 
 void Callback_command_delegate::set_callbacks(Start_row_callback start_row,
                                               End_row_callback end_row) {
-  m_start_row = start_row;
-  m_end_row = end_row;
+  m_start_row = std::move(start_row);
+  m_end_row = std::move(end_row);
 }
 
 void Callback_command_delegate::reset() {
@@ -141,8 +144,7 @@ int Callback_command_delegate::start_row() {
 }
 
 int Callback_command_delegate::end_row() {
-  if (m_end_row && !m_end_row(m_current_row)) return true;
-  return false;
+  return m_end_row && !m_end_row(m_current_row);
 }
 
 void Callback_command_delegate::abort_row() {}

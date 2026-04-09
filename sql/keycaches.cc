@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -112,7 +112,7 @@ bool process_key_caches(process_key_cache_t func) {
   NAMED_ILINK *element;
 
   while ((element = it++)) {
-    KEY_CACHE *key_cache = (KEY_CACHE *)element->data;
+    auto *key_cache = (KEY_CACHE *)element->data;
     func(element->name, key_cache);
   }
   return false;

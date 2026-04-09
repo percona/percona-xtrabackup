@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -86,7 +86,7 @@ TYPED_TEST(GeometriesTest, Point) {
   gis::Nop_visitor visitor;
   EXPECT_FALSE(pt.accept(&visitor));
 
-  typename TypeParam::Point pt2(0.0, 0.0);
+  typename TypeParam::Point const pt2(0.0, 0.0);
   EXPECT_EQ(0.0, pt2.x());
   EXPECT_EQ(0.0, pt2.y());
 
@@ -106,7 +106,7 @@ TYPED_TEST(GeometriesTest, Point) {
   EXPECT_EQ(1.7976931348623157e308, pt.x());
   EXPECT_EQ(-1.7976931348623157e308, pt.y());
 
-  std::unique_ptr<typename TypeParam::Point> pt_clone(pt.clone());
+  std::unique_ptr<typename TypeParam::Point> const pt_clone(pt.clone());
   EXPECT_FALSE(&pt == pt_clone.get());
   EXPECT_EQ(pt.type(), pt_clone.get()->type());
   EXPECT_EQ(pt.coordinate_system(), pt_clone.get()->coordinate_system());
@@ -148,7 +148,7 @@ TYPED_TEST(GeometriesTest, Linestring) {
   EXPECT_EQ(10.0, ls.front().x());
   EXPECT_EQ(10.0, ls.front().y());
 
-  std::unique_ptr<gis::Linestring> ls_new(
+  std::unique_ptr<gis::Linestring> const ls_new(
       gis::Linestring::create_linestring(ls.coordinate_system()));
   EXPECT_FALSE(&ls == ls_new.get());
   EXPECT_EQ(gis::Geometry_type::kLinestring, ls_new.get()->type());
@@ -156,7 +156,7 @@ TYPED_TEST(GeometriesTest, Linestring) {
   EXPECT_TRUE(ls_new.get()->empty());
   EXPECT_TRUE(ls_new.get()->is_empty());
 
-  std::unique_ptr<typename TypeParam::Linestring> ls_clone(ls.clone());
+  std::unique_ptr<typename TypeParam::Linestring> const ls_clone(ls.clone());
   EXPECT_FALSE(&ls == ls_clone.get());
   EXPECT_EQ(ls.type(), ls_clone.get()->type());
   EXPECT_EQ(ls.coordinate_system(), ls_clone.get()->coordinate_system());
@@ -202,7 +202,7 @@ TYPED_TEST(GeometriesTest, Linearring) {
   EXPECT_EQ(10.0, lr.front().x());
   EXPECT_EQ(10.0, lr.front().y());
 
-  std::unique_ptr<gis::Linearring> lr_new(
+  std::unique_ptr<gis::Linearring> const lr_new(
       gis::Linearring::create_linearring(lr.coordinate_system()));
   EXPECT_FALSE(&lr == lr_new.get());
   EXPECT_EQ(gis::Geometry_type::kLinestring, lr_new.get()->type());
@@ -210,7 +210,7 @@ TYPED_TEST(GeometriesTest, Linearring) {
   EXPECT_TRUE(lr_new.get()->empty());
   EXPECT_TRUE(lr_new.get()->is_empty());
 
-  std::unique_ptr<typename TypeParam::Linearring> lr_clone(
+  std::unique_ptr<typename TypeParam::Linearring> const lr_clone(
       static_cast<typename TypeParam::Linearring *>(lr.clone()));
   EXPECT_FALSE(&lr == lr_clone.get());
   EXPECT_EQ(lr.type(), lr_clone.get()->type());
@@ -261,7 +261,7 @@ TYPED_TEST(GeometriesTest, Polygon) {
   gis::Nop_visitor visitor;
   EXPECT_FALSE(py.accept(&visitor));
 
-  std::unique_ptr<gis::Polygon> py_new(
+  std::unique_ptr<gis::Polygon> const py_new(
       gis::Polygon::create_polygon(py.coordinate_system()));
   EXPECT_FALSE(&py == py_new.get());
   EXPECT_EQ(gis::Geometry_type::kPolygon, py_new.get()->type());
@@ -269,7 +269,7 @@ TYPED_TEST(GeometriesTest, Polygon) {
   EXPECT_TRUE(py_new.get()->empty());
   EXPECT_TRUE(py_new.get()->is_empty());
 
-  std::unique_ptr<typename TypeParam::Polygon> py_clone(py.clone());
+  std::unique_ptr<typename TypeParam::Polygon> const py_clone(py.clone());
   EXPECT_FALSE(&py == py_clone.get());
   EXPECT_EQ(py.type(), py_clone.get()->type());
   EXPECT_EQ(py.coordinate_system(), py_clone.get()->coordinate_system());
@@ -354,7 +354,7 @@ TYPED_TEST(GeometriesTest, Geometrycollection) {
   gis::Nop_visitor visitor;
   EXPECT_FALSE(gc.accept(&visitor));
 
-  typename TypeParam::Geometrycollection gc_copy = gc;
+  typename TypeParam::Geometrycollection const gc_copy = gc;
   EXPECT_EQ(13U, gc_copy.size());
   EXPECT_FALSE(gc.empty());
   EXPECT_FALSE(gc.is_empty());
@@ -366,7 +366,7 @@ TYPED_TEST(GeometriesTest, Geometrycollection) {
   EXPECT_EQ(11U, gc.size());
   EXPECT_EQ(gis::Geometry_type::kPoint, gc.front().type());
 
-  std::unique_ptr<gis::Geometrycollection> gc_new(
+  std::unique_ptr<gis::Geometrycollection> const gc_new(
       gis::Geometrycollection::create_geometrycollection(
           gc.coordinate_system()));
   EXPECT_FALSE(&gc == gc_new.get());
@@ -375,7 +375,8 @@ TYPED_TEST(GeometriesTest, Geometrycollection) {
   EXPECT_TRUE(gc_new.get()->empty());
   EXPECT_TRUE(gc_new.get()->is_empty());
 
-  std::unique_ptr<typename TypeParam::Geometrycollection> gc_clone(gc.clone());
+  std::unique_ptr<typename TypeParam::Geometrycollection> const gc_clone(
+      gc.clone());
   EXPECT_FALSE(&gc == gc_clone.get());
   EXPECT_EQ(gc.type(), gc_clone.get()->type());
   EXPECT_EQ(gc.coordinate_system(), gc_clone.get()->coordinate_system());
@@ -413,7 +414,7 @@ TYPED_TEST(GeometriesTest, Multipoint) {
   EXPECT_EQ(1.0, mpt.front().x());
   EXPECT_EQ(1.0, mpt.front().y());
 
-  std::unique_ptr<gis::Multipoint> mpt_new(
+  std::unique_ptr<gis::Multipoint> const mpt_new(
       gis::Multipoint::create_multipoint(mpt.coordinate_system()));
   EXPECT_FALSE(&mpt == mpt_new.get());
   EXPECT_EQ(gis::Geometry_type::kMultipoint, mpt_new.get()->type());
@@ -461,7 +462,7 @@ TYPED_TEST(GeometriesTest, Multilinestring) {
   EXPECT_FALSE(mls.empty());
   EXPECT_FALSE(mls.is_empty());
 
-  typename TypeParam::Linestring ls2;
+  typename TypeParam::Linestring const ls2;
   ls.push_back(typename TypeParam::Point(0.0, 0.0));
   ls.push_back(typename TypeParam::Point(20.0, 20.0));
   mls.push_back(std::move(ls));
@@ -476,7 +477,7 @@ TYPED_TEST(GeometriesTest, Multilinestring) {
   EXPECT_EQ(1U, mls.size());
   EXPECT_EQ(2U, mls.front().size());
 
-  std::unique_ptr<gis::Multilinestring> mls_new(
+  std::unique_ptr<gis::Multilinestring> const mls_new(
       gis::Multilinestring::create_multilinestring(mls.coordinate_system()));
   EXPECT_FALSE(&mls == mls_new.get());
   EXPECT_EQ(gis::Geometry_type::kMultilinestring, mls_new.get()->type());
@@ -484,7 +485,8 @@ TYPED_TEST(GeometriesTest, Multilinestring) {
   EXPECT_TRUE(mls_new.get()->empty());
   EXPECT_TRUE(mls_new.get()->is_empty());
 
-  std::unique_ptr<typename TypeParam::Multilinestring> mls_clone(mls.clone());
+  std::unique_ptr<typename TypeParam::Multilinestring> const mls_clone(
+      mls.clone());
   EXPECT_FALSE(&mls == mls_clone.get());
   EXPECT_EQ(mls.type(), mls_clone.get()->type());
   EXPECT_EQ(mls.coordinate_system(), mls_clone.get()->coordinate_system());
@@ -542,7 +544,7 @@ TYPED_TEST(GeometriesTest, Multipolygon) {
   gis::Nop_visitor visitor;
   EXPECT_FALSE(mpy.accept(&visitor));
 
-  std::unique_ptr<gis::Multipolygon> mpy_new(
+  std::unique_ptr<gis::Multipolygon> const mpy_new(
       gis::Multipolygon::create_multipolygon(mpy.coordinate_system()));
   EXPECT_FALSE(&mpy == mpy_new.get());
   EXPECT_EQ(gis::Geometry_type::kMultipolygon, mpy_new.get()->type());
@@ -550,7 +552,8 @@ TYPED_TEST(GeometriesTest, Multipolygon) {
   EXPECT_TRUE(mpy_new.get()->empty());
   EXPECT_TRUE(mpy_new.get()->is_empty());
 
-  std::unique_ptr<typename TypeParam::Multipolygon> mpy_clone(mpy.clone());
+  std::unique_ptr<typename TypeParam::Multipolygon> const mpy_clone(
+      mpy.clone());
   EXPECT_FALSE(&mpy == mpy_clone.get());
   EXPECT_EQ(mpy.type(), mpy_clone.get()->type());
   EXPECT_EQ(mpy.coordinate_system(), mpy_clone.get()->coordinate_system());

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,11 +31,10 @@
 #include "sql/dd/impl/types/object_table_definition_impl.h"
 #include "sql/dd/impl/types/tablespace_impl.h"  // dd::Tablespace_impl
 
-namespace dd {
-namespace tables {
+namespace dd::tables {
 
 const Tablespaces &Tablespaces::instance() {
-  static Tablespaces *s_instance = new Tablespaces();
+  static auto *s_instance = new Tablespaces();
   return *s_instance;
 }
 
@@ -94,5 +93,4 @@ bool Tablespaces::update_object_key(Global_name_key *key,
 
 ///////////////////////////////////////////////////////////////////////////
 
-}  // namespace tables
-}  // namespace dd
+}  // namespace dd::tables

@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,13 +54,13 @@ class Sql_cmd_load_table final : public Sql_cmd {
       On_duplicate on_duplicate, Table_ident *table,
       List<String> *opt_partitions, const CHARSET_INFO *opt_charset,
       LEX_CSTRING compression_algorithm, String *opt_xml_rows_identified_by,
-      const Field_separators &field_separators,
-      const Line_separators &line_separators, ulong skip_lines,
+      const Field_separators *field_separators,
+      const Line_separators *line_separators, ulong skip_lines,
       mem_root_deque<Item *> *opt_fields_or_vars,
       mem_root_deque<Item *> *opt_set_fields,
       mem_root_deque<Item *> *opt_set_exprs, List<String> *opt_set_expr_strings,
       ulong concurrency, ulonglong memory_size, bool is_bulk_operation)
-      : m_exchange(filename.str, false, filetype),
+      : m_exchange(filename.str, UNDEFINED_DEST, filetype),
         m_is_local_file(is_local_file),
         m_bulk_source(source_type),
         m_file_count(file_count),
@@ -85,13 +85,14 @@ class Sql_cmd_load_table final : public Sql_cmd {
       m_opt_set_exprs = std::move(*opt_set_exprs);
     }
 
-    m_exchange.cs = opt_charset;
+    m_exchange.file_info.cs = opt_charset;
 
     if (opt_xml_rows_identified_by != nullptr)
       m_exchange.line.line_term = opt_xml_rows_identified_by;
 
     m_exchange.field.merge_field_separators(field_separators);
     m_exchange.line.merge_line_separators(line_separators);
+    m_exchange.assign_default_values();
     m_exchange.skip_lines = skip_lines;
   }
 
@@ -120,6 +121,9 @@ class Sql_cmd_load_table final : public Sql_cmd {
 
   /// Maximum memory size to be used in bytes
   ulonglong m_memory_size;
+
+  /// Loading non empty table
+  bool m_non_empty_table{};
 
  public:
   const On_duplicate m_on_duplicate;
@@ -150,7 +154,18 @@ class Sql_cmd_load_table final : public Sql_cmd {
   bool validate_table_for_bulk_load(THD *thd, Table_ref *const table_ref,
                                     dd::Table *table_def, handlerton **hton);
 
-  bool bulk_driver_service(THD *thd, const TABLE *table, size_t &affected_rows);
+  bool rename_table_for_incremental_bulk_load(
+      THD *thd, const std::string &schema_name,
+      const std::string &old_table_name, const std::string &new_table_name);
+
+  bool duplicate_table_for_bulk_load(THD *thd, std::string &temp_name,
+                                     const std::string &schema_name,
+                                     Table_ref *new_table_ref);
+
+  bool bulk_driver_service(THD *thd, const TABLE *sql_table,
+                           const TABLE *duplicate_table,
+                           const Bulk_load_file_info &info, Bulk_source src,
+                           size_t &affected_rows);
 
   bool read_fixed_length(THD *thd, COPY_INFO &info, Table_ref *table_list,
                          READ_INFO &read_info, ulong skip_lines);

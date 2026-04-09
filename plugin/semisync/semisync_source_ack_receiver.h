@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@
 #include "plugin/semisync/semisync_source.h"
 #include "sql/sql_class.h"
 
-struct Slave {
+struct Replica {
   enum class EnumStatus { up, leaving, down };
   uint32_t thread_id;
   Vio *vio;
@@ -45,18 +45,18 @@ struct Slave {
   my_socket sock_fd() const { return vio->mysql_socket.fd; }
 };
 
-typedef std::vector<Slave> Slave_vector;
-typedef Slave_vector::iterator Slave_vector_it;
+typedef std::vector<Replica> Replica_vector;
+typedef Replica_vector::iterator Replica_vector_it;
 
 /**
   Ack_receiver is responsible to control ack receive thread and maintain
-  slave information used by ack receive thread.
+  replica information used by ack receive thread.
 
   There are mainly four operations on ack receive thread:
   start: start ack receive thread
   stop: stop ack receive thread
-  add_slave: maintain a new semisync slave's information
-  remove_slave: remove a semisync slave's information
+  add_replica: maintain a new semisync replica's information
+  remove_replica: remove a semisync replica's information
  */
 class Ack_receiver : public ReplSemiSyncBase {
  public:
@@ -66,23 +66,23 @@ class Ack_receiver : public ReplSemiSyncBase {
   /**
      Notify ack receiver to receive acks on the dump session.
 
-     It adds the given dump thread into the slave list and wakes
-     up ack thread if it is waiting for any slave coming.
+     It adds the given dump thread into the replica list and wakes
+     up ack thread if it is waiting for any replica coming.
 
      @param[in] thd  THD of a dump thread.
 
      @return it return false if succeeds, otherwise true is returned.
   */
-  bool add_slave(THD *thd);
+  bool add_replica(THD *thd);
 
   /**
     Notify ack receiver not to receive ack on the dump session.
 
-    it removes the given dump thread from slave list.
+    it removes the given dump thread from replica list.
 
     @param[in] thd  THD of a dump thread.
   */
-  void remove_slave(THD *thd);
+  void remove_replica(THD *thd);
 
   /**
     Start ack receive thread
@@ -99,7 +99,7 @@ class Ack_receiver : public ReplSemiSyncBase {
   /**
      The core of ack receive thread.
 
-     It monitors all slaves' sockets and receives acks when they come.
+     It monitors all replicas' sockets and receives acks when they come.
   */
   void run();
 
@@ -115,14 +115,14 @@ class Ack_receiver : public ReplSemiSyncBase {
   enum status { ST_UP, ST_DOWN, ST_STOPPING };
   uint8 m_status;
   /*
-    Protect m_status, m_slaves_changed and m_slaves. ack thread and other
+    Protect m_status, m_replicas_changed and m_replicas. ack thread and other
     session may access the variables at the same time.
   */
   mysql_mutex_t m_mutex;
   mysql_cond_t m_cond;
-  /* If slave list is updated(add or remove). */
-  bool m_slaves_changed;
-  Slave_vector m_slaves;
+  /* If replica list is updated(add or remove). */
+  bool m_replicas_changed;
+  Replica_vector m_replicas;
   my_thread_handle m_pid;
 
   /* Declare them private, so no one can copy the object. */
@@ -130,7 +130,7 @@ class Ack_receiver : public ReplSemiSyncBase {
   Ack_receiver &operator=(const Ack_receiver &ack_receiver);
 
   void set_stage_info(const PSI_stage_info &stage);
-  void wait_for_slave_connection();
+  void wait_for_replica_connection();
 };
 
 extern Ack_receiver *ack_receiver;

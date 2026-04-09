@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -31,9 +31,11 @@ SET(JAVA_SOURCES
   ${CLUSTERJ_API_PREFIX}/ClusterJFatalInternalException.java
   ${CLUSTERJ_API_PREFIX}/ClusterJFatalUserException.java
   ${CLUSTERJ_API_PREFIX}/ClusterJHelper.java
+  ${CLUSTERJ_API_PREFIX}/ClusterJTableException.java
   ${CLUSTERJ_API_PREFIX}/ClusterJUserException.java
   ${CLUSTERJ_API_PREFIX}/ColumnMetadata.java
   ${CLUSTERJ_API_PREFIX}/ColumnType.java
+  ${CLUSTERJ_API_PREFIX}/Connection.java
   ${CLUSTERJ_API_PREFIX}/Constants.java
   ${CLUSTERJ_API_PREFIX}/Dbug.java
   ${CLUSTERJ_API_PREFIX}/DynamicObject.java

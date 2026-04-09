@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,25 +32,42 @@ class Mock_Logger : public Logger_interface {
     ON_CALL(*this, finalize()).WillByDefault(Return(GCS_OK));
   }
 
-  ~Mock_Logger() = default;
+  ~Mock_Logger() override = default;
   MOCK_METHOD0(initialize, enum_gcs_error());
   MOCK_METHOD0(finalize, enum_gcs_error());
   MOCK_METHOD2(log_event, void(const gcs_log_level_t, const std::string &));
+};
+
+class Mock_clock_timestamp_provider : public Clock_timestamp_interface {
+ public:
+  Mock_clock_timestamp_provider() = default;
+
+  ~Mock_clock_timestamp_provider() = default;
+  MOCK_METHOD2(get_timestamp_as_c_string, void(char *buffer, size_t *size));
+  MOCK_METHOD1(get_timestamp_as_string, void(std::string &str));
+  MOCK_METHOD0(initialize, enum_gcs_error());
+  MOCK_METHOD0(finalize, enum_gcs_error());
 };
 
 class LoggingInfrastructureTest : public GcsBaseTestNoLogging {
  protected:
   LoggingInfrastructureTest() : logger(nullptr) {}
 
-  void SetUp() override { logger = new Mock_Logger(); }
+  void SetUp() override {
+    logger = new Mock_Logger();
+    clock_timestamp_provider = new Mock_clock_timestamp_provider;
+  }
 
   void TearDown() override {
     Gcs_log_manager::finalize();
     delete logger;
     logger = nullptr;
+    delete clock_timestamp_provider;
+    clock_timestamp_provider = nullptr;
   }
 
   Mock_Logger *logger;
+  Mock_clock_timestamp_provider *clock_timestamp_provider;
 };
 
 TEST_F(LoggingInfrastructureTest, InjectedMockLoggerTest) {
@@ -72,7 +89,7 @@ TEST_F(LoggingInfrastructureTest, InjectedMockLoggerTest) {
   }
 
   // Initialize new mock logger
-  Mock_Logger *anotherLogger = new Mock_Logger();
+  auto *anotherLogger = new Mock_Logger();
   Gcs_log_manager::initialize(anotherLogger);
 
   // anotherLogger initialized
@@ -90,7 +107,9 @@ class DebuggingInfrastructureTest : public GcsBaseTestNoLogging {
 
   void SetUp() override {
     sink = new Gcs_async_buffer(new Gcs_output_sink());
-    debugger = new Gcs_default_debugger(sink);
+    clock_timestamp_provider = std::make_shared<Gcs_clock_timestamp_provider>();
+    clock_timestamp_provider->initialize();
+    debugger = new Gcs_default_debugger(sink, clock_timestamp_provider);
     saved_options = Gcs_debug_manager::get_current_debug_options();
     Gcs_debug_manager::unset_debug_options(GCS_DEBUG_ALL);
     ASSERT_EQ(Gcs_debug_manager::get_current_debug_options(), GCS_DEBUG_NONE);
@@ -104,12 +123,14 @@ class DebuggingInfrastructureTest : public GcsBaseTestNoLogging {
     Gcs_debug_manager::finalize();
     delete debugger;
     delete sink;
+    clock_timestamp_provider->finalize();
     debugger = nullptr;
   }
 
   Gcs_default_debugger *debugger;
   Gcs_async_buffer *sink;
   int64_t saved_options;
+  std::shared_ptr<Gcs_clock_timestamp_provider> clock_timestamp_provider;
 };
 
 TEST_F(DebuggingInfrastructureTest, DebugManagerTestingSetOfOptions) {

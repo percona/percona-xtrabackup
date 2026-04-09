@@ -1,28 +1,28 @@
 SET @start_global_value = @@global.innodb_change_buffer_max_size;
 SELECT @start_global_value;
 @start_global_value
-25
+5
 Valid values are between 0 and 50
 select @@global.innodb_change_buffer_max_size between 0 and 50;
 @@global.innodb_change_buffer_max_size between 0 and 50
 1
 select @@global.innodb_change_buffer_max_size;
 @@global.innodb_change_buffer_max_size
-25
+5
 select @@session.innodb_change_buffer_max_size;
 ERROR HY000: Variable 'innodb_change_buffer_max_size' is a GLOBAL variable
 show global variables like 'innodb_change_buffer_max_size';
 Variable_name	Value
-innodb_change_buffer_max_size	25
+innodb_change_buffer_max_size	5
 show session variables like 'innodb_change_buffer_max_size';
 Variable_name	Value
-innodb_change_buffer_max_size	25
+innodb_change_buffer_max_size	5
 select * from performance_schema.global_variables where variable_name='innodb_change_buffer_max_size';
 VARIABLE_NAME	VARIABLE_VALUE
-innodb_change_buffer_max_size	25
+innodb_change_buffer_max_size	5
 select * from performance_schema.session_variables where variable_name='innodb_change_buffer_max_size';
 VARIABLE_NAME	VARIABLE_VALUE
-innodb_change_buffer_max_size	25
+innodb_change_buffer_max_size	5
 set global innodb_change_buffer_max_size=10;
 select @@global.innodb_change_buffer_max_size;
 @@global.innodb_change_buffer_max_size
@@ -70,8 +70,8 @@ select @@global.innodb_change_buffer_max_size;
 set global innodb_change_buffer_max_size=DEFAULT;
 select @@global.innodb_change_buffer_max_size;
 @@global.innodb_change_buffer_max_size
-25
+5
 SET @@global.innodb_change_buffer_max_size = @start_global_value;
 SELECT @@global.innodb_change_buffer_max_size;
 @@global.innodb_change_buffer_max_size
-25
+5

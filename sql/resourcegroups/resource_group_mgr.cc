@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@
 #include "my_compiler.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
+#include "mysql/components/library_mysys/my_system.h"  // my_num_vcpus
 #include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/components/services/log_builtins.h"  // LogErr
 #include "mysql/psi/mysql_rwlock.h"
@@ -55,7 +56,6 @@
 #include "sql/handler.h"
 #include "sql/log.h"     // LogErr
 #include "sql/mysqld.h"  // key_resource_group_mgr*
-#include "sql/resourcegroups/platform/thread_attrs_api.h"
 #include "sql/resourcegroups/resource_group.h"
 #include "sql/resourcegroups/thread_resource_control.h"
 #include "sql/sql_class.h"  // class THD
@@ -415,7 +415,7 @@ bool Resource_group_mgr::init() {
       std::unique_ptr<Resource_group>(m_sys_default_resource_group));
 
   // Initialize number of VCPUs.
-  m_num_vcpus = platform::num_vcpus();
+  m_num_vcpus = my_num_vcpus();
   return false;
 }
 

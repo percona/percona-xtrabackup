@@ -1,4 +1,4 @@
-CREATE TABLE t (a INT, b INT, c INT, d INT, e INT, PRIMARY KEY(a, b, c, d), KEY(b, d)) ENGINE=innodb;
+CREATE TABLE t (a INT, b INT, c INT, d INT, e INT, KEY b(a, b, c, d)) ENGINE=innodb;
 # Since ANALYZE TABLE only reads a subset of the data, the statistics for
 # table t depends on the row order. And since the INSERT INTO ... SELECT
 # may be executed using different execution plans, we've added ORDER BY
@@ -11,7 +11,7 @@ SET optimizer_switch = 'skip_scan=on';
 SET optimizer_trace="enabled=on,one_line=off";
 EXPLAIN SELECT a, b, c, d FROM t WHERE a = 2 AND d >= 98 AND e = 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	ref	PRIMARY	PRIMARY	4	const	250	3.33	Using where
+1	SIMPLE	t	NULL	ref	b	b	5	const	80	3.33	Using index condition; Using where
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`e` = 2) and (`test`.`t`.`a` = 2) and (`test`.`t`.`d` >= 98))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%query_references_nonkey_column%';
@@ -19,7 +19,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE a = 5 OR b = 2 AND d >= 98;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	index_merge	PRIMARY,b	b,PRIMARY	8,4	NULL	251	100.00	Using sort_union(b,PRIMARY); Using where
+1	SIMPLE	t	NULL	index	b	b	20	NULL	160	51.67	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`a` = 5) or ((`test`.`t`.`b` = 2) and (`test`.`t`.`d` >= 98)))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%disjuntive_predicate_present%';
@@ -27,7 +27,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE a = 5 OR b = 2 OR d >= 98;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	index	PRIMARY,b	b	8	NULL	2500	52.00	Using where; Using index
+1	SIMPLE	t	NULL	index	b	b	20	NULL	160	70.00	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`a` = 5) or (`test`.`t`.`b` = 2) or (`test`.`t`.`d` >= 98))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%disjuntive_predicate_present%';
@@ -35,7 +35,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE a = 5 OR d >= 98;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	index	PRIMARY	b	8	NULL	2500	40.00	Using where; Using index
+1	SIMPLE	t	NULL	index	b	b	20	NULL	160	66.67	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`a` = 5) or (`test`.`t`.`d` >= 98))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%disjuntive_predicate_present%';
@@ -43,7 +43,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE ((a = 5 AND b = 2) OR a = 2) and d >= 98;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	range	PRIMARY,b	PRIMARY	8	NULL	300	33.33	Using where; Using index
+1	SIMPLE	t	NULL	range	b	b	10	NULL	81	33.33	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((((`test`.`t`.`b` = 2) and (`test`.`t`.`a` = 5)) or (`test`.`t`.`a` = 2)) and (`test`.`t`.`d` >= 98))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%keypart_in_disjunctive_query%';
@@ -51,7 +51,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE a > 2 AND d >= 98;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	range	PRIMARY,b	PRIMARY	4	NULL	1250	33.33	Using where; Using index
+1	SIMPLE	t	NULL	range	b	b	5	NULL	1	33.33	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`a` > 2) and (`test`.`t`.`d` >= 98))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%prefix_not_const_equality%';
@@ -59,7 +59,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE a = 2 AND (d >= 98 OR d < 2);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	ref	PRIMARY	PRIMARY	4	const	250	55.55	Using where; Using index
+1	SIMPLE	t	NULL	ref	b	b	5	const	80	55.55	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`a` = 2) and ((`test`.`t`.`d` >= 98) or (`test`.`t`.`d` < 2)))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%range_predicate_too_complex%';
@@ -67,7 +67,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE a = 2 AND b = 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	ref	PRIMARY,b	PRIMARY	8	const,const	50	100.00	Using index
+1	SIMPLE	t	NULL	ref	b	b	10	const,const	8	100.00	Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`b` = 2) and (`test`.`t`.`a` = 2))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%no_range_predicate%';
@@ -75,7 +75,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE (a < 1 OR a = 4 OR a = 5) AND b IN (1, 2, 3) AND d >= 98;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	range	PRIMARY,b	b	8	NULL	3	46.00	Using where; Using index
+1	SIMPLE	t	NULL	range	b	b	10	NULL	7	33.33	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where (((`test`.`t`.`a` < 1) or (`test`.`t`.`a` = 4) or (`test`.`t`.`a` = 5)) and (`test`.`t`.`b` in (1,2,3)) and (`test`.`t`.`d` >= 98))
 SELECT count(*) FROM information_schema.optimizer_trace WHERE trace LIKE '%prefix_not_const_equality%';
@@ -83,7 +83,7 @@ count(*)
 1
 EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) AND d >= 98;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	range	PRIMARY,b	b	12	NULL	3	50.00	Using where; Using index
+1	SIMPLE	t	NULL	range	b	b	10	NULL	57	33.33	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`a` AS `a`,`test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`a` in (1,2,3,4,5)) and (`test`.`t`.`b` in (1,2,3)) and (`test`.`t`.`d` >= 98))
 SELECT * FROM information_schema.optimizer_trace;
@@ -155,12 +155,12 @@ EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) A
                 "table": "`t`",
                 "range_analysis": {
                   "table_scan": {
-                    "rows": 2500,
-                    "cost": 256.35
+                    "rows": 160,
+                    "cost": 19.35
                   },
                   "potential_range_indexes": [
                     {
-                      "index": "PRIMARY",
+                      "index": "b",
                       "usable": true,
                       "key_parts": [
                         "a",
@@ -168,21 +168,11 @@ EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) A
                         "c",
                         "d"
                       ]
-                    },
-                    {
-                      "index": "b",
-                      "usable": true,
-                      "key_parts": [
-                        "b",
-                        "d",
-                        "a",
-                        "c"
-                      ]
                     }
                   ],
                   "best_covering_index_scan": {
                     "index": "b",
-                    "cost": 252.077,
+                    "cost": 16.3758,
                     "chosen": true
                   },
                   "setup_range_conditions": [
@@ -194,22 +184,18 @@ EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) A
                   "skip_scan_range": {
                     "potential_skip_scan_indexes": [
                       {
-                        "index": "PRIMARY",
-                        "tree_travel_cost": 0.6,
-                        "num_groups": 76,
-                        "rows": 249,
-                        "cost": 129.041
-                      },
-                      {
                         "index": "b",
-                        "usable": false,
-                        "cause": "prefix_not_const_equality"
+                        "tree_travel_cost": 0.4,
+                        "num_groups": 29,
+                        "index skip scan cost": 32.0443,
+                        "rows": 57,
+                        "cost": 32.0443
                       }
                     ]
                   },
                   "best_skip_scan_summary": {
                     "type": "skip_scan",
-                    "index": "PRIMARY",
+                    "index": "b",
                     "key_parts_used_for_access": [
                       "a",
                       "b",
@@ -236,12 +222,13 @@ EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) A
                     "range": [
                       "98 <= d"
                     ],
-                    "chosen": true
+                    "chosen": false,
+                    "cause": "cost"
                   },
                   "analyzing_range_alternatives": {
                     "range_scan_alternatives": [
                       {
-                        "index": "PRIMARY",
+                        "index": "b",
                         "ranges": [
                           "a = 1 AND b = 1",
                           "a = 1 AND b = 2",
@@ -260,28 +247,12 @@ EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) A
                           "a = 5 AND b = 3"
                         ],
                         "index_dives_for_eq_ranges": true,
-                        "rowid_ordered": true,
-                        "using_mrr": false,
-                        "index_only": true,
-                        "in_memory": 1,
-                        "rows": 750,
-                        "cost": 79.0093,
-                        "chosen": true
-                      },
-                      {
-                        "index": "b",
-                        "ranges": [
-                          "b = 1 AND 98 <= d",
-                          "b = 2 AND 98 <= d",
-                          "b = 3 AND 98 <= d"
-                        ],
-                        "index_dives_for_eq_ranges": true,
                         "rowid_ordered": false,
                         "using_mrr": false,
                         "index_only": true,
                         "in_memory": 1,
-                        "rows": 3,
-                        "cost": 0.561462,
+                        "rows": 57,
+                        "cost": 6.0043,
                         "chosen": true
                       }
                     ],
@@ -294,15 +265,27 @@ EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) A
                     "range_access_plan": {
                       "type": "range_scan",
                       "index": "b",
-                      "rows": 3,
+                      "rows": 57,
                       "ranges": [
-                        "b = 1 AND 98 <= d AND 1 <= a",
-                        "b = 2 AND 98 <= d AND 1 <= a",
-                        "b = 3 AND 98 <= d AND 1 <= a"
+                        "a = 1 AND b = 1",
+                        "a = 1 AND b = 2",
+                        "a = 1 AND b = 3",
+                        "a = 2 AND b = 1",
+                        "a = 2 AND b = 2",
+                        "a = 2 AND b = 3",
+                        "a = 3 AND b = 1",
+                        "a = 3 AND b = 2",
+                        "a = 3 AND b = 3",
+                        "a = 4 AND b = 1",
+                        "a = 4 AND b = 2",
+                        "a = 4 AND b = 3",
+                        "a = 5 AND b = 1",
+                        "a = 5 AND b = 2",
+                        "a = 5 AND b = 3"
                       ]
                     },
-                    "rows_for_plan": 3,
-                    "cost_for_plan": 0.561462,
+                    "rows_for_plan": 57,
+                    "cost_for_plan": 6.0043,
                     "chosen": true
                   }
                 }
@@ -318,23 +301,23 @@ EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) A
                 "best_access_path": {
                   "considered_access_paths": [
                     {
-                      "rows_to_scan": 3,
+                      "rows_to_scan": 57,
                       "filtering_effect": [
                       ],
-                      "final_filtering_effect": 0.5,
+                      "final_filtering_effect": 0.3333,
                       "access_type": "range",
                       "range_details": {
                         "used_index": "b"
                       },
-                      "resulting_rows": 1.5,
-                      "cost": 0.861462,
+                      "resulting_rows": 18.9981,
+                      "cost": 11.7043,
                       "chosen": true
                     }
                   ]
                 },
                 "condition_filtering_pct": 100,
-                "rows_for_plan": 1.5,
-                "cost_for_plan": 0.861462,
+                "rows_for_plan": 18.9981,
+                "cost_for_plan": 11.7043,
                 "chosen": true
               }
             ]
@@ -382,7 +365,7 @@ EXPLAIN SELECT a, b, c, d FROM t WHERE a IN (1, 2, 3, 4, 5) AND b IN (1, 2, 3) A
 }	0	0
 EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	range	PRIMARY,b	PRIMARY	12	NULL	83	33.33	Using where; Using index for skip scan
+1	SIMPLE	t	NULL	ref	b	b	5	const	1	11.11	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`a` = 5) and (`test`.`t`.`c` > 4) and (`test`.`t`.`d` < 3))
 SELECT * FROM information_schema.optimizer_trace;
@@ -454,12 +437,12 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3	{
                 "table": "`t`",
                 "range_analysis": {
                   "table_scan": {
-                    "rows": 2500,
-                    "cost": 256.35
+                    "rows": 160,
+                    "cost": 19.35
                   },
                   "potential_range_indexes": [
                     {
-                      "index": "PRIMARY",
+                      "index": "b",
                       "usable": true,
                       "key_parts": [
                         "a",
@@ -467,21 +450,11 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3	{
                         "c",
                         "d"
                       ]
-                    },
-                    {
-                      "index": "b",
-                      "usable": true,
-                      "key_parts": [
-                        "b",
-                        "d",
-                        "a",
-                        "c"
-                      ]
                     }
                   ],
                   "best_covering_index_scan": {
                     "index": "b",
-                    "cost": 252.077,
+                    "cost": 16.3758,
                     "chosen": true
                   },
                   "setup_range_conditions": [
@@ -493,24 +466,18 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3	{
                   "skip_scan_range": {
                     "potential_skip_scan_indexes": [
                       {
-                        "index": "PRIMARY",
-                        "tree_travel_cost": 0.6,
-                        "num_groups": 6,
-                        "rows": 83,
-                        "cost": 19.9798
-                      },
-                      {
                         "index": "b",
-                        "tree_travel_cost": 0.6,
-                        "num_groups": 6,
-                        "rows": 833,
-                        "cost": 133.008
+                        "tree_travel_cost": 0.4,
+                        "num_groups": 1,
+                        "index skip scan cost": 1.2,
+                        "rows": 1,
+                        "cost": 1.2
                       }
                     ]
                   },
                   "best_skip_scan_summary": {
                     "type": "skip_scan",
-                    "index": "PRIMARY",
+                    "index": "b",
                     "key_parts_used_for_access": [
                       "a",
                       "b",
@@ -527,24 +494,18 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3	{
                   "analyzing_range_alternatives": {
                     "range_scan_alternatives": [
                       {
-                        "index": "PRIMARY",
+                        "index": "b",
                         "ranges": [
                           "a = 5"
                         ],
                         "index_dives_for_eq_ranges": true,
-                        "rowid_ordered": true,
+                        "rowid_ordered": false,
                         "using_mrr": false,
                         "index_only": true,
                         "in_memory": 1,
-                        "rows": 250,
-                        "cost": 25.3431,
-                        "chosen": false,
-                        "cause": "cost"
-                      },
-                      {
-                        "index": "b",
-                        "chosen": false,
-                        "cause": "no_valid_range_for_this_index"
+                        "rows": 1,
+                        "cost": 0.36,
+                        "chosen": true
                       }
                     ],
                     "analyzing_roworder_intersect": {
@@ -554,22 +515,15 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3	{
                   },
                   "chosen_range_access_summary": {
                     "range_access_plan": {
-                      "type": "skip_scan",
-                      "index": "PRIMARY",
-                      "key_parts_used_for_access": [
-                        "a",
-                        "b",
-                        "c"
-                      ],
-                      "prefix ranges": [
+                      "type": "range_scan",
+                      "index": "b",
+                      "rows": 1,
+                      "ranges": [
                         "a = 5"
-                      ],
-                      "range": [
-                        "4 < c"
                       ]
                     },
-                    "rows_for_plan": 83,
-                    "cost_for_plan": 19.9798,
+                    "rows_for_plan": 1,
+                    "cost_for_plan": 0.36,
                     "chosen": true
                   }
                 }
@@ -586,41 +540,27 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3	{
                   "considered_access_paths": [
                     {
                       "access_type": "ref",
-                      "index": "PRIMARY",
-                      "rows": 250,
-                      "cost": 25.4922,
+                      "index": "b",
+                      "rows": 1,
+                      "cost": 0.35,
                       "chosen": true
                     },
                     {
-                      "rows_to_scan": 83,
-                      "filtering_effect": [
-                      ],
-                      "final_filtering_effect": 0.3333,
                       "access_type": "range",
                       "range_details": {
-                        "used_index": "index_for_skip_scan(PRIMARY)"
+                        "used_index": "b"
                       },
-                      "resulting_rows": 27.6639,
-                      "cost": 28.2798,
-                      "chosen": false
+                      "chosen": false,
+                      "cause": "heuristic_index_cheaper"
                     }
                   ]
                 },
                 "condition_filtering_pct": 11.1089,
-                "rows_for_plan": 27.7722,
-                "cost_for_plan": 25.4922,
+                "rows_for_plan": 0.111089,
+                "cost_for_plan": 0.35,
                 "chosen": true
               }
             ]
-          },
-          {
-            "access_type_changed": {
-              "table": "`t`",
-              "index": "PRIMARY",
-              "old_type": "ref",
-              "new_type": "range",
-              "cause": "uses_more_keyparts"
-            }
           },
           {
             "attaching_conditions_to_tables": {
@@ -640,7 +580,7 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3	{
               {
                 "table": "`t`",
                 "original_table_condition": "((`t`.`a` = 5) and (`t`.`c` > 4) and (`t`.`d` < 3))",
-                "final_table_condition   ": "((`t`.`a` = 5) and (`t`.`c` > 4) and (`t`.`d` < 3))"
+                "final_table_condition   ": "((`t`.`c` > 4) and (`t`.`d` < 3))"
               }
             ]
           },
@@ -665,7 +605,7 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND c > 4 AND d < 3	{
 }	0	0
 EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND d < 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	ref	PRIMARY,b	PRIMARY	4	const	250	33.33	Using where; Using index
+1	SIMPLE	t	NULL	ref	b	b	5	const	1	33.33	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`b` AS `b`,`test`.`t`.`c` AS `c`,`test`.`t`.`d` AS `d` from `test`.`t` where ((`test`.`t`.`a` = 5) and (`test`.`t`.`d` < 3))
 SELECT * FROM information_schema.optimizer_trace;
@@ -737,12 +677,12 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND d < 3	{
                 "table": "`t`",
                 "range_analysis": {
                   "table_scan": {
-                    "rows": 2500,
-                    "cost": 256.35
+                    "rows": 160,
+                    "cost": 19.35
                   },
                   "potential_range_indexes": [
                     {
-                      "index": "PRIMARY",
+                      "index": "b",
                       "usable": true,
                       "key_parts": [
                         "a",
@@ -750,21 +690,11 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND d < 3	{
                         "c",
                         "d"
                       ]
-                    },
-                    {
-                      "index": "b",
-                      "usable": true,
-                      "key_parts": [
-                        "b",
-                        "d",
-                        "a",
-                        "c"
-                      ]
                     }
                   ],
                   "best_covering_index_scan": {
                     "index": "b",
-                    "cost": 252.077,
+                    "cost": 16.3758,
                     "chosen": true
                   },
                   "setup_range_conditions": [
@@ -776,24 +706,18 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND d < 3	{
                   "skip_scan_range": {
                     "potential_skip_scan_indexes": [
                       {
-                        "index": "PRIMARY",
-                        "tree_travel_cost": 0.6,
-                        "num_groups": 26,
-                        "rows": 83,
-                        "cost": 43.9798
-                      },
-                      {
                         "index": "b",
-                        "tree_travel_cost": 0.6,
-                        "num_groups": 6,
-                        "rows": 833,
-                        "cost": 133.008
+                        "tree_travel_cost": 0.4,
+                        "num_groups": 1,
+                        "index skip scan cost": 1.2,
+                        "rows": 1,
+                        "cost": 1.2
                       }
                     ]
                   },
                   "best_skip_scan_summary": {
                     "type": "skip_scan",
-                    "index": "PRIMARY",
+                    "index": "b",
                     "key_parts_used_for_access": [
                       "a",
                       "b",
@@ -804,30 +728,25 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND d < 3	{
                       "a = 5"
                     ],
                     "range": [
-                      "d < 3"
+                      "NULL < d < 3"
                     ],
                     "chosen": true
                   },
                   "analyzing_range_alternatives": {
                     "range_scan_alternatives": [
                       {
-                        "index": "PRIMARY",
+                        "index": "b",
                         "ranges": [
                           "a = 5"
                         ],
                         "index_dives_for_eq_ranges": true,
-                        "rowid_ordered": true,
+                        "rowid_ordered": false,
                         "using_mrr": false,
                         "index_only": true,
                         "in_memory": 1,
-                        "rows": 250,
-                        "cost": 25.3431,
+                        "rows": 1,
+                        "cost": 0.36,
                         "chosen": true
-                      },
-                      {
-                        "index": "b",
-                        "chosen": false,
-                        "cause": "no_valid_range_for_this_index"
                       }
                     ],
                     "analyzing_roworder_intersect": {
@@ -838,14 +757,14 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND d < 3	{
                   "chosen_range_access_summary": {
                     "range_access_plan": {
                       "type": "range_scan",
-                      "index": "PRIMARY",
-                      "rows": 250,
+                      "index": "b",
+                      "rows": 1,
                       "ranges": [
                         "a = 5"
                       ]
                     },
-                    "rows_for_plan": 250,
-                    "cost_for_plan": 25.3431,
+                    "rows_for_plan": 1,
+                    "cost_for_plan": 0.36,
                     "chosen": true
                   }
                 }
@@ -862,15 +781,15 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND d < 3	{
                   "considered_access_paths": [
                     {
                       "access_type": "ref",
-                      "index": "PRIMARY",
-                      "rows": 250,
-                      "cost": 25.4922,
+                      "index": "b",
+                      "rows": 1,
+                      "cost": 0.35,
                       "chosen": true
                     },
                     {
                       "access_type": "range",
                       "range_details": {
-                        "used_index": "PRIMARY"
+                        "used_index": "b"
                       },
                       "chosen": false,
                       "cause": "heuristic_index_cheaper"
@@ -878,8 +797,8 @@ EXPLAIN SELECT b, c, d FROM t WHERE a = 5 AND d < 3	{
                   ]
                 },
                 "condition_filtering_pct": 33.33,
-                "rows_for_plan": 83.325,
-                "cost_for_plan": 25.4922,
+                "rows_for_plan": 0.3333,
+                "cost_for_plan": 0.35,
                 "chosen": true
               }
             ]
@@ -930,7 +849,7 @@ Table	Op	Msg_type	Msg_text
 test.t	histogram	status	Histogram statistics created for column 'd'.
 EXPLAIN SELECT b FROM t WHERE d < 2;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t	NULL	range	PRIMARY,b	b	8	NULL	250	100.00	Using where; Using index for skip scan
+1	SIMPLE	t	NULL	index	b	b	20	NULL	160	0.62	Using where; Using index
 Warnings:
 Note	1003	/* select#1 */ select `test`.`t`.`b` AS `b` from `test`.`t` where (`test`.`t`.`d` < 2)
 SELECT * FROM information_schema.optimizer_trace;
@@ -996,12 +915,12 @@ EXPLAIN SELECT b FROM t WHERE d < 2	{
                 "table": "`t`",
                 "range_analysis": {
                   "table_scan": {
-                    "rows": 2500,
-                    "cost": 256.35
+                    "rows": 160,
+                    "cost": 19.35
                   },
                   "potential_range_indexes": [
                     {
-                      "index": "PRIMARY",
+                      "index": "b",
                       "usable": true,
                       "key_parts": [
                         "a",
@@ -1009,21 +928,11 @@ EXPLAIN SELECT b FROM t WHERE d < 2	{
                         "c",
                         "d"
                       ]
-                    },
-                    {
-                      "index": "b",
-                      "usable": true,
-                      "key_parts": [
-                        "b",
-                        "d",
-                        "a",
-                        "c"
-                      ]
                     }
                   ],
                   "best_covering_index_scan": {
                     "index": "b",
-                    "cost": 252.077,
+                    "cost": 16.3758,
                     "chosen": true
                   },
                   "setup_range_conditions": [
@@ -1035,26 +944,16 @@ EXPLAIN SELECT b FROM t WHERE d < 2	{
                   "skip_scan_range": {
                     "potential_skip_scan_indexes": [
                       {
-                        "index": "PRIMARY",
-                        "histogram_selectivity": {
-                          "condition": "(`t`.`d` < 2)",
-                          "histogram_selectivity": 0.1
-                        },
-                        "tree_travel_cost": 0.6,
-                        "num_groups": 251,
-                        "rows": 250,
-                        "cost": 339.192
-                      },
-                      {
                         "index": "b",
                         "histogram_selectivity": {
                           "condition": "(`t`.`d` < 2)",
-                          "histogram_selectivity": 0.1
+                          "histogram_selectivity": 0.001
                         },
-                        "tree_travel_cost": 0.6,
-                        "num_groups": 6,
-                        "rows": 250,
-                        "cost": 45.132
+                        "tree_travel_cost": 0.4,
+                        "num_groups": 81,
+                        "index skip scan cost": 65.2,
+                        "rows": 1,
+                        "cost": 65.2
                       }
                     ]
                   },
@@ -1062,21 +961,19 @@ EXPLAIN SELECT b FROM t WHERE d < 2	{
                     "type": "skip_scan",
                     "index": "b",
                     "key_parts_used_for_access": [
+                      "a",
                       "b",
+                      "c",
                       "d"
                     ],
                     "range": [
-                      "d < 2"
+                      "NULL < d < 2"
                     ],
-                    "chosen": true
+                    "chosen": false,
+                    "cause": "cost"
                   },
                   "analyzing_range_alternatives": {
                     "range_scan_alternatives": [
-                      {
-                        "index": "PRIMARY",
-                        "chosen": false,
-                        "cause": "no_valid_range_for_this_index"
-                      },
                       {
                         "index": "b",
                         "chosen": false,
@@ -1087,22 +984,6 @@ EXPLAIN SELECT b FROM t WHERE d < 2	{
                       "usable": false,
                       "cause": "too_few_roworder_scans"
                     }
-                  },
-                  "chosen_range_access_summary": {
-                    "range_access_plan": {
-                      "type": "skip_scan",
-                      "index": "b",
-                      "key_parts_used_for_access": [
-                        "b",
-                        "d"
-                      ],
-                      "range": [
-                        "d < 2"
-                      ]
-                    },
-                    "rows_for_plan": 250,
-                    "cost_for_plan": 45.132,
-                    "chosen": true
                   }
                 }
               }
@@ -1117,23 +998,24 @@ EXPLAIN SELECT b FROM t WHERE d < 2	{
                 "best_access_path": {
                   "considered_access_paths": [
                     {
-                      "rows_to_scan": 250,
+                      "rows_to_scan": 160,
                       "filtering_effect": [
+                        {
+                          "condition": "(`t`.`d` < 2)",
+                          "histogram_selectivity": 0.001
+                        }
                       ],
-                      "final_filtering_effect": 1,
-                      "access_type": "range",
-                      "range_details": {
-                        "used_index": "index_for_skip_scan(b)"
-                      },
-                      "resulting_rows": 250,
-                      "cost": 70.132,
+                      "final_filtering_effect": 0.00625,
+                      "access_type": "scan",
+                      "resulting_rows": 1,
+                      "cost": 17.25,
                       "chosen": true
                     }
                   ]
                 },
                 "condition_filtering_pct": 100,
-                "rows_for_plan": 250,
-                "cost_for_plan": 70.132,
+                "rows_for_plan": 1,
+                "cost_for_plan": 17.25,
                 "chosen": true
               }
             ]

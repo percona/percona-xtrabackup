@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -63,7 +63,8 @@ void register_test_logger() {
 void init_test_logger(
     const std::list<std::string> &additional_log_domains /* = {} */,
     const std::string &log_folder /* = "" */,
-    const std::string &log_filename /* = "" */) {
+    const std::string &log_filename /* = "" */,
+    const std::string &log_level /* = "debug" */) {
   register_test_logger();
 
   mysql_harness::DIM &dim = mysql_harness::DIM::instance();
@@ -75,7 +76,7 @@ void init_test_logger(
         mysql_harness::Config::allow_keys);
     config->add(mysql_harness::logging::kConfigSectionLogger);
     config->get(mysql_harness::logging::kConfigSectionLogger, "")
-        .add(mysql_harness::logging::options::kLevel, "debug");
+        .add(mysql_harness::logging::options::kLevel, log_level);
 
     dim.set_Config(config.release(),
                    std::default_delete<mysql_harness::LoaderConfig>());

@@ -1,7 +1,10 @@
 --source include/no_valgrind_without_big.inc
---disable_warnings
-DROP TABLE IF EXISTS t1,t2,t3,t4,t5,t6,t7;
---enable_warnings
+# Several queries in this file give different result with hypergraph
+# because it chooses a different plan. The reason for different
+# result is Bug#36070629. If either of the optimizers choose
+# range scan results differ. So we disable these tests with hypergraph
+# for now. Enable the test when the bug is fixed.
+--source include/not_hypergraph.inc
 
 # Set max_error_count to contain number of warnings in result file
 SET @@session.max_error_count = 64;

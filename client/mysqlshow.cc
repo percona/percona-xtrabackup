@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,11 +27,11 @@
 
 #include <mysql.h>
 #include <mysqld_error.h>
-#include <signal.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <csignal>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
 
 #include "client/include/caching_sha2_passwordopt-vars.h"
 #include "client/include/client_priv.h"
@@ -321,7 +321,7 @@ static struct my_option my_long_options[] = {
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
      0, nullptr, 0, nullptr}};
 
-static void usage(void) {
+static void usage() {
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
   puts(
@@ -397,7 +397,6 @@ static void get_options(int *argc, char ***argv) {
   }
   if (debug_info_flag) my_end_arg = MY_CHECK_ERROR | MY_GIVE_INFO;
   if (debug_check_flag) my_end_arg = MY_CHECK_ERROR;
-  return;
 }
 
 static int list_dbs(MYSQL *mysql, const char *wild) {
@@ -427,10 +426,8 @@ static int list_dbs(MYSQL *mysql, const char *wild) {
     row = mysql_fetch_row(result);
     if (!my_strcasecmp(&my_charset_latin1, row[0], wild)) {
       mysql_free_result(result);
-      if (opt_status)
-        return list_table_status(mysql, wild, nullptr);
-      else
-        return list_tables(mysql, wild, nullptr);
+      if (opt_status) return list_table_status(mysql, wild, nullptr);
+      return list_tables(mysql, wild, nullptr);
     }
   }
 
@@ -567,12 +564,7 @@ static int list_tables(MYSQL *mysql, const char *db, const char *table) {
     counter++;
     if (opt_verbose > 0) {
       if (!(mysql_select_db(mysql, db))) {
-        mysql_real_escape_string_quote(mysql, rows, row[0],
-                                       (unsigned long)strlen(row[0]), '`');
-        snprintf(query, sizeof(query), "SELECT * FROM `%s` LIMIT 0", rows);
-        MYSQL_RES *rresult = (0 == mysql_query(mysql, query))
-                                 ? mysql_store_result(mysql)
-                                 : nullptr;
+        MYSQL_RES *rresult = mysql_list_fields(mysql, row[0], nullptr);
         ulong rowcount = 0L;
         if (!rresult) {
           my_stpcpy(fields, "N/A");

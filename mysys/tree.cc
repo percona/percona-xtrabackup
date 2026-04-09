@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -67,15 +67,15 @@
   ft_boolean_search.c (at least) relies on that.
 */
 
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cstdio>  // IWYU pragma: keep printf
+#include <cstring>
+#include <new>
 
 #include "my_alloc.h"
 #include "my_base.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_pointer_arithmetic.h"
 #include "my_sys.h"
 #include "my_tree.h"
 #include "mysql/service_mysql_alloc.h"
@@ -430,14 +430,13 @@ void *tree_search_next(TREE *tree, TREE_ELEMENT ***last_pos, int l_offs,
       *++*last_pos = x;
     }
     return ELEMENT_KEY(tree, x);
-  } else {
-    TREE_ELEMENT *y = *--*last_pos;
-    while (y != &tree->null_element && x == ELEMENT_CHILD(y, r_offs)) {
-      x = y;
-      y = *--*last_pos;
-    }
-    return y == &tree->null_element ? nullptr : ELEMENT_KEY(tree, y);
   }
+  TREE_ELEMENT *y = *--*last_pos;
+  while (y != &tree->null_element && x == ELEMENT_CHILD(y, r_offs)) {
+    x = y;
+    y = *--*last_pos;
+  }
+  return y == &tree->null_element ? nullptr : ELEMENT_KEY(tree, y);
 }
 
 /*

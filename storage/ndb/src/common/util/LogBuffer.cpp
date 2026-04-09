@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -294,7 +294,7 @@ size_t LogBuffer::get(char *buf, size_t buf_size, uint timeout_ms) {
   }
 
   // Wait until there's something in the buffer or until timeout
-  while ((m_size == 0) && (cond_ret == 0) && (m_stop == false)) {
+  while ((m_size == 0) && (cond_ret == 0) && !m_stop) {
     /**
      * Log buffer is empty, block until signal is received
      * or until timeout.
@@ -308,7 +308,8 @@ size_t LogBuffer::get(char *buf, size_t buf_size, uint timeout_ms) {
   if (m_size == 0) {
     // log buffer empty even after timeout, return
     return 0;
-  } else if (m_size < buf_size) {
+  }
+  if (m_size < buf_size) {
     // change num of bytes to be copied to available bytes
     size = m_size;
   }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -361,9 +361,15 @@ static void do_field_decimal(Copy_field *, const Field *from_field,
 }
 
 inline type_conversion_status copy_time_to_time(const Field *from, Field *to) {
-  MYSQL_TIME ltime;
-  from->get_time(&ltime);
-  return to->store_time(&ltime);
+  Datetime_val dt;
+  if (from->type() == MYSQL_TYPE_TIME) {
+    Time_val time;
+    (void)from->val_time(&time);
+    *implicit_cast<MYSQL_TIME *>(&dt) = MYSQL_TIME(time);
+  } else {
+    from->val_datetime(&dt, TIME_FUZZY_DATE);
+  }
+  return to->store_time(&dt);
 }
 
 /**
@@ -807,25 +813,27 @@ type_conversion_status field_conv_slow(Field *to, const Field *from) {
     return TYPE_OK;
   } else if (is_temporal_type(from_type) && from_type != MYSQL_TYPE_YEAR &&
              to->result_type() == INT_RESULT) {
-    MYSQL_TIME ltime;
     longlong nr;
     if (from_type == MYSQL_TYPE_TIME) {
-      from->get_time(&ltime);
-      if (current_thd->is_fsp_truncate_mode())
-        nr = TIME_to_ulonglong_time(ltime);
-      else
-        nr = TIME_to_ulonglong_time_round(ltime);
+      Time_val time;
+      (void)from->val_time(&time);
+      if (current_thd->is_fsp_truncate_mode()) {
+        nr = time.to_int_truncated();
+      } else {
+        nr = time.to_int_rounded();
+      }
     } else {
-      from->get_date(&ltime, TIME_FUZZY_DATE);
+      Date_val date;
+      (void)from->val_date(&date, TIME_FUZZY_DATE);
       if (current_thd->is_fsp_truncate_mode())
-        nr = TIME_to_ulonglong_datetime(ltime);
+        nr = TIME_to_ulonglong_datetime(date);
       else {
         nr = propagate_datetime_overflow(current_thd, [&](int *w) {
-          return TIME_to_ulonglong_datetime_round(ltime, w);
+          return TIME_to_ulonglong_datetime_round(date, w);
         });
       }
     }
-    return to->store(ltime.neg ? -nr : nr, false);
+    return to->store(nr, false);
   } else if (is_temporal_type(from_type) && from_type != MYSQL_TYPE_YEAR &&
              (to->result_type() == REAL_RESULT ||
               to->result_type() == DECIMAL_RESULT ||
@@ -849,27 +857,30 @@ type_conversion_status field_conv_slow(Field *to, const Field *from) {
              (to_type == MYSQL_TYPE_FLOAT || to_type == MYSQL_TYPE_DOUBLE)) {
     return to->store(from->val_real());
   } else if (from_type == MYSQL_TYPE_JSON && is_temporal_type(to_type)) {
-    MYSQL_TIME ltime;
+    MYSQL_TIME mtime;
     bool res = true;
     switch (to_type) {
-      case MYSQL_TYPE_TIME:
-        res = from->get_time(&ltime);
+      case MYSQL_TYPE_TIME: {
+        Time_val time;
+        res = from->val_time(&time);
+        mtime = MYSQL_TIME(time);
         break;
+      }
       case MYSQL_TYPE_DATETIME:
       case MYSQL_TYPE_TIMESTAMP:
       case MYSQL_TYPE_DATE:
       case MYSQL_TYPE_NEWDATE:
-        res = from->get_date(&ltime, 0);
+        res = from->val_date((Date_val *)(&mtime), 0);
         break;
       default:  // MYSQL_TYPE_YEAR is handled as an integer above
         assert(false);
     }
     /*
-      Field_json::get_time and get_date set ltime to zero, and we store it in
-      the `to` field, so in case conversion errors are ignored we can read zeros
-      instead of garbage.
+      Field_json::val_time(), val_date() and val_datetime() set the value to
+      zero, which is then stored in the `to` field, so in case conversion errors
+      are ignored we can read zeros instead of garbage.
     */
-    const type_conversion_status store_res = to->store_time(&ltime);
+    const type_conversion_status store_res = to->store_time(&mtime);
     return res ? TYPE_ERR_BAD_VALUE : store_res;
   } else if ((from->result_type() == STRING_RESULT &&
               (to->result_type() == STRING_RESULT ||
@@ -886,11 +897,12 @@ type_conversion_status field_conv_slow(Field *to, const Field *from) {
       string->double conversion.
     */
     return to->store(result.c_ptr_quick(), result.length(), from->charset());
-  } else if (from->result_type() == REAL_RESULT)
+  } else if (from->result_type() == REAL_RESULT) {
     return to->store(from->val_real());
-  else if (from->result_type() == DECIMAL_RESULT) {
+  } else if (from->result_type() == DECIMAL_RESULT) {
     my_decimal buff;
     return to->store_decimal(from->val_decimal(&buff));
-  } else
+  } else {
     return to->store(from->val_int(), from->is_flag_set(UNSIGNED_FLAG));
+  }
 }

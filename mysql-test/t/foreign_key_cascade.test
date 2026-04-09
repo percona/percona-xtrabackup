@@ -1,0 +1,489 @@
+#WL 11249 SQL engine layer foreign key support
+--echo # FR 1.9: With multi-level foreign keys CASCADE clause, if CASCADE
+--echo # chain exceeds 15, it must report error ER_FK_DEPTH_EXCEEDED.
+--echo # FR 1.9.1) Test UPDATE and DELETE CASCADE multi level foreign keys
+--echo # report ER_FK_DEPTH_EXCEEDED for depth 15.
+--echo # Create a chain of 17 tables (t1 to t17) with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform UPDATE and DELETE operations on t1 and verify that ER_FK_DEPTH_EXCEEDED is reported.
+
+CALL mtr.add_suppression("Cannot delete/update rows with cascading foreign key constraints that exceed max depth of 15. Please drop excessive foreign constraints and try again");
+CREATE TABLE t1 (f1 INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1), (2);
+CREATE TABLE t2 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t1 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t2 VALUES (1), (2);
+CREATE TABLE t3 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t2 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t3 VALUES (1), (2);
+CREATE TABLE t4 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t3 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t4 VALUES (1), (2);
+CREATE TABLE t5 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t4 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t5 VALUES (1), (2);
+CREATE TABLE t6 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t5 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t6 VALUES (1), (2);
+CREATE TABLE t7 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t6 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t7 VALUES (1), (2);
+CREATE TABLE t8 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t7 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t8 VALUES (1), (2);
+CREATE TABLE t9 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t8 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t9 VALUES (1), (2);
+CREATE TABLE t10 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t9 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t10 VALUES (1), (2);
+CREATE TABLE t11 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t10 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t11 VALUES (1), (2);
+CREATE TABLE t12 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t11 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t12 VALUES (1), (2);
+CREATE TABLE t13 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t12 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t13 VALUES (1), (2);
+CREATE TABLE t14 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t13 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t14 VALUES (1), (2);
+CREATE TABLE t15 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t14 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t15 VALUES (1), (2);
+CREATE TABLE t16 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t15 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t16 VALUES (1), (2);
+CREATE TABLE t17 (f1 INT UNIQUE KEY,
+  FOREIGN KEY (f1) REFERENCES t16 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t17 VALUES (1), (2);
+--error ER_FK_DEPTH_EXCEEDED
+UPDATE t1 SET f1=5 where f1=2;
+--error ER_FK_DEPTH_EXCEEDED
+DELETE FROM t1 where f1=1;
+SELECT * from t1 ORDER BY f1;
+DELETE FROM t16;
+UPDATE t1 SET f1=5 where f1=2;
+DELETE FROM t1 where f1=1;
+SELECT * from t1 ORDER BY f1;
+DROP TABLE t17, t16, t15, t14, t13, t12, t11, t10, t9, t8, t7, t6, t5, t4, t3, t2, t1;
+
+--echo # FR 1.9.2) Test foreign key support with multi-level foreign keys and
+--echo # ON UPDATE/DELETE SET NULL reports ER_FK_DEPTH_EXCEEDED for depth 15.
+--echo # Create a chain of 16 tables (p1 to p16 and q1 to q16) with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform UPDATE and DELETE operations on p1 and q1 and verify that ON UPDATE/DELETE SET NULL cascades correctly up to depth 15.
+--echo # Add one more table to the chain and verify that ER_FK_DEPTH_EXCEEDED is reported.
+--disable_query_log
+--disable_warnings
+drop database if exists test1;
+create database test1;
+use test1;
+--enable_warnings
+# Create Parent Table
+CREATE TABLE p1 ( c1_p1 INT PRIMARY KEY ) ENGINE = InnoDB;
+CREATE TABLE q1 ( c1 INT , c2 VARCHAR(10), c3 NUMERIC(4,1) , c4 DATETIME,c5 VARCHAR(20), PRIMARY KEY (c1,c2,c3)) ENGINE = InnoDB;
+# Procedure To create table such as T1<--T2<--T3....T14
+# e.g p1 is referenced by p2 , p2 is referenced by p3 and so on ..
+# Length of table referenced by each other is 255
+DELIMITER |;
+CREATE PROCEDURE create_table(IN i INT,IN max_table_num INT)
+BEGIN
+  WHILE (i <= max_table_num) DO
+    SET @GetName1 = CONCAT('CREATE TABLE p',i, '(c1_p',i,' INT,',' CONSTRAINT FOREIGN KEY (`c1_p',i,'`) REFERENCES p',i-1,'(`c1_p',i-1,'`)', ' ON DELETE SET NULL ON UPDATE SET NULL ) ENGINE = InnoDB;' );
+    SET @GetName2 = CONCAT('CREATE TABLE q',i,'(c1 INT , c2 VARCHAR(10), c3 numeric(4,1) , c4 DATETIME,c5 VARCHAR(20),CONSTRAINT FOREIGN  KEY (c1,c2,c3) REFERENCES q',i-1,'(c1,c2,c3) ON DELETE SET NULL ON UPDATE SET NULL , index(c1,c2) ) ENGINE = InnoDB;');
+    PREPARE stmt_1 FROM @GetName1;
+    EXECUTE stmt_1;
+    PREPARE stmt_2 FROM @GetName2;
+    EXECUTE stmt_2;
+    SET i = i + 1;
+  END WHILE;
+END|
+DELIMITER ;|
+SET restrict_fk_on_non_standard_key=OFF;
+CALL create_table(2,15);
+SET restrict_fk_on_non_standard_key=ON;
+# Procedure to populate data in tables (10 records)
+DELIMITER |;
+CREATE PROCEDURE insert_table_rows(IN tablename CHAR(10), IN i INT,IN j INT,IN table_type INT)
+BEGIN
+  WHILE (i <= j) DO
+    IF(table_type < 2) THEN
+       SET @GetName1 = CONCAT('INSERT INTO ', tableName, ' VALUES (',i,');');
+    ELSE
+       SET @GetName1 = CONCAT('INSERT INTO ', tableName, ' VALUES (',i,',REPEAT("a",10),',i+0.5,',now(),REPEAT("b",10));');
+    END IF;
+    PREPARE stmt_3 FROM @GetName1;
+    EXECUTE stmt_3;
+    SET i = i + 1;
+  END WHILE;
+END|
+DELIMITER ;|
+
+DELIMITER |;
+CREATE PROCEDURE populate_tables(IN i INT,IN max_table_num INT,IN start_row INT , IN end_row INT)
+BEGIN
+  WHILE (i <= max_table_num) DO
+    SET @GetName1 = CONCAT("CALL insert_table_rows ('p", i,"'",",",start_row,",",end_row,",1);");
+    SET @GetName2 = CONCAT("CALL insert_table_rows ('q", i,"'",",",start_row,",",end_row,",2);");
+    PREPARE stmt5 FROM @GetName1;
+    EXECUTE stmt5;
+    PREPARE stmt6 FROM @GetName2;
+    EXECUTE stmt6;
+    SET i = i + 1;
+  END WHILE;
+END|
+DELIMITER ;|
+CALL populate_tables(1,15,1,10);
+
+DELIMITER |;
+CREATE PROCEDURE count_nulls_in_p(IN i INT,IN max_table_num INT)
+BEGIN
+  WHILE (i <= max_table_num) DO
+    SET @GetName1 = CONCAT("SELECT COUNT(*) AS 'p",i," NULL count' FROM p",i," WHERE c1_p",i," IS NULL;");
+    PREPARE stmt7 FROM @GetName1;
+    EXECUTE stmt7;
+    SET i = i + 1;
+  END WHILE;
+END|
+DELIMITER ;|
+
+DELIMITER |;
+CREATE PROCEDURE count_nulls_in_q(IN i INT,IN max_table_num INT)
+BEGIN
+  WHILE (i <= max_table_num) DO
+    SET @GetName1 = CONCAT("SELECT COUNT(*) AS 'q",i," NULL count' FROM q",i," WHERE c1 IS NULL OR c2 IS NULL OR c3 IS NULL;");
+    PREPARE stmt8 FROM @GetName1;
+    EXECUTE stmt8;
+    SET i = i + 1;
+  END WHILE;
+END|
+DELIMITER ;|
+
+DELIMITER |;
+CREATE PROCEDURE delete_from_tables(IN i INT,IN min_table_num INT)
+BEGIN
+  WHILE (i >= min_table_num) DO
+    SET @GetName1 = CONCAT("DELETE FROM p",i,";");
+    SET @GetName2 = CONCAT("DELETE FROM q",i,";");
+    PREPARE stmt9 FROM @GetName1;
+    EXECUTE stmt9;
+    PREPARE stmt10 FROM @GetName2;
+    EXECUTE stmt10;
+    SET i = i - 1;
+  END WHILE;
+END|
+DELIMITER ;|
+
+--enable_query_log
+
+# Verify that ON UPDATE SET NULL cascades correctly up to the recursion limit
+SELECT * FROM p1;
+SELECT * FROM p15;
+CALL count_nulls_in_p(2,14);
+
+UPDATE p1 SET c1_p1 = 55 where c1_p1 = 5;
+SELECT * FROM p1;
+SELECT * FROM p15 order by c1_p15;
+CALL count_nulls_in_p(2,14);
+
+SELECT c1,c2,c3,c5 FROM q1;
+SELECT c1,c2,c3,c5 FROM q15;
+CALL count_nulls_in_q(2,14);
+
+UPDATE q1 SET c2 = 'bb' where c1 = 7;
+
+SELECT c1,c2,c3,c5 FROM q1;
+SELECT c1,c2,c3,c5 FROM q15;
+CALL count_nulls_in_q(2,14);
+
+# Verify that ON DELETE SET NULL cascades correctly up to the recursion limit
+DELETE FROM p1 where c1_p1 = 2;
+SELECT * FROM p1;
+SELECT * FROM p15 order by c1_p15;
+CALL count_nulls_in_p(2,14);
+
+DELETE FROM q1 WHERE c1=3;
+SELECT c1,c2,c3,c5 FROM q1;
+SELECT c1,c2,c3,c5 FROM q15;
+CALL count_nulls_in_q(2,14);
+
+--echo # Add 1 more table to the collections of related tables and check
+--echo # that the relevant error message is generated when the 
+--echo # ON UPDATE SET NULL cascade reaches its limit.
+CALL mtr.add_suppression("Cannot delete/update rows with cascading foreign key constraints that exceed max depth of 15. Please drop excessive foreign constraints and try again");
+
+CALL delete_from_tables(15,1);
+SET restrict_fk_on_non_standard_key=OFF;
+CALL create_table(16,16);
+SET restrict_fk_on_non_standard_key=ON;
+
+CALL populate_tables(1,16,1,10);
+
+--error ER_FK_DEPTH_EXCEEDED
+UPDATE p1 SET c1_p1 = 55 WHERE c1_p1 = 5;
+SELECT * FROM p1;
+SELECT * FROM p16;
+CALL count_nulls_in_p(2,15);
+
+--error ER_FK_DEPTH_EXCEEDED
+UPDATE q1 SET c2 = 'bb' WHERE c1 = 7;
+SELECT c1,c2,c3,c5 FROM q1;
+SELECT c1,c2,c3,c5 FROM q16;
+CALL count_nulls_in_q(2,15);
+
+# Verify that the ON DELETE SET NULL cascade reaches the limit and generates
+# the relevant error too...
+--error ER_FK_DEPTH_EXCEEDED
+DELETE FROM p1 WHERE c1_p1 = 2;
+SELECT * FROM p1;
+SELECT * FROM p16;
+CALL count_nulls_in_p(2,15);
+
+--error ER_FK_DEPTH_EXCEEDED
+DELETE FROM q1 WHERE c1 = 9;
+SELECT c1,c2,c3,c5 FROM q1;
+SELECT c1,c2,c3,c5 FROM q16;
+CALL count_nulls_in_q(2,15);
+
+# Clean database
+DROP DATABASE test1;
+use test;
+
+--echo # FR 1.9.3) Multiple CASCADE
+--echo # Test foreign key support with multiple CASCADE clauses from different tables.
+--echo # Create tables t1, t2, and t3 with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform DELETE and UPDATE operations on t1 and t2 and verify that CASCADE works correctly.
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t1 VALUES (1,1), (2,2), (3,3);
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t2 VALUES (1,1), (2,2), (3,3);
+CREATE TABLE t3 (f1 INT, f2 INT, f3 INT, f4 INT,
+  FOREIGN KEY (f1) REFERENCES t1 (f1) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (f2) REFERENCES t2 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t3 VALUES (1,1,1,1);
+INSERT INTO t3 VALUES (2,2,2,2);
+INSERT INTO t3 VALUES (3,3,3,3);
+DELETE FROM t1 WHERE f1=1;
+UPDATE t2 set f1=5 where f1=2;
+SELECT * FROM t1;
+SELECT * FROM t2;
+SELECT * FROM t3;
+DROP TABLE t1, t2, t3;
+
+--echo # FR 1.9.4) Grandchild constraints affecting cascades
+--echo # Test foreign key support with grandchild constraints affecting cascades.
+--echo # Create tables t1, t2, t3, and t4 with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform DELETE and UPDATE operations on t1 and verify that the operations are prevented 
+--echo #  by the grandchild table's FK RESTRICT.
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t1 VALUES (1,1), (2,2);
+CREATE TABLE t2 (f1 INT PRIMARY KEY, f2 INT,
+  FOREIGN KEY (f1) REFERENCES t1 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t2 VALUES (1,1), (2,2);
+CREATE TABLE t3 (f1 INT PRIMARY KEY, f2 INT,
+  FOREIGN KEY (f1) REFERENCES t2 (f1) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t3 VALUES (1,1), (2,2);
+CREATE TABLE t4 (f1 INT PRIMARY KEY, f2 INT,
+  FOREIGN KEY (f1) REFERENCES t3 (f1) ON DELETE RESTRICT ON UPDATE RESTRICT);
+INSERT INTO t4 VALUES (1,1), (2,2);
+
+--error ER_ROW_IS_REFERENCED_2
+DELETE FROM t1 WHERE f1=1;
+
+--error ER_ROW_IS_REFERENCED_2
+UPDATE t1 set f1=3 where f1=2;
+
+SELECT * FROM t1;
+SELECT * FROM t4;
+DROP TABLE t4, t3, t2, t1;
+
+--echo # FR 1.9.5) Mixed Multi level cascades
+--echo # Test foreign key support with mixed multi-level cascades.
+--echo # Create tables t1, t2, and t3 with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform DELETE operation on t1 and verify that the operation is cascaded differently to t2 and t3.
+CREATE TABLE t1(s1 INT PRIMARY KEY);
+CREATE TABLE t2(s1 INT, FOREIGN KEY (s1) REFERENCES t1(s1) ON DELETE CASCADE);
+SET restrict_fk_on_non_standard_key=OFF;
+CREATE TABLE t3(s1 INT, FOREIGN KEY (s1) REFERENCES t2(s1) ON DELETE SET NULL);
+SET restrict_fk_on_non_standard_key=ON;
+
+INSERT INTO t1 VALUES (1),(2),(3);
+INSERT INTO t2 VALUES (1),(2),(3);
+INSERT INTO t3 VALUES (1),(2),(3);
+SELECT * FROM t1;
+SELECT * FROM t2;
+SELECT * FROM t3;
+
+DELETE FROM t1 WHERE s1=2;
+SELECT * FROM t1 ORDER BY s1;
+SELECT * FROM t2 ORDER BY s1;
+SELECT * FROM t3 ORDER BY s1;
+
+DROP TABLE t3, t2, t1;
+
+--echo # FR 1.9.6) Test foreign key support with multi-level DELETE CASCADE using different columns.
+--echo # Create tables country, state, and city with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform DELETE operation on country and verify that the operation is cascaded to city.
+CREATE TABLE country(countryid INT PRIMARY KEY);
+CREATE TABLE state(stateid INT, countryid INT, PRIMARY KEY(stateid),
+  FOREIGN KEY (countryid) REFERENCES country(countryid) ON UPDATE CASCADE ON DELETE CASCADE);
+CREATE TABLE city(cityid INT, stateid INT, PRIMARY KEY(cityid),
+  FOREIGN KEY (stateid) REFERENCES state(stateid) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO country VALUES (1);
+INSERT INTO country VALUES (2);
+INSERT INTO state VALUES (10, 1);
+INSERT INTO state VALUES (20, 2);
+INSERT INTO city VALUES (100, 10);
+INSERT INTO city VALUES (200, 20);
+
+DELETE FROM country where countryid=2;
+SELECT * FROM city;
+
+DROP TABLE city, state, country;
+
+--echo # FR 1.9.7) Test foreign key support with UPDATE CASCADE and an expression in the SET clause.
+--echo # Create tables parent, child, and grandchild with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform UPDATE operation on parent and verify that the operation is cascaded to child and grandchild.
+CREATE TABLE parent(f1 INT PRIMARY KEY);
+CREATE TABLE child (f1 INT, UNIQUE KEY(f1),
+FOREIGN KEY(f1) REFERENCES parent(f1) ON UPDATE CASCADE);
+CREATE TABLE grandchild (f1 INT, UNIQUE KEY(f1),
+FOREIGN KEY(f1) REFERENCES parent(f1) ON UPDATE CASCADE);
+INSERT INTO parent (f1) VALUES (1),(2);
+INSERT INTO child (f1) VALUES (1),(2);
+INSERT INTO grandchild (f1) VALUES (1),(2);
+UPDATE parent SET f1=f1+100 WHERE f1=1;
+SELECT * FROM parent;
+SELECT * FROM child;
+SELECT * FROM grandchild;
+DROP TABLE parent, child, grandchild;
+
+--echo # FR 1.9.8) Test foreign key support with cascading NULL values from parent to child.
+--echo # Create tables parent and child with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform UPDATE operation on parent and verify that NULL values are cascaded to child.
+CREATE TABLE parent (idp INT NOT NULL PRIMARY KEY, namep CHAR(20) UNIQUE);
+
+CREATE TABLE child (idc INT NOT NULL PRIMARY KEY, namec CHAR(20),
+FOREIGN KEY (namec) REFERENCES parent(namep) ON UPDATE CASCADE);
+
+INSERT INTO parent (idp, namep) VALUE (1,'one'), (2,'two'), (3,'three');
+INSERT INTO child (idc, namec) VALUE (1,'one'), (11,'one'), (2,'two'),
+  (22,'two'), (3,'three'), (33,'three');
+
+UPDATE parent SET idp = 4,namep = 'four' WHERE idp = 3;
+
+SELECT * FROM parent ORDER BY idp;
+SELECT * FROM child ORDER BY idc;
+
+UPDATE parent SET namep = NULL WHERE idp = 4;
+
+SELECT idp, namep, ISNULL(namep) FROM parent ORDER BY idp;
+SELECT idc, namec, ISNULL(namec) FROM child ORDER BY idc;
+
+DROP TABLE child;
+DROP TABLE parent;
+
+--echo # FR 1.9.9) Test foreign key support with cascading NULL values to non-nullable fields.
+--echo # Create tables parent and child with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform UPDATE operation on parent and verify that attempting to cascade NULL 
+--echo #  to a non-nullable field is handled gracefully.
+CREATE TABLE parent(
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  f1 INT, UNIQUE INDEX (f1));
+CREATE TABLE child(
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  f2 INT NOT NULL,
+  FOREIGN KEY (f2) REFERENCES parent(f1) ON UPDATE CASCADE
+);
+
+INSERT INTO parent (f1) VALUE (2),(4),(8);
+INSERT INTO child (f2) VALUE (2),(4),(8);
+
+--error ER_ROW_IS_REFERENCED_2
+UPDATE parent SET f1=NULL WHERE id=1;
+
+DROP TABLE child;
+DROP TABLE parent;
+
+--echo # FR 1.9.10) Test foreign key support with cascading NULL values to non-nullable
+--echo #         fields in composite foreign keys.
+--echo # Create tables parent and child with composite foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform UPDATE operation on parent and verify that attempting to cascade NULL 
+--echo #  to a non-nullable field is handled gracefully.
+CREATE TABLE parent(
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  p1 INT, p2 INT, p3 INT,
+  UNIQUE INDEX (p1,p2,p3));
+CREATE TABLE child(
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  c1 INT, c2 INT NOT NULL, c3 INT,
+  FOREIGN KEY (c1,c2,c3) REFERENCES parent(p1,p2,p3) ON UPDATE CASCADE
+);
+
+INSERT INTO parent (p1,p2,p3) VALUE (1,2,3),(4,5,6),(7,8,9);
+INSERT INTO child  (c1,c2,c3) VALUE (1,2,3),(4,5,6),(7,8,9);
+SELECT * FROM parent;
+SELECT * FROM child;
+UPDATE parent SET p2=42 WHERE id=2;
+SELECT * FROM parent;
+SELECT * FROM child;
+UPDATE parent SET p1=NULL WHERE id=1;
+SELECT * FROM parent;
+SELECT * FROM child;
+--error ER_ROW_IS_REFERENCED_2
+UPDATE parent SET p2=NULL WHERE id=3;
+
+DROP TABLE child;
+DROP TABLE parent;
+
+--echo # FR 1.9.11) Test foreign key support with cascading timestamp values from parent to child.
+--echo # Create tables parent and child with foreign key constraints.
+--echo # Insert data into the tables.
+--echo # Perform UPDATE operation on parent and verify that timestamp values are cascaded to child.
+CREATE TABLE parent (
+  idp INT NOT NULL PRIMARY KEY,
+  tsp TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP UNIQUE
+);
+
+CREATE TABLE child (
+  idc INT NOT NULL PRIMARY KEY,
+  tsc TIMESTAMP,
+  FOREIGN KEY (tsc) REFERENCES parent(tsp) ON UPDATE CASCADE
+);
+
+INSERT INTO parent (idp) VALUE (1);
+INSERT INTO child (idc, tsc) SELECT * FROM parent;
+
+# Verify that the row in child is related to the row in parent by
+# attempting to delete the parent row...
+--error ER_ROW_IS_REFERENCED_2
+DELETE FROM parent WHERE idp = 1;
+
+UPDATE parent SET tsp = NULL WHERE idp = 1;
+
+SELECT * FROM parent;
+SELECT * FROM child;
+
+# Update what was a null foreign key column in a parent row
+# to a value that is not present in a child row...
+UPDATE parent SET tsp = '2025-02-11 11:26:49' WHERE idp = 1;
+SELECT * FROM parent;
+SELECT * FROM child;
+
+--error ER_NO_REFERENCED_ROW_2
+UPDATE child SET tsc = '2025-02-11 11:00:00' WHERE idc = 1;
+
+UPDATE child SET tsc = '2025-02-11 11:26:49' WHERE idc = 1;
+
+DROP TABLE child;
+DROP TABLE parent;

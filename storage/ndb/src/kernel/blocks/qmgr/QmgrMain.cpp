@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 #include <NdbSleep.h>
 #include <NdbTick.h>
 #include <ndb_version.h>
+#include <DebuggerNames.hpp>
 #include <NodeInfo.hpp>
 #include <OwnProcessInfo.hpp>
 #include <pc.hpp>
@@ -763,7 +764,6 @@ void Qmgr::execCONNECT_REP(Signal *signal) {
 
   if (ERROR_INSERTED(931)) {
     jam();
-    g_eventLogger->info("Discarding CONNECT_REP(%d)", connectedNodeId);
     infoEvent("Discarding CONNECT_REP(%d)", connectedNodeId);
     return;
   }
@@ -772,7 +772,6 @@ void Qmgr::execCONNECT_REP(Signal *signal) {
       getNodeInfo(connectedNodeId).getType() == NodeInfo::API) {
     jam();
     CLEAR_ERROR_INSERT_VALUE;
-    g_eventLogger->info("Discarding one API CONNECT_REP(%d)", connectedNodeId);
     infoEvent("Discarding one API CONNECT_REP(%d)", connectedNodeId);
     return;
   }
@@ -2707,7 +2706,8 @@ void Qmgr::execCM_ADD(Signal *signal) {
       set_hb_count(addNodePtr.i) = 0;
       c_clusterNodes.set(addNodePtr.i);
       findNeighbours(signal, __LINE__);
-
+      g_eventLogger->info("Node %u joined cluster.  Members : %s", addNodePtr.i,
+                          BaseString::getPrettyText(c_clusterNodes).c_str());
       /**
        * SEND A HEARTBEAT IMMEDIATELY TO DECREASE THE RISK THAT WE MISS EARLY
        * HEARTBEATS.
@@ -2786,6 +2786,8 @@ void Qmgr::joinedCluster(Signal *signal, NodeRecPtr nodePtr) {
   findNeighbours(signal, __LINE__);
   c_clusterNodes.set(nodePtr.i);
   c_start.reset();
+  g_eventLogger->info("Joined cluster.  Members : %s",
+                      BaseString::getPrettyText(c_clusterNodes).c_str());
 
   /**
    * SEND A HEARTBEAT IMMEDIATELY TO DECREASE THE RISK
@@ -3072,6 +3074,7 @@ void Qmgr::initData(Signal *signal) {
   c_restartPartitionedTimeout = Uint32(~0);
   c_restartFailureTimeout = Uint32(~0);
   c_restartNoNodegroupTimeout = 15000;
+  c_apiFailureTimeoutSecs = 600;
   ndb_mgm_get_int_parameter(p, CFG_DB_HEARTBEAT_INTERVAL, &hbDBDB);
   ndb_mgm_get_int_parameter(p, CFG_DB_ARBIT_TIMEOUT, &arbitTimeout);
   ndb_mgm_get_int_parameter(p, CFG_DB_ARBIT_METHOD, &arbitMethod);
@@ -3084,6 +3087,8 @@ void Qmgr::initData(Signal *signal) {
   ndb_mgm_get_int_parameter(p, CFG_DB_START_FAILURE_TIMEOUT,
                             &c_restartFailureTimeout);
   ndb_mgm_get_int_parameter(p, CFG_DB_CONNECT_CHECK_DELAY, &ccInterval);
+  ndb_mgm_get_int_parameter(p, CFG_DB_API_FAILURE_HANDLING_TIMEOUT,
+                            &c_apiFailureTimeoutSecs);
 
   if (c_restartPartialTimeout == 0) {
     c_restartPartialTimeout = Uint32(~0);
@@ -3437,7 +3442,7 @@ void Qmgr::apiHbHandlingLab(Signal *signal, NDB_TICKS now) {
         signal->theData[1] = nodeId;
         sendSignal(CMVMI_REF, GSN_EVENT_REP, signal, 2, JBB);
 
-        api_failed(signal, nodeId);
+        api_failed(signal, nodeId, AFC_Heartbeat, 0);
       }  // if
     }    // if
     else if (TnodePtr.p->phase == ZAPI_INACTIVE && TnodePtr.p->m_secret != 0 &&
@@ -3513,15 +3518,18 @@ void Qmgr::checkStartInterface(Signal *signal, NDB_TICKS now) {
         sendSignal(TRPMAN_REF, GSN_OPEN_COMORD, signal, 2, JBB);
       } else {
         jam();
-        if (((get_hb_count(nodePtr.i) + 1) % 30) == 0) {
-          jam();
-          char buf[256];
-          if (getNodeInfo(nodePtr.i).m_type == NodeInfo::DB) {
+        const Uint32 secondsElapsed = get_hb_count(nodePtr.i);
+        bool generateDelayLog =
+            (secondsElapsed && ((secondsElapsed % 30) == 0));
+
+        if (getNodeInfo(nodePtr.i).m_type == NodeInfo::DB) {
+          if (generateDelayLog) {
             jam();
+            char buf[256];
             BaseString::snprintf(buf, sizeof(buf),
                                  "Failure handling of node %d has not completed"
                                  " in %d seconds - state = %d",
-                                 nodePtr.i, get_hb_count(nodePtr.i),
+                                 nodePtr.i, secondsElapsed,
                                  nodePtr.p->failState);
             warningEvent("%s", buf);
 
@@ -3531,12 +3539,41 @@ void Qmgr::checkStartInterface(Signal *signal, NDB_TICKS now) {
             signal->theData[0] = DumpStateOrd::DihTcSumaNodeFailCompleted;
             signal->theData[1] = nodePtr.i;
             sendSignal(DBDIH_REF, GSN_DUMP_STATE_ORD, signal, 2, JBB);
-          } else {
+          }
+        } else {
+          /* API/MGMD */
+
+          /* Check which timeout value to use */
+          Uint32 maxSeconds = c_apiFailureTimeoutSecs;
+          if (nodePtr.p->failState == WAITING_FOR_API_FAILCONF) {
+            /* Check if we are waiting for DICT */
+            for (Uint32 i = 0; i < NDB_ARRAY_SIZE(nodePtr.p->m_failconf_blocks);
+                 i++) {
+              if (nodePtr.p->m_failconf_blocks[i] == DBDICT) {
+                /* DICT failure handling time can include
+                 * Schema Transaction rollback/forward
+                 */
+                maxSeconds = (7 * 24 * 60 * 60);
+                break;
+              }
+            }
+          }
+          const Uint32 remainSecs =
+              ((maxSeconds > 0) ? (secondsElapsed >= maxSeconds
+                                       ? 0
+                                       : maxSeconds - secondsElapsed)
+                                : UINT32_MAX);
+
+          const bool escalate = (remainSecs == 0);
+          generateDelayLog |= (remainSecs == 5 || escalate);
+
+          if (generateDelayLog) {
             jam();
+            char buf[256];
             BaseString::snprintf(buf, sizeof(buf),
                                  "Failure handling of api %u has not completed"
-                                 " in %d seconds - state = %d",
-                                 nodePtr.i, get_hb_count(nodePtr.i),
+                                 " in %d seconds.  Limit %u - state = %d",
+                                 nodePtr.i, secondsElapsed, maxSeconds,
                                  nodePtr.p->failState);
             warningEvent("%s", buf);
             if (nodePtr.p->failState == WAITING_FOR_API_FAILCONF) {
@@ -3550,7 +3587,40 @@ void Qmgr::checkStartInterface(Signal *signal, NDB_TICKS now) {
                                    nodePtr.p->m_failconf_blocks[3],
                                    nodePtr.p->m_failconf_blocks[4]);
               warningEvent("%s", buf);
+
+              /* Ask delayed block(s) to explain themselves */
+              for (Uint32 i = 0;
+                   i < NDB_ARRAY_SIZE(nodePtr.p->m_failconf_blocks); i++) {
+                if (nodePtr.p->m_failconf_blocks[i] != 0) {
+                  signal->theData[0] = DumpStateOrd::DihTcSumaNodeFailCompleted;
+                  signal->theData[1] = nodePtr.i;
+                  const Uint32 dstRef =
+                      numberToRef(nodePtr.p->m_failconf_blocks[i], 0);
+                  sendSignal(dstRef, GSN_DUMP_STATE_ORD, signal, 2, JBB);
+                }
+              }
             }
+          }
+
+          if (escalate) {
+            g_eventLogger->error(
+                "Failure handling of api %u has not completed "
+                "in %d seconds.  Limit %d - state = %d blocks "
+                "%u %u %u %u %u",
+                nodePtr.i, secondsElapsed, maxSeconds, nodePtr.p->failState,
+                nodePtr.p->m_failconf_blocks[0],
+                nodePtr.p->m_failconf_blocks[1],
+                nodePtr.p->m_failconf_blocks[2],
+                nodePtr.p->m_failconf_blocks[3],
+                nodePtr.p->m_failconf_blocks[4]);
+
+            CRASH_INSERTION(961);  // Safe exit for testing
+            char buf[100];
+            BaseString::snprintf(
+                buf, sizeof(buf),
+                "Exceeded limit of %u seconds handling failure of Api node %u.",
+                maxSeconds, nodePtr.i);
+            progError(__LINE__, NDBD_EXIT_API_FAIL_HANDLING_TIMEOUT, buf);
           }
         }
       }
@@ -3636,7 +3706,8 @@ void Qmgr::execAPI_FAILREQ(Signal *signal) {
 
   ndbrequire(getNodeInfo(failedNodePtr.i).getType() != NodeInfo::DB);
 
-  api_failed(signal, signal->theData[0]);
+  api_failed(signal, signal->theData[0], AFC_Notification,
+             signal->getSendersBlockRef());
 }
 
 void Qmgr::execAPI_FAILCONF(Signal *signal) {
@@ -3920,7 +3991,7 @@ void Qmgr::execDISCONNECT_REP(Signal *signal) {
 
   if (getNodeInfo(nodeId).getType() != NodeInfo::DB) {
     jam();
-    api_failed(signal, nodeId);
+    api_failed(signal, nodeId, AFC_Disconnect, 0);
     return;
   }
 
@@ -4043,7 +4114,8 @@ void Qmgr::execUPGRADE_PROTOCOL_ORD(Signal *signal) {
   }
 }
 
-void Qmgr::api_failed(Signal *signal, Uint32 nodeId) {
+void Qmgr::api_failed(Signal *signal, Uint32 nodeId, ApiFailureCause afc,
+                      Uint32 senderRef) {
   jam();
   NodeRecPtr failedNodePtr;
   /**------------------------------------------------------------------------
@@ -4087,6 +4159,34 @@ void Qmgr::api_failed(Signal *signal, Uint32 nodeId) {
   }
 
   ndbrequire(failedNodePtr.p->failState == NORMAL);
+
+  {
+    char msgBuf[30];
+    const char *message = "unknown cause";
+    switch (afc) {
+      case AFC_Heartbeat:
+        message = "missed heartbeats";
+        break;
+      case AFC_Disconnect:
+        message = "transporter disconnection";
+        break;
+      case AFC_Notification:
+        if (refToNode(senderRef) == getOwnNodeId()) {
+          BaseString::snprintf(msgBuf, sizeof(msgBuf), "request from local %s",
+                               getBlockName(refToBlock(senderRef)));
+        } else {
+          BaseString::snprintf(msgBuf, sizeof(msgBuf), "request from node %u",
+                               refToNode(senderRef));
+        }
+        message = msgBuf;
+        break;
+      default:
+        ndbabort();
+    }
+
+    g_eventLogger->info("Cleanup of node %u connection state triggered by %s",
+                        nodeId, message);
+  }
 
   /* Send API_FAILREQ to peer QMGR blocks to allow them to disconnect
    * quickly
@@ -4556,31 +4656,13 @@ void Qmgr::failReportLab(Signal *signal, Uint16 aFailedNode,
     jam();
 
     Uint32 code = NDBD_EXIT_NODE_DECLARED_DEAD;
-    const char *msg = 0;
+    const char *msg = FailRep::getFailCauseText(aFailCause);
     // Message buffer for FailRep::ZPARTITIONED_CLUSTER
     static const Uint32 bitmaskTextLen = NdbNodeBitmask::TextLength + 1;
     char extra[2 * bitmaskTextLen + 30];
 
+    /* Special handling for some causes */
     switch (aFailCause) {
-      case FailRep::ZOWN_FAILURE:
-        msg = "Own failure";
-        break;
-      case FailRep::ZOTHER_NODE_WHEN_WE_START:
-      case FailRep::ZOTHERNODE_FAILED_DURING_START:
-        msg = "Other node died during start";
-        break;
-      case FailRep::ZIN_PREP_FAIL_REQ:
-        msg = "Prep fail";
-        break;
-      case FailRep::ZSTART_IN_REGREQ:
-        msg = "Start timeout";
-        break;
-      case FailRep::ZHEARTBEAT_FAILURE:
-        msg = "Heartbeat failure";
-        break;
-      case FailRep::ZLINK_FAILURE:
-        msg = "Connection failure";
-        break;
       case FailRep::ZPARTITIONED_CLUSTER: {
         code = NDBD_EXIT_PARTITIONED_SHUTDOWN;
         char buf1[bitmaskTextLen], buf2[bitmaskTextLen];
@@ -4617,14 +4699,7 @@ void Qmgr::failReportLab(Signal *signal, Uint16 aFailedNode,
         msg = extra;
         break;
       }
-      case FailRep::ZMULTI_NODE_SHUTDOWN:
-        msg = "Multi node shutdown";
-        break;
-      case FailRep::ZCONNECT_CHECK_FAILURE:
-        msg = "Connectivity check failure";
-        break;
       case FailRep::ZFORCED_ISOLATION:
-        msg = "Forced isolation";
         if (ERROR_INSERTED(942)) {
           g_eventLogger->info(
               "FAIL_REP FORCED_ISOLATION received from data node %u - "
@@ -4635,7 +4710,7 @@ void Qmgr::failReportLab(Signal *signal, Uint16 aFailedNode,
         }
         break;
       default:
-        msg = "<UNKNOWN>";
+        break;
     }
 
     CRASH_INSERTION(932);
@@ -5652,6 +5727,27 @@ void Qmgr::failReport(Signal *signal, Uint16 aFailedNode, UintR aSendFailRep,
       }        // if
     }          // if
     cfailedNodes.set(failedNodePtr.i);
+
+    /* We are at the start of failure processing.
+     * Can take some time to process
+     * Calculate the new end state membership
+     */
+    NdbNodeBitmask survivors(c_clusterNodes);
+    survivors.bitANDC(cfailedNodes);
+
+    if (sourceNode == getOwnNodeId()) {
+      g_eventLogger->info(
+          "Node %u leaving cluster due to %s.  "
+          "Members : %s",
+          failedNodePtr.i, FailRep::getFailCauseText(aFailCause),
+          BaseString::getPrettyText(survivors).c_str());
+    } else {
+      g_eventLogger->info(
+          "Node %u leaving cluster due to %s (notified by node %u).  "
+          "Members : %s",
+          failedNodePtr.i, FailRep::getFailCauseText(aFailCause), sourceNode,
+          BaseString::getPrettyText(survivors).c_str());
+    }
   }  // if
 }  // Qmgr::failReport()
 
@@ -6301,8 +6397,6 @@ void Qmgr::stateArbitFind(Signal *signal) {
 
       if (arbitRec.getTimediff() > getArbitTimeout()) {
         jam();
-        g_eventLogger->warning(
-            "Could not find an arbitrator, cluster is not partition-safe");
         warningEvent(
             "Could not find an arbitrator, cluster is not partition-safe");
         arbitRec.setTimestamp();
@@ -6427,13 +6521,6 @@ void Qmgr::execARBIT_PREPREQ(Signal *signal) {
       if (!c_connectedNodes.get(arbitRec.node)) {
         char buf[20];  // needs 16 + 1 for '\0'
         arbitRec.ticket.getText(buf, sizeof(buf));
-        g_eventLogger->warning(
-            "President %u proposed disconnected "
-            "node %u as arbitrator [ticket=%s]. "
-            "Cluster may be partially connected. "
-            "Connected nodes: %s",
-            cpresident, arbitRec.node, buf,
-            BaseString::getPrettyTextShort(c_connectedNodes).c_str());
 
         warningEvent(
             "President %u proposed disconnected node %u "
@@ -6970,7 +7057,8 @@ void Qmgr::execDUMP_STATE_ORD(Signal *signal) {
 
   if (signal->theData[0] == 900 && signal->getLength() == 2) {
     g_eventLogger->info("disconnecting %u", signal->theData[1]);
-    api_failed(signal, signal->theData[1]);
+    api_failed(signal, signal->theData[1], AFC_Notification,
+               signal->getSendersBlockRef());
   }
 
   if (signal->theData[0] == 908) {
@@ -7065,6 +7153,15 @@ void Qmgr::execDUMP_STATE_ORD(Signal *signal) {
     closeCom->failedNodeId = nodeId;
     sendSignal(TRPMAN_REF, GSN_CLOSE_COMREQ, signal,
                CloseComReqConf::SignalLength, JBB);
+  }
+  if (signal->theData[0] == 909) {
+    jam();
+    if (signal->getLength() == 2) {
+      jam();
+      g_eventLogger->info("QMGR : Setting c_apiFailureTimeoutSecs to %u",
+                          signal->theData[1]);
+      c_apiFailureTimeoutSecs = signal->theData[1];
+    }
   }
 }  // Qmgr::execDUMP_STATE_ORD()
 
@@ -7197,6 +7294,33 @@ void Qmgr::execNODE_FAILREP(Signal *signal) {
   }
 }
 
+static const char *getAllocFailureExplanation(Uint32 errorCode) {
+  switch (errorCode) {
+    case AllocNodeIdRef::NoError:
+      return "No Error";
+    case AllocNodeIdRef::Undefined:
+      return "Undefined error.  Retry";
+    case AllocNodeIdRef::NF_FakeErrorREF:
+      return "Node Failure. Retry";
+    case AllocNodeIdRef::Busy:
+      return "System busy with another nodeid allocation. Retry";
+    case AllocNodeIdRef::NotMaster:
+      return "Request to incorrect node. Retry";
+    case AllocNodeIdRef::NodeReserved:
+      return "Node id already reserved";
+    case AllocNodeIdRef::NodeConnected:
+      return "Node id already in use";
+    case AllocNodeIdRef::NodeFailureHandlingNotCompleted:
+      return "Node id not yet ready for use.  Retry";
+    case AllocNodeIdRef::NodeTypeMismatch:
+      return "Node id of wrong type";
+    case AllocNodeIdRef::NotReady:
+      return "Data node not ready for nodeid allocation yet. Retry";
+    default:
+      return "Unknown error code";
+  }
+}
+
 void Qmgr::execALLOC_NODEID_REQ(Signal *signal) {
   jamEntry();
   AllocNodeIdReq req = *(AllocNodeIdReq *)signal->getDataPtr();
@@ -7250,8 +7374,9 @@ void Qmgr::execALLOC_NODEID_REQ(Signal *signal) {
 
     if (error) {
       jam();
-      g_eventLogger->debug("Alloc node id for node %u failed, err: %u",
-                           nodePtr.i, error);
+      g_eventLogger->debug(
+          "Alloc node id request for node %u rejected due to %s (%u)",
+          nodePtr.i, getAllocFailureExplanation(error), error);
       AllocNodeIdRef *ref = (AllocNodeIdRef *)signal->getDataPtrSend();
       ref->senderRef = reference();
       ref->errorCode = error;
@@ -7350,8 +7475,9 @@ void Qmgr::execALLOC_NODEID_REQ(Signal *signal) {
 
   if (error) {
     jam();
-    g_eventLogger->info("Alloc nodeid for node %u failed,err: %u", req.nodeId,
-                        error);
+    g_eventLogger->info(
+        "Alloc node id request for node %u rejected due to %s (%u)", req.nodeId,
+        getAllocFailureExplanation(error), error);
     AllocNodeIdRef *ref = (AllocNodeIdRef *)signal->getDataPtrSend();
     ref->senderRef = reference();
     ref->errorCode = error;
@@ -7461,9 +7587,11 @@ void Qmgr::completeAllocNodeIdReq(Signal *signal) {
       ptrAss(nodePtr, nodeRec);
       nodePtr.p->m_secret = 0;
     }
-    g_eventLogger->info("Alloc node id for node %u failed, err: %u",
-                        opAllocNodeIdReq.m_req.nodeId,
-                        opAllocNodeIdReq.m_error);
+    g_eventLogger->info(
+        "Alloc node id request for node %u rejected due to %s (%u)",
+        opAllocNodeIdReq.m_req.nodeId,
+        getAllocFailureExplanation(opAllocNodeIdReq.m_error),
+        opAllocNodeIdReq.m_error);
 
     AllocNodeIdRef *ref = (AllocNodeIdRef *)signal->getDataPtrSend();
     ref->senderRef = reference();

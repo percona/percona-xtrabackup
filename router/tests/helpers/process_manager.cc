@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -83,6 +83,7 @@ Path ProcessManager::origin_dir_;
 Path ProcessManager::data_dir_;
 Path ProcessManager::plugin_dir_;
 Path ProcessManager::mysqlrouter_exec_;
+Path ProcessManager::mysqlrouter_bootstrap_exec_;
 Path ProcessManager::mysqlserver_mock_exec_;
 
 using namespace std::chrono_literals;
@@ -251,6 +252,35 @@ ProcessWrapper &ProcessManager::Spawner::launch_command(
 
   processes_.emplace_back(std::move(pw), expected_exit_status_);
 
+#ifdef _WIN32
+  // add the process to the job-object.
+
+  if (!job_object_.is_open()) {
+    auto create_res = mysql_harness::win32::JobObject::create();
+    if (!create_res) {
+      throw std::system_error(create_res.error());
+    }
+    job_object_ = std::move(*create_res);
+
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION job_limit{};
+    job_limit.BasicLimitInformation.LimitFlags =
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+    auto set_info_res = job_object_.set_information(
+        JobObjectExtendedLimitInformation, &job_limit, sizeof(job_limit));
+    if (!set_info_res) {
+      throw std::system_error(set_info_res.error());
+    }
+  }
+
+  auto process_handle = std::get<0>(processes_.back())->process_handle();
+
+  auto assign_res = job_object_.assign_process(process_handle);
+  if (!assign_res) {
+    throw std::system_error(assign_res.error());
+  }
+#endif
+
   return *std::get<0>(processes_.back()).get();
 }
 
@@ -357,8 +387,16 @@ ProcessWrapper &ProcessManager::Spawner::spawn(
 
 ProcessManager::Spawner ProcessManager::spawner(std::string executable,
                                                 std::string logging_file) {
-  return {executable, logging_dir_.name(), logging_file,
-          generate_notify_socket_path(get_test_temp_dir_name()), processes_};
+  return {
+      std::move(executable),
+      logging_dir_.name(),
+      std::move(logging_file),
+      generate_notify_socket_path(get_test_temp_dir_name()),
+      processes_,
+#ifdef _WIN32
+      job_object_,
+#endif
+  };
 }
 
 stdx::expected<void, std::error_code> ProcessManager::wait_for_notified(
@@ -423,6 +461,20 @@ ProcessWrapper &ProcessManager::launch_router(
     std::chrono::milliseconds wait_for_notify_ready /*= 30s*/,
     OutputResponder output_resp) {
   return router_spawner()
+      .with_sudo(with_sudo)
+      .catch_stderr(catch_stderr)
+      .expected_exit_code(expected_exit_code)
+      .wait_for_notify_ready(wait_for_notify_ready)
+      .output_responder(std::move(output_resp))
+      .spawn(params);
+}
+
+ProcessWrapper &ProcessManager::launch_router_bootstrap(
+    const std::vector<std::string> &params, int expected_exit_code /*= 0*/,
+    bool catch_stderr /*= true*/, bool with_sudo /*= false*/,
+    std::chrono::milliseconds wait_for_notify_ready /*= 30s*/,
+    OutputResponder output_resp) {
+  return router_bootstrap_spawner()
       .with_sudo(with_sudo)
       .catch_stderr(catch_stderr)
       .expected_exit_code(expected_exit_code)
@@ -755,6 +807,7 @@ void ProcessManager::set_origin(const Path &dir) {
   };
 
   mysqlrouter_exec_ = get_exe_path("mysqlrouter");
+  mysqlrouter_bootstrap_exec_ = get_exe_path("mysqlrouter_bootstrap");
   mysqlserver_mock_exec_ = get_exe_path("mysql_server_mock");
 
   data_dir_ = COMPONENT_TEST_DATA_DIR;

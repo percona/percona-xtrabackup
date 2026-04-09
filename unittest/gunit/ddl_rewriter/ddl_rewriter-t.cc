@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@ namespace ddl_rewriter_unittest {
 class DDL_rewriter_test : public ::testing::Test {
  public:
   DDL_rewriter_test() = default;
-  ~DDL_rewriter_test() = default;
+  ~DDL_rewriter_test() override = default;
 };
 
 struct Query_pair {
@@ -161,9 +161,9 @@ std::vector<Query_pair> missing_rewrite_queries{
      " CREATE TABLE t(i int) ENCRYPTION='N'"}};
 
 void test_queries(const std::vector<Query_pair> &queries) {
-  for (auto &q : queries) {
+  for (const auto &q : queries) {
     std::string rewrite_result;
-    bool expect_rewrite = (q.query != q.rewritten_query);
+    bool const expect_rewrite = (q.query != q.rewritten_query);
     EXPECT_EQ(query_rewritten(q.query, &rewrite_result), expect_rewrite);
     if (expect_rewrite) {
       EXPECT_EQ(rewrite_result, q.rewritten_query);

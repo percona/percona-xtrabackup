@@ -4,6 +4,8 @@
 --source include/no_ps_protocol.inc
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --disable_warnings
 drop table if exists t1,t2;
@@ -197,7 +199,7 @@ drop table t1;
 #
 # Testing regexp
 #
-set collation_connection=utf8_general_ci;
+set collation_connection=utf8mb3_general_ci;
 --source include/ctype_regex.inc
 set names utf8mb3;
 
@@ -722,11 +724,11 @@ select soundex(_utf8mb3 0xD091D092D093);
 select hex(soundex(_utf8mb3 0xD091D092D093));
 
 
-SET collation_connection='utf8_general_ci';
+SET collation_connection='utf8mb3_general_ci';
 -- source include/ctype_filesort.inc
 -- source include/ctype_like_escape.inc
 -- source include/ctype_german.inc
-SET collation_connection='utf8_bin';
+SET collation_connection='utf8mb3_bin';
 -- source include/ctype_filesort.inc
 -- source include/ctype_like_escape.inc
 
@@ -1056,7 +1058,7 @@ CREATE TABLE t1 (id int PRIMARY KEY,
                  b int,
                  f varchar(128) default 'XXX',
                  INDEX (a(4))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 INSERT INTO t1(id, a, b) VALUES
   (1, 'cccc', 50), (2, 'cccc', 70), (3, 'cccc', 30),
   (4, 'cccc', 30), (5, 'cccc', 20), (6, 'bbbbbb', 40),
@@ -1084,7 +1086,7 @@ SET NAMES utf8mb3;
 CREATE TABLE t1 (
   a CHAR(13) DEFAULT '',
   INDEX(a)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_general_ci;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 INSERT INTO t1 VALUES 
  ('Käli Käli 2-4'), ('Käli Käli 2-4'),
  ('Käli Käli 2+4'), ('Käli Käli 2+4'),
@@ -1115,7 +1117,7 @@ DROP TABLE t1,t2;
 CREATE TABLE t1 (
   a char(255) DEFAULT '', 
   KEY(a(10))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_general_ci;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 INSERT INTO t1 VALUES ('Käli Käli 2-4');
 SELECT * FROM t1 WHERE a LIKE 'Käli Käli 2%';
 INSERT INTO t1 VALUES ('Käli Käli 2-4');
@@ -1124,7 +1126,7 @@ DROP TABLE t1;
 
 CREATE TABLE t1 (
   a char(255) DEFAULT ''
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_general_ci;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 INSERT INTO t1 VALUES ('Käli Käli 2-4');
 INSERT INTO t1 VALUES ('Käli Käli 2-4');
 SELECT * FROM t1 WHERE a LIKE 'Käli Käli 2%';
@@ -1169,7 +1171,7 @@ DROP TABLE t1;
 #
 
 create table t1(a char(200) COLLATE utf8mb3_unicode_ci NOT NULL default '')
-  default charset=utf8mb3 collate=utf8_unicode_ci;
+  default charset=utf8mb3 collate=utf8mb3_unicode_ci;
 insert into t1 values (unhex('65')), (unhex('C3A9')), (unhex('65'));
 -- disable_query_log
 -- disable_result_log
@@ -1763,7 +1765,7 @@ set names utf8mb3;
 --source include/weight_string.inc
 --source include/weight_string_euro.inc
 
-set @@collation_connection=utf8_bin;
+set @@collation_connection=utf8mb3_bin;
 --source include/weight_string.inc
 --source include/weight_string_euro.inc
 
@@ -1832,3 +1834,5 @@ INSERT INTO t2 (c2) VALUES(REPEAT(_utf8mb4 0xE0B295, 128));
 
 DROP TABLE t1;
 DROP TABLE t2;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

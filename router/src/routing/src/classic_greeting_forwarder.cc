@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -678,7 +678,8 @@ ServerGreetor::client_greeting() {
       break;
     case SslMode::kPreferred:
       client_caps.set(classic_protocol::capabilities::pos::ssl,
-                      server_supports_tls);
+                      server_supports_tls &&
+                          !connection()->server_conn().is_secure_transport());
       break;
     case SslMode::kRequired:
       client_caps.set(classic_protocol::capabilities::pos::ssl);
@@ -877,12 +878,19 @@ ServerGreetor::client_greeting_full() {
 }
 
 static stdx::expected<TlsClientContext *, std::error_code> get_dest_ssl_ctx(
-    MySQLRoutingContext &ctx, const std::string &id) {
-  return mysql_harness::make_tcp_address(id).and_then(
-      [&ctx, &id](const auto &addr)
-          -> stdx::expected<TlsClientContext *, std::error_code> {
-        return ctx.dest_ssl_ctx(id, addr.address());
-      });
+    MySQLRoutingContext &ctx,
+    const std::optional<mysql_harness::Destination> &opt_dest) {
+  if (!opt_dest) {
+    return stdx::unexpected(make_error_code(std::errc::invalid_argument));
+  }
+
+  const auto &dest = *opt_dest;
+
+  if (dest.is_local()) {
+    return ctx.dest_ssl_ctx(dest.str(), dest.as_local().path());
+  }
+
+  return ctx.dest_ssl_ctx(dest.str(), dest.as_tcp().hostname());
 }
 
 stdx::expected<Processor::Result, std::error_code>
@@ -910,15 +918,6 @@ ServerGreetor::tls_connect_init() {
 
   SSL_set_msg_callback(dst_channel.ssl(), ssl_msg_cb);
   SSL_set_msg_callback_arg(dst_channel.ssl(), connection());
-
-  // when a connection is taken from the pool for this client-connection ...
-
-  // ... ensure it is TLS again.
-  connection()->requires_tls(true);
-
-  // ... ensure it has/hasn't a client cert.
-  connection()->requires_client_cert(SSL_get_certificate(dst_channel.ssl()) !=
-                                     nullptr);
 
   trace_event_tls_connect_ =
       trace_span(trace_event_client_greeting_, "mysql/tls_connect");
@@ -1262,6 +1261,18 @@ stdx::expected<Processor::Result, std::error_code> ServerGreetor::auth_ok() {
     src_protocol.schema(dst_protocol.schema());
   } else {
     src_protocol.schema("");
+  }
+
+  // when a connection is taken from the pool for this client-connection ...
+  //
+  using TC = TransportConstraints::Constraint;
+
+  if (auto *ssl = src_conn.channel().ssl()) {
+    connection()->expected_server_transport_constraints(
+        (SSL_get_certificate(ssl) != nullptr) ? TC::kHasClientCert
+                                              : TC::kEncrypted);
+  } else {
+    connection()->expected_server_transport_constraints(TC::kPlaintext);
   }
 
   stage(Stage::Ok);
@@ -1857,15 +1868,6 @@ ServerFirstAuthenticator::tls_connect_init() {
   SSL_set_msg_callback(dst_channel.ssl(), ssl_msg_cb);
   SSL_set_msg_callback_arg(dst_channel.ssl(), connection());
 
-  // when a connection is taken from the pool for this client-connection ...
-
-  // ... ensure it is TLS again.
-  connection()->requires_tls(true);
-
-  // ... ensure it has/hasn't a client cert.
-  connection()->requires_client_cert(SSL_get_certificate(dst_channel.ssl()) !=
-                                     nullptr);
-
   tls_client_ctx->get_session().and_then(
       [&](auto *sess) -> stdx::expected<void, std::error_code> {
         SSL_set_session(dst_channel.ssl(), sess);
@@ -2149,6 +2151,18 @@ ServerFirstAuthenticator::auth_ok() {
   if (!msg.session_changes().empty()) {
     (void)connection()->track_session_changes(
         net::buffer(msg.session_changes()), src_protocol.shared_capabilities());
+  }
+
+  // when a connection is taken from the pool for this client-connection ...
+  //
+  using TC = TransportConstraints::Constraint;
+
+  if (auto *ssl = src_conn.channel().ssl()) {
+    connection()->expected_server_transport_constraints(
+        (SSL_get_certificate(ssl) != nullptr) ? TC::kHasClientCert
+                                              : TC::kEncrypted);
+  } else {
+    connection()->expected_server_transport_constraints(TC::kPlaintext);
   }
 
   if (connection()->context().router_require_enforce()) {

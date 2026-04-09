@@ -471,7 +471,11 @@ EXPLAIN ANALYZE FOR CONNECTION 1;
 # and FORMAT=JSON with explain_json_format_version=2.
 --error ER_NOT_SUPPORTED_YET
 EXPLAIN ANALYZE FORMAT=TRADITIONAL SELECT 1;
+SET explain_json_format_version = 1;
 --error ER_EXPLAIN_ANALYZE_JSON_FORMAT_VERSION_NOT_SUPPORTED
+EXPLAIN ANALYZE FORMAT=JSON SELECT 1;
+SET explain_json_format_version = DEFAULT;
+--replace_regex $elide_json_costs_and_time
 EXPLAIN ANALYZE FORMAT=JSON SELECT 1;
 --replace_regex $elide_costs_and_time
 EXPLAIN ANALYZE FORMAT=TREE SELECT 1;
@@ -850,7 +854,6 @@ DROP TABLE t1;
 CREATE TABLE t(a INTEGER,b INTEGER);
 INSERT INTO t VALUES(1,2),(2,3);
 ANALYZE TABLE t;
-SET explain_json_format_version = 2;
 # FirstMatch strategy - Semijoin converted to inner join by
 # limiting one row from the table on the inner side.
 let $query = SELECT a FROM t WHERE 4 IN (SELECT b+1 FROM t);

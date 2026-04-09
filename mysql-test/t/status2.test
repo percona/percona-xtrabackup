@@ -94,10 +94,14 @@ TRUNCATE TABLE performance_schema.events_statements_summary_by_digest;
 --disable_result_log
 --eval $query
 --enable_result_log
---enable_ps_protocol
+
+# Do not execute this in --ps-protocol:
+# The test client will create prepared statements,
+# adding noise to digests, polluting the output.
 SELECT SUM_NO_INDEX_USED, SUM_NO_GOOD_INDEX_USED
 FROM performance_schema.events_statements_summary_by_digest
 WHERE QUERY_SAMPLE_TEXT LIKE 'SELECT %';
+--enable_ps_protocol
 
 # Covering index scan is counted as "select_scan", but not as "no_index_used".
 let $query = SELECT 1 FROM t ORDER BY x;
@@ -114,10 +118,10 @@ TRUNCATE TABLE performance_schema.events_statements_summary_by_digest;
 --disable_result_log
 --eval $query
 --enable_result_log
---enable_ps_protocol
 SELECT SUM_NO_INDEX_USED, SUM_NO_GOOD_INDEX_USED
 FROM performance_schema.events_statements_summary_by_digest
 WHERE QUERY_SAMPLE_TEXT LIKE 'SELECT %';
+--enable_ps_protocol
 
 # An index lookup is not counted.
 let $query = SELECT x FROM t WHERE x = 1;
@@ -184,7 +188,7 @@ SHOW STATUS LIKE 'select%';
 # A join with a table scan on the left side and a primary index lookup
 # on the right side will count the table scan as "select_scan", and
 # the index lookup is not counted at all.
-let $query = SELECT * FROM t AS t1, t AS t2 WHERE t1.y = t2.id;
+let $query = SELECT * FROM t AS t1, t AS t2 WHERE t1.y = t2.id LIMIT 1;
 --replace_regex $elide_costs
 --eval EXPLAIN FORMAT=TREE $query
 FLUSH STATUS;
@@ -212,11 +216,11 @@ TRUNCATE TABLE performance_schema.events_statements_summary_by_digest;
 --disable_result_log
 --eval $query
 --enable_result_log
---enable_ps_protocol
 --skip_if_hypergraph  # Does not support dynamic range scans.
 SELECT SUM_NO_INDEX_USED, SUM_NO_GOOD_INDEX_USED
 FROM performance_schema.events_statements_summary_by_digest
 WHERE QUERY_SAMPLE_TEXT LIKE 'SELECT %';
+--enable_ps_protocol
 
 # INSERT SELECT should also count the scans. Should see one
 # "select_scan" for the table scan.

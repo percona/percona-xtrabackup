@@ -30,40 +30,17 @@
 --source include/rpl/reset.inc
 
 --echo ####################################################################
---echo # Test Case 2: Enable Multithreaded Slave with replica_parallel_type as
---echo # DATABASE. Verify that slave displays appropriate XA_STATE in
+--echo # Test Case 2: Enable Multithreaded Slave.
+--echo # Verify that slave displays appropriate XA_STATE in
 --echo # performance schema table, post XA PREPARE AND XA COMMIT command
 --echo # execution.
 --echo ####################################################################
 --source include/rpl/connection_replica.inc
 
-# Save existing settings.
+# Enable MTS
+--source include/rpl/stop_replica.inc
 SET @save_replica_parallel_workers=@@global.replica_parallel_workers;
-SET @replica_parallel_type=@@global.replica_parallel_type;
-
-# Enable MTS
---source include/rpl/stop_replica.inc
 SET GLOBAL replica_parallel_workers=4;
-SET GLOBAL replica_parallel_type='DATABASE';
---source include/rpl/start_replica.inc
-
-# Verify
---source common/rpl/rpl_perfschema_applier_xa_status.test
-
-# Cleanup
---source include/rpl/reset.inc
-
---echo ####################################################################
---echo # Test Case 3: Enable Multithreaded Slave with replica_parallel_type as
---echo # LOGICAL_CLOCK. Verify that slave displays appropriate XA_STATE in
---echo # performance schema table, post XA PREPARE AND XA COMMIT command
---echo # execution.
---echo ####################################################################
-
-# Enable MTS
---source include/rpl/stop_replica.inc
-SET GLOBAL replica_parallel_workers=4;
-SET GLOBAL replica_parallel_type='LOGICAL_CLOCK';
 --source include/rpl/start_replica.inc
 
 # Verify
@@ -74,7 +51,6 @@ SET GLOBAL replica_parallel_type='LOGICAL_CLOCK';
 # Cleanup
 --source include/rpl/stop_replica.inc
 set @@global.replica_parallel_workers= @save_replica_parallel_workers;
-set @@global.replica_parallel_type= @replica_parallel_type;
 --source include/rpl/start_replica.inc
 
 --source include/rpl/deinit.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,9 +30,6 @@
   @file mysys/my_access.cc
 */
 
-#include <errno.h>
-
-#include "m_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"  // IWYU pragma: keep
@@ -41,6 +38,7 @@
 
 #ifdef _WIN32
 
+#include "m_string.h"
 #include "my_io.h"
 #include "my_thread_local.h"
 

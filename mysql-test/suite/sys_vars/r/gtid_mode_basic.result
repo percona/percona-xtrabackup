@@ -1,9 +1,9 @@
+include/rpl/set_gtid_mode_off.inc
 RESET BINARY LOGS AND GTIDS;
 SET @start_global_value = @@global.gtid_mode;
 SELECT @start_global_value;
 @start_global_value
 OFF
-SET @start_enforce_gtid_consistency= @@global.enforce_gtid_consistency;
 SET @@global.enforce_gtid_consistency = ON;
 select @@global.gtid_mode;
 @@global.gtid_mode
@@ -53,24 +53,24 @@ ERROR 42000: Variable 'gtid_mode' can't be set to the value of 'NULL'
 select @@global.gtid_mode;
 @@global.gtid_mode
 OFF
-set global gtid_mode = default;
+set global gtid_mode = OFF;
 select @@global.gtid_mode;
 @@global.gtid_mode
 OFF
 set global gtid_mode = OFF_PERMISSIVE;
-set global gtid_mode = default;
+set global gtid_mode = OFF;
 select @@global.gtid_mode;
 @@global.gtid_mode
 OFF
 set global gtid_mode = OFF_PERMISSIVE;
 set global gtid_mode = ON_PERMISSIVE;
-set global gtid_mode = default;
+set global gtid_mode = OFF;
 ERROR HY000: The value of @@GLOBAL.GTID_MODE can only be changed one step at a time: OFF <-> OFF_PERMISSIVE <-> ON_PERMISSIVE <-> ON. Also note that this value must be stepped up or down simultaneously on all servers. See the Manual for instructions.
 select @@global.gtid_mode;
 @@global.gtid_mode
 ON_PERMISSIVE
 set global gtid_mode = ON;
-set global gtid_mode = default;
+set global gtid_mode = OFF;
 ERROR HY000: The value of @@GLOBAL.GTID_MODE can only be changed one step at a time: OFF <-> OFF_PERMISSIVE <-> ON_PERMISSIVE <-> ON. Also note that this value must be stepped up or down simultaneously on all servers. See the Manual for instructions.
 select @@global.gtid_mode;
 @@global.gtid_mode
@@ -131,6 +131,4 @@ COMMIT;
 SET AUTOCOMMIT = 1;
 SET SESSION GTID_NEXT = 'AUTOMATIC';
 DROP TABLE t1;
-SET GLOBAL GTID_MODE ='off_permissive';
-SET GLOBAL GTID_MODE = 'off';
-SET @@global.enforce_gtid_consistency = @start_enforce_gtid_consistency;
+include/rpl/set_gtid_mode_on.inc

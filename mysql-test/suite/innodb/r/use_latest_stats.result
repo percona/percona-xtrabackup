@@ -1,0 +1,186 @@
+CREATE TABLE t1 (a INT, b INT, KEY(a), KEY(b));
+SET information_schema_stats_expiry = 0;
+SET GLOBAL DEBUG='+d,syncpoint_completed_stats_update';
+INSERT t1 VALUES (1, 1), (1, 2);
+SET DEBUG_SYNC='now WAIT_FOR reached_completed_stats_update';
+SET DEBUG_SYNC='now SIGNAL continue_completed_stats_update';
+SET GLOBAL DEBUG='-d,syncpoint_completed_stats_update';
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+database_name	table_name	index_name	stat_name	stat_value
+test	t1	a	n_diff_pfx01	1
+test	t1	b	n_diff_pfx01	2
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+count(*)
+2
+Warnings:
+Note	168	print_records_per_key: test.t1 t1 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b) = (1.000000)
+Note	168	print_records_per_key: test.t1 t1 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b) = (1.000000)
+SET DEBUG='-d,print_records_per_key';
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+database_name	table_name	index_name	stat_name	stat_value
+test	t1	a	n_diff_pfx01	1
+test	t1	b	n_diff_pfx01	2
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+count(*)
+2
+Warnings:
+Note	168	print_records_per_key: test.t1 t1 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b) = (1.000000)
+Note	168	print_records_per_key: test.t1 t1 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b) = (1.000000)
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	NON_UNIQUE	INDEX_SCHEMA	INDEX_NAME	SEQ_IN_INDEX	COLUMN_NAME	COLLATION	CARDINALITY	SUB_PART	PACKED	NULLABLE	INDEX_TYPE	COMMENT	INDEX_COMMENT	IS_VISIBLE	EXPRESSION
+def	test	t1	1	test	a	1	a	A	1	NULL	NULL	YES	BTREE			YES	NULL
+def	test	t1	1	test	b	1	b	A	2	NULL	NULL	YES	BTREE			YES	NULL
+TRUNCATE t1;
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+database_name	table_name	index_name	stat_name	stat_value
+test	t1	a	n_diff_pfx01	0
+test	t1	b	n_diff_pfx01	0
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+count(*)
+0
+Warnings:
+Note	168	print_records_per_key: test.t1 t1 a(a) = (1.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b) = (1.000000)
+Note	168	print_records_per_key: test.t1 t1 a(a) = (1.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b) = (1.000000)
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	NON_UNIQUE	INDEX_SCHEMA	INDEX_NAME	SEQ_IN_INDEX	COLUMN_NAME	COLLATION	CARDINALITY	SUB_PART	PACKED	NULLABLE	INDEX_TYPE	COMMENT	INDEX_COMMENT	IS_VISIBLE	EXPRESSION
+def	test	t1	1	test	a	1	a	A	0	NULL	NULL	YES	BTREE			YES	NULL
+def	test	t1	1	test	b	1	b	A	0	NULL	NULL	YES	BTREE			YES	NULL
+INSERT t1 VALUES (1, 1), (1, 2);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+database_name	table_name	index_name	stat_name	stat_value
+test	t1	a	n_diff_pfx01	1
+test	t1	b	n_diff_pfx01	2
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+count(*)
+2
+Warnings:
+Note	168	print_records_per_key: test.t1 t1 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b) = (1.000000)
+Note	168	print_records_per_key: test.t1 t1 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b) = (1.000000)
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	NON_UNIQUE	INDEX_SCHEMA	INDEX_NAME	SEQ_IN_INDEX	COLUMN_NAME	COLLATION	CARDINALITY	SUB_PART	PACKED	NULLABLE	INDEX_TYPE	COMMENT	INDEX_COMMENT	IS_VISIBLE	EXPRESSION
+def	test	t1	1	test	a	1	a	A	1	NULL	NULL	YES	BTREE			YES	NULL
+def	test	t1	1	test	b	1	b	A	2	NULL	NULL	YES	BTREE			YES	NULL
+DROP TABLE t1;
+CREATE TABLE t1 (a INT PRIMARY KEY AUTO_INCREMENT, b INT, c INT, KEY(b));
+SET GLOBAL innodb_stats_auto_recalc = OFF;
+INSERT t1 VALUES (1, 1, 1), (2, 1, 1), (3, 1, 1), (4, 1, 1), (5, 1, 1), (6, 1, 1), (7, 1, 1), (8, 1, 1), (9, 1, 1), (10, 1, 1), (11, 1, 1), (12, 1, 1), (13, 1, 1), (14, 1, 1), (15, 1, 1), (16, 1, 1);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+EXPLAIN ANALYZE FORMAT=TREE SELECT * FROM t1 WHERE b = 1;
+EXPLAIN
+-> Filter: (t1.b = 1)
+    -> Table scan on t1
+
+TRUNCATE t1;
+INSERT t1 VALUES (1, 1, 1), (2, 1, 1), (3, 3, 3), (4, 3, 3), (5, 5, 5), (6, 5, 5), (7, 7, 7), (8, 7, 7);
+SET GLOBAL innodb_stats_auto_recalc = ON;
+ALTER TABLE t1 STATS_AUTO_RECALC = 1;
+SET GLOBAL DEBUG='+d,syncpoint_completed_stats_update';
+INSERT t1 VALUES (9, 9, 9), (10, 10, 10);
+SET DEBUG_SYNC='now WAIT_FOR reached_completed_stats_update';
+SET DEBUG_SYNC='now SIGNAL continue_completed_stats_update';
+SET GLOBAL DEBUG='-d,syncpoint_completed_stats_update';
+EXPLAIN ANALYZE FORMAT=TREE SELECT * FROM t1 WHERE b = 1;
+EXPLAIN
+-> Index lookup on t1 using b (b = 1)
+
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+database_name	table_name	index_name	stat_name	stat_value
+test	t1	b	n_diff_pfx01	6
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t1;
+count(*)
+10
+Warnings:
+Note	168	print_records_per_key: test.t1 t1 PRIMARY(a) = (1.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b,a) = (1.666667,1.000000)
+Note	168	print_records_per_key: test.t1 t1 PRIMARY(a) = (1.000000)
+Note	168	print_records_per_key: test.t1 t1 b(b,a) = (1.666667,1.000000)
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	NON_UNIQUE	INDEX_SCHEMA	INDEX_NAME	SEQ_IN_INDEX	COLUMN_NAME	COLLATION	CARDINALITY	SUB_PART	PACKED	NULLABLE	INDEX_TYPE	COMMENT	INDEX_COMMENT	IS_VISIBLE	EXPRESSION
+def	test	t1	1	test	b	1	b	A	6	NULL	NULL	YES	BTREE			YES	NULL
+def	test	t1	0	test	PRIMARY	1	a	A	10	NULL	NULL		BTREE			YES	NULL
+DROP TABLE t1;
+CREATE TABLE t2 (a INT, b INT, KEY(a), KEY(b))
+PARTITION BY RANGE (a) (
+PARTITION p0 VALUES LESS THAN (4),
+PARTITION p1 VALUES LESS THAN MAXVALUE
+);
+SET GLOBAL DEBUG='+d,syncpoint_completed_stats_update';
+INSERT t2 VALUES (1, 1), (1, 2);
+SET DEBUG_SYNC='now WAIT_FOR reached_completed_stats_update';
+SET DEBUG_SYNC='now SIGNAL continue_completed_stats_update';
+SET GLOBAL DEBUG='-d,syncpoint_completed_stats_update';
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+database_name	table_name	index_name	stat_name	stat_value
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t2;
+count(*)
+2
+Warnings:
+Note	168	print_records_per_key: test.t2 t2 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t2 t2 b(b) = (1.000000)
+Note	168	print_records_per_key: test.t2 t2 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t2 t2 b(b) = (1.000000)
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	NON_UNIQUE	INDEX_SCHEMA	INDEX_NAME	SEQ_IN_INDEX	COLUMN_NAME	COLLATION	CARDINALITY	SUB_PART	PACKED	NULLABLE	INDEX_TYPE	COMMENT	INDEX_COMMENT	IS_VISIBLE	EXPRESSION
+ANALYZE TABLE t2;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+database_name	table_name	index_name	stat_name	stat_value
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t2;
+count(*)
+2
+Warnings:
+Note	168	print_records_per_key: test.t2 t2 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t2 t2 b(b) = (1.000000)
+Note	168	print_records_per_key: test.t2 t2 a(a) = (2.000000)
+Note	168	print_records_per_key: test.t2 t2 b(b) = (1.000000)
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	NON_UNIQUE	INDEX_SCHEMA	INDEX_NAME	SEQ_IN_INDEX	COLUMN_NAME	COLLATION	CARDINALITY	SUB_PART	PACKED	NULLABLE	INDEX_TYPE	COMMENT	INDEX_COMMENT	IS_VISIBLE	EXPRESSION
+TRUNCATE t2;
+SELECT database_name, table_name, index_name, stat_name, stat_value FROM mysql.innodb_index_stats WHERE table_name = 't1' AND index_name IN ('a', 'b') AND stat_name = 'n_diff_pfx01';
+database_name	table_name	index_name	stat_name	stat_value
+SET DEBUG='+d,print_records_per_key';
+SELECT count(*) FROM t2;
+count(*)
+0
+Warnings:
+Note	168	print_records_per_key: test.t2 t2 a(a) = (1.000000)
+Note	168	print_records_per_key: test.t2 t2 b(b) = (1.000000)
+Note	168	print_records_per_key: test.t2 t2 a(a) = (1.000000)
+Note	168	print_records_per_key: test.t2 t2 b(b) = (1.000000)
+SET DEBUG='-d,print_records_per_key';
+SELECT * FROM information_schema.statistics WHERE table_name = 't1';
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	NON_UNIQUE	INDEX_SCHEMA	INDEX_NAME	SEQ_IN_INDEX	COLUMN_NAME	COLLATION	CARDINALITY	SUB_PART	PACKED	NULLABLE	INDEX_TYPE	COMMENT	INDEX_COMMENT	IS_VISIBLE	EXPRESSION
+DROP TABLE t2;
+SET DEBUG='-d,print_records_per_key';
+SET information_schema_stats_expiry = DEFAULT;
+SET GLOBAL innodb_stats_auto_recalc = DEFAULT;

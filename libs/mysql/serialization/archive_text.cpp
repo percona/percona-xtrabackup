@@ -1,4 +1,4 @@
-// Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -30,9 +30,9 @@ namespace mysql::serialization {
 std::string Archive_text::get_raw_data() { return m_stream.str(); }
 
 void Archive_text::put_field_separator() {
-  if (is_good() == true) {
+  if (is_good()) {
     m_stream << std::endl;
-    if (m_stream.good() == false) {
+    if (!m_stream.good()) {
       m_error = Serialization_error(
           __FILE__, __LINE__, "Unable to write data to the stream",
           Serialization_error_type::archive_write_error);
@@ -41,9 +41,9 @@ void Archive_text::put_field_separator() {
 }
 
 void Archive_text::put_entry_separator() {
-  if (is_good() == true) {
+  if (is_good()) {
     m_stream << " ";
-    if (m_stream.good() == false) {
+    if (!m_stream.good()) {
       m_error = Serialization_error(
           __FILE__, __LINE__, "Unable to write data to the stream",
           Serialization_error_type::archive_write_error);
@@ -52,9 +52,9 @@ void Archive_text::put_entry_separator() {
 }
 
 void Archive_text::put_level_separator() {
-  if (is_good() == true) {
+  if (is_good()) {
     m_stream << "  ";
-    if (m_stream.good() == false) {
+    if (!m_stream.good()) {
       m_error = Serialization_error(
           __FILE__, __LINE__, "Unable to write data to the stream",
           Serialization_error_type::archive_write_error);

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,7 +22,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <gtest/gtest.h>
-#include <string.h>
+#include <cstring>
 
 #include "my_sys.h"
 #include "mysql/strings/collations.h"
@@ -45,13 +45,13 @@ void test_caseup_casedn(const CHARSET_INFO *cs) {
     // fprintf(stdout, "compatible %s\n", cs->m_coll_name);
     strncpy(test_string, input_string, sizeof(test_string));
 
-    size_t uplen = my_caseup_str(cs, test_string);
+    size_t const uplen = my_caseup_str(cs, test_string);
     EXPECT_EQ(5, uplen);
     EXPECT_STREQ(test_string, output_string);
 
     EXPECT_EQ(0, my_strcasecmp(cs, test_string, output_string));
 
-    size_t downlen = my_casedn_str(cs, test_string);
+    size_t const downlen = my_casedn_str(cs, test_string);
     EXPECT_EQ(5, downlen);
     EXPECT_STREQ(test_string, input_string);
   } else {

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -30,15 +30,14 @@
 #include <string>
 #include <utility>  // move
 
-#include "destination.h"  // AllowedNodes
-#include "tcp_address.h"
+#include "mysqlrouter/destination_status_types.h"  // AllowedNodes
 
 class SharedQuarantineHandler {
  public:
   using update_callback_type =
-      std::function<bool(mysql_harness::TCPAddress, bool)>;
+      std::function<bool(mysql_harness::Destination, bool)>;
   using is_quarantined_callback_type =
-      std::function<bool(mysql_harness::TCPAddress)>;
+      std::function<bool(mysql_harness::Destination)>;
   using stop_callback_type = std::function<void()>;
 
   using refresh_callback_type = std::function<void(
@@ -52,8 +51,8 @@ class SharedQuarantineHandler {
    */
   void on_update(update_callback_type clb) { on_update_ = std::move(clb); }
 
-  bool update(const mysql_harness::TCPAddress &addr, bool success) {
-    if (on_update_) return on_update_(addr, success);
+  bool update(const mysql_harness::Destination &dest, bool success) {
+    if (on_update_) return on_update_(dest, success);
     return false;
   }
 
@@ -67,8 +66,8 @@ class SharedQuarantineHandler {
     on_is_quarantined_ = std::move(clb);
   }
 
-  bool is_quarantined(const mysql_harness::TCPAddress &addr) const {
-    return on_is_quarantined_ ? on_is_quarantined_(addr) : false;
+  bool is_quarantined(const mysql_harness::Destination &dest) const {
+    return on_is_quarantined_ ? on_is_quarantined_(dest) : false;
   }
 
   /**

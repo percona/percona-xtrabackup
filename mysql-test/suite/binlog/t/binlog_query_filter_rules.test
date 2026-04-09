@@ -25,7 +25,7 @@ drop table t1;
 # Reset GTIDs
 RESET BINARY LOGS AND GTIDS;
 # Run statements
---exec $MYSQL -e "source $MYSQLTEST_VARDIR/tmp/bug36099.sql"
+--exec $MYSQL --commands -e "source $MYSQLTEST_VARDIR/tmp/bug36099.sql"
 
 --echo *** must be 1 ***
 select * from t1;

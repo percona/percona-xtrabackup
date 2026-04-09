@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@
 
 bool printALLOC_NODEID_REQ(FILE *output, const Uint32 *theData, Uint32 len,
                            Uint16 /*recBlockNo*/) {
-  const AllocNodeIdReq *sig = (const AllocNodeIdReq *)&theData[0];
+  const auto *sig = (const AllocNodeIdReq *)&theData[0];
 
   switch (len) {
     case AllocNodeIdReq::SignalLength:
@@ -57,7 +57,7 @@ bool printALLOC_NODEID_REQ(FILE *output, const Uint32 *theData, Uint32 len,
 
 bool printALLOC_NODEID_CONF(FILE *output, const Uint32 *theData, Uint32 len,
                             Uint16 /*recBlockNo*/) {
-  const AllocNodeIdConf *sig = (const AllocNodeIdConf *)&theData[0];
+  const auto *sig = (const AllocNodeIdConf *)&theData[0];
 
   if (len == AllocNodeIdConf::SignalLength) {
     fprintf(output,
@@ -99,7 +99,7 @@ static const char *get_text_AllocNodeIdRef_ErrorCodes(Uint32 errorCode) {
 
 bool printALLOC_NODEID_REF(FILE *output, const Uint32 *theData, Uint32 len,
                            Uint16 /*recBlockNo*/) {
-  const AllocNodeIdRef *sig = (const AllocNodeIdRef *)&theData[0];
+  const auto *sig = (const AllocNodeIdRef *)&theData[0];
 
   if (len == AllocNodeIdRef::SignalLength) {
     fprintf(output,

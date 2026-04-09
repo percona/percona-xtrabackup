@@ -1,0 +1,56 @@
+--source include/big_test.inc
+--source include/have_debug.inc
+
+CREATE TABLE `t1` (
+  `id` int NOT NULL,
+  `val` int NOT NULL,
+  PRIMARY KEY (`id`)
+);
+INSERT INTO t1 VALUES (1,1);
+
+# Create quite a big table, with 1M records.
+--let $k=0
+while($k<20){
+  INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+  --inc $k
+}
+SELECT COUNT(*) FROM t1;
+UPDATE t1 SET val=id;
+CREATE INDEX by_val ON t1(val);
+
+# Restart with small BP and redo, and ibuf turned on
+--let $restart_parameters=restart: --innodb_redo_log_capacity=8388608 --innodb_buffer_pool_chunk_size=1048576 --innodb_buffer_pool_size=16000000  --innodb-change-buffering=all
+--source include/restart_mysqld.inc
+SELECT @@GLOBAL.innodb_buffer_pool_size/1024/16;
+SELECT @@GLOBAL.innodb_redo_log_capacity;
+
+--connect (con1,localhost,root,,)
+  # Pause checkpointer
+  set global innodb_checkpoint_disabled=1;
+  # Pause srv_master_thread
+  set global debug='+d,syncpoint_srv_master_sleep';
+  # Pause purge
+  BEGIN; SELECT * FROM t1 LIMIT 1;
+
+--connect (con2,localhost,root,,)
+  # Ensure all secondary index pages are mentioned in redo log
+  DELETE t1.* FROM t1 FORCE INDEX(by_val) WHERE val>1 AND val MOD 1000 = 1;
+  # Ensure (almost) all secondary index pages have ibuffered changes
+  --send DELETE FROM t1 WHERE id MOD 10 = 3;
+
+--connection default
+SET GLOBAL innodb_monitor_enable="log_lsn%";
+--let $wait_timeout=600
+# Wait till 8MB - log free margin, that is around 6MB is full
+let $wait_condition=
+  SELECT `count`>6150000
+  FROM INFORMATION_SCHEMA.INNODB_METRICS
+  WHERE NAME LIKE 'log_lsn_checkpoint_age';
+--source include/wait_condition.inc
+# 64MB BP allows the the whole scanned redolog entries to fit the buffer pool and cause the biggest hit on pending ibuf merges
+# Now the ibuf on recovery may fill up rest of the redolog till hard 8MB limit.
+--let $restart_parameters=restart: --innodb_redo_log_capacity=8388608 --innodb_buffer_pool_chunk_size=1048576 --innodb_buffer_pool_size=64000000  --innodb-change-buffering=all
+--source include/kill_and_restart_mysqld.inc
+
+DROP TABLE t1;
+

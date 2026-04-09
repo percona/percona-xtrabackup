@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,9 @@
 #ifndef ROUTER_SRC_HTTP_INCLUDE_HTTP_BASE_URI_H_
 #define ROUTER_SRC_HTTP_INCLUDE_HTTP_BASE_URI_H_
 
+#include <map>
 #include <string>
+#include <vector>
 
 #include "mysqlrouter/uri.h"
 
@@ -36,6 +38,10 @@ namespace http {
 namespace base {
 
 class HTTP_COMMON_EXPORT Uri {
+ public:
+  using QueryElements = std::map<std::string, std::string>;
+  using PathElements = std::vector<std::string>;
+
  public:
   Uri();
   Uri(const std::string &uri);  // NOLINT(runtime/explicit)
@@ -73,15 +79,22 @@ class HTTP_COMMON_EXPORT Uri {
   virtual std::string get_query() const;
   virtual bool set_query(const std::string &query);
 
+  virtual QueryElements &get_query_elements();
+  virtual PathElements &get_path_elements();
+
+  virtual const QueryElements &get_query_elements() const;
+  virtual const PathElements &get_path_elements() const;
+
   /**
    * check if URI is valid.
    */
-  operator bool() const;
+  bool empty() const;
 
   Uri &operator=(Uri &&other);
   Uri &operator=(const Uri &other);
 
  private:
+  operator bool() const;
   mysqlrouter::URI uri_impl_;
 };
 

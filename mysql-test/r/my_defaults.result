@@ -1,0 +1,9 @@
+#
+# Bug#26750972: TRAILING # COMMENT ON !INCLUDEDIR / !INCLUDE DIRECTIVE CAUSES ERROR
+#
+# Create a cnf file with includedir
+# Create a directory for the include
+# Create a cnf file within the include dir
+# test: must print included_file_user
+--user=included_file_user
+# End of 9.6 tests

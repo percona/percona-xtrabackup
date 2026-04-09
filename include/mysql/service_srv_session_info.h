@@ -1,6 +1,6 @@
 #ifndef MYSQL_SERVICE_SRV_SESSION_INFO_INCLUDED
 #define MYSQL_SERVICE_SRV_SESSION_INFO_INCLUDED
-/*  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -34,8 +34,8 @@
 #include "lex_string.h" /* LEX_CSTRING */
 #include "my_thread.h"  /* my_thread_id */
 #include "my_thread_local.h"
+#include "mysql/components/services/bits/thd.h"
 #include "mysql_com.h" /* Vio for violite.h */
-#include "plugin.h"    /* MYSQL_THD */
 
 enum enum_vio_type : int;
 #endif

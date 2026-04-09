@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1402,7 +1402,7 @@ static int mi_sort_records(MI_CHECK *param, MI_INFO *info, char *name,
   DBUG_TRACE;
 
   memset(&sort_info, 0, sizeof(sort_info));
-  memset(&sort_param, 0, sizeof(sort_param));
+  memset((void *)&sort_param, 0, sizeof(sort_param));
   sort_param.sort_info = &sort_info;
   sort_info.param = param;
   keyinfo = &share->keyinfo[sort_key];

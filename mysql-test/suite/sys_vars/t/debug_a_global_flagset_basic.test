@@ -1,0 +1,52 @@
+--source include/have_debug.inc
+#
+# A global flagset variable test
+#
+
+# just to show that global.debug_a_global_flagset exists
+SELECT @@global.debug_a_global_flagset;
+
+--echo # Not a session
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+SELECT @@session.debug_a_global_flagset;
+
+SELECT @@global.debug_a_global_flagset INTO @save;
+
+SHOW GLOBAL VARIABLES LIKE 'debug_a_global_flagset';
+
+--disable_warnings
+SELECT * FROM performance_schema.global_variables WHERE variable_name="debug_a_global_flagset";
+--enable_warnings
+
+--echo # try a wrong value: should return an error
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.debug_a_global_flagset="1";
+
+--echo # try wrong value types: should return errors
+--error ER_WRONG_VALUE_FOR_VAR
+SET @@global.debug_a_global_flagset="a";
+--error ER_WRONG_TYPE_FOR_VAR
+SET @@global.debug_a_global_flagset=1.1;
+--error ER_WRONG_TYPE_FOR_VAR
+SET @@global.debug_a_global_flagset=1e1;
+
+--echo # try setting global: should pass
+SET GLOBAL debug_a_global_flagset="f1=off";
+SET GLOBAL debug_a_global_flagset=DEFAULT;
+
+--echo # try setting persist: should pass
+SET PERSIST debug_a_global_flagset="f2=off";
+SELECT VARIABLE_VALUE FROM performance_schema.persisted_variables
+  WHERE VARIABLE_NAME='debug_a_global_flagset';
+RESET PERSIST debug_a_global_flagset;
+
+--echo # try setting persist only: should pass
+SET PERSIST_ONLY debug_a_global_flagset="f1=on";
+SELECT VARIABLE_VALUE FROM performance_schema.persisted_variables
+  WHERE VARIABLE_NAME='debug_a_global_flagset';
+RESET PERSIST debug_a_global_flagset;
+
+--echo # Cleanup
+SET GLOBAL debug_a_global_flagset=@save;
+
+--echo # End of Tests

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,9 +26,9 @@
 #endif
 #include "xcom/site_def.h"
 
-#include <assert.h>
-#include <stdlib.h>
 #include <algorithm>
+#include <cassert>
+#include <cstdlib>
 #include <iterator>
 
 #include "xcom/bitset.h"
@@ -91,7 +91,8 @@ void free_site_def_body(site_def *s) {
     free_node_set(&s->global_node_set);
     free_node_set(&s->local_node_set);
     xdr_free((xdrproc_t)xdr_leader_array, (char *)(&s->leaders));
-    IFDBG(D_BUG, FN; STRLIT("free "); PTREXP(s); PTREXP(s->dispatch_table));
+    XCOM_IFDBG(D_BUG, FN; STRLIT("free "); PTREXP(s);
+               PTREXP(s->dispatch_table));
     free(s->dispatch_table);
   }
 }
@@ -117,13 +118,13 @@ void free_site_defs() {
 site_def *push_site_def(site_def *s) {
   uint32_t i;
   set_site_def_ptr(&site_defs, nullptr, site_defs.count);
-  IFDBG(
+  XCOM_IFDBG(
       D_NONE, FN; NDBG(site_defs.count, u); PTREXP(s); if (s) {
         SYCEXP(s->start);
         SYCEXP(s->boot_key);
       });
   for (i = site_defs.count; i > 0; i--) {
-    IFDBG(
+    XCOM_IFDBG(
         D_NONE, NDBG(i - 1, d); PTREXP(site_defs.site_def_ptr_array_val[i - 1]);
         if (site_defs.site_def_ptr_array_val[i - 1]) {
           SYCEXP(site_defs.site_def_ptr_array_val[i - 1]->start);
@@ -266,7 +267,7 @@ void garbage_collect_site_defs(synode_no x) {
   u_int i;
   u_int s_max = site_defs.count;
 
-  IFDBG(D_NONE, FN; NDBG(site_defs.count, u); SYCEXP(x););
+  XCOM_IFDBG(D_NONE, FN; NDBG(site_defs.count, u); SYCEXP(x););
   for (i = 3; i < s_max; i++) {
     if (match_def(site_defs.site_def_ptr_array_val[i], x)) {
       break;
@@ -275,9 +276,10 @@ void garbage_collect_site_defs(synode_no x) {
   i++;
   for (; i < s_max; i++) {
     site_def *site = site_defs.site_def_ptr_array_val[i];
-    IFDBG(D_NONE, NDBG(i, d); PTREXP(site_defs.site_def_ptr_array_val[i]););
+    XCOM_IFDBG(D_NONE, NDBG(i, d);
+               PTREXP(site_defs.site_def_ptr_array_val[i]););
     if (site) {
-      IFDBG(D_NONE, SYCEXP(site->start); SYCEXP(site->boot_key););
+      XCOM_IFDBG(D_NONE, SYCEXP(site->start); SYCEXP(site->boot_key););
       free_site_def(site);
       site_defs.site_def_ptr_array_val[i] = nullptr;
     }
@@ -334,7 +336,7 @@ site_def *clone_site_def(site_def const *site) {
   retval->cached_leaders = false;    // Invalidate cached leaders
   retval->dispatch_table = nullptr;  // Invalidate dispatch table
   assert(retval->global_node_set.node_set_len == _get_maxnodes(retval));
-  IFDBG(D_NONE, FN; PTREXP(site); PTREXP(retval));
+  XCOM_IFDBG(D_NONE, FN; PTREXP(site); PTREXP(retval));
   return retval;
 }
 
@@ -391,7 +393,7 @@ uint32_t get_group_id(site_def const *site) {
   if (site) {
     uint32_t group_id = site->start.group_id;
     assert(site->global_node_set.node_set_len == _get_maxnodes(site));
-    IFDBG(D_NONE, FN; NDBG((unsigned long)group_id, lu););
+    XCOM_IFDBG(D_NONE, FN; NDBG((unsigned long)group_id, lu););
     return group_id;
   } else {
     return null_id;
@@ -454,7 +456,8 @@ synode_no config_max_boot_key(gcs_snapshot const *gcs_snap) {
 /* Import configs from snapshot */
 void import_config(gcs_snapshot *gcs_snap) {
   int i;
-  IFDBG(D_NONE, FN; SYCEXP(gcs_snap->log_start); SYCEXP(gcs_snap->log_end));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(gcs_snap->log_start);
+             SYCEXP(gcs_snap->log_end));
   for (i = (int)gcs_snap->cfg.configs_len - 1; i >= 0; i--) {
     config_ptr cp = gcs_snap->cfg.configs_val[i];
     if (cp) {
@@ -468,7 +471,7 @@ void import_config(gcs_snapshot *gcs_snap) {
           !synode_eq(cp->boot_key, get_site_def()->boot_key) ||
           !synode_eq(cp->start, get_site_def()->start)) {
         site_def *site = new_site_def();
-        IFDBG(D_NONE, FN; SYCEXP(cp->start); SYCEXP(cp->boot_key));
+        XCOM_IFDBG(D_NONE, FN; SYCEXP(cp->start); SYCEXP(cp->boot_key));
         init_site_def(cp->nodes.node_list_len, cp->nodes.node_list_val, site);
         site->start = cp->start;
         site->boot_key = cp->boot_key;
@@ -519,7 +522,7 @@ gcs_snapshot *export_config() {
       cp->global_node_set = clone_node_set(site->global_node_set);
       cp->max_active_leaders = site->max_active_leaders;
       cp->leaders = clone_leader_array(site->leaders);
-      IFDBG(D_BUG, FN; SYCEXP(cp->start); SYCEXP(cp->boot_key));
+      XCOM_IFDBG(D_BUG, FN; SYCEXP(cp->start); SYCEXP(cp->boot_key));
       gcs_snap->cfg.configs_val[i] = cp;
     }
   }
@@ -552,7 +555,7 @@ synode_no get_min_delivered_msg(site_def const *s) {
       }
     }
   }
-  IFDBG(D_NONE, FN; SYCEXP(retval));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(retval));
   return retval;
 }
 
@@ -560,7 +563,7 @@ synode_no get_min_delivered_msg(site_def const *s) {
 void update_delivered(site_def *s, node_no node, synode_no msgno) {
   if (node < s->nodes.node_list_len) {
     s->delivered_msg[node] = msgno;
-    /* IFDBG(D_NONE, FN; SYCEXP(s->delivered_msg[node]); NDBG(node,u)); */
+    /* XCOM_IFDBG(D_NONE, FN; SYCEXP(s->delivered_msg[node]); NDBG(node,u)); */
   }
 }
 
@@ -572,11 +575,12 @@ the LAST config has the lowest. */
 synode_no get_highest_boot_key(gcs_snapshot *gcs_snap) {
   int i;
   synode_no retval = null_synode;
-  IFDBG(D_NONE, FN; SYCEXP(gcs_snap->log_start); SYCEXP(gcs_snap->log_end));
+  XCOM_IFDBG(D_NONE, FN; SYCEXP(gcs_snap->log_start);
+             SYCEXP(gcs_snap->log_end));
   for (i = 0; i < (int)gcs_snap->cfg.configs_len; i++) {
     config_ptr cp = gcs_snap->cfg.configs_val[i];
     if (cp) {
-      IFDBG(D_NONE, FN; SYCEXP(cp->start); SYCEXP(cp->boot_key));
+      XCOM_IFDBG(D_NONE, FN; SYCEXP(cp->start); SYCEXP(cp->boot_key));
       retval = cp->boot_key;
       break;
     }

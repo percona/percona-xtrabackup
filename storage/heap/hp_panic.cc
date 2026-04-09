@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ int hp_panic(enum ha_panic_function flag) {
 
   mysql_mutex_lock(&THR_LOCK_heap);
   for (element = heap_open_list; element; element = next_open) {
-    HP_INFO *info = (HP_INFO *)element->data;
+    auto *info = (HP_INFO *)element->data;
     next_open = element->next; /* Save if close */
     switch (flag) {
       case HA_PANIC_CLOSE:
@@ -44,7 +44,7 @@ int hp_panic(enum ha_panic_function flag) {
     }
   }
   for (element = heap_share_list; element; element = next_open) {
-    HP_SHARE *share = (HP_SHARE *)element->data;
+    auto *share = (HP_SHARE *)element->data;
     next_open = element->next; /* Save if close */
     switch (flag) {
       case HA_PANIC_CLOSE: {

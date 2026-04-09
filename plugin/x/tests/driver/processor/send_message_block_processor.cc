@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -159,9 +159,9 @@ std::string Send_message_block_processor::message_serialize(
   std::swap(res[1], res[2]);
 #endif
 
-  res[4] = client_msgs_by_name
-               [client_msgs_by_full_name[message.GetDescriptor()->full_name()]]
-                   .second;
+  res[4] = client_msgs_by_name[client_msgs_by_full_name[std::string(
+                                   message.GetDescriptor()->full_name())]]
+               .second;
   res.append(out);
 
   return res;

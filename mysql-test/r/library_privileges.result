@@ -1,0 +1,1188 @@
+########################################
+# This file contains security-related tests for LIBRARY feature
+# with the focus on 2 things:
+#   1. the visibility of library's inside information_schema
+#     - requires SHOW_ROUTINE or global SELECT, or
+#     - CREATE ROUTINE or ALTER ROUTINE or EXECUTE
+#   2. the following operations:
+#     CREATE LIBRARY       (CREATE ROUTINE)
+#     DROP LIBRARY         (ALTER ROUTINE)
+#     ALTER LIBRARY        (ALTER ROUTINE)
+#     SHOW CREATE LIBRARY  (SHOW_ROUTINE or CREATE ROUTINE or ALTER ROUTINE or global SELECT)
+#     SHOW LIBRARY CODE    (SHOW_ROUTINE or CREATE ROUTINE or ALTER ROUTINE or global SELECT) - not supported
+#     SHOW LIBRARY STATUS  (SHOW_ROUTINE or CREATE ROUTINE or ALTER ROUTINE or global SELECT)
+#
+# This test file does NOT test importing of libraries.
+#
+########################################
+########################################
+# Setup
+########################################
+SHOW GLOBAL VARIABLES LIKE 'automatic_sp_privileges';
+Variable_name	Value
+automatic_sp_privileges	ON
+CREATE DATABASE my_data;
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE DATABASE db_root;
+USE db_root;
+CREATE LIBRARY lib_root LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY lib_root_replacement LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+return "YOU SHALL NOT SEE THIS ROOT COMMENT !!!"
+  }
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE FUNCTION function_root() RETURNS VARCHAR(128) LANGUAGE JAVASCRIPT USING (lib_root) AS
+"return lib_root.foo()";
+Warnings:
+Warning	6001	Language component: Not available.
+# We need an account less than SYSTEM_USER, because we need to avoid creating objects with SYSTEM_USER,
+# because then no user can alter or drop them except SYSTEM_USER
+CREATE USER 'myRoot'@localhost;
+GRANT SELECT ON *.* TO 'myRoot'@'localhost' WITH GRANT OPTION;
+GRANT CREATE ON *.* TO 'myRoot'@'localhost' WITH GRANT OPTION;
+GRANT INSERT ON *.* TO 'myRoot'@'localhost' WITH GRANT OPTION;
+GRANT EXECUTE ON *.* TO 'myRoot'@'localhost' WITH GRANT OPTION;
+GRANT CREATE ROUTINE ON *.* TO 'myRoot'@'localhost' WITH GRANT OPTION;
+GRANT ALTER ROUTINE ON *.* TO 'myRoot'@'localhost' WITH GRANT OPTION;
+GRANT SHOW_ROUTINE ON *.* TO 'myRoot'@'localhost' WITH GRANT OPTION;
+GRANT CREATE USER ON *.* TO 'myRoot'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
+# Define some tables, no one should have access to them, but it doesn't matter,
+# since they wont be used.
+USE my_data;
+CREATE TABLE t (col_a VARCHAR(2));
+INSERT INTO t (col_a) VALUES ('a1');
+INSERT INTO t (col_a) VALUES ('a2');
+# Define all the libraries from myRoot's account
+USE db1;
+CREATE LIBRARY lib_foo LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY lib_foo_replacement LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+return "YOU SHALL NOT SEE THIS F00 COMMENT !!!"
+  }
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY lib_bar LANGUAGE JAVASCRIPT
+AS $$
+export function bar() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "BAR"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY lib_uses_both LANGUAGE JAVASCRIPT
+AS $$
+import {foo} from "/db1/lib_foo"
+  import {bar} from "/db1/lib_bar"
+
+export function both() {return foo() + "and " + bar()}
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+# Different object type, same name. Should not be confused when granting/revoking privileges
+CREATE FUNCTION lib_uses_both() RETURNS INT LANGUAGE JAVASCRIPT
+AS $$
+return 42;
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+# Different object type, same name. Should not be confused when granting/revoking privileges
+CREATE PROCEDURE lib_uses_both() LANGUAGE JAVASCRIPT
+AS $$
+console.log("Hello world")
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+USE db2;
+CREATE LIBRARY lib_foo LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY lib_bar LANGUAGE JAVASCRIPT
+AS $$
+export function bar() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "BAR"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY lib_uses_both LANGUAGE JAVASCRIPT
+AS $$
+import {foo} from "/db2/lib_foo"
+  import {bar} from "/db2/lib_bar"
+
+export function both() {return foo() + "and " + bar()}
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+USE db_root;
+CREATE LIBRARY lib_no_root LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+USE test;
+########################################
+# Setup users & permissions
+########################################
+CREATE USER 'userNothing'@localhost;
+# Note: for CREATE, we cannot pass the object type
+CREATE USER 'userCreatesDb2'@localhost;
+GRANT CREATE ROUTINE ON db2.* TO 'userCreatesDb2'@localhost;
+CREATE USER 'userCreatesAll'@localhost;
+GRANT CREATE ROUTINE ON *.* TO 'userCreatesAll'@localhost;
+CREATE USER 'userAltersDb1Both'@localhost;
+GRANT ALTER ROUTINE ON LIBRARY db1.lib_uses_both TO 'userAltersDb1Both'@localhost;
+GRANT ALTER ROUTINE ON LIBRARY db1.lib_uses_both2222 TO 'userAltersDb1Both'@localhost;
+ERROR 42000: LIBRARY lib_uses_both2222 does not exist
+CREATE USER 'userAltersDb2'@localhost;
+GRANT ALTER ROUTINE ON db2.* TO 'userAltersDb2'@localhost;
+CREATE USER 'userAltersAll'@localhost;
+GRANT ALTER ROUTINE ON *.* TO 'userAltersAll'@localhost;
+# Note: for SELECT, we cannot scope to a single SP, since select is on tables
+CREATE USER 'userSelectsDb2'@localhost;
+GRANT SELECT ON db2.* TO 'userSelectsDb2'@localhost;
+CREATE USER 'userSelectsAll'@localhost;
+GRANT SELECT ON *.* TO 'userSelectsAll'@localhost;
+# Note: SHOW_ROUTINE is only global
+CREATE USER 'userShowsAll'@localhost;
+GRANT SHOW_ROUTINE ON LIBRARY db1.lib_uses_both TO 'userShowsAll'@localhost;
+ERROR HY000: Illegal privilege level specified for lib_uses_both
+GRANT SHOW_ROUTINE ON db2.* TO 'userShowsAll'@localhost;
+ERROR HY000: Illegal privilege level specified for SHOW_ROUTINE
+GRANT SHOW_ROUTINE ON *.* TO 'userShowsAll'@localhost;
+CREATE USER 'userExecutesDb1Both'@localhost;
+GRANT EXECUTE ON LIBRARY db1.lib_uses_both TO 'userExecutesDb1Both'@localhost;
+CREATE USER 'userExecutesDb2'@localhost;
+GRANT EXECUTE ON db2.* TO 'userExecutesDb2'@localhost;
+CREATE USER 'userExecutesAll'@localhost;
+GRANT EXECUTE ON *.* TO 'userExecutesAll'@localhost;
+SELECT USER, PRIV, WITH_GRANT_OPTION FROM mysql.global_grants WHERE USER NOT LIKE 'mysql.%' AND USER NOT LIKE 'root';
+USER	PRIV	WITH_GRANT_OPTION
+myRoot	SHOW_ROUTINE	Y
+userShowsAll	SHOW_ROUTINE	N
+SELECT user, db, Routine_name, Routine_type, Proc_priv FROM mysql.procs_priv;
+user	db	Routine_name	Routine_type	Proc_priv
+userAltersDb1Both	db1	lib_uses_both	LIBRARY	Alter Routine
+userExecutesDb1Both	db1	lib_uses_both	LIBRARY	Execute
+SELECT * FROM mysql.db WHERE USER NOT LIKE 'mysql.%' AND USER NOT LIKE 'root';
+Host	Db	User	Select_priv	Insert_priv	Update_priv	Delete_priv	Create_priv	Drop_priv	Grant_priv	References_priv	Index_priv	Alter_priv	Create_tmp_table_priv	Lock_tables_priv	Create_view_priv	Show_view_priv	Create_routine_priv	Alter_routine_priv	Execute_priv	Event_priv	Trigger_priv
+%	test		Y	Y	Y	Y	Y	Y	N	Y	Y	Y	Y	Y	Y	Y	Y	N	N	Y	Y
+localhost	db2	userAltersDb2	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	Y	N	N	N
+localhost	db2	userCreatesDb2	N	N	N	N	N	N	N	N	N	N	N	N	N	N	Y	N	N	N	N
+localhost	db2	userExecutesDb2	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	Y	N	N
+localhost	db2	userSelectsDb2	Y	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+SELECT User, Select_priv, Insert_priv, Update_priv, Delete_priv, Create_priv, Drop_priv, Reload_priv, Shutdown_priv, Process_priv, File_priv,Grant_priv, References_priv, Index_priv, Alter_priv, Show_db_priv, Super_priv, Create_tmp_table_priv, Lock_tables_priv, Execute_priv, Repl_slave_priv, Repl_client_priv, Create_view_priv, Show_view_priv, Create_routine_priv, Alter_routine_priv, Create_user_priv, Event_priv, Trigger_priv, Create_tablespace_priv FROM mysql.user WHERE USER NOT LIKE 'mysql.%' AND USER NOT LIKE 'root';
+User	Select_priv	Insert_priv	Update_priv	Delete_priv	Create_priv	Drop_priv	Reload_priv	Shutdown_priv	Process_priv	File_priv	Grant_priv	References_priv	Index_priv	Alter_priv	Show_db_priv	Super_priv	Create_tmp_table_priv	Lock_tables_priv	Execute_priv	Repl_slave_priv	Repl_client_priv	Create_view_priv	Show_view_priv	Create_routine_priv	Alter_routine_priv	Create_user_priv	Event_priv	Trigger_priv	Create_tablespace_priv
+myRoot	Y	Y	N	N	Y	N	N	N	N	N	Y	N	N	N	N	N	N	N	Y	N	N	N	N	Y	Y	Y	N	N	N
+userAltersAll	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	Y	N	N	N	N
+userAltersDb1Both	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+userAltersDb2	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+userCreatesAll	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	Y	N	N	N	N	N
+userCreatesDb2	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+userExecutesAll	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	Y	N	N	N	N	N	N	N	N	N	N
+userExecutesDb1Both	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+userExecutesDb2	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+userNothing	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+userSelectsAll	Y	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+userSelectsDb2	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+userShowsAll	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N	N
+########################################
+# Test existence, visibility and SHOW CREATE
+########################################
+# Root can see everything
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	
+db1	lib_foo_replacement	
+db1	lib_uses_both	
+db2	lib_bar	
+db2	lib_foo	
+db2	lib_uses_both	
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+SHOW CREATE LIBRARY db1.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_foo`
+    LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_foo`
+    LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$
+SHOW LIBRARY CODE WHERE Db='db1' and Name='lib_foo';
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'CODE WHERE Db='db1' and Name='lib_foo'' at line 1
+SHOW LIBRARY STATUS WHERE Db='db1' and Name='lib_foo';
+Db	Name	Language	Creator	Modified	Created	Comment
+db1	lib_foo	JAVASCRIPT	myRoot@localhost	<modified>	<created>	
+# Switch to userNothing
+# No permissions, so expect empty table
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+# For reference to show that it is the same error code for both functions and libraries
+SHOW CREATE FUNCTION db1.lib_uses_both;
+ERROR 42000: FUNCTION lib_uses_both does not exist
+SHOW CREATE LIBRARY db1.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+SHOW CREATE LIBRARY db1.lib_uses_both;
+ERROR 42000: LIBRARY lib_uses_both does not exist
+SHOW CREATE LIBRARY db2.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+# Switch to userCreatesDb2: can only see db2
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db2	lib_bar	
+db2	lib_foo	
+db2	lib_uses_both	
+SHOW CREATE LIBRARY db1.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+SHOW CREATE LIBRARY db1.lib_uses_both;
+ERROR 42000: LIBRARY lib_uses_both does not exist
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+# Switch to userCreatesAll: can also see all
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	
+db1	lib_foo_replacement	
+db1	lib_uses_both	
+db2	lib_bar	
+db2	lib_foo	
+db2	lib_uses_both	
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+SHOW CREATE LIBRARY db1.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+SHOW CREATE LIBRARY db1.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+# Switch to userAltersDb1Both: can only see db1.lib_uses_both
+# Ensure that it is empty, i.e. no proc nor func should be visible
+SELECT ROUTINE_SCHEMA, ROUTINE_NAME FROM information_schema.routines WHERE ROUTINE_SCHEMA = "db1" ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME;
+ROUTINE_SCHEMA	ROUTINE_NAME
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_uses_both	
+SHOW CREATE LIBRARY db1.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+ALTER LIBRARY db1.lib_uses_both COMMENT "Comment altered by userAltersDb1Both";
+SELECT LIBRARY_COMMENT FROM information_schema.libraries WHERE LIBRARY_SCHEMA='db1' AND LIBRARY_NAME='lib_uses_both';
+LIBRARY_COMMENT
+Comment altered by userAltersDb1Both
+SHOW CREATE LIBRARY db1.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+SHOW CREATE FUNCTION db1.lib_uses_both;
+ERROR 42000: FUNCTION lib_uses_both does not exist
+ALTER FUNCTION db1.lib_uses_both COMMENT "Comment altered by userAltersDb1Both - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+SHOW CREATE PROCEDURE db1.lib_uses_both;
+ERROR 42000: PROCEDURE lib_uses_both does not exist
+SHOW CREATE LIBRARY db2.lib_uses_both;
+ERROR 42000: LIBRARY lib_uses_both does not exist
+SHOW CREATE LIBRARY db2.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+# Switch to userAltersDb2: can only see db2
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db2	lib_bar	
+db2	lib_foo	
+db2	lib_uses_both	
+SHOW CREATE LIBRARY db1.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+SHOW CREATE LIBRARY db1.lib_uses_both;
+ERROR 42000: LIBRARY lib_uses_both does not exist
+ALTER LIBRARY db2.lib_foo COMMENT "Comment altered by userAltersDb2";
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+ALTER LIBRARY db1.lib_uses_both COMMENT "Comment altered by userAltersDb2 - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userAltersDb2'@'localhost' for routine 'db1.lib_uses_both'
+SHOW CREATE LIBRARY db1.lib_uses_both;
+ERROR 42000: LIBRARY lib_uses_both does not exist
+ALTER FUNCTION db1.lib_uses_both COMMENT "Comment altered by userAltersDb2 - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userAltersDb2'@'localhost' for routine 'db1.lib_uses_both'
+SHOW CREATE PROCEDURE db1.lib_uses_both;
+ERROR 42000: PROCEDURE lib_uses_both does not exist
+# Switch to userAltersAll
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	
+db1	lib_foo_replacement	
+db1	lib_uses_both	Comment altered by userAltersDb1Both
+db2	lib_bar	
+db2	lib_foo	Comment altered by userAltersDb2
+db2	lib_uses_both	
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+SHOW CREATE LIBRARY db1.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+SHOW CREATE LIBRARY db1.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+ALTER LIBRARY db1.lib_uses_both COMMENT "Comment altered by userAltersAll";
+SELECT LIBRARY_COMMENT FROM information_schema.libraries WHERE LIBRARY_SCHEMA='db2' AND LIBRARY_NAME='lib_foo';
+LIBRARY_COMMENT
+Comment altered by userAltersDb2
+SHOW CREATE LIBRARY db1.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+ALTER PROCEDURE db1.lib_uses_both COMMENT "Comment altered by userAltersAll";
+# Even if userAltersAll has the permissions to alter the procedure and read the library, they do not have execute access to the library.
+ALTER PROCEDURE db1.lib_uses_both USING (db2.lib_foo);
+ERROR 42000: LIBRARY lib_foo does not exist
+# Even if userAltersAll has the permissions to alter the procedure, they do not have execute access to the library.
+ALTER PROCEDURE db1.lib_uses_both USING (db1.lib_foo);
+ERROR 42000: LIBRARY lib_foo does not exist
+SHOW CREATE PROCEDURE db1.lib_uses_both;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SELECT ROUTINE_SCHEMA, ROUTINE_NAME, LIBRARY_SCHEMA, LIBRARY_NAME FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES WHERE ROUTINE_SCHEMA='db1' AND ROUTINE_NAME='lib_uses_both';
+ROUTINE_SCHEMA	ROUTINE_NAME	LIBRARY_SCHEMA	LIBRARY_NAME
+ALTER LIBRARY db2.lib_foo COMMENT "Comment altered by userAltersAll";
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+SELECT LIBRARY_COMMENT FROM information_schema.libraries WHERE LIBRARY_SCHEMA='db2' AND LIBRARY_NAME='lib_foo';
+LIBRARY_COMMENT
+Comment altered by userAltersAll
+# Switch to userSelectsDb2
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+ALTER LIBRARY db1.lib_foo COMMENT "Comment altered by userSelectsDb2 - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userSelectsDb2'@'localhost' for routine 'db1.lib_foo'
+SHOW CREATE LIBRARY db1.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+SHOW CREATE LIBRARY db1.lib_uses_both;
+ERROR 42000: LIBRARY lib_uses_both does not exist
+# Global select is necessary, not only the schema-level select
+SHOW CREATE LIBRARY db2.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+ALTER LIBRARY db2.lib_foo COMMENT "Comment altered by userSelectsDb2 - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userSelectsDb2'@'localhost' for routine 'db2.lib_foo'
+# Switch to userSelectsAll
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	
+db1	lib_foo_replacement	
+db1	lib_uses_both	Comment altered by userAltersAll
+db2	lib_bar	
+db2	lib_foo	Comment altered by userAltersAll
+db2	lib_uses_both	
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+SHOW CREATE LIBRARY db1.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_foo`
+    LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$
+ALTER LIBRARY db1.lib_uses_both COMMENT "Comment altered by userSelectsAll - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db1.lib_uses_both'
+SHOW CREATE LIBRARY db1.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_uses_both`
+    COMMENT 'Comment altered by userAltersAll'
+    LANGUAGE JAVASCRIPT
+AS $$
+import {foo} from "/db1/lib_foo"
+  import {bar} from "/db1/lib_bar"
+
+export function both() {return foo() + "and " + bar()}
+$$
+ALTER FUNCTION db1.lib_uses_both COMMENT "Comment altered by userSelectsAll - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db1.lib_uses_both'
+ALTER LIBRARY db2.lib_foo COMMENT "Comment altered by userSelectsAll - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db2.lib_foo'
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_foo`
+    COMMENT 'Comment altered by userAltersAll'
+    LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$
+# Switch to userShowsAll
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	
+db1	lib_foo_replacement	
+db1	lib_uses_both	Comment altered by userAltersAll
+db2	lib_bar	
+db2	lib_foo	Comment altered by userAltersAll
+db2	lib_uses_both	
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+SHOW CREATE LIBRARY db1.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_foo`
+    LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$
+ALTER LIBRARY db1.lib_uses_both COMMENT "Comment altered by userShowsAll - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userShowsAll'@'localhost' for routine 'db1.lib_uses_both'
+SHOW CREATE LIBRARY db1.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_uses_both`
+    COMMENT 'Comment altered by userAltersAll'
+    LANGUAGE JAVASCRIPT
+AS $$
+import {foo} from "/db1/lib_foo"
+  import {bar} from "/db1/lib_bar"
+
+export function both() {return foo() + "and " + bar()}
+$$
+ALTER LIBRARY db2.lib_foo COMMENT "Comment altered by userShowsAll - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userShowsAll'@'localhost' for routine 'db2.lib_foo'
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_foo`
+    COMMENT 'Comment altered by userAltersAll'
+    LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$
+# Switch to userExecutesDb1Both
+# Ensure that it is empty, i.e. no proc nor func should be visible
+SELECT ROUTINE_SCHEMA, ROUTINE_NAME FROM information_schema.routines WHERE ROUTINE_SCHEMA = "db1" ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME;
+ROUTINE_SCHEMA	ROUTINE_NAME
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_uses_both	Comment altered by userAltersAll
+SHOW CREATE LIBRARY db1.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+ALTER LIBRARY db1.lib_uses_both COMMENT "Comment altered by userExecutesDb1Both - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+SHOW CREATE LIBRARY db1.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+ALTER FUNCTION db1.lib_uses_both COMMENT "Comment altered by userExecutesDb1Both - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+SHOW CREATE FUNCTION db1.lib_uses_both;
+ERROR 42000: FUNCTION lib_uses_both does not exist
+SHOW CREATE PROCEDURE db1.lib_uses_both;
+ERROR 42000: PROCEDURE lib_uses_both does not exist
+SHOW CREATE LIBRARY db2.lib_uses_both;
+ERROR 42000: LIBRARY lib_uses_both does not exist
+SHOW CREATE LIBRARY db2.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+# Switch to userExecutesDb2
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db2	lib_bar	
+db2	lib_foo	Comment altered by userAltersAll
+db2	lib_uses_both	
+SHOW CREATE LIBRARY db1.lib_foo;
+ERROR 42000: LIBRARY lib_foo does not exist
+SHOW CREATE LIBRARY db1.lib_uses_both;
+ERROR 42000: LIBRARY lib_uses_both does not exist
+ALTER LIBRARY db2.lib_uses_both COMMENT "Comment altered by userExecutesDb2 - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userExecutesDb2'@'localhost' for routine 'db2.lib_uses_both'
+SHOW CREATE LIBRARY db2.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+# Switch to userExecutesAll
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	
+db1	lib_foo_replacement	
+db1	lib_uses_both	Comment altered by userAltersAll
+db2	lib_bar	
+db2	lib_foo	Comment altered by userAltersAll
+db2	lib_uses_both	
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+ALTER LIBRARY db1.lib_foo COMMENT "Comment altered by userExecutesAll - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userExecutesAll'@'localhost' for routine 'db1.lib_foo'
+SHOW CREATE LIBRARY db1.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+SHOW CREATE LIBRARY db1.lib_uses_both;
+Library	sql_mode	Create Library
+lib_uses_both	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+ALTER LIBRARY db2.lib_foo COMMENT "Comment altered by userExecutesAll - DISALLOWED";
+ERROR 42000: alter routine command denied to user 'userExecutesAll'@'localhost' for routine 'db2.lib_foo'
+SHOW CREATE LIBRARY db2.lib_foo;
+Library	sql_mode	Create Library
+lib_foo	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	NULL
+########################################
+# Test CREATE LIBRARY
+########################################
+# Root can create everything
+CREATE LIBRARY db1.l_root LANGUAGE JAVASCRIPT AS 'var x = 1';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY db2.l_root LANGUAGE JAVASCRIPT AS 'var x = 1';
+Warnings:
+Warning	6001	Language component: Not available.
+# Switch to userNothing
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userNothing'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userNothing'@'localhost' to database 'db2'
+# Verify that error code is the same for functions
+CREATE FUNCTION db2.l_fail() RETURNS INT LANGUAGE JAVASCRIPT AS 'return 42';
+ERROR 42000: Access denied for user 'userNothing'@'localhost' to database 'db2'
+# Switch to userCreatesDb2
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userCreatesDb2'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_userCreatesDb2 LANGUAGE JAVASCRIPT AS 'var x = 1';
+# Switch to userCreatesAll
+CREATE LIBRARY db1.l_userCreatesAll LANGUAGE JAVASCRIPT AS 'var x = 1';
+CREATE LIBRARY db2.l_userCreatesAll LANGUAGE JAVASCRIPT AS 'var x = 1';
+# Switch to userAltersDb1Both
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userAltersDb1Both'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userAltersDb1Both'@'localhost' to database 'db2'
+# Switch to userAltersDb2
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userAltersDb2'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userAltersDb2'@'localhost' to database 'db2'
+# Verify that error code is the same for functions
+CREATE FUNCTION db2.l_fail() RETURNS INT LANGUAGE JAVASCRIPT AS 'return 42';
+ERROR 42000: Access denied for user 'userAltersDb2'@'localhost' to database 'db2'
+# Switch to userAltersAll
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userAltersAll'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userAltersAll'@'localhost' to database 'db2'
+# Switch to userSelectsDb2
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userSelectsDb2'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userSelectsDb2'@'localhost' to database 'db2'
+# Switch to userSelectsAll
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userSelectsAll'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userSelectsAll'@'localhost' to database 'db2'
+# Switch to userShowsAll
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userShowsAll'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userShowsAll'@'localhost' to database 'db2'
+# Switch to userExecutesDb1Both
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userExecutesDb1Both'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userExecutesDb1Both'@'localhost' to database 'db2'
+# Switch to userExecutesDb2
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userExecutesDb2'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userExecutesDb2'@'localhost' to database 'db2'
+# Switch to userExecutesAll
+CREATE LIBRARY db1.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userExecutesAll'@'localhost' to database 'db1'
+CREATE LIBRARY db2.l_fail LANGUAGE JAVASCRIPT AS 'var x = 1';
+ERROR 42000: Access denied for user 'userExecutesAll'@'localhost' to database 'db2'
+# Switch to myRoot
+# Ensure that newly created LIBRARIES got ALTER and EXECUTE privileges for its creators
+# These are db2.l_userCreatesDb2, db1.l_userCreatesAll and db2.l_userCreatesAll
+SELECT user, db, Routine_name, Routine_type, Proc_priv FROM mysql.procs_priv WHERE Routine_name LIKE 'l_userCreates%';
+user	db	Routine_name	Routine_type	Proc_priv
+userCreatesAll	db1	l_userCreatesAll	LIBRARY	Execute,Alter Routine
+userCreatesAll	db2	l_userCreatesAll	LIBRARY	Execute,Alter Routine
+userCreatesDb2	db2	l_userCreatesDb2	LIBRARY	Execute,Alter Routine
+########################################
+# Test ALTER LIBRARY
+########################################
+# Root can alter everything
+ALTER LIBRARY db1.l_root COMMENT 'Test Alter Library Comment by root';
+ALTER LIBRARY db2.l_root COMMENT 'Test Alter Library Comment by root';
+# Confirm the allowed changes are in place.
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM INFORMATION_SCHEMA.LIBRARIES ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	
+db1	lib_foo_replacement	
+db1	lib_uses_both	Comment altered by userAltersAll
+db1	l_root	Test Alter Library Comment by root
+db1	l_userCreatesAll	
+db2	lib_bar	
+db2	lib_foo	Comment altered by userAltersAll
+db2	lib_uses_both	
+db2	l_root	Test Alter Library Comment by root
+db2	l_userCreatesAll	
+db2	l_userCreatesDb2	
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+# myRoot can not alter the root's functions and libraries.
+ALTER LIBRARY db_root.lib_root COMMENT 'Test Alter Library Comment by myRoot - DISALLOWED';
+ERROR 42000: Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation
+SHOW CREATE LIBRARY db_root.lib_root;
+Library	sql_mode	Create Library
+lib_root	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib_root`
+    LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {
+let r = session.runSql("SELECT * FROM my_data.t")
+return "FOO"
+  }
+let r2 = session.runSql("SELECT * FROM my_data.t")
+$$
+ALTER FUNCTION db_root.function_root USING (db_root.lib_root_replacement as lib_root);
+ERROR 42000: Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation
+SHOW CREATE FUNCTION db_root.function_root;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+function_root	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `function_root`() RETURNS varchar(128) CHARSET utf8mb4
+    LANGUAGE JAVASCRIPT
+    USING (`db_root`.`lib_root`)
+AS $$return lib_root.foo()$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+# Switch to userNothing
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userNothing'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userNothing'@'localhost' for routine 'db2.lib_foo'
+# Verify that error code is the same for functions
+ALTER FUNCTION db1.lib_uses_both COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userNothing'@'localhost' for routine 'db1.lib_uses_both'
+# Switch to userCreatesDb2
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userCreatesDb2'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userCreatesDb2'@'localhost' for routine 'db2.lib_foo'
+# NOTE: but user can alter his own libraries because automatic-sp-privileges = ON
+ALTER LIBRARY db2.l_userCreatesDb2 COMMENT 'Test Alter Library Comment by userCreatesDb2';
+# Switch to userCreatesAll
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userCreatesAll'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userCreatesAll'@'localhost' for routine 'db2.lib_foo'
+# NOTE: but user can alter his own libraries because automatic-sp-privileges = ON
+ALTER LIBRARY db1.l_userCreatesAll COMMENT 'Test Alter Library Comment by l_userCreatesAll';
+ALTER LIBRARY db2.l_userCreatesAll COMMENT 'Test Alter Library Comment by l_userCreatesAll';
+# Confirm only the allowed changes are in place.
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM INFORMATION_SCHEMA.LIBRARIES ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	
+db1	lib_foo_replacement	
+db1	lib_uses_both	Comment altered by userAltersAll
+db1	l_root	Test Alter Library Comment by root
+db1	l_userCreatesAll	Test Alter Library Comment by l_userCreatesAll
+db2	lib_bar	
+db2	lib_foo	Comment altered by userAltersAll
+db2	lib_uses_both	
+db2	l_root	Test Alter Library Comment by root
+db2	l_userCreatesAll	Test Alter Library Comment by l_userCreatesAll
+db2	l_userCreatesDb2	Test Alter Library Comment by userCreatesDb2
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+# Switch to userSelectsDb2
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userSelectsDb2'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db1.lib_uses_both COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userSelectsDb2'@'localhost' for routine 'db1.lib_uses_both'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userSelectsDb2'@'localhost' for routine 'db2.lib_foo'
+# Switch to userSelectsAll
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db1.lib_uses_both COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db1.lib_uses_both'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db2.lib_foo'
+# Switch to userShowsAll
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userShowsAll'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db1.lib_uses_both COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userShowsAll'@'localhost' for routine 'db1.lib_uses_both'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userShowsAll'@'localhost' for routine 'db2.lib_foo'
+# Switch to userExecutesDb1Both
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db1.lib_uses_both COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db2.lib_foo'
+ALTER FUNCTION db1.lib_uses_both COMMENT 'Test Alter Function Comment';
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+ALTER FUNCTION db1.lib_uses_both COMMENT 'Test Alter Function Comment';
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+# Switch to userExecutesDb2
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesDb2'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db1.lib_uses_both COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesDb2'@'localhost' for routine 'db1.lib_uses_both'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesDb2'@'localhost' for routine 'db2.lib_foo'
+# Switch to userExecutesAll
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesAll'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db1.lib_uses_both COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesAll'@'localhost' for routine 'db1.lib_uses_both'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userExecutesAll'@'localhost' for routine 'db2.lib_foo'
+# Switch to userAltersDb1Both
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db1.lib_uses_both COMMENT 'Test Alter Library Comment lib_uses_both';
+DROP FUNCTION db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+DROP FUNCTION db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+ALTER LIBRARY db2.lib_uses_both COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db2.lib_uses_both'
+ALTER LIBRARY db2.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db2.lib_foo'
+# Confirm only the allowed changes are in place.
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM INFORMATION_SCHEMA.LIBRARIES ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_uses_both	Test Alter Library Comment lib_uses_both
+# Switch to userAltersDb2
+ALTER LIBRARY db1.lib_foo COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userAltersDb2'@'localhost' for routine 'db1.lib_foo'
+ALTER LIBRARY db2.lib_foo COMMENT 'Test Alter Library Comment db2';
+# Confirm only the allowed changes are in place.
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM INFORMATION_SCHEMA.LIBRARIES ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db2	lib_bar	
+db2	lib_foo	Test Alter Library Comment db2
+db2	lib_uses_both	
+db2	l_root	Test Alter Library Comment by root
+db2	l_userCreatesAll	Test Alter Library Comment by l_userCreatesAll
+db2	l_userCreatesDb2	Test Alter Library Comment by userCreatesDb2
+# Switch to userAltersAll
+ALTER LIBRARY db1.lib_foo COMMENT 'Test Alter Library Comment by UserAltersAll';
+ALTER LIBRARY db2.lib_bar COMMENT 'Test Alter Library Comment by UserAltersAll';
+# Confirm only the allowed changes are in place.
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM INFORMATION_SCHEMA.LIBRARIES ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	Test Alter Library Comment by UserAltersAll
+db1	lib_foo_replacement	
+db1	lib_uses_both	Test Alter Library Comment lib_uses_both
+db1	l_root	Test Alter Library Comment by root
+db1	l_userCreatesAll	Test Alter Library Comment by l_userCreatesAll
+db2	lib_bar	Test Alter Library Comment by UserAltersAll
+db2	lib_foo	Test Alter Library Comment db2
+db2	lib_uses_both	
+db2	l_root	Test Alter Library Comment by root
+db2	l_userCreatesAll	Test Alter Library Comment by l_userCreatesAll
+db2	l_userCreatesDb2	Test Alter Library Comment by userCreatesDb2
+db_root	lib_no_root	
+db_root	lib_root	
+db_root	lib_root_replacement	
+# Switch to myRoot
+# Ensure that the newly created LIBRARIES should be gone. Only userCreatesAll's and userCreatesDb2's libraries should remain.
+SELECT user, db, Routine_name, Routine_type, Proc_priv FROM mysql.procs_priv WHERE Routine_name LIKE 'l_userCreates%';
+user	db	Routine_name	Routine_type	Proc_priv
+userCreatesAll	db1	l_userCreatesAll	LIBRARY	Execute,Alter Routine
+userCreatesAll	db2	l_userCreatesAll	LIBRARY	Execute,Alter Routine
+userCreatesDb2	db2	l_userCreatesDb2	LIBRARY	Execute,Alter Routine
+# Special case: ensure that nobody can alter db_root nor lib_root except the original root
+USE db_root;
+# Switch to userAltersDb1Both
+ALTER LIBRARY db_root.lib_root COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db_root.lib_root'
+# Switch to userAltersDb2
+ALTER LIBRARY db_root.lib_root COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: alter routine command denied to user 'userAltersDb2'@'localhost' for routine 'db_root.lib_root'
+# Switch to userAltersAll
+ALTER LIBRARY db_root.lib_root COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation
+# Switch to myRoot
+ALTER LIBRARY db_root.lib_root COMMENT 'Disallowed Library Comment!!!';
+ERROR 42000: Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation
+ALTER LIBRARY db_root.lib_no_root COMMENT 'Test Alter Library Comment lib_no_root';
+# Confirm only the allowed changes are in place.
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM INFORMATION_SCHEMA.LIBRARIES ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db1	lib_bar	
+db1	lib_foo	Test Alter Library Comment by UserAltersAll
+db1	lib_foo_replacement	
+db1	lib_uses_both	Test Alter Library Comment lib_uses_both
+db1	l_root	Test Alter Library Comment by root
+db1	l_userCreatesAll	Test Alter Library Comment by l_userCreatesAll
+db2	lib_bar	Test Alter Library Comment by UserAltersAll
+db2	lib_foo	Test Alter Library Comment db2
+db2	lib_uses_both	
+db2	l_root	Test Alter Library Comment by root
+db2	l_userCreatesAll	Test Alter Library Comment by l_userCreatesAll
+db2	l_userCreatesDb2	Test Alter Library Comment by userCreatesDb2
+db_root	lib_no_root	Test Alter Library Comment lib_no_root
+db_root	lib_root	
+db_root	lib_root_replacement	
+########################################
+# Test DROP LIBRARY
+########################################
+# Root can drop everything
+DROP LIBRARY db1.l_root;
+DROP LIBRARY db2.l_root;
+# Switch to userNothing
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userNothing'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userNothing'@'localhost' for routine 'db2.lib_foo'
+# Verify that error code is the same for functions
+DROP FUNCTION db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userNothing'@'localhost' for routine 'db1.lib_uses_both'
+# Switch to userCreatesDb2
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userCreatesDb2'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userCreatesDb2'@'localhost' for routine 'db2.lib_foo'
+# NOTE: but user can delete his own libraries because automatic-sp-privileges = ON
+DROP LIBRARY db2.l_userCreatesDb2;
+# Switch to userCreatesAll
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userCreatesAll'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userCreatesAll'@'localhost' for routine 'db2.lib_foo'
+# NOTE: but user can delete his own libraries because automatic-sp-privileges = ON
+DROP LIBRARY db1.l_userCreatesAll;
+DROP LIBRARY db2.l_userCreatesAll;
+# Switch to userSelectsDb2
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userSelectsDb2'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userSelectsDb2'@'localhost' for routine 'db1.lib_uses_both'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userSelectsDb2'@'localhost' for routine 'db2.lib_foo'
+# Switch to userSelectsAll
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db1.lib_uses_both'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userSelectsAll'@'localhost' for routine 'db2.lib_foo'
+# Switch to userShowsAll
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userShowsAll'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userShowsAll'@'localhost' for routine 'db1.lib_uses_both'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userShowsAll'@'localhost' for routine 'db2.lib_foo'
+# Switch to userExecutesDb1Both
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db2.lib_foo'
+DROP FUNCTION db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+DROP FUNCTION db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userExecutesDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+# Switch to userExecutesDb2
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userExecutesDb2'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userExecutesDb2'@'localhost' for routine 'db1.lib_uses_both'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userExecutesDb2'@'localhost' for routine 'db2.lib_foo'
+# Switch to userExecutesAll
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userExecutesAll'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userExecutesAll'@'localhost' for routine 'db1.lib_uses_both'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userExecutesAll'@'localhost' for routine 'db2.lib_foo'
+# Switch to userAltersDb1Both
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db1.lib_uses_both;
+DROP FUNCTION db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+DROP FUNCTION db1.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db1.lib_uses_both'
+DROP LIBRARY db2.lib_uses_both;
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db2.lib_uses_both'
+DROP LIBRARY db2.lib_foo;
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db2.lib_foo'
+# Switch to userAltersDb2
+DROP LIBRARY db1.lib_foo;
+ERROR 42000: alter routine command denied to user 'userAltersDb2'@'localhost' for routine 'db1.lib_foo'
+DROP LIBRARY db2.lib_foo;
+# Switch to userAltersAll
+DROP LIBRARY db1.lib_foo;
+DROP LIBRARY db2.lib_bar;
+# Switch to myRoot
+# Ensure that this is EMPTY. Newly created LIBRARIES should be gone
+SELECT user, db, Routine_name, Routine_type, Proc_priv FROM mysql.procs_priv WHERE Routine_name LIKE 'l_userCreates%';
+user	db	Routine_name	Routine_type	Proc_priv
+# Special case: ensure that nobody can drop db_root nor lib_root except the original root
+USE db_root;
+# Switch to userAltersDb1Both
+DROP LIBRARY db_root.lib_root;
+ERROR 42000: alter routine command denied to user 'userAltersDb1Both'@'localhost' for routine 'db_root.lib_root'
+DROP DATABASE db_root;
+ERROR 42000: Access denied for user 'userAltersDb1Both'@'localhost' to database 'db_root'
+# Switch to userAltersDb2
+DROP LIBRARY db_root.lib_root;
+ERROR 42000: alter routine command denied to user 'userAltersDb2'@'localhost' for routine 'db_root.lib_root'
+DROP DATABASE db_root;
+ERROR 42000: Access denied for user 'userAltersDb2'@'localhost' to database 'db_root'
+# Switch to userAltersAll
+DROP LIBRARY db_root.lib_root;
+ERROR 42000: Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation
+DROP DATABASE db_root;
+ERROR 42000: Access denied for user 'userAltersAll'@'localhost' to database 'db_root'
+# Switch to myRoot
+DROP LIBRARY db_root.lib_root;
+ERROR 42000: Access denied; you need (at least one of) the SYSTEM_USER privilege(s) for this operation
+DROP LIBRARY db_root.lib_no_root;
+DROP DATABASE db_root;
+ERROR 42000: Access denied for user 'myRoot'@'localhost' to database 'db_root'
+########################################
+# Test automatic_sp_privileges = OFF
+########################################
+# Switch to default so we can set the global variable
+SET GLOBAL automatic_sp_privileges = 'OFF';
+# Switch to myRoot to verify the variable
+SHOW GLOBAL VARIABLES LIKE 'automatic_sp_privileges';
+Variable_name	Value
+automatic_sp_privileges	OFF
+# Switch to userCreatesDb2
+CREATE LIBRARY db2.l_userCreatesDb2Again LANGUAGE JAVASCRIPT AS 'var x = 1';
+Warnings:
+Warning	6001	Language component: Not available.
+# Now, that automatic_sp_privileges is OFF, user cannot import his own LIBRARIES.
+CREATE FUNCTION db2.f_userCreatesDb2Again() RETURNS INT LANGUAGE JAVASCRIPT USING (db2.l_userCreatesDb2Again) AS 'return 42';
+ERROR 42000: execute command denied to user 'userCreatesDb2'@'localhost' for routine 'db2.l_userCreatesDb2Again'
+# Now, that automatic_sp_privileges is OFF, user cannot delete his own LIBRARY
+DROP LIBRARY db2.l_userCreatesDb2Again;
+ERROR 42000: alter routine command denied to user 'userCreatesDb2'@'localhost' for routine 'db2.l_userCreatesDb2Again'
+# Switch to userCreatesAll
+CREATE LIBRARY db1.l_userCreatesAllAgain LANGUAGE JAVASCRIPT AS 'var x = 1';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY db2.l_userCreatesAllAgain LANGUAGE JAVASCRIPT AS 'var x = 1';
+Warnings:
+Warning	6001	Language component: Not available.
+# Now, that automatic_sp_privileges is OFF, user cannot import his own LIBRARIES.
+CREATE FUNCTION db1.f_userCreatesAllAgain() RETURNS INT LANGUAGE JAVASCRIPT USING (db1.l_userCreatesAllAgain) AS 'return 42';
+ERROR 42000: execute command denied to user 'userCreatesAll'@'localhost' for routine 'db1.l_userCreatesAllAgain'
+# Now, that automatic_sp_privileges is OFF, user cannot delete his own LIBRARIES
+DROP LIBRARY db1.l_userCreatesAllAgain;
+ERROR 42000: alter routine command denied to user 'userCreatesAll'@'localhost' for routine 'db1.l_userCreatesAllAgain'
+DROP LIBRARY db2.l_userCreatesAllAgain;
+ERROR 42000: alter routine command denied to user 'userCreatesAll'@'localhost' for routine 'db2.l_userCreatesAllAgain'
+########################################
+# Test revoke
+########################################
+# Switch to myRoot
+CREATE DATABASE db3;
+USE db3;
+CREATE LIBRARY lib_foo LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {return 42}
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY lib_foo_replacement LANGUAGE JAVASCRIPT
+AS $$
+export function foo() {return 41}
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY lib_bar LANGUAGE JAVASCRIPT
+AS $$
+export function bar() {return 43}
+$$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE FUNCTION foo() RETURNS INT LANGUAGE JAVASCRIPT USING (lib_foo) AS 'return lib_foo.foo()';
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE USER 'userExecutesDb3foo'@localhost;
+GRANT EXECUTE ON FUNCTION db3.foo TO 'userExecutesDb3foo'@localhost;
+GRANT EXECUTE ON LIBRARY db3.lib_foo TO 'userExecutesDb3foo'@localhost;
+GRANT EXECUTE ON LIBRARY db3.lib_foo_replacement TO 'userExecutesDb3foo'@localhost;
+GRANT EXECUTE ON LIBRARY db3.lib_bar TO 'userExecutesDb3foo'@localhost;
+CREATE USER 'userAltersDb3foo'@localhost;
+GRANT ALTER ROUTINE ON FUNCTION db3.foo TO 'userAltersDb3foo'@localhost;
+GRANT ALTER ROUTINE ON LIBRARY db3.lib_foo TO 'userAltersDb3foo'@localhost;
+GRANT ALTER ROUTINE ON LIBRARY db3.lib_bar TO 'userAltersDb3foo'@localhost;
+# Switch to userExecutesDb3foo
+# Should see both libs in db3
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db3	lib_bar	
+db3	lib_foo	
+db3	lib_foo_replacement	
+# Even if the user has EXECUTE permissions, they lack the ALTER one.
+ALTER FUNCTION db3.foo USING (db3.lib_foo_replacement);
+ERROR 42000: alter routine command denied to user 'userExecutesDb3foo'@'localhost' for routine 'db3.foo'
+SELECT ROUTINE_NAME, LIBRARY_NAME FROM information_schema.routine_libraries WHERE ROUTINE_SCHEMA = 'db3' ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+ROUTINE_NAME	LIBRARY_NAME
+foo	lib_foo
+# Switch to myRoot
+REVOKE EXECUTE ON LIBRARY db3.lib_foo FROM 'userExecutesDb3foo'@localhost;
+# Switch to userExecutesDb3foo again
+# Should see only db3.lib_bar
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db3	lib_bar	
+db3	lib_foo_replacement	
+# Switch to myRoot
+GRANT ALTER ROUTINE ON FUNCTION db3.foo TO 'userExecutesDb3foo'@localhost;
+# Switch to userExecutesDb3foo again
+ALTER FUNCTION db3.foo USING (db3.lib_foo_replacement);
+SELECT ROUTINE_NAME, LIBRARY_NAME FROM information_schema.routine_libraries WHERE ROUTINE_SCHEMA = 'db3' ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+ROUTINE_NAME	LIBRARY_NAME
+foo	lib_foo_replacement
+# The permission to import that library was revoked.
+ALTER FUNCTION db3.foo USING (db3.lib_foo);
+ERROR 42000: LIBRARY lib_foo does not exist
+SELECT ROUTINE_NAME, LIBRARY_NAME FROM information_schema.routine_libraries WHERE ROUTINE_SCHEMA = 'db3' ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+ROUTINE_NAME	LIBRARY_NAME
+foo	lib_foo_replacement
+# Switch to myRoot
+ALTER FUNCTION db3.foo USING (db3.lib_foo);
+SELECT ROUTINE_NAME, LIBRARY_NAME FROM information_schema.routine_libraries WHERE ROUTINE_SCHEMA = 'db3' ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+ROUTINE_NAME	LIBRARY_NAME
+foo	lib_foo
+# Switch to userAltersDb3foo
+# Should see both libs in db3
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+db3	lib_bar	
+db3	lib_foo	
+DROP LIBRARY db3.lib_foo;
+# The user lacks the permissions to import the library.
+ALTER FUNCTION db3.foo USING (db3.lib_foo_replacement);
+ERROR 42000: LIBRARY lib_foo_replacement does not exist
+SELECT ROUTINE_NAME, LIBRARY_NAME FROM information_schema.routine_libraries WHERE ROUTINE_SCHEMA = 'db3' ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+ROUTINE_NAME	LIBRARY_NAME
+foo	lib_foo
+# Switch to myRoot
+REVOKE ALTER ROUTINE ON LIBRARY db3.lib_bar FROM 'userAltersDb3foo'@localhost;
+# Switch to userAltersDb3foo
+# Should be empty because lib_foo was dropped and privileges to lib_bar were revoked
+SELECT LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_COMMENT FROM information_schema.libraries ORDER BY LIBRARY_SCHEMA, LIBRARY_NAME;
+LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_COMMENT
+DROP LIBRARY db3.lib_bar;
+ERROR 42000: alter routine command denied to user 'userAltersDb3foo'@'localhost' for routine 'db3.lib_bar'
+########################################
+# Cleanup
+########################################
+# Switch to default
+# The original configuration should not be modified.
+SELECT * FROM information_schema.routine_libraries ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, LIBRARY_SCHEMA, LIBRARY_NAME;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	db3	foo	FUNCTION	def	db3	lib_foo	NULL
+def	db_root	function_root	FUNCTION	def	db_root	lib_root	NULL
+SET GLOBAL automatic_sp_privileges = 'ON';
+DROP DATABASE db1;
+DROP DATABASE db2;
+DROP DATABASE db3;
+DROP DATABASE my_data;
+DROP DATABASE db_root;
+DROP USER 'myRoot'@localhost;
+DROP USER 'userNothing'@localhost;
+DROP USER 'userCreatesDb2'@localhost;
+DROP USER 'userCreatesAll'@localhost;
+DROP USER 'userAltersDb1Both'@localhost;
+DROP USER 'userAltersDb2'@localhost;
+DROP USER 'userAltersAll'@localhost;
+DROP USER 'userSelectsDb2'@localhost;
+DROP USER 'userSelectsAll'@localhost;
+DROP USER 'userShowsAll'@localhost;
+DROP USER 'userExecutesDb1Both'@localhost;
+DROP USER 'userExecutesDb2'@localhost;
+DROP USER 'userExecutesAll'@localhost;
+DROP USER 'userExecutesDb3foo'@localhost;
+DROP USER 'userAltersDb3foo'@localhost;

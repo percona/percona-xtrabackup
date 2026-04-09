@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -85,6 +85,8 @@ struct Hyperedge {
   // left and right may not overlap, and both must have at least one bit set.
   NodeMap left;
   NodeMap right;
+
+  friend bool operator==(Hyperedge, Hyperedge) = default;
 };
 
 struct Hypergraph {

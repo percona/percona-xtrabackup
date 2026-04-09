@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ bool printREAD_NODES_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const ReadNodesConf *const sig = (const ReadNodesConf *)theData;
+  const auto *const sig = (const ReadNodesConf *)theData;
   fprintf(output, " noOfNodes: %x\n", sig->noOfNodes);
   fprintf(output, " ndynamicId: %x\n", sig->ndynamicId);
   fprintf(output, " masterNodeId: %x\n", sig->masterNodeId);

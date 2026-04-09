@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,21 +23,18 @@
 
 #include "auth_kerberos_client_io.h"
 
-#include <assert.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <string>
 
 #include "log_client.h"
 
-/* Log into server log. */
-extern Logger_client *g_logger_client;
-
 Kerberos_client_io::Kerberos_client_io(MYSQL_PLUGIN_VIO *vio) : m_vio{vio} {}
 
-Kerberos_client_io::~Kerberos_client_io() {}
+Kerberos_client_io::~Kerberos_client_io() = default;
 
 /*
   Data Format:
@@ -86,9 +83,8 @@ bool Kerberos_client_io::read_spn_realm_from_server(
       memcpy(buffer_tmp, buffer + cur_pos, length);
       cur_pos += length;
       return true;
-    } else {
-      return false;
     }
+    return false;
   };
   /* Get "SPN length 2 bytes + SPN + UPN realm length 2 bytes + UPN realm from
    * the server. */
@@ -161,12 +157,11 @@ bool Kerberos_client_io::write_gssapi_buffer(const unsigned char *buffer,
     log_client_error(
         "Kerberos client plug-in has failed to write data to the server. ");
     return false;
-  } else {
-    log_client_dbg(
-        "Kerberos_client_io::write_gssapi_buffer: kerberos write to server "
-        "has succeed ");
-    return true;
   }
+  log_client_dbg(
+      "Kerberos_client_io::write_gssapi_buffer: kerberos write to server "
+      "has succeed ");
+  return true;
 }
 
 bool Kerberos_client_io::read_gssapi_buffer(unsigned char **gssapi_buffer,
@@ -184,7 +179,7 @@ bool Kerberos_client_io::read_gssapi_buffer(unsigned char **gssapi_buffer,
   }
   log_client_stream << "Kerberos client plug-in data read length: "
                     << *buffer_len;
-  log_client_info(log_client_stream.str().c_str());
+  log_client_info(log_client_stream.str());
   g_logger_client->log_client_plugin_data_exchange(*gssapi_buffer, *buffer_len);
   return true;
 }

@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Test how we handle locking in various cases when
 # we read data from MyISAM tables.
@@ -815,3 +816,4 @@ connection con2;
 #Clean up.
 DROP TABLE t1;
 SET DEBUG_SYNC= 'RESET';
+include/rpl/set_gtid_mode_on.inc

@@ -1,7 +1,7 @@
 #ifndef SQL_ITERATORS_HASH_JOIN_ITERATOR_H_
 #define SQL_ITERATORS_HASH_JOIN_ITERATOR_H_
 
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <cassert>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "my_alloc.h"
@@ -46,6 +47,7 @@
 
 class Item;
 class THD;
+struct AccessPath;
 
 struct ChunkPair {
   HashJoinChunk probe_chunk;
@@ -306,6 +308,8 @@ class HashJoinIterator final : public RowIterator {
   ///   A list of extra conditions that the iterator will evaluate after a
   ///   lookup in the hash table is done, but before the row is returned. The
   ///   conditions are AND-ed together into a single Item.
+  /// @param single_row_index_lookups
+  ///   All the single-row index lookups in the build input and probe input.
   /// @param first_input
   ///   The first input (build or probe) to read from. (If this is empty, we
   ///   will not have to read from the other.)
@@ -318,7 +322,7 @@ class HashJoinIterator final : public RowIterator {
   ///   block the iterator is a part of has been asked to clear hash tables,
   ///   since outer references may have changed value. It is used to know when
   ///   we need to drop our hash table; when the value changes, we need to drop
-  ///   it. If it is nullptr, we _always_ drop it on Init().
+  ///   it. If it is nullptr, we _always_ drop it in DoInit().
   HashJoinIterator(THD *thd, unique_ptr_destroy_only<RowIterator> build_input,
                    const Prealloced_array<TABLE *, 4> &build_input_tables,
                    double estimated_build_rows,
@@ -329,17 +333,11 @@ class HashJoinIterator final : public RowIterator {
                    const std::vector<HashJoinCondition> &join_conditions,
                    bool allow_spill_to_disk, JoinType join_type,
                    const Mem_root_array<Item *> &extra_conditions,
+                   std::span<AccessPath *> single_row_index_lookups,
                    HashJoinInput first_input, bool probe_input_batch_mode,
                    uint64_t *hash_table_generation);
 
-  bool Init() override;
-
-  int Read() override;
-
   void SetNullRowFlag(bool is_null_row) override {
-    // Don't call this after Init() but before calling Read() for the first
-    // time. Init() may have loaded a row that is (partially or fully) a null
-    // row, so resetting the null row flags is incorrect.
     assert(!m_probe_row_read || m_state == State::END_OF_ROWS);
     m_build_input->SetNullRowFlag(is_null_row);
     m_probe_input->SetNullRowFlag(is_null_row);
@@ -358,12 +356,22 @@ class HashJoinIterator final : public RowIterator {
   int ChunkCount() { return m_chunk_files_on_disk.size(); }
 
  private:
+  bool DoInit() override;
+
+  int DoRead() override;
+
   /// Read all rows from the build input and store the rows into the in-memory
   /// hash table. If the hash table goes full, the rest of the rows are written
   /// out to chunk files on disk. See the class comment for more details.
   ///
   /// @retval true in case of error
   bool BuildHashTable();
+
+  /// Write all the remaining rows from the build table input to chunk files on
+  /// disk.
+  ///
+  /// @return True on error, false on success.
+  bool WriteBuildTableToChunkFiles();
 
   /// Read all rows from the next chunk file into the in-memory hash table.
   /// See the class comment for details.
@@ -533,7 +541,6 @@ class HashJoinIterator final : public RowIterator {
   // compute the join key when needed.
   pack_rows::TableCollection m_probe_input_tables;
   pack_rows::TableCollection m_build_input_tables;
-  const table_map m_tables_to_get_rowid_for;
 
   // An in-memory hash table that holds rows from the build input (directly from
   // the build input iterator, or from a chunk file). See the class comment for
@@ -643,6 +650,9 @@ class HashJoinIterator final : public RowIterator {
   // (see m_probe_row_saving_read_file).
   ha_rows m_probe_row_saving_read_file_current_row{0};
 
+  // All the single-row index lookups that provide rows to this iterator.
+  std::span<AccessPath *> m_single_row_index_lookups;
+
   // The "type" of hash join we are executing. We currently have three different
   // types of hash join:
   // - In memory: We do everything in memory without any refills of the hash
@@ -666,6 +676,10 @@ class HashJoinIterator final : public RowIterator {
   };
   HashJoinType m_hash_join_type{HashJoinType::IN_MEMORY};
 
+  /// If m_probe_row_read is true, the contents of the first row of
+  /// m_probe_input is stored in this member.
+  String m_cached_probe_row;
+
   // The match flag for the last probe row read from chunk file.
   //
   // This is needed if a outer join spills to disk; a probe row can match a row
@@ -673,7 +687,7 @@ class HashJoinIterator final : public RowIterator {
   // because the hash table was full). So when reading a probe row from a chunk
   // file, this variable holds the match flag. This flag must be a class member,
   // since one probe row may match multiple rows from the hash table; the
-  // execution will go out of HashJoinIterator::Read() between each matching
+  // execution will go out of HashJoinIterator::DoRead() between each matching
   // row, causing any local match flag to lose the match flag info from the last
   // probe row read.
   bool m_probe_row_match_flag{false};
@@ -683,13 +697,13 @@ class HashJoinIterator final : public RowIterator {
   /// another.
   bool m_probe_row_read{false};
 
-  /// Helper function for Init(). Read the first row from m_probe_input.
+  /// Helper function for DoInit(). Read the first row from m_probe_input.
   /// @returns 'true' if there was an error.
   bool ReadFirstProbeRow();
 
-  /// Helper function for Init(). Build the hash table and check for empty query
-  /// results (empty build input or non-empty build input in case of degenerate
-  /// antijoin.)
+  /// Helper function for DoInit(). Build the hash table and check for empty
+  /// query results (empty build input or non-empty build input in case of
+  /// degenerate antijoin.)
   /// @returns 'true' in case of error.
   bool InitHashTable();
 };

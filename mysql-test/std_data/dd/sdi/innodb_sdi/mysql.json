@@ -7526,7 +7526,7 @@
                 "is_virtual": false,
                 "hidden": 1,
                 "ordinal_position": 11,
-                "char_length": 1560,
+                "char_length": 1638,
                 "numeric_precision": 0,
                 "numeric_scale": 0,
                 "numeric_scale_null": true,
@@ -7544,12 +7544,12 @@
                 "comment": "",
                 "generation_expression": "",
                 "generation_expression_utf8": "",
-                "options": "interval_count=33;",
+                "options": "interval_count=34;",
                 "se_private_data": "table_id=X",
                 "engine_attribute": "",
                 "secondary_engine_attribute": "",
                 "column_key": 1,
-                "column_type_utf8": "set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')",
+                "column_type_utf8": "set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')",
                 "elements": [
                     {
                         "name": "UkVBTF9BU19GTE9BVA==", "decoded-name": "REAL_AS_FLOAT",
@@ -7682,6 +7682,10 @@
                     {
                         "name": "VElNRV9UUlVOQ0FURV9GUkFDVElPTkFM", "decoded-name": "TIME_TRUNCATE_FRACTIONAL",
                         "index": 33
+                    },
+                    {
+                        "name": "SU5URVJQUkVUX1VURjhfQVNfVVRGOE1CNA==", "decoded-name": "INTERPRET_UTF8_AS_UTF8MB4",
+                        "index": 34
                     }
                 ],
                 "collation_id": X,
@@ -14721,12 +14725,12 @@
                 "comment": "",
                 "generation_expression": "",
                 "generation_expression_utf8": "",
-                "options": "interval_count=2;",
+                "options": "interval_count=3;",
                 "se_private_data": "table_id=X",
                 "engine_attribute": "",
                 "secondary_engine_attribute": "",
                 "column_key": 1,
-                "column_type_utf8": "enum('FUNCTION','PROCEDURE')",
+                "column_type_utf8": "enum('FUNCTION','PROCEDURE','LIBRARY')",
                 "elements": [
                     {
                         "name": "RlVOQ1RJT04=", "decoded-name": "FUNCTION",
@@ -14735,6 +14739,10 @@
                     {
                         "name": "UFJPQ0VEVVJF", "decoded-name": "PROCEDURE",
                         "index": 2
+                    },
+                    {
+                        "name": "TElCUkFSWQ==", "decoded-name": "LIBRARY",
+                        "index": 3
                     }
                 ],
                 "collation_id": X,
@@ -15517,7 +15525,7 @@
                 "is_virtual": false,
                 "hidden": 1,
                 "ordinal_position": 21,
-                "char_length": 1560,
+                "char_length": 1638,
                 "numeric_precision": 0,
                 "numeric_scale": 0,
                 "numeric_scale_null": true,
@@ -15535,12 +15543,12 @@
                 "comment": "",
                 "generation_expression": "",
                 "generation_expression_utf8": "",
-                "options": "interval_count=33;",
+                "options": "interval_count=34;",
                 "se_private_data": "table_id=X",
                 "engine_attribute": "",
                 "secondary_engine_attribute": "",
                 "column_key": 1,
-                "column_type_utf8": "set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')",
+                "column_type_utf8": "set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')",
                 "elements": [
                     {
                         "name": "UkVBTF9BU19GTE9BVA==", "decoded-name": "REAL_AS_FLOAT",
@@ -15673,6 +15681,10 @@
                     {
                         "name": "VElNRV9UUlVOQ0FURV9GUkFDVElPTkFM", "decoded-name": "TIME_TRUNCATE_FRACTIONAL",
                         "index": 33
+                    },
+                    {
+                        "name": "SU5URVJQUkVUX1VURjhfQVNfVVRGOE1CNA==", "decoded-name": "INTERPRET_UTF8_AS_UTF8MB4",
+                        "index": 34
                     }
                 ],
                 "collation_id": X,
@@ -23909,7 +23921,7 @@
                 "is_virtual": false,
                 "hidden": 1,
                 "ordinal_position": 12,
-                "char_length": 1560,
+                "char_length": 1638,
                 "numeric_precision": 0,
                 "numeric_scale": 0,
                 "numeric_scale_null": true,
@@ -23927,12 +23939,12 @@
                 "comment": "",
                 "generation_expression": "",
                 "generation_expression_utf8": "",
-                "options": "interval_count=33;",
+                "options": "interval_count=34;",
                 "se_private_data": "table_id=X",
                 "engine_attribute": "",
                 "secondary_engine_attribute": "",
                 "column_key": 1,
-                "column_type_utf8": "set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL')",
+                "column_type_utf8": "set('REAL_AS_FLOAT','PIPES_AS_CONCAT','ANSI_QUOTES','IGNORE_SPACE','NOT_USED','ONLY_FULL_GROUP_BY','NO_UNSIGNED_SUBTRACTION','NO_DIR_IN_CREATE','NOT_USED_9','NOT_USED_10','NOT_USED_11','NOT_USED_12','NOT_USED_13','NOT_USED_14','NOT_USED_15','NOT_USED_16','NOT_USED_17','NOT_USED_18','ANSI','NO_AUTO_VALUE_ON_ZERO','NO_BACKSLASH_ESCAPES','STRICT_TRANS_TABLES','STRICT_ALL_TABLES','NO_ZERO_IN_DATE','NO_ZERO_DATE','ALLOW_INVALID_DATES','ERROR_FOR_DIVISION_BY_ZERO','TRADITIONAL','NOT_USED_29','HIGH_NOT_PRECEDENCE','NO_ENGINE_SUBSTITUTION','PAD_CHAR_TO_FULL_LENGTH','TIME_TRUNCATE_FRACTIONAL','INTERPRET_UTF8_AS_UTF8MB4')",
                 "elements": [
                     {
                         "name": "UkVBTF9BU19GTE9BVA==", "decoded-name": "REAL_AS_FLOAT",
@@ -24065,6 +24077,10 @@
                     {
                         "name": "VElNRV9UUlVOQ0FURV9GUkFDVElPTkFM", "decoded-name": "TIME_TRUNCATE_FRACTIONAL",
                         "index": 33
+                    },
+                    {
+                        "name": "SU5URVJQUkVUX1VURjhfQVNfVVRGOE1CNA==", "decoded-name": "INTERPRET_UTF8_AS_UTF8MB4",
+                        "index": 34
                     }
                 ],
                 "collation_id": X,
@@ -36396,12 +36412,12 @@
                 "comment": "",
                 "generation_expression": "",
                 "generation_expression_utf8": "",
-                "options": "interval_count=2;",
+                "options": "interval_count=3;",
                 "se_private_data": "table_id=X",
                 "engine_attribute": "",
                 "secondary_engine_attribute": "",
                 "column_key": 2,
-                "column_type_utf8": "enum('FUNCTION','PROCEDURE')",
+                "column_type_utf8": "enum('FUNCTION','PROCEDURE','LIBRARY')",
                 "elements": [
                     {
                         "name": "RlVOQ1RJT04=", "decoded-name": "FUNCTION",
@@ -36410,6 +36426,10 @@
                     {
                         "name": "UFJPQ0VEVVJF", "decoded-name": "PROCEDURE",
                         "index": 2
+                    },
+                    {
+                        "name": "TElCUkFSWQ==", "decoded-name": "LIBRARY",
+                        "index": 3
                     }
                 ],
                 "collation_id": X,

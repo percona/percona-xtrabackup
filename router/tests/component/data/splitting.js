@@ -9,6 +9,9 @@ if (mysqld.global.gr_node_host === undefined) {
   mysqld.global.gr_node_host = "127.0.0.1";
 }
 
+if (mysqld.global.routing_guidelines === undefined) {
+  mysqld.global.routing_guidelines = "";
+}
 
 if (mysqld.global.gr_id === undefined) {
   mysqld.global.gr_id = "uuid";
@@ -111,6 +114,7 @@ var options = {
   innodb_cluster_name: mysqld.global.cluster_name,
   router_options: mysqld.global.router_options,
   metadata_schema_version: mysqld.global.metadata_schema_version,
+  routing_guidelines: mysqld.global.routing_guidelines,
 };
 
 // prepare the responses for common statements
@@ -126,6 +130,8 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_select_group_membership",
       "router_clusterset_present",
       "router_select_router_options_view",
+      "get_guidelines_router_info",
+      "get_routing_guidelines",
     ],
     options);
 
@@ -135,8 +141,8 @@ var router_select_metadata =
 var router_update_attributes =
     common_stmts.get("router_update_attributes_v2", options);
 
-var router_update_last_check_in_v2 =
-    common_stmts.get("router_update_last_check_in_v2", options);
+var router_update_last_check_in_v2_4 =
+    common_stmts.get("router_update_last_check_in_v2_4", options);
 
 var next_trx_is_read_only = false;
 var in_transaction = false;
@@ -318,6 +324,8 @@ var status_vars = {
     } else if ([
                  "START TRANSACTION;", "START TRANSACTION", "BEGIN"
                ].indexOf(stmt) !== -1) {
+      mysqld.global.transaction_count++;
+
       // router replays what the server sends ... which includes the trailing
       // semi-colon
 
@@ -344,6 +352,8 @@ var status_vars = {
     } else if ([
                  "START TRANSACTION READ ONLY;", "START TRANSACTION READ ONLY"
                ].indexOf(stmt) !== -1) {
+      mysqld.global.transaction_count++;
+
       // router replays what the server sends ... which includes the trailing
       // semi-colon
       in_transaction = true;
@@ -566,12 +576,21 @@ var status_vars = {
     } else if (stmt === "MOCK fail_connect_once()") {
       mysqld.global.fail_connect_once = true;
       return {ok: {}};
-    } else if (stmt === router_update_last_check_in_v2.stmt) {
+    } else if (stmt === router_update_last_check_in_v2_4.stmt) {
       mysqld.global.update_last_check_in_count++;
-      return router_update_last_check_in_v2;
+      return router_update_last_check_in_v2_4;
     } else if (stmt.match(router_update_attributes.stmt_regex)) {
       mysqld.global.update_attributes_count++;
       return router_update_attributes;
+    } else if (stmt.trim() === "" || stmt === ";") {
+      return {
+        error: {
+          code: 1065,
+          message: "Query was empty",
+        }
+      };
+    } else if (stmt === "/* */" || stmt === "-- ") {
+      return {ok: {}};
     } else {
       console.log(stmt);
       return common_stmts.unknown_statement_response(stmt);

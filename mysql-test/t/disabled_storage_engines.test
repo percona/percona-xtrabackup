@@ -8,7 +8,11 @@
 # 'storage engine name' is disabled (Table creation is disallowed.)" for the
 # storage engines specified by disabled-storage-engine option.
 
+--source include/not_asan_mac.inc
 --source include/have_example_plugin.inc
+
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 CALL mtr.add_suppression("default_storage_engine is set to a disabled storage engine .*");
 CALL mtr.add_suppression("default_tmp_storage_engine is set to a disabled storage engine .*");
@@ -36,6 +40,9 @@ CREATE TABLE tp1 (c1 int) PARTITION BY KEY (c1) PARTITIONS 1;
 --exec echo "restart: --disabled_storage_engines=innodb,myisam,heap,example" >$MYSQLTEST_VARDIR/tmp/mysqld.1.expect
 --source include/wait_until_connected_again.inc
 --source include/xplugin_wait_for_interfaces.inc
+
+# gtid_mode default is ON, so after restart we should again set it to OFF
+--source include/rpl/set_gtid_mode_off.inc
 
 SHOW VARIABLES LIKE 'disabled_storage_engines';
 SELECT * FROM t1;

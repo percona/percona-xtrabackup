@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -70,7 +70,7 @@ int main() {
 
   std::stringstream file_content;
   file_content << std::cin.rdbuf();
-  std::string master_key = file_content.str();
+  std::string const master_key = file_content.str();
   {
     std::ofstream output_file(get_master_key_file_path());
     output_file << master_key;

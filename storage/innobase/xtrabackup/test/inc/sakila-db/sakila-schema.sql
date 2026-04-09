@@ -1,18 +1,34 @@
 -- Sakila Sample Database Schema
--- Version 0.8
+-- Version 1.5
 
--- Copyright (c) 2006, MySQL AB
--- All rights reserved.
+-- Copyright (c) 2006, 2026, Oracle and/or its affiliates.
 
--- Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+-- Redistribution and use in source and binary forms, with or without
+-- modification, are permitted provided that the following conditions are
+-- met:
 
---  * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
---  * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
---  * Neither the name of MySQL AB nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+-- * Redistributions of source code must retain the above copyright notice,
+--   this list of conditions and the following disclaimer.
+-- * Redistributions in binary form must reproduce the above copyright
+--   notice, this list of conditions and the following disclaimer in the
+--   documentation and/or other materials provided with the distribution.
+-- * Neither the name of Oracle nor the names of its contributors may be used
+--   to endorse or promote products derived from this software without
+--   specific prior written permission.
 
--- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+-- IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+-- THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+-- PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+-- CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+-- EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+-- PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+-- PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+-- LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+-- NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+-- SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-
+SET NAMES utf8mb4;
 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='TRADITIONAL';
@@ -32,7 +48,7 @@ CREATE TABLE actor (
   last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (actor_id),
   KEY idx_actor_last_name (last_name)
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `address`
@@ -46,11 +62,15 @@ CREATE TABLE address (
   city_id SMALLINT UNSIGNED NOT NULL,
   postal_code VARCHAR(10) DEFAULT NULL,
   phone VARCHAR(20) NOT NULL,
+  -- Add GEOMETRY column for MySQL 5.7.5 and higher
+  -- Also include SRID attribute for MySQL 8.0.3 and higher
+  /*!50705 location GEOMETRY */ /*!80003 SRID 0 */ /*!50705 NOT NULL,*/
   last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (address_id),
   KEY idx_fk_city_id (city_id),
+  /*!50705 SPATIAL KEY `idx_location` (location),*/
   CONSTRAINT `fk_address_city` FOREIGN KEY (city_id) REFERENCES city (city_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `category`
@@ -61,7 +81,7 @@ CREATE TABLE category (
   name VARCHAR(25) NOT NULL,
   last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (category_id)
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `city`
@@ -75,7 +95,7 @@ CREATE TABLE city (
   PRIMARY KEY  (city_id),
   KEY idx_fk_country_id (country_id),
   CONSTRAINT `fk_city_country` FOREIGN KEY (country_id) REFERENCES country (country_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `country`
@@ -86,7 +106,7 @@ CREATE TABLE country (
   country VARCHAR(50) NOT NULL,
   last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (country_id)
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `customer`
@@ -108,7 +128,7 @@ CREATE TABLE customer (
   KEY idx_last_name (last_name),
   CONSTRAINT fk_customer_address FOREIGN KEY (address_id) REFERENCES address (address_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_customer_store FOREIGN KEY (store_id) REFERENCES store (store_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `film`
@@ -116,7 +136,7 @@ CREATE TABLE customer (
 
 CREATE TABLE film (
   film_id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  title VARCHAR(255) NOT NULL,
+  title VARCHAR(128) NOT NULL,
   description TEXT DEFAULT NULL,
   release_year YEAR DEFAULT NULL,
   language_id TINYINT UNSIGNED NOT NULL,
@@ -134,7 +154,7 @@ CREATE TABLE film (
   KEY idx_fk_original_language_id (original_language_id),
   CONSTRAINT fk_film_language FOREIGN KEY (language_id) REFERENCES language (language_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_film_language_original FOREIGN KEY (original_language_id) REFERENCES language (language_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `film_actor`
@@ -148,7 +168,7 @@ CREATE TABLE film_actor (
   KEY idx_fk_film_id (`film_id`),
   CONSTRAINT fk_film_actor_actor FOREIGN KEY (actor_id) REFERENCES actor (actor_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_film_actor_film FOREIGN KEY (film_id) REFERENCES film (film_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `film_category`
@@ -161,19 +181,30 @@ CREATE TABLE film_category (
   PRIMARY KEY (film_id, category_id),
   CONSTRAINT fk_film_category_film FOREIGN KEY (film_id) REFERENCES film (film_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_film_category_category FOREIGN KEY (category_id) REFERENCES category (category_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `film_text`
+-- 
+-- InnoDB added FULLTEXT support in 5.6.10. If you use an
+-- earlier version, then consider upgrading (recommended) or 
+-- changing InnoDB to MyISAM as the film_text engine
 --
 
+-- Use InnoDB for film_text as of 5.6.10, MyISAM prior to 5.6.10.
+SET @old_default_storage_engine = @@default_storage_engine;
+SET @@default_storage_engine = 'MyISAM';
+/*!50610 SET @@default_storage_engine = 'InnoDB'*/;
+
 CREATE TABLE film_text (
-  film_id SMALLINT NOT NULL,
+  film_id SMALLINT UNSIGNED NOT NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT,
   PRIMARY KEY  (film_id),
   FULLTEXT KEY idx_title_description (title,description)
-)ENGINE=MyISAM DEFAULT CHARSET=utf8;
+) DEFAULT CHARSET=utf8mb4;
+
+SET @@default_storage_engine = @old_default_storage_engine;
 
 --
 -- Triggers for loading film_text from film
@@ -187,7 +218,7 @@ CREATE TRIGGER `ins_film` AFTER INSERT ON `film` FOR EACH ROW BEGIN
 
 
 CREATE TRIGGER `upd_film` AFTER UPDATE ON `film` FOR EACH ROW BEGIN
-    IF (old.title != new.title) or (old.description != new.description)
+    IF (old.title != new.title) OR (old.description != new.description) OR (old.film_id != new.film_id)
     THEN
         UPDATE film_text
             SET title=new.title,
@@ -218,7 +249,7 @@ CREATE TABLE inventory (
   KEY idx_store_id_film_id (store_id,film_id),
   CONSTRAINT fk_inventory_store FOREIGN KEY (store_id) REFERENCES store (store_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_inventory_film FOREIGN KEY (film_id) REFERENCES film (film_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `language`
@@ -229,7 +260,7 @@ CREATE TABLE language (
   name CHAR(20) NOT NULL,
   last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (language_id)
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `payment`
@@ -249,7 +280,7 @@ CREATE TABLE payment (
   CONSTRAINT fk_payment_rental FOREIGN KEY (rental_id) REFERENCES rental (rental_id) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT fk_payment_customer FOREIGN KEY (customer_id) REFERENCES customer (customer_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_payment_staff FOREIGN KEY (staff_id) REFERENCES staff (staff_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
 --
@@ -272,7 +303,7 @@ CREATE TABLE rental (
   CONSTRAINT fk_rental_staff FOREIGN KEY (staff_id) REFERENCES staff (staff_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_rental_inventory FOREIGN KEY (inventory_id) REFERENCES inventory (inventory_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_rental_customer FOREIGN KEY (customer_id) REFERENCES customer (customer_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `staff`
@@ -288,14 +319,14 @@ CREATE TABLE staff (
   store_id TINYINT UNSIGNED NOT NULL,
   active BOOLEAN NOT NULL DEFAULT TRUE,
   username VARCHAR(16) NOT NULL,
-  password VARCHAR(40) BINARY DEFAULT NULL,
+  password VARCHAR(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY  (staff_id),
   KEY idx_fk_store_id (store_id),
   KEY idx_fk_address_id (address_id),
   CONSTRAINT fk_staff_store FOREIGN KEY (store_id) REFERENCES store (store_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_staff_address FOREIGN KEY (address_id) REFERENCES address (address_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- Table structure for table `store`
@@ -311,7 +342,7 @@ CREATE TABLE store (
   KEY idx_fk_address_id (address_id),
   CONSTRAINT fk_store_staff FOREIGN KEY (manager_staff_id) REFERENCES staff (staff_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_store_address FOREIGN KEY (address_id) REFERENCES address (address_id) ON DELETE RESTRICT ON UPDATE CASCADE
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 --
 -- View structure for view `customer_list`
@@ -319,8 +350,8 @@ CREATE TABLE store (
 
 CREATE VIEW customer_list
 AS
-SELECT cu.customer_id AS ID, CONCAT(cu.first_name, _utf8' ', cu.last_name) AS name, a.address AS address, a.postal_code AS `zip code`,
-	a.phone AS phone, city.city AS city, country.country AS country, IF(cu.active, _utf8'active',_utf8'') AS notes, cu.store_id AS SID
+SELECT cu.customer_id AS ID, CONCAT(cu.first_name, _utf8mb4' ', cu.last_name) AS name, a.address AS address, a.postal_code AS `zip code`,
+	a.phone AS phone, city.city AS city, country.country AS country, IF(cu.active, _utf8mb4'active',_utf8mb4'') AS notes, cu.store_id AS SID
 FROM customer AS cu JOIN address AS a ON cu.address_id = a.address_id JOIN city ON a.city_id = city.city_id
 	JOIN country ON city.country_id = country.country_id;
 
@@ -331,11 +362,12 @@ FROM customer AS cu JOIN address AS a ON cu.address_id = a.address_id JOIN city 
 CREATE VIEW film_list
 AS
 SELECT film.film_id AS FID, film.title AS title, film.description AS description, category.name AS category, film.rental_rate AS price,
-	film.length AS length, film.rating AS rating, GROUP_CONCAT(CONCAT(actor.first_name, _utf8' ', actor.last_name) SEPARATOR ', ') AS actors
-FROM category LEFT JOIN film_category ON category.category_id = film_category.category_id LEFT JOIN film ON film_category.film_id = film.film_id
-        JOIN film_actor ON film.film_id = film_actor.film_id
-	JOIN actor ON film_actor.actor_id = actor.actor_id
-GROUP BY film.film_id;
+	film.length AS length, film.rating AS rating, GROUP_CONCAT(CONCAT(actor.first_name, _utf8mb4' ', actor.last_name) SEPARATOR ', ') AS actors
+FROM film LEFT JOIN film_category ON film_category.film_id = film.film_id
+LEFT JOIN category ON category.category_id = film_category.category_id LEFT
+JOIN film_actor ON film.film_id = film_actor.film_id LEFT JOIN actor ON
+  film_actor.actor_id = actor.actor_id
+GROUP BY film.film_id, category.name;
 
 --
 -- View structure for view `nicer_but_slower_film_list`
@@ -345,12 +377,13 @@ CREATE VIEW nicer_but_slower_film_list
 AS
 SELECT film.film_id AS FID, film.title AS title, film.description AS description, category.name AS category, film.rental_rate AS price,
 	film.length AS length, film.rating AS rating, GROUP_CONCAT(CONCAT(CONCAT(UCASE(SUBSTR(actor.first_name,1,1)),
-	LCASE(SUBSTR(actor.first_name,2,LENGTH(actor.first_name))),_utf8' ',CONCAT(UCASE(SUBSTR(actor.last_name,1,1)),
+	LCASE(SUBSTR(actor.first_name,2,LENGTH(actor.first_name))),_utf8mb4' ',CONCAT(UCASE(SUBSTR(actor.last_name,1,1)),
 	LCASE(SUBSTR(actor.last_name,2,LENGTH(actor.last_name)))))) SEPARATOR ', ') AS actors
-FROM category LEFT JOIN film_category ON category.category_id = film_category.category_id LEFT JOIN film ON film_category.film_id = film.film_id
-        JOIN film_actor ON film.film_id = film_actor.film_id
-	JOIN actor ON film_actor.actor_id = actor.actor_id
-GROUP BY film.film_id;
+FROM film LEFT JOIN film_category ON film_category.film_id = film.film_id
+LEFT JOIN category ON category.category_id = film_category.category_id LEFT
+JOIN film_actor ON film.film_id = film_actor.film_id LEFT JOIN actor ON
+  film_actor.actor_id = actor.actor_id
+GROUP BY film.film_id, category.name;
 
 --
 -- View structure for view `staff_list`
@@ -358,7 +391,7 @@ GROUP BY film.film_id;
 
 CREATE VIEW staff_list
 AS
-SELECT s.staff_id AS ID, CONCAT(s.first_name, _utf8' ', s.last_name) AS name, a.address AS address, a.postal_code AS `zip code`, a.phone AS phone,
+SELECT s.staff_id AS ID, CONCAT(s.first_name, _utf8mb4' ', s.last_name) AS name, a.address AS address, a.postal_code AS `zip code`, a.phone AS phone,
 	city.city AS city, country.country AS country, s.store_id AS SID
 FROM staff AS s JOIN address AS a ON s.address_id = a.address_id JOIN city ON a.city_id = city.city_id
 	JOIN country ON city.country_id = country.country_id;
@@ -370,8 +403,8 @@ FROM staff AS s JOIN address AS a ON s.address_id = a.address_id JOIN city ON a.
 CREATE VIEW sales_by_store
 AS
 SELECT
-CONCAT(c.city, _utf8',', cy.country) AS store
-, CONCAT(m.first_name, _utf8' ', m.last_name) AS manager
+CONCAT(c.city, _utf8mb4',', cy.country) AS store
+, CONCAT(m.first_name, _utf8mb4' ', m.last_name) AS manager
 , SUM(p.amount) AS total_sales
 FROM payment AS p
 INNER JOIN rental AS r ON p.rental_id = r.rental_id
@@ -445,7 +478,7 @@ DELIMITER //
 
 CREATE PROCEDURE rewards_report (
     IN min_monthly_purchases TINYINT UNSIGNED
-    , IN min_dollar_amount_purchased DECIMAL(10,2) UNSIGNED
+    , IN min_dollar_amount_purchased DECIMAL(10,2)
     , OUT count_rewardees INT
 )
 LANGUAGE SQL
@@ -564,7 +597,12 @@ BEGIN
      AND store_id = p_store_id
      AND inventory_in_stock(inventory_id);
 
-     SELECT FOUND_ROWS() INTO p_film_count;
+     SELECT COUNT(*)
+     FROM inventory
+     WHERE film_id = p_film_id
+     AND store_id = p_store_id
+     AND inventory_in_stock(inventory_id)
+     INTO p_film_count;
 END $$
 
 DELIMITER ;
@@ -580,7 +618,12 @@ BEGIN
      AND store_id = p_store_id
      AND NOT inventory_in_stock(inventory_id);
 
-     SELECT FOUND_ROWS() INTO p_film_count;
+     SELECT COUNT(*)
+     FROM inventory
+     WHERE film_id = p_film_id
+     AND store_id = p_store_id
+     AND NOT inventory_in_stock(inventory_id)
+     INTO p_film_count;
 END $$
 
 DELIMITER ;
@@ -635,28 +678,6 @@ BEGIN
 END $$
 
 DELIMITER ;
-
---
--- Trigger to enforce payment_date during INSERT
---
-
-CREATE TRIGGER payment_date BEFORE INSERT ON payment
-	FOR EACH ROW SET NEW.payment_date = NOW();
-
---
--- Trigger to enforce create dates on INSERT
---
-
-CREATE TRIGGER customer_create_date BEFORE INSERT ON customer
-	FOR EACH ROW SET NEW.create_date = NOW();
-
---
--- Trigger to enforce rental_date on INSERT
---
-
-CREATE TRIGGER rental_date BEFORE INSERT ON rental
-	FOR EACH ROW SET NEW.rental_date = NOW();
-
 
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;

@@ -1,4 +1,3 @@
-DROP TABLE IF EXISTS t1,t2,t3,t4,t5,t6,t7;
 SET @@session.max_error_count = 64;
 SELECT 0 + b'0';
 0 + b'0'

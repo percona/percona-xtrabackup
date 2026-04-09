@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,7 @@
 static constexpr bool openssl_version_ok =
     (OPENSSL_VERSION_NUMBER >= NDB_TLS_MINIMUM_OPENSSL);
 
-static void systemInfo(const Configuration &config, const LogLevel &logLevel) {
+static void systemInfo(const Configuration &config) {
 #ifdef _WIN32
   int processors = 0;
   int speed;
@@ -96,19 +96,15 @@ static void systemInfo(const Configuration &config, const LogLevel &logLevel) {
   speed = pinfo.pi_clock;
 #endif
 
-  if (logLevel.getLogLevel(LogLevel::llStartUp) > 0) {
-    g_eventLogger->info("NDB Cluster -- DB node %d", globalData.ownId);
-    g_eventLogger->info("%s --", NDB_VERSION_STRING);
+  g_eventLogger->info("NDB Cluster -- DB node %d", globalData.ownId);
+  g_eventLogger->info("%s --", NDB_VERSION_STRING);
 #ifdef NDB_SOLARIS
-    g_eventLogger->info(
-        "NDB is running on a machine with %d processor(s) at %d MHz", processor,
-        speed);
+  g_eventLogger->info(
+      "NDB is running on a machine with %d processor(s) at %d MHz", processor,
+      speed);
 #endif
-  }
-  if (logLevel.getLogLevel(LogLevel::llStartUp) > 3) {
-    Uint32 t = config.timeBetweenWatchDogCheck();
-    g_eventLogger->info("WatchDog timer is set to %d ms", t);
-  }
+  Uint32 t = config.timeBetweenWatchDogCheck();
+  g_eventLogger->info("WatchDog timer is set to %d ms", t);
 }
 
 static Uint64 parse_size(const char *src) {
@@ -883,11 +879,8 @@ void *async_log_func(void *args) {
   const size_t get_bytes = 512;
   char buf[get_bytes + 1];
   size_t bytes;
-  int part_bytes = 0, bytes_printed = 0;
 
   while (!data->stop) {
-    part_bytes = 0;
-    bytes_printed = 0;
     if ((bytes = logBuf->get(buf, get_bytes))) {
       fwrite(buf, bytes, 1, f);
       fflush(f);
@@ -1091,7 +1084,7 @@ void ndbd_run(bool foreground, int report_fd, const char *connect_str,
     stop_async_log_func(log_threadvar, thread_args);
     ndbd_exit(-1);
   }
-  systemInfo(*theConfig, *theConfig->m_logLevel);
+  systemInfo(*theConfig);
 
   /**
     Start the watch-dog thread before we start allocating memory.
@@ -1149,9 +1142,14 @@ void ndbd_run(bool foreground, int report_fd, const char *connect_str,
           "empty password not allowed");
       ndbd_exit(-1);
     }
+    if (pwd_size > MAX_BACKUP_ENCRYPTION_PASSWORD_LENGTH) {
+      g_eventLogger->info(
+          "Invalid filesystem password, "
+          "too long");
+      ndbd_exit(-1);
+    }
 
     memcpy(globalData.filesystemPassword, pwd, pwd_size);
-    globalData.filesystemPassword[pwd_size] = '\0';
     globalData.filesystemPasswordLength = pwd_size;
     require(globalData.filesystemPasswordLength > 0);
   }
@@ -1317,8 +1315,6 @@ extern bool opt_core;
 // instantiated and updated in NdbcntrMain.cpp
 extern Uint32 g_currentStartPhase;
 
-int simulate_error_during_shutdown = 0;
-
 void NdbShutdown(int error_code, NdbShutdownType type,
                  NdbRestartType restartType) {
   if (type == NST_ErrorInsert) {
@@ -1384,6 +1380,19 @@ void NdbShutdown(int error_code, NdbShutdownType type,
        * Very serious, don't attempt to free, just die!!
        */
       g_eventLogger->info("Watchdog shutdown completed - %s", exitAbort);
+#ifdef ERROR_INSERT
+      const Uint32 shf =
+          globalEmulatorData.theConfiguration->getShutdownHandlingFault();
+      if (shf != 0) {
+        if (shf == Configuration::SHF_DELAY_AFTER_WRITING_ERRORLOG ||
+            shf == Configuration::SHF_DELAY_WHILE_WRITING_ERRORLOG) {
+          g_eventLogger->info(
+              "ERROR_INSERT : Watchdog choosing restart rather than hard exit "
+              "for test pass");
+          childExit(error_code, NRT_NoStart_Restart, g_currentStartPhase);
+        }
+      }
+#endif
       if (opt_core) {
         childAbort(error_code, -1, g_currentStartPhase);
       } else {
@@ -1391,11 +1400,18 @@ void NdbShutdown(int error_code, NdbShutdownType type,
       }
     }
 
+#ifdef ERROR_INSERT
 #ifndef _WIN32
-    if (simulate_error_during_shutdown) {
-      kill(getpid(), simulate_error_during_shutdown);
+    if (globalEmulatorData.theConfiguration->getShutdownHandlingFault() ==
+        Configuration::SHF_UNIX_SIGNAL) {
+      const Uint32 sigId =
+          globalEmulatorData.theConfiguration->getShutdownHandlingFaultExtra();
+      g_eventLogger->info("ERROR_INSERT : Raising unix signal %u to self",
+                          sigId);
+      kill(getpid(), sigId);
       while (true) NdbSleep_MilliSleep(10);
     }
+#endif
 #endif
 
     globalEmulatorData.theWatchDog->doStop();

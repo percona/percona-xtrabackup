@@ -3,6 +3,7 @@
 --source include/have_innodb_16k.inc
 --source include/elide_costs.inc
 SET NAMES utf8mb3;
+SET explain_json_format_version = 1;
 
 --echo
 --echo Flag unsupported aggregates as window functions
@@ -2089,68 +2090,51 @@ DROP TABLE t;
 
 --echo #
 --echo # Check window aggregate referencing columns from an outside query
---echo # All results checked against Postgresql which also allows this.
+--echo #
 
 CREATE TABLE t1(i INT, j INT, k INT);
 INSERT INTO t1 VALUES (1,1,1),(2,2,2);
 
 # The outer references in ORDER BY and PARTITIONING BY for windows is
-# a constant so essentially no-ops leading to indeterminate results, cf.
-# use of --replace_regex below.
-#
+# not allowed as per the SQL standard, cf. SQL 2016, section 7.15
+# window clause, SR 4.
+
+--error ER_INVALID_OUTER_REFERENCE
 SELECT (SELECT ROW_NUMBER() OVER (ORDER BY upper.j) FROM t1 LIMIT 1)
     FROM t1 AS upper;
 
+--error ER_INVALID_OUTER_REFERENCE
 SELECT (SELECT ROW_NUMBER() OVER (PARTITION BY upper.j) FROM t1 LIMIT 1)
     FROM t1 AS upper;
 
-SELECT (SELECT ROW_NUMBER() OVER (PARTITION BY upper.j)
-        FROM t1 LIMIT 1 OFFSET 1)
-    FROM t1 AS upper;
-
---replace_regex /[12]/Accepted/
-SELECT (SELECT FIRST_VALUE(j) OVER (ORDER BY upper.j) FROM t1 LIMIT 1)
-    FROM t1 AS upper;
---replace_regex /[12]/Accepted/
-SELECT (SELECT FIRST_VALUE(j) OVER (ORDER BY upper.j DESC) FROM t1 LIMIT 1)
-    FROM t1 AS upper;
-
-SELECT (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j DESC)
+SELECT (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.j DESC)
         FROM t1 LIMIT 1)
-    FROM t1 AS upper;
-
---replace_regex /[12]/Accepted/
-SELECT (SELECT LAST_VALUE(j) OVER (ORDER BY upper.j) FROM t1 LIMIT 1)
-    FROM t1 AS upper;
---replace_regex /[12]/Accepted/
-SELECT (SELECT LAST_VALUE(j) OVER (ORDER BY upper.j DESC) FROM t1 LIMIT 1)
     FROM t1 AS upper;
 
 # Windowing embedded in WHERE clause of outer query
 SELECT * FROM t1 AS upper
-    WHERE (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+    WHERE (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
            FROM t1 LIMIT 1) = 1
            ;
+
 SELECT * FROM t1 AS upper
-    WHERE (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+    WHERE (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
            FROM t1 LIMIT 1) = 2;
 
 #
 # Windowing embedded inside ORDER BY of windowing query
 #
 SELECT FIRST_VALUE(j) OVER (ORDER BY 0 +
-                            (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+                            (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
                              FROM t1 LIMIT 1))
     FROM t1 AS upper;
 
 SELECT LAST_VALUE(j)  OVER (ORDER BY 0 +
-                            (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+                            (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
                              FROM t1 LIMIT 1))
     FROM t1 AS upper;
 
-# We may start banning subqueries in query order by. When this starts
-# failing, make sure the above fail too:
-SELECT * FROM t1 AS upper ORDER BY (0 + (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY upper.j)
+SELECT * FROM t1 AS upper ORDER BY (0 + (SELECT FIRST_VALUE(upper.j) OVER (ORDER BY t1.i)
                                          FROM t1 LIMIT 1));
 
 
@@ -3955,7 +3939,7 @@ SELECT FROM_UNIXTIME(LAG('',99)OVER(ROWS UNBOUNDED PRECEDING),'%I %l %I');
 SELECT FROM_UNIXTIME(FIRST_VALUE(@b)RESPECT NULLS OVER(),
                  REPEAT('1',32))IS NOT FALSE;
 SELECT ((NTILE(70)OVER())<<(FROM_UNIXTIME(LEAD('',67) RESPECT NULLS
-                                      OVER(),SHA(''))));
+                                      OVER(),SHA2('',256))));
 SELECT FROM_UNIXTIME(LAG('-778:36:16.905133',246) RESPECT NULLS OVER(),
                  REPLACE('%M%V   ','',''));
 
@@ -4042,8 +4026,8 @@ SELECT AVG(i), RANK() OVER (ORDER BY i) FROM t1;
 SELECT AVG(i) FROM t1 ORDER BY RANK() OVER (PARTITION BY AVG(i) ORDER BY i);
 --error ER_MIX_OF_GROUP_FUNC_AND_FIELDS
 SELECT AVG(i), RANK() OVER w FROM t1 WINDOW w AS (ORDER BY i);
---error ER_MIX_OF_GROUP_FUNC_AND_FIELDS
-SELECT (select AVG(i)+RANK() OVER (ORDER BY i)) FROM t1;
+--error ER_INVALID_OUTER_REFERENCE
+SELECT (SELECT AVG(i)+RANK() OVER (ORDER BY i)) FROM t1;
 
 DROP TABLE t1;
 

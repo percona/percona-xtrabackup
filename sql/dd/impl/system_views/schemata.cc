@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,11 +27,10 @@
 
 #include "sql/stateless_allocator.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Schemata &Schemata::instance() {
-  static Schemata *s_instance = new Schemata();
+  static auto *s_instance = new Schemata();
   return *s_instance;
 }
 
@@ -62,5 +61,4 @@ Schemata::Schemata() {
   m_target_def.add_where("CAN_ACCESS_DATABASE(sch.name)");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

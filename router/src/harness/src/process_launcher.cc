@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -104,14 +104,21 @@ std::error_code ProcessLauncher::send_shutdown_event(
 #ifdef _WIN32
   switch (event) {
     case ShutdownEvent::TERM:
-      ok = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pi.dwProcessId);
-      break;
-    case ShutdownEvent::KILL:
-      ok = TerminateProcess(pi.hProcess, 0x0);
+      if (!GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, process_.process_id())) {
+        return last_error_code();
+      } else {
+        return {};
+      }
       break;
     case ShutdownEvent::ABRT:
-      ok = TerminateProcess(pi.hProcess, STATUS_TIMEOUT);
-      break;
+    case ShutdownEvent::KILL:
+      auto terminate_res = process_.process_handle().terminate(
+          event == ShutdownEvent::ABRT ? STATUS_TIMEOUT : 0x0);
+      if (!terminate_res) {
+        return terminate_res.error();
+      }
+
+      return {};
   }
 #else
   switch (event) {
@@ -195,40 +202,256 @@ std::string cmdline_from_args(const std::string &executable_path,
   return s;
 }
 
+// Handle
+
+stdx::expected<void, std::error_code> Handle::close() {
+  if (handle_ == INVALID_HANDLE_VALUE) return {};
+
+  auto res = CloseHandle(handle_);
+
+  if (!res) return stdx::unexpected(last_error_code());
+
+  handle_ = INVALID_HANDLE_VALUE;
+
+  return {};
+}
+
+stdx::expected<void, std::error_code> Handle::set_information(HANDLE hndl,
+                                                              DWORD mask,
+                                                              DWORD flags) {
+  if (!SetHandleInformation(hndl, mask, flags)) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {};
+}
+
+stdx::expected<void, std::error_code> Handle::set_information(DWORD mask,
+                                                              DWORD flags) {
+  return set_information(native_handle(), mask, flags);
+}
+
+stdx::expected<DWORD, std::error_code> Handle::wait_for_single_object(
+    DWORD timeout_ms) {
+  auto wait_res = WaitForSingleObject(native_handle(), timeout_ms);
+  switch (wait_res) {
+    case WAIT_FAILED:
+      return stdx::unexpected(last_error_code());
+    case WAIT_TIMEOUT:
+      return stdx::unexpected(make_error_code(std::errc::timed_out));
+  }
+  return wait_res;
+}
+
+// FileHandle
+
+stdx::expected<DWORD, std::error_code> FileHandle::write(
+    const void *buf, DWORD buf_size, OVERLAPPED *overlapped) {
+  if (!is_open()) return 0;
+
+  DWORD dwBytesWritten;
+
+  BOOL bSuccess =
+      WriteFile(native_handle(), buf, buf_size, &dwBytesWritten, overlapped);
+
+  if (!bSuccess) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  // When child input buffer is full, this returns zero in NO_WAIT mode.
+  return dwBytesWritten;
+}
+
+stdx::expected<DWORD, std::error_code> FileHandle::read(
+    void *buf, DWORD buf_size, OVERLAPPED *overlapped) {
+  DWORD dwBytesRead;
+
+  BOOL bSuccess =
+      ReadFile(native_handle(), buf, buf_size, &dwBytesRead, overlapped);
+
+  if (!bSuccess) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return dwBytesRead;
+}
+
+// PipeHandle
+
+stdx::expected<PipeHandle::PeekResult, std::error_code> PipeHandle::peek(
+    void *buf, DWORD buf_size) {
+  PipeHandle::PeekResult res;
+
+  BOOL bSuccess =
+      PeekNamedPipe(native_handle(), buf, buf_size, &res.bytesRead,
+                    &res.totalBytesAvail, &res.bytesLeftThisMessage);
+
+  if (!bSuccess) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return res;
+}
+
+// ProcessHandle
+
+stdx::expected<void, std::error_code> ProcessHandle::terminate(
+    UINT exit_code) const {
+  if (!TerminateProcess(native_handle(), exit_code)) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {};
+}
+
+stdx::expected<DWORD, std::error_code> ProcessHandle::exit_code() const {
+  DWORD dwExit;
+
+  if (!GetExitCodeProcess(native_handle(), &dwExit)) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {dwExit};
+}
+
+// ThreadHandle
+
+stdx::expected<void, std::error_code> ThreadHandle::resume() const {
+  if (!ResumeThread(native_handle())) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {};
+}
+
+// JobObject
+
+stdx::expected<JobObject, std::error_code> JobObject::create() {
+  HANDLE job_object = CreateJobObject(nullptr, nullptr);
+  if (job_object == nullptr) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {Handle(job_object)};
+}
+
+stdx::expected<void, std::error_code> JobObject::set_information(
+    JOBOBJECTINFOCLASS info_class, void *info, DWORD info_size) {
+  const auto res = SetInformationJobObject(handle_.native_handle(), info_class,
+                                           info, info_size);
+
+  if (!res) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {};
+}
+
+stdx::expected<void, std::error_code> JobObject::assign_process(
+    HANDLE process) {
+  const auto res = AssignProcessToJobObject(handle_.native_handle(), process);
+
+  if (!res) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {};
+}
+
+stdx::expected<Process, std::error_code> Process::create(
+    const char *app_name, char *cmd_line, SECURITY_ATTRIBUTES *process_attrs,
+    SECURITY_ATTRIBUTES *thread_attrs, BOOL inherit_handles,
+    DWORD creation_flags, void *env, const char *current_dir,
+    STARTUPINFO *startup_info) {
+  PROCESS_INFORMATION process_info;
+
+  BOOL res = CreateProcess(app_name, cmd_line, process_attrs, thread_attrs,
+                           inherit_handles, creation_flags, env, current_dir,
+                           startup_info, &process_info);
+
+  if (!res) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {Process(ProcessHandle(process_info.hProcess),  //
+                  ThreadHandle(process_info.hThread),    //
+                  process_info.dwProcessId,              //
+                  process_info.dwThreadId)};
+}
+
+stdx::expected<Pipe, std::error_code> Pipe::create(
+    SECURITY_ATTRIBUTES *sec_attrs, DWORD sz) {
+  HANDLE rd;
+  HANDLE wr;
+
+  BOOL success = CreatePipe(&rd, &wr, sec_attrs, sz);
+
+  if (!success) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {Pipe(PipeHandle(rd), PipeHandle(wr))};
+}
+
+stdx::expected<ThreadAttributeList, std::error_code>
+ThreadAttributeList::create(DWORD count) {
+  SIZE_T size = 0;
+
+  // figure out the size needed
+  if (InitializeProcThreadAttributeList(nullptr, count, 0, &size) == FALSE) {
+    auto ec = last_error_code();
+
+    if (ec.value() != ERROR_INSUFFICIENT_BUFFER) {
+      return stdx::unexpected(ec);
+    }
+  }
+
+  // allocate the memory for the list
+  auto attr_list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(
+      HeapAlloc(GetProcessHeap(), 0, size));
+
+  if (attr_list == nullptr) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  if (InitializeProcThreadAttributeList(attr_list, count, 0, &size) == FALSE) {
+    ThreadAttributeList _(attr_list);  // capture it to clean it up
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {ThreadAttributeList(attr_list)};
+}
+
+stdx::expected<void, std::error_code> ThreadAttributeList::update(
+    DWORD flags, DWORD_PTR attribute, void *value, size_t value_size,
+    void **prev_value, size_t *return_size) const {
+  if (UpdateProcThreadAttribute(attr_list_, flags, attribute, value, value_size,
+                                prev_value, return_size) == FALSE) {
+    return stdx::unexpected(last_error_code());
+  }
+
+  return {};
+}
+
 }  // namespace win32
 
-void ProcessLauncher::start() {
+static stdx::expected<win32::Pipe, std::error_code> create_pipe() {
   SECURITY_ATTRIBUTES saAttr;
 
   saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
   saAttr.bInheritHandle = TRUE;
   saAttr.lpSecurityDescriptor = nullptr;
 
-  if (!CreatePipe(&child_out_rd, &child_out_wr, &saAttr, 0)) {
-    throw std::system_error(last_error_code(), "Failed to create child_out_rd");
+  auto pipe_res = win32::Pipe::create(&saAttr, 0);
+  if (!pipe_res) {
+    return stdx::unexpected(pipe_res.error());
   }
 
-  if (!SetHandleInformation(child_out_rd, HANDLE_FLAG_INHERIT, 0))
-    throw std::system_error(last_error_code(), "Failed to create child_out_rd");
+  return {std::move(*pipe_res)};
+}
 
-  // force non blocking IO in Windows
-  // DWORD mode = PIPE_NOWAIT;
-  // BOOL res = SetNamedPipeHandleState(child_out_rd, &mode, nullptr, nullptr);
-
-  if (!CreatePipe(&child_in_rd, &child_in_wr, &saAttr, 0))
-    throw std::system_error(last_error_code(), "Failed to create child_in_rd");
-
-  if (!SetHandleInformation(child_in_wr, HANDLE_FLAG_INHERIT, 0))
-    throw std::system_error(last_error_code(), "Failed to created child_in_wr");
-
-  std::string arguments = win32::cmdline_from_args(executable_path, args);
-
-  // as CreateProcess may/will modify the arguments (split filename and args
-  // with a \0) keep a copy of it for error-reporting.
-  std::string create_process_arguments = arguments;
-
-  DWORD dwCreationFlags = 0;
-
+static std::vector<TCHAR> create_environment_block(
+    const std::vector<std::pair<std::string, std::string>> &env_vars) {
   std::vector<TCHAR> env_block;
 
   if (auto parent_env = GetEnvironmentStrings()) {
@@ -256,10 +479,6 @@ void ProcessLauncher::start() {
     FreeEnvironmentStrings(parent_env);
   }
 
-#ifdef UNICODE
-  dwCreationFlags |= CREATE_UNICODE_ENVIRONMENT;
-#endif
-
   for (const auto &[key, val] : env_vars) {
     std::copy(key.begin(), key.end(), std::back_insert_iterator(env_block));
     env_block.push_back('=');
@@ -269,114 +488,167 @@ void ProcessLauncher::start() {
   }
   env_block.push_back(0);  // terminate env-block
 
-  // The code below makes sure the process we are launching only inherits the
-  // in/out pipes FDs
-  SIZE_T size = 0;
-  // figure out the size needed for a 1-elem list
-  if (InitializeProcThreadAttributeList(nullptr, 1, 0, &size) == FALSE &&
-      GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
-    throw std::system_error(last_error_code(),
+  return env_block;
+}
+
+static stdx::expected<void, std::error_code> inherit_handles(
+    win32::ThreadAttributeList &attr_list,
+    std::span<HANDLE> handles_to_inherit) {
+  return attr_list.update(0,                                  // flags
+                          PROC_THREAD_ATTRIBUTE_HANDLE_LIST,  // attribute
+                          handles_to_inherit.data(),          // value
+                          handles_to_inherit.size_bytes(),    // value_size
+                          nullptr,                            // prev_value
+                          nullptr                             // return_size
+  );
+}
+
+void ProcessLauncher::start(bool use_std_io_handlers) {
+  std::string arguments = win32::cmdline_from_args(executable_path, args);
+
+  auto thread_attr_list_res = win32::ThreadAttributeList::create(1);
+  if (!thread_attr_list_res) {
+    throw std::system_error(thread_attr_list_res.error(),
                             "Failed to InitializeProcThreadAttributeList() "
                             "when launching a process " +
                                 arguments);
   }
 
-  // allocate the memory for the list
-  auto attribute_list = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(
-      HeapAlloc(GetProcessHeap(), 0, size));
-  if (attribute_list == nullptr) {
-    throw std::system_error(
-        last_error_code(),
-        "Failed to HeapAlloc() when launchin a process " + arguments);
-  }
-  Scope_guard clean_attribute_list_guard(
-      [&]() { DeleteProcThreadAttributeList(attribute_list); });
+  auto thread_attr_list = std::move(*thread_attr_list_res);
 
-  if (InitializeProcThreadAttributeList(attribute_list, 1, 0, &size) == FALSE) {
-    throw std::system_error(last_error_code(),
-                            "Failed to InitializeProcThreadAttributeList() 2 "
-                            "when launching a process " +
-                                arguments);
-  }
+  // as CreateProcess may/will modify the arguments (split filename and args
+  // with a \0) keep a copy of it for error-reporting.
+  std::string create_process_arguments = arguments;
 
-  // fill up the list
-  HANDLE handles_to_inherit[] = {child_out_wr, child_in_rd};
-  if (UpdateProcThreadAttribute(attribute_list, 0,
-                                PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-                                handles_to_inherit, sizeof(handles_to_inherit),
-                                nullptr, nullptr) == FALSE) {
-    throw std::system_error(
-        last_error_code(),
-        "Failed to UpdateProcThreadAttribute() when launching a process " +
-            arguments);
-  }
+  auto env_block = create_environment_block(env_vars);
+
+  DWORD dwCreationFlags = 0;
+#ifdef UNICODE
+  dwCreationFlags |= CREATE_UNICODE_ENVIRONMENT;
+#endif
+
+  STARTUPINFO si{};
 
   // prepare the process' startup parameters structure
   si.cb = sizeof(STARTUPINFO);
-  if (redirect_stderr) si.hStdError = child_out_wr;
-  si.hStdOutput = child_out_wr;
-  si.hStdInput = child_in_rd;
-  si.dwFlags |= STARTF_USESTDHANDLES;
-  STARTUPINFOEX si_ex;
-  ZeroMemory(&si_ex, sizeof(si_ex));
+
+  win32::FileHandle child_in_rd;
+  win32::FileHandle child_out_wr;
+
+  if (!use_std_io_handlers) {
+    auto child_out_res = create_pipe();
+    if (!child_out_res) {
+      throw std::system_error(child_out_res.error(),
+                              "Failed to create child_out");
+    }
+
+    auto child_in_res = create_pipe();
+    if (!child_in_res) {
+      throw std::system_error(child_in_res.error(),
+                              "Failed to create child_in");
+    }
+
+    auto child_in = std::move(*child_in_res);
+    auto child_out = std::move(*child_out_res);
+
+    // pass them to the child and keep them alive until Process::create()
+    child_in_rd = std::move(child_in.read_handle());
+    child_out_wr = std::move(child_out.write_handle());
+
+    // keep them alive until the Process:: is closed.
+    child_in_wr = std::move(child_in.write_handle());
+    child_out_rd = std::move(child_out.read_handle());
+
+    // don't pass the parent's side of the pipes down to the child.
+    for (HANDLE hndl :
+         {child_in_wr.native_handle(), child_out_rd.native_handle()}) {
+      auto set_info_res =
+          win32::Handle::set_information(hndl, HANDLE_FLAG_INHERIT, 0);
+      if (!set_info_res) {
+        throw std::system_error(set_info_res.error());
+      }
+    }
+
+    si.hStdOutput = child_out_wr.native_handle();
+    if (redirect_stderr) {
+      si.hStdError = si.hStdOutput;
+    }
+
+    si.hStdInput = child_in_rd.native_handle();
+    si.dwFlags |= STARTF_USESTDHANDLES;
+
+    // marked them as inherited for Process::create()
+    std::array<HANDLE, 2> handles_to_inherit = {{
+        si.hStdInput,
+        si.hStdOutput,
+    }};
+
+    auto update_res = inherit_handles(thread_attr_list, handles_to_inherit);
+    if (!update_res) {
+      throw std::system_error(
+          update_res.error(),
+          "Failed to UpdateProcThreadAttribute() when launching a process " +
+              arguments);
+    }
+  }
+
+  STARTUPINFOEX si_ex{};
+
   si_ex.StartupInfo = si;
   si_ex.StartupInfo.cb = sizeof(si_ex);
-  si_ex.lpAttributeList = attribute_list;
+  si_ex.lpAttributeList = thread_attr_list.get();
 
   dwCreationFlags |= EXTENDED_STARTUPINFO_PRESENT;
   dwCreationFlags |= CREATE_NEW_PROCESS_GROUP;
+  // dwCreationFlags |= CREATE_SUSPENDED;
 
   // launch the process
-  BOOL bSuccess =
-      CreateProcess(nullptr,                            // lpApplicationName
-                    &create_process_arguments.front(),  // lpCommandLine
-                    nullptr,                            // lpProcessAttributes
-                    nullptr,                            // lpThreadAttributes
-                    TRUE,                               // bInheritHandles
-                    dwCreationFlags,                    //
-                    env_block.data(),                   // lpEnvironment
-                    nullptr,                            // lpCurrentDirectory
-                    &si_ex.StartupInfo,                 // lpStartupInfo
-                    &pi);                               // lpProcessInformation
+  auto process_res = win32::Process::create(
+      nullptr,                            // lpApplicationName
+      &create_process_arguments.front(),  // lpCommandLine
+      nullptr,                            // lpProcessAttributes
+      nullptr,                            // lpThreadAttributes
+      TRUE,                               // bInheritHandles
+      dwCreationFlags,                    //
+      env_block.data(),                   // lpEnvironment
+      nullptr,                            // lpCurrentDirectory
+      &si_ex.StartupInfo                  // lpStartupInfo
+  );
 
-  if (!bSuccess) {
-    throw std::system_error(last_error_code(),
+  if (!process_res) {
+    throw std::system_error(process_res.error(),
                             "Failed to start process " + arguments);
   } else {
+    process_ = std::move(*process_res);
+
     is_alive = true;
   }
-
-  CloseHandle(child_out_wr);
-  CloseHandle(child_in_rd);
-
-  // DWORD res1 = WaitForInputIdle(pi.hProcess, 100);
-  // res1 = WaitForSingleObject(pi.hThread, 100);
 }
 
 ProcessLauncher::process_id_type ProcessLauncher::get_pid() const {
-  return pi.dwProcessId;
+  return process_.process_id();
 }
 
 ProcessLauncher::process_handle_type ProcessLauncher::get_process_handle()
     const {
-  return pi.hProcess;
+  return process_.process_handle().native_handle();
 }
 
 stdx::expected<ProcessLauncher::exit_status_type, std::error_code>
 ProcessLauncher::exit_code() {
-  DWORD dwExit = 0;
+  auto exit_code_res = process_.process_handle().exit_code();
+  if (!exit_code_res) {
+    return stdx::unexpected(exit_code_res.error());
+  }
 
-  const BOOL ret = GetExitCodeProcess(pi.hProcess, &dwExit);
-  if (ret == 0) {
-    return stdx::unexpected(last_error_code());
-  } else if (dwExit == STILL_ACTIVE) {
+  if (exit_code_res.value() == STILL_ACTIVE) {
     return stdx::unexpected(std::make_error_code(std::errc::timed_out));
   }
 
   using ret_type =
       stdx::expected<ProcessLauncher::exit_status_type, std::error_code>;
 
-  return ret_type{std::in_place, exit_status_type::native_t{}, dwExit};
+  return ret_type{std::in_place, exit_status_type::native_t{}, *exit_code_res};
 }
 
 ProcessLauncher::exit_status_type ProcessLauncher::native_wait(
@@ -387,18 +659,19 @@ ProcessLauncher::exit_status_type ProcessLauncher::native_wait(
   auto ec = exit_res.error();
   if (ec != std::errc::timed_out) throw std::system_error(ec);
 
-  auto wait_ret = WaitForSingleObject(pi.hProcess, timeout.count());
-  switch (wait_ret) {
+  auto wait_res =
+      process_.process_handle().wait_for_single_object(timeout.count());
+  if (!wait_res) {
+    throw std::system_error(last_error_code());
+  }
+
+  switch (*wait_res) {
     case WAIT_OBJECT_0:
       break;
-    case WAIT_TIMEOUT:
-      throw std::system_error(std::make_error_code(std::errc::timed_out));
-    case WAIT_FAILED:
-      throw std::system_error(last_error_code());
     default:
       throw std::runtime_error(
           "Unexpected error while waiting for the process '" + executable_path +
-          "' to finish: " + std::to_string(wait_ret));
+          "' to finish: " + std::to_string(*wait_res));
   }
 
   // try again.
@@ -414,39 +687,54 @@ ProcessLauncher::exit_status_type ProcessLauncher::native_wait(
 }
 
 ProcessLauncher::exit_status_type ProcessLauncher::close() {
-  DWORD dwExit;
-  if (GetExitCodeProcess(pi.hProcess, &dwExit)) {
-    if (dwExit == STILL_ACTIVE) {
+  auto exit_code_res = process_.process_handle().exit_code();
+  if (exit_code_res) {
+    if (*exit_code_res == STILL_ACTIVE) {
       send_shutdown_event(ShutdownEvent::TERM);
 
       DWORD wait_timeout =
           std::chrono::duration_cast<std::chrono::milliseconds>(
               kTerminateWaitInterval)
               .count();
-      if (WaitForSingleObject(pi.hProcess, wait_timeout) != WAIT_OBJECT_0) {
-        // use the big hammer if that did not work
-        if (send_shutdown_event(ShutdownEvent::KILL))
-          throw std::system_error(last_error_code());
 
-        // wait again, if that fails not much we can do
-        if (WaitForSingleObject(pi.hProcess, wait_timeout) != WAIT_OBJECT_0) {
+      auto wait_1_res =
+          process_.process_handle().wait_for_single_object(wait_timeout);
+      if (!wait_1_res || *wait_1_res != WAIT_OBJECT_0) {
+        // use the big hammer if that did not work
+        if (send_shutdown_event(ShutdownEvent::KILL)) {
           throw std::system_error(last_error_code());
         }
+
+        // wait again, if that fails not much we can do
+        auto wait_2_res =
+            process_.process_handle().wait_for_single_object(wait_timeout);
+        if (!wait_2_res) {
+          throw std::system_error(wait_2_res.error());
+        }
       }
+
+      exit_code_res = process_.process_handle().exit_code();
     }
+  } else if (is_alive) {
+    // get-exit-code failed, but the process should be alive ... throw
+    throw std::system_error(last_error_code());
   } else {
-    if (is_alive) throw std::system_error(last_error_code());
+    // it failed ...
   }
 
-  if (!CloseHandle(pi.hProcess)) throw std::system_error(last_error_code());
-  if (!CloseHandle(pi.hThread)) throw std::system_error(last_error_code());
+  process_.process_handle().close();
+  process_.thread_handle().close();
 
-  if (!CloseHandle(child_out_rd)) throw std::system_error(last_error_code());
-  if (!child_in_wr_closed && !CloseHandle(child_in_wr))
-    throw std::system_error(last_error_code());
+  if (child_out_rd.is_open()) {
+    child_out_rd.close();
+  }
+  if (child_in_wr.is_open()) {
+    child_in_wr.close();
+  }
 
   is_alive = false;
-  return 0;
+
+  return exit_code_res ? *exit_code_res : 0;
 }
 
 static void throw_system_error(const std::error_code ec) {
@@ -462,19 +750,17 @@ static void throw_system_error(const std::error_code ec) {
 
 int ProcessLauncher::read(char *buf, size_t count,
                           std::chrono::milliseconds timeout) {
-  DWORD dwBytesRead;
-  DWORD dwBytesAvail;
+  if (!child_out_rd.is_open()) return 0;
 
   // at least 1ms, but max 100ms
   auto std_interval = std::min(100ms, std::max(timeout / 10, 1ms));
 
   do {
     // check if there is data in the pipe before issuing a blocking read
-    BOOL bSuccess = PeekNamedPipe(child_out_rd, nullptr, 0, nullptr,
-                                  &dwBytesAvail, nullptr);
+    auto peek_res = child_out_rd.peek(nullptr, 0);
 
-    if (!bSuccess) {
-      auto ec = last_error_code();
+    if (!peek_res) {
+      auto ec = peek_res.error();
       if (ec == std::error_code(ERROR_NO_DATA, std::system_category()) ||
           ec == std::error_code(ERROR_BROKEN_PIPE, std::system_category())) {
         return EOF;
@@ -484,11 +770,10 @@ int ProcessLauncher::read(char *buf, size_t count,
     }
 
     // we got data, let's read it
-    if (dwBytesAvail != 0) break;
+    if (peek_res->totalBytesAvail != 0) break;
 
     if (timeout.count() == 0) {
       // no data and time left to wait
-      //
 
       return 0;
     }
@@ -501,10 +786,9 @@ int ProcessLauncher::read(char *buf, size_t count,
     timeout -= interval;
   } while (true);
 
-  BOOL bSuccess = ReadFile(child_out_rd, buf, count, &dwBytesRead, nullptr);
-
-  if (bSuccess == FALSE) {
-    auto ec = last_error_code();
+  auto read_res = child_out_rd.read(buf, count);
+  if (!read_res) {
+    auto ec = read_res.error();
     if (ec == std::error_code(ERROR_NO_DATA, std::system_category()) ||
         ec == std::error_code(ERROR_BROKEN_PIPE, std::system_category())) {
       return EOF;
@@ -513,31 +797,26 @@ int ProcessLauncher::read(char *buf, size_t count,
     }
   }
 
-  return dwBytesRead;
+  return *read_res;
 }
 
 int ProcessLauncher::write(const char *buf, size_t count) {
-  DWORD dwBytesWritten;
+  auto write_res = child_in_wr.write(buf, count);
+  if (!write_res) {
+    auto ec = write_res.error();
 
-  BOOL bSuccess = WriteFile(child_in_wr, buf, count, &dwBytesWritten, nullptr);
-  if (!bSuccess) {
-    auto ec = last_error_code();
-    if (ec !=
-        std::error_code(
-            ERROR_NO_DATA,
-            std::system_category()))  // otherwise child process just died.
-      throw std::system_error(ec);
-  } else {
-    // When child input buffer is full, this returns zero in NO_WAIT mode.
-    return dwBytesWritten;
+    // otherwise child process just died.
+    if (ec == std::error_code(ERROR_NO_DATA, std::system_category())) {
+      return 0;
+    }
+
+    throw std::system_error(ec);
   }
-  return 0;  // so the compiler does not cry
+
+  return *write_res;
 }
 
-void ProcessLauncher::end_of_write() {
-  CloseHandle(child_in_wr);
-  child_in_wr_closed = true;
-}
+void ProcessLauncher::end_of_write() { child_in_wr.close(); }
 
 #else
 
@@ -590,18 +869,27 @@ static auto get_env_vars(const std::vector<std::string> &env_vars) {
   return result;
 }
 
-void ProcessLauncher::start() {
-  if (pipe(fd_in) < 0) {
-    throw std::system_error(last_error_code(),
-                            "ProcessLauncher::start() pipe(fd_in)");
-  }
-  if (pipe(fd_out) < 0) {
-    throw std::system_error(last_error_code(),
-                            "ProcessLauncher::start() pipe(fd_out)");
-  }
+void ProcessLauncher::start(bool use_std_io_handlers) {
+  start(use_std_io_handlers, use_std_io_handlers);
+}
 
-  // Ignore broken pipe signal
-  signal(SIGPIPE, SIG_IGN);
+void ProcessLauncher::start(bool use_stdout_handler, bool use_stdin_handler) {
+  if (!use_stdin_handler) {
+    if (pipe(fd_in) < 0) {
+      throw std::system_error(last_error_code(),
+                              "ProcessLauncher::start() pipe(fd_in)");
+    }
+  }
+  if (!use_stdout_handler) {
+    if (pipe(fd_out) < 0) {
+      throw std::system_error(last_error_code(),
+                              "ProcessLauncher::start() pipe(fd_out)");
+    }
+  }
+  if (!use_stdout_handler && !use_stdin_handler) {
+    // Ignore broken pipe signal
+    signal(SIGPIPE, SIG_IGN);
+  }
 
   childpid = fork();
   if (childpid == -1) {
@@ -614,19 +902,10 @@ void ProcessLauncher::start() {
     prctl(PR_SET_PDEATHSIG, SIGHUP);
 #endif
 
-    ::close(fd_out[0]);
-    ::close(fd_in[1]);
-    while (dup2(fd_out[1], STDOUT_FILENO) == -1) {
-      auto ec = last_error_code();
-      if (ec == std::errc::interrupted) {
-        continue;
-      } else {
-        throw std::system_error(ec, "ProcessLauncher::start() dup2()");
-      }
-    }
+    if (!use_stdout_handler) {
+      ::close(fd_out[0]);
 
-    if (redirect_stderr) {
-      while (dup2(fd_out[1], STDERR_FILENO) == -1) {
+      while (dup2(fd_out[1], STDOUT_FILENO) == -1) {
         auto ec = last_error_code();
         if (ec == std::errc::interrupted) {
           continue;
@@ -634,18 +913,32 @@ void ProcessLauncher::start() {
           throw std::system_error(ec, "ProcessLauncher::start() dup2()");
         }
       }
-    }
-    while (dup2(fd_in[0], STDIN_FILENO) == -1) {
-      auto ec = last_error_code();
-      if (ec == std::errc::interrupted) {
-        continue;
-      } else {
-        throw std::system_error(ec, "ProcessLauncher::start() dup2()");
+
+      if (redirect_stderr) {
+        while (dup2(fd_out[1], STDERR_FILENO) == -1) {
+          auto ec = last_error_code();
+          if (ec == std::errc::interrupted) {
+            continue;
+          } else {
+            throw std::system_error(ec, "ProcessLauncher::start() dup2()");
+          }
+        }
       }
+      fcntl(fd_out[1], F_SETFD, FD_CLOEXEC);
     }
 
-    fcntl(fd_out[1], F_SETFD, FD_CLOEXEC);
-    fcntl(fd_in[0], F_SETFD, FD_CLOEXEC);
+    if (!use_stdin_handler) {
+      ::close(fd_in[1]);
+      while (dup2(fd_in[0], STDIN_FILENO) == -1) {
+        auto ec = last_error_code();
+        if (ec == std::errc::interrupted) {
+          continue;
+        } else {
+          throw std::system_error(ec, "ProcessLauncher::start() dup2()");
+        }
+      }
+      fcntl(fd_in[0], F_SETFD, FD_CLOEXEC);
+    }
 
     // mark all FDs as CLOEXEC
     //
@@ -679,8 +972,8 @@ void ProcessLauncher::start() {
       exit(ec.value());
     }
   } else {
-    ::close(fd_out[1]);
-    ::close(fd_in[0]);
+    if (!use_stdout_handler) ::close(fd_out[1]);
+    if (!use_stdin_handler) ::close(fd_in[0]);
 
     fd_out[1] = -1;
     fd_in[0] = -1;

@@ -1,0 +1,29 @@
+# ==== Purpose ====
+#
+# See rpl_gtid_replica_skip_errors.test. This test case verifies R6 and R7 for
+# MyISAM tables.
+
+--source include/have_debug.inc
+--source include/have_binlog_format_row.inc
+--source include/have_myisam.inc
+--source include/rpl/init_source_replica.inc
+
+--echo #
+--echo # Initialize
+--echo #
+
+--source include/rpl/connection_replica.inc
+--let $messages = Replica SQL for channel .*: Worker 1 failed executing transaction.*
+--let $suppress_on_current_connection = 1
+--source include/suppress_messages.inc
+
+#### R6, R7: use rpl_gtid_replica_skip_errors_dml.test ####
+
+--let $engine = MyISAM
+--source common/rpl/rpl_gtid_replica_skip_errors_dml.test
+
+--echo #
+--echo # Clean up
+--echo #
+
+--source include/rpl/deinit.inc

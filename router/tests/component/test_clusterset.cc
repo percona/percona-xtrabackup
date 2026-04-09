@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -47,6 +47,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "mock_server_testutils.h"
 #include "mysql/harness/stdx/ranges.h"     // enumerate
 #include "mysql/harness/utility/string.h"  // join
+#include "mysql/harness/utility/string.h"  // string_format
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/mysql_session.h"
 #include "mysqlrouter/rest_client.h"
@@ -55,12 +56,15 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include "router_component_clusterset.h"
 #include "router_component_test.h"
 #include "router_component_testutils.h"
+#include "router_config.h"  // MYSQL_ROUTER_VERSION
 #include "router_test_helpers.h"
+#include "routing_guidelines_builder.h"
 #include "stdx_expected_no_error.h"
 #include "tcp_port_pool.h"
 
 using mysqlrouter::ClusterType;
 using mysqlrouter::MySQLSession;
+using ::testing::Contains;
 using ::testing::PrintToString;
 using namespace std::chrono_literals;
 using namespace std::string_literals;
@@ -95,7 +99,8 @@ class ClusterSetTest : public RouterComponentClusterSetTest {
     std::map<std::string, std::string> options{
         {"bind_address", "127.0.0.1"},
         {"bind_port", std::to_string(router_port)},
-        {"destinations", "metadata-cache://test/default?role=" + role},
+        {"destinations",
+         "metadata-cache://cluster-name-1/default?role=" + role},
         {"protocol", "classic"}};
 
     if (!strategy.empty()) {
@@ -171,28 +176,6 @@ class ClusterSetTest : public RouterComponentClusterSetTest {
         MockServerRestClient(http_port).get_globals_as_json_string();
 
     return get_int_field_value(server_globals, name);
-  }
-
-  void set_fetch_whole_topology(bool value) {
-    const std::string metadata_cache_section_name = "test";
-    const std::string path = std::string(rest_api_basepath) + "/metadata/" +
-                             metadata_cache_section_name + "/config";
-    ASSERT_TRUE(wait_for_rest_endpoint_ready(path, http_port_, kRestApiUsername,
-                                             kRestApiPassword));
-
-    const std::string parameter = "fetchWholeTopology="s + (value ? "1" : "0");
-
-    IOContext io_ctx;
-    RestClient rest_client(io_ctx, "127.0.0.1", http_port_, kRestApiUsername,
-                           kRestApiPassword);
-
-    auto req =
-        rest_client.request_sync(HttpMethod::Get, path + "?" + parameter);
-
-    ASSERT_TRUE(req) << "HTTP Request failed (early): " << req.error_msg()
-                     << std::endl;
-    ASSERT_GT(req.get_response_code(), 0)
-        << "HTTP Request failed: " << req.error_msg() << std::endl;
   }
 
   // @brief wait until global read from the mock server is greater or equal
@@ -284,6 +267,16 @@ class ClusterSetTest : public RouterComponentClusterSetTest {
     }
   }
 
+  std::vector<uint16_t> get_cluster_classic_ro_nodes(
+      const RouterComponentClusterSetTest::ClusterData &cluster) const {
+    std::vector<std::uint16_t> res{cluster.nodes[kRONode1Id].classic_port,
+                                   cluster.nodes[kRONode2Id].classic_port};
+
+    if (cluster.role == "SECONDARY" || cluster.invalid)
+      res.push_back(cluster.nodes[kRWNodeId].classic_port);
+    return res;
+  }
+
   std::string router_conf_file;
 
   TempDirectory temp_test_dir;
@@ -295,8 +288,11 @@ class ClusterSetTest : public RouterComponentClusterSetTest {
 
   static const std::chrono::milliseconds kTTL;
   static const std::chrono::seconds kReadyNotifyTimeout;
+
   static const unsigned kRWNodeId = 0;
   static const unsigned kRONodeId = 1;
+  static const unsigned kRONode1Id = 1;
+  static const unsigned kRONode2Id = 2;
 
   const unsigned kPrimaryClusterId{0};
   const unsigned kFirstReplicaClusterId{1};
@@ -442,6 +438,199 @@ TEST_F(ClusterSetTest, TargetClusterNoChange) {
   EXPECT_EQ(1, count_str_occurences(log_content, needle));
 }
 
+TEST_F(ClusterSetTest, CloseConnectionAfterRefreshIsDefaultOff) {
+  RecordProperty("Worklog", "16652");
+  RecordProperty("RequirementId", "FR3");
+  RecordProperty("Description",
+                 "close-connection-after-refresh MUST default to 0. "
+                 "But with cluster-set, it has no impact as the connection "
+                 "switches between the servers.");
+  const std::string target_cluster = "primary";
+  const auto target_cluster_id = 0;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  auto &router = launch_router(cs_options.topology);
+
+  // keep the Router running for several md refresh rounds
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  // check the new target_cluster was reported only once
+  const std::string needle = "New target cluster assigned in the metadata";
+  const std::string log_content = router.get_logfile_content();
+
+  // 1 is expected, that comes from the initial reading of the metadata
+  EXPECT_EQ(1, count_str_occurences(log_content, needle));
+
+  // should be more than 1 connect-attempt
+  std::string server_globals =
+      MockServerRestClient(cs_options.topology.clusters[0].nodes[0].http_port)
+          .get_globals_as_json_string();
+
+  EXPECT_GE(get_int_field_value(server_globals, "connects"), 2);
+}
+
+TEST_F(ClusterSetTest, CloseConnectionAfterRefreshOnWorks) {
+  RecordProperty("Worklog", "16652");
+  RecordProperty("RequirementId", "FR1");
+  RecordProperty("Description",
+                 "if close-connection-after-refresh is 1, the connection after "
+                 "refresh MUST be closed."
+                 "With cluster-set, it has no impact as the connection is "
+                 "closed anyway as the cache switches between the servers.");
+  const std::string target_cluster = "primary";
+  const auto target_cluster_id = 0;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  create_clusterset(cs_options);
+
+  auto cs_topology = cs_options.topology;
+  bool use_gr_notifications = false;
+  auto metadata_ttl = kTTL;
+
+  SCOPED_TRACE("// Prepare the dynamic state file for the Router");
+  const auto clusterset_all_nodes_ports =
+      cs_topology.get_md_servers_classic_ports();
+  router_state_file =
+      create_state_file(temp_test_dir.name(),
+                        create_state_file_content("", cs_topology.uuid,
+                                                  clusterset_all_nodes_ports,
+                                                  /*view_id*/ 1));
+
+  SCOPED_TRACE("// Prepare the config file for the Router");
+  router_port_rw = port_pool_.get_next_available();
+  router_port_ro = port_pool_.get_next_available();
+
+  auto default_section = get_DEFAULT_defaults();
+
+  init_keyring(default_section, temp_test_dir.name());
+
+  default_section["dynamic_state"] = router_state_file;
+
+  const std::string userfile = create_password_file();
+  const std::string rest_sections = mysql_harness::join(
+      get_restapi_config("rest_metadata_cache", userfile, true), "\n");
+
+  router_conf_file = create_config_file(
+      temp_test_dir.name(),
+      metadata_cache_section(metadata_ttl, use_gr_notifications) +
+          "close_connection_after_refresh=1\n" +
+          routing_section(router_port_rw, "PRIMARY", "first-available") +
+          routing_section(router_port_ro, "SECONDARY", "round-robin") +
+          rest_sections,
+      &default_section);
+
+  SCOPED_TRACE("// Launch the Router");
+  auto &router = router_spawner().spawn({"-c", router_conf_file});
+
+  // keep the Router running for several md refresh rounds
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  // check the new target_cluster was repoted only once
+  const std::string needle = "New target cluster assigned in the metadata";
+  const std::string log_content = router.get_logfile_content();
+
+  // 1 is expected, that comes from the initial reading of the metadata
+  EXPECT_EQ(1, count_str_occurences(log_content, needle));
+
+  // should be more than 1 connect-attempt
+  std::string server_globals =
+      MockServerRestClient(cs_options.topology.clusters[0].nodes[0].http_port)
+          .get_globals_as_json_string();
+
+  EXPECT_GE(get_int_field_value(server_globals, "connects"), 2);
+}
+
+TEST_F(ClusterSetTest, CloseConnectionAfterRefreshOffWorks) {
+  RecordProperty("Worklog", "16652");
+  RecordProperty("RequirementId", "FR2.1");
+  RecordProperty(
+      "Description",
+      "If close-connection-after-refresh is 0, the connection after refresh "
+      "can stay open if it is same-server, but with cluster-set, it has "
+      "no impact as the connection switches between the servers.");
+
+  const std::string target_cluster = "primary";
+  const auto target_cluster_id = 0;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  create_clusterset(cs_options);
+
+  auto cs_topology = cs_options.topology;
+  bool use_gr_notifications = false;
+  auto metadata_ttl = kTTL;
+
+  SCOPED_TRACE("// Prepare the dynamic state file for the Router");
+  const auto clusterset_all_nodes_ports =
+      cs_topology.get_md_servers_classic_ports();
+  router_state_file =
+      create_state_file(temp_test_dir.name(),
+                        create_state_file_content("", cs_topology.uuid,
+                                                  clusterset_all_nodes_ports,
+                                                  /*view_id*/ 1));
+
+  SCOPED_TRACE("// Prepare the config file for the Router");
+  router_port_rw = port_pool_.get_next_available();
+  router_port_ro = port_pool_.get_next_available();
+
+  auto default_section = get_DEFAULT_defaults();
+
+  init_keyring(default_section, temp_test_dir.name());
+
+  default_section["dynamic_state"] = router_state_file;
+
+  const std::string userfile = create_password_file();
+  const std::string rest_sections = mysql_harness::join(
+      get_restapi_config("rest_metadata_cache", userfile, true), "\n");
+
+  router_conf_file = create_config_file(
+      temp_test_dir.name(),
+      metadata_cache_section(metadata_ttl, use_gr_notifications) +
+          "close_connection_after_refresh=0\n" +
+          routing_section(router_port_rw, "PRIMARY", "first-available") +
+          routing_section(router_port_ro, "SECONDARY", "round-robin") +
+          rest_sections,
+      &default_section);
+
+  SCOPED_TRACE("// Launch the Router");
+  auto &router = router_spawner().spawn({"-c", router_conf_file});
+
+  // keep the Router running for several md refresh rounds
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  // check the new target_cluster was repoted only once
+  const std::string needle = "New target cluster assigned in the metadata";
+  const std::string log_content = router.get_logfile_content();
+
+  // 1 is expected, that comes from the initial reading of the metadata
+  EXPECT_EQ(1, count_str_occurences(log_content, needle));
+
+  // should be more than 1 connect-attempt as the clusterset implementation will
+  // close the connection and go to another node.
+  std::string server_globals =
+      MockServerRestClient(cs_options.topology.clusters[0].nodes[0].http_port)
+          .get_globals_as_json_string();
+
+  EXPECT_GE(get_int_field_value(server_globals, "connects"), 2);
+}
+
 class ClusterChangeTargetClusterInTheMetadataTest
     : public ClusterSetTest,
       public ::testing::WithParamInterface<
@@ -510,16 +699,13 @@ TEST_P(ClusterChangeTargetClusterInTheMetadataTest,
     verify_new_connection_fails(router_port_rw);
   }
 
-  const auto first_ro_node1 =
-      (expected_initial_connection_cluster_id == 0 /*Primary*/) ? kRONodeId
-                                                                : kRWNodeId;
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(),
-      cs_options.topology.clusters[expected_initial_connection_cluster_id]
-          .nodes[first_ro_node1]
-          .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con1_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology
+                          .clusters[expected_initial_connection_cluster_id])));
 
   auto ro_con1 = std::move(*ro_con1_res);
 
@@ -613,18 +799,13 @@ TEST_P(ClusterChangeTargetClusterInTheMetadataTest,
     ASSERT_NO_FATAL_FAILURE(verify_new_connection_fails(router_port_rw));
   }
 
-  const auto first_ro_node =
-      (expected_new_connection_cluster_id == 0 /*Primary*/) ? kRONodeId
-                                                            : kRWNodeId;
-  // +1 because it's round-robin and this is the second RO connection
   {
     auto ro_con2_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(ro_con2_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
         ro_con2_res->get(),
-        cs_options.topology.clusters[expected_new_connection_cluster_id]
-            .nodes[first_ro_node + 1]
-            .classic_port));
+        get_cluster_classic_ro_nodes(
+            cs_options.topology.clusters[expected_new_connection_cluster_id])));
   }
 
   SCOPED_TRACE(
@@ -720,9 +901,8 @@ TEST_F(ClusterSetTest, ClusterChangeClustersetIDInTheMetadata) {
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
   ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[kTargetClusterId]
-                              .nodes[kRONodeId]
-                              .classic_port));
+      ro_con1_res->get(), get_cluster_classic_ro_nodes(
+                              cs_options.topology.clusters[kTargetClusterId])));
   auto ro_con1 = std::move(*ro_con1_res);
 
   SCOPED_TRACE("// Change the clusterset_id in the metadata");
@@ -764,9 +944,8 @@ TEST_F(ClusterSetTest, ClusterChangeClustersetIDInTheMetadata) {
   auto ro_con2_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con2_res);
   ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con2_res->get(), cs_options.topology.clusters[kTargetClusterId]
-                              .nodes[kRONodeId + 1]
-                              .classic_port));
+      ro_con2_res->get(), get_cluster_classic_ro_nodes(
+                              cs_options.topology.clusters[kTargetClusterId])));
   auto ro_con2 = std::move(*ro_con2_res);
 
   SCOPED_TRACE(
@@ -946,9 +1125,8 @@ TEST_F(ClusterSetTest, ClusterRolesChangeInTheRuntime) {
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
   ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[primary_cluster_id]
-                              .nodes[kRONodeId]
-                              .classic_port));
+      ro_con1_res->get(),
+      get_cluster_classic_ro_nodes(cs_options.topology.clusters[0])));
   auto ro_con1 = std::move(*ro_con1_res);
 
   verify_only_primary_gets_updates(cs_options.topology, primary_cluster_id);
@@ -983,13 +1161,12 @@ TEST_F(ClusterSetTest, ClusterRolesChangeInTheRuntime) {
                               .classic_port));
   auto rw_con2 = std::move(*rw_con2_res);
 
-  // +1%2 is for round-robin
   auto ro_con2_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con2_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con2_res->get(), cs_options.topology.clusters[primary_cluster_id]
-                              .nodes[kRONodeId + 1 % 2]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con2_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[primary_cluster_id])));
   auto ro_con2 = std::move(*ro_con2_res);
 
   // check the new primary gets updates
@@ -1024,13 +1201,12 @@ TEST_F(ClusterSetTest, ClusterRolesChangeInTheRuntime) {
                               .classic_port));
   auto rw_con3 = std::move(*rw_con3_res);
 
-  // +2 %2 is for round-robin
   auto ro_con3_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con3_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con3_res->get(), cs_options.topology.clusters[primary_cluster_id]
-                              .nodes[kRONodeId + 2 % 2]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con3_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[primary_cluster_id])));
   auto ro_con3 = std::move(*ro_con3_res);
 
   ////////////////////////////////////
@@ -1060,13 +1236,13 @@ TEST_F(ClusterSetTest, ClusterRolesChangeInTheRuntime) {
       rw_con4_res->get(), cs_options.topology.clusters[primary_cluster_id]
                               .nodes[kRWNodeId]
                               .classic_port));
-  // +3%2 is for round-robin
+
   auto ro_con4_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con4_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con4_res->get(), cs_options.topology.clusters[primary_cluster_id]
-                              .nodes[kRONodeId + 3 % 2]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con4_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[primary_cluster_id])));
 }
 
 /**
@@ -1104,10 +1280,10 @@ TEST_F(ClusterSetTest, TargetClusterStickToPrimaryUUID) {
 
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[target_cluster_id]
-                              .nodes[kRONodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con1_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[target_cluster_id])));
   auto ro_con1 = std::move(*ro_con1_res);
 
   // check that the primary cluster is getting the periodic metadata updates
@@ -1137,13 +1313,12 @@ TEST_F(ClusterSetTest, TargetClusterStickToPrimaryUUID) {
   SCOPED_TRACE(
       "// Check that new RO connection is directed to the same Cluster and no "
       "new RW connection is possible");
-  // +1%3 because we round-robin and we now have 3 RO nodes
   auto ro_con2_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con2_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con2_res->get(), cs_options.topology.clusters[target_cluster_id]
-                              .nodes[(kRWNodeId + 1) % 3]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con2_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[target_cluster_id])));
   auto ro_con2 = std::move(*ro_con2_res);
 
   verify_new_connection_fails(router_port_rw);
@@ -1172,13 +1347,12 @@ TEST_F(ClusterSetTest, TargetClusterStickToPrimaryUUID) {
       "// Check that new RO connection is directed to the same Cluster and no "
       "new RW connection is possible");
   verify_new_connection_fails(router_port_rw);
-  // +2%3 because we round-robin and we now have 3 RO nodes
   auto ro_con3_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con3_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con3_res->get(), cs_options.topology.clusters[target_cluster_id]
-                              .nodes[(kRWNodeId + 2) % 3]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con3_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[target_cluster_id])));
   auto ro_con3 = std::move(*ro_con3_res);
 
   ////////////////////////////////////
@@ -1209,17 +1383,17 @@ TEST_F(ClusterSetTest, TargetClusterStickToPrimaryUUID) {
 
   auto ro_con4_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con4_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con4_res->get(), cs_options.topology.clusters[target_cluster_id]
-                              .nodes[kRONodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con4_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[target_cluster_id])));
 }
 
 /**
  * @test Check that the Router sticks to the target_cluster given by UUID when
  * its role changes starting from REPLICA.
  */
-TEST_F(ClusterSetTest, TargetClusterStickToReaplicaUUID) {
+TEST_F(ClusterSetTest, TargetClusterStickToReplicaUUID) {
   // first cluster is a primary on start
   unsigned primary_cluster_id = 0;
   // our target_cluster is first Replica
@@ -1243,10 +1417,10 @@ TEST_F(ClusterSetTest, TargetClusterStickToReaplicaUUID) {
   verify_new_connection_fails(router_port_rw);
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[target_cluster_id]
-                              .nodes[kRWNodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con1_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[target_cluster_id])));
   auto ro_con1 = std::move(*ro_con1_res);
 
   ////////////////////////////////////
@@ -1269,13 +1443,12 @@ TEST_F(ClusterSetTest, TargetClusterStickToReaplicaUUID) {
   SCOPED_TRACE(
       "// Check that new RO connection is directed to the same Cluster and no "
       "new RW connection is possible");
-  // +1%3 because we round-robin and we now have 3 RO nodes
   auto ro_con2_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con2_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con2_res->get(), cs_options.topology.clusters[target_cluster_id]
-                              .nodes[(kRWNodeId + 1) % 3]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con2_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[target_cluster_id])));
   auto ro_con2 = std::move(*ro_con2_res);
 
   verify_new_connection_fails(router_port_rw);
@@ -1308,13 +1481,12 @@ TEST_F(ClusterSetTest, TargetClusterStickToReaplicaUUID) {
                              .classic_port));
   auto rw_con = std::move(*rw_con_res);
 
-  // +2%2 because we round-robin and we now have 2 RO nodes
   auto ro_con3_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con3_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con3_res->get(), cs_options.topology.clusters[target_cluster_id]
-                              .nodes[kRONodeId + 2 % 2]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con3_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[target_cluster_id])));
   auto ro_con3 = std::move(*ro_con3_res);
 
   ////////////////////////////////////
@@ -1345,10 +1517,10 @@ TEST_F(ClusterSetTest, TargetClusterStickToReaplicaUUID) {
   verify_new_connection_fails(router_port_rw);
   auto ro_con4_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con4_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con4_res->get(), cs_options.topology.clusters[target_cluster_id]
-                              .nodes[kRONodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con4_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[target_cluster_id])));
 }
 
 class ViewIdChangesTest
@@ -1474,11 +1646,11 @@ INSTANTIATE_TEST_SUITE_P(ViewIdChanges, ViewIdChangesTest,
 
 /**
  * @test Check that when 2 clusters claim they are both PRIMARY, Router follows
- * the one that has a highier view_id
+ * the one that has a higher view_id
  * [@FR9]
  * [@TS_R11_3]
  */
-TEST_F(ClusterSetTest, TwoPrimaryClustersHighierViewId) {
+TEST_F(ClusterSetTest, TwoPrimaryClustersHigherViewId) {
   const std::string router_options = R"({"target_cluster" : "primary"})";
   SCOPED_TRACE(
       "// We configure Router to follow PRIMARY cluster, first cluster starts "
@@ -1504,16 +1676,16 @@ TEST_F(ClusterSetTest, TwoPrimaryClustersHighierViewId) {
 
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                              .nodes[kRONodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con1_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kPrimaryClusterId])));
 
   auto ro_con1 = std::move(*ro_con1_res);
 
   SCOPED_TRACE(
       "// Now let's make first REPLICA to claim that it's also a primary. But "
-      "it has a highier view so the Router should believe the REPLICA");
+      "it has a higher view so the Router should believe the REPLICA");
 
   change_clusterset_primary(cs_options.topology, kFirstReplicaClusterId);
   cs_options.view_id = ++view_id;
@@ -1557,13 +1729,12 @@ TEST_F(ClusterSetTest, TwoPrimaryClustersHighierViewId) {
                               .classic_port));
   auto rw_con2 = std::move(*rw_con2_res);
 
-  // +1 as we round-dobin and this is already a second connection
   auto ro_con2_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con2_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con2_res->get(), cs_options.topology.clusters[kFirstReplicaClusterId]
-                              .nodes[kRONodeId + 1]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con2_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kFirstReplicaClusterId])));
   auto ro_con2 = std::move(*ro_con2_res);
 
   SCOPED_TRACE(
@@ -1609,18 +1780,17 @@ TEST_F(ClusterSetTest, TwoPrimaryClustersHighierViewId) {
                               .nodes[kRWNodeId]
                               .classic_port));
 
-  // +1 as we round-dobin and this is already a second connection
   auto ro_con3_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con3_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con3_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                              .nodes[kRONodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con3_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kPrimaryClusterId])));
 }
 
 /**
  * @test Check that when 2 clusters claim they are both PRIMARY, Router follows
- * the one that has a highier view_id
+ * the one that has a higher view_id
  * [@FR9]
  * [@TS_R11_4]
  */
@@ -1652,10 +1822,10 @@ TEST_F(ClusterSetTest, TwoPrimaryClustersLowerViewId) {
 
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                              .nodes[kRONodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con1_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kPrimaryClusterId])));
   auto ro_con1 = std::move(*ro_con1_res);
 
   SCOPED_TRACE(
@@ -1702,13 +1872,12 @@ TEST_F(ClusterSetTest, TwoPrimaryClustersLowerViewId) {
                               .nodes[kRWNodeId]
                               .classic_port));
 
-  // +1 as we round-robin and this is already a second connection
   auto ro_con2_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con2_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con2_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                              .nodes[kRONodeId + 1]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con2_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kPrimaryClusterId])));
 }
 
 struct InvalidatedClusterTestParams {
@@ -1739,8 +1908,10 @@ TEST_P(PrimaryTargetClusterMarkedInvalidInTheMetadataTest,
 
   ClusterSetOptions cs_options;
   cs_options.tracefile = "metadata_clusterset.js";
-  cs_options.router_options = R"({"target_cluster" : "primary",
-        "stats_updates_frequency": 1})";
+  cs_options.router_options =
+      R"({"target_cluster" : "primary", "stats_updates_frequency": 1,
+      "invalidated_cluster_policy" : ")" +
+      policy + "\" }";
   create_clusterset(cs_options);
 
   /* auto &router = */ launch_router(cs_options.topology);
@@ -1758,10 +1929,10 @@ TEST_P(PrimaryTargetClusterMarkedInvalidInTheMetadataTest,
 
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                              .nodes[kRONodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con1_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kPrimaryClusterId])));
   auto ro_con1 = std::move(*ro_con1_res);
 
   SCOPED_TRACE(
@@ -1771,10 +1942,6 @@ TEST_P(PrimaryTargetClusterMarkedInvalidInTheMetadataTest,
 
   cs_options.view_id = ++view_id;
   cs_options.target_cluster_id = kPrimaryClusterId;
-  cs_options.router_options =
-      R"({"target_cluster" : "primary", "stats_updates_frequency": 1,
-      "invalidated_cluster_policy" : ")" +
-      policy + "\" }";
 
   set_mock_metadata_on_all_cs_nodes(cs_options);
 
@@ -1799,9 +1966,8 @@ TEST_P(PrimaryTargetClusterMarkedInvalidInTheMetadataTest,
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                             .nodes[kRONodeId]
-                             .classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[kPrimaryClusterId])));
   }
 
   // Primary cluster is invalidated - Router should not do any UPDATE operations
@@ -1846,7 +2012,9 @@ TEST_P(ReplicaTargetClusterMarkedInvalidInTheMetadataTest,
   cs_options.tracefile = "metadata_clusterset.js";
   cs_options.router_options =
       R"({"target_cluster" : "00000000-0000-0000-0000-0000000000g2",
-          "stats_updates_frequency": 1})";
+          "stats_updates_frequency": 1,
+          "invalidated_cluster_policy" : ")" +
+      policy + "\" }";
   create_clusterset(cs_options);
 
   /* auto &router = */ launch_router(cs_options.topology);
@@ -1859,10 +2027,10 @@ TEST_P(ReplicaTargetClusterMarkedInvalidInTheMetadataTest,
 
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[kFirstReplicaClusterId]
-                              .nodes[0]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con1_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kFirstReplicaClusterId])));
 
   auto ro_con1 = std::move(*ro_con1_res);
 
@@ -1879,11 +2047,6 @@ TEST_P(ReplicaTargetClusterMarkedInvalidInTheMetadataTest,
   size_t node_id = 0;
   cs_options.view_id = ++view_id;
   cs_options.target_cluster_id = kFirstReplicaClusterId;
-  cs_options.router_options =
-      R"({"target_cluster" : "00000000-0000-0000-0000-0000000000g2",
-          "stats_updates_frequency": 1,
-          "invalidated_cluster_policy" : ")" +
-      policy + "\" }";
   for (const auto &node : second_replica.nodes) {
     const auto http_port = node.http_port;
     set_mock_clusterset_metadata(http_port,
@@ -1910,10 +2073,10 @@ TEST_P(ReplicaTargetClusterMarkedInvalidInTheMetadataTest,
 
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
-    ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[kFirstReplicaClusterId]
-                             .nodes[1]
-                             .classic_port));
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(),
+                    get_cluster_classic_ro_nodes(
+                        cs_options.topology.clusters[kFirstReplicaClusterId])));
   }
 
   // make sure only new PRIMARY (former REPLICA2) gets the periodic updates now
@@ -1992,9 +2155,8 @@ TEST_F(ClusterSetTest, StateFileMetadataServersChange) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                             .nodes[kRONodeId]
-                             .classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[kPrimaryClusterId])));
   }
   SCOPED_TRACE(
       "// Remove Primary Cluster nodes one by one and check that it is "
@@ -2130,9 +2292,8 @@ TEST_F(ClusterSetTest, StateFileMetadataServersChange) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                             .nodes[kRONodeId + 1]
-                             .classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[kPrimaryClusterId])));
   }
 }
 
@@ -2164,10 +2325,10 @@ TEST_F(ClusterSetTest, SomeMetadataServerUnaccessible) {
 
   auto ro_con1_res = make_new_connection(router_port_ro);
   ASSERT_NO_ERROR(ro_con1_res);
-  ASSERT_NO_FATAL_FAILURE(verify_port(
-      ro_con1_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                              .nodes[kRONodeId]
-                              .classic_port));
+  ASSERT_NO_FATAL_FAILURE(
+      verify_port(ro_con1_res->get(),
+                  get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kPrimaryClusterId])));
   auto ro_con1 = std::move(*ro_con1_res);
 
   SCOPED_TRACE("// Make the first Replica Cluster nodes unaccessible");
@@ -2216,9 +2377,8 @@ TEST_F(ClusterSetTest, SomeMetadataServerUnaccessible) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[kPrimaryClusterId]
-                             .nodes[kRONodeId + 1]
-                             .classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[kPrimaryClusterId])));
   }
 }
 
@@ -2260,8 +2420,8 @@ TEST_F(ClusterSetTest, UseReplicaPrimaryAsRwNode) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(),
-        cs_options.topology.clusters[target_cluster_id].nodes[i].classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[target_cluster_id])));
   }
 
   // ==================================================================
@@ -2273,7 +2433,7 @@ TEST_F(ClusterSetTest, UseReplicaPrimaryAsRwNode) {
   set_mock_clusterset_metadata(primary_node_http_port, target_cluster_id, 0,
                                cs_options);
 
-  EXPECT_TRUE(wait_for_transaction_count_increase(primary_node_http_port, 2));
+  EXPECT_TRUE(wait_for_transaction_count_increase(primary_node_http_port, 3));
 
   std::vector<std::unique_ptr<MySQLSession>> rw_connections;
   std::vector<std::unique_ptr<MySQLSession>> ro_connections;
@@ -2294,9 +2454,8 @@ TEST_F(ClusterSetTest, UseReplicaPrimaryAsRwNode) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[target_cluster_id]
-                             .nodes[i % 2 + 1]
-                             .classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[target_cluster_id])));
 
     ro_connections.push_back(std::move(*conn_res));
   }
@@ -2310,7 +2469,7 @@ TEST_F(ClusterSetTest, UseReplicaPrimaryAsRwNode) {
   set_mock_clusterset_metadata(primary_node_http_port, target_cluster_id, 0,
                                cs_options);
 
-  EXPECT_TRUE(wait_for_transaction_count_increase(primary_node_http_port, 2));
+  EXPECT_TRUE(wait_for_transaction_count_increase(primary_node_http_port, 3));
 
   // check that the RW connections were dropped
   for (auto &con : rw_connections) {
@@ -2333,9 +2492,8 @@ TEST_F(ClusterSetTest, UseReplicaPrimaryAsRwNode) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[target_cluster_id]
-                             .nodes[i % target_cluster_nodes]
-                             .classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[target_cluster_id])));
   }
 }
 
@@ -2373,9 +2531,8 @@ TEST_F(ClusterSetTest, UseReplicaPrimaryAsRwNodeIgnoredIfTargetPrimary) {
 
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[target_cluster_id]
-                             .nodes[1 + i % 2]
-                             .classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[target_cluster_id])));
   }
 
   // ==================================================================
@@ -2406,9 +2563,8 @@ TEST_F(ClusterSetTest, UseReplicaPrimaryAsRwNodeIgnoredIfTargetPrimary) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[target_cluster_id]
-                             .nodes[1 + (i + 1) % 2]
-                             .classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[target_cluster_id])));
   }
 }
 
@@ -2459,18 +2615,24 @@ TEST_P(ClusterSetUseReplicaPrimaryAsRwNodeInvalidTest,
         cs_options.topology.clusters[target_cluster_id].nodes[i].classic_port));
   }
 
+  // wait for a few md refresh rounds
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
   const std::string warning =
-      "WARNING .* Error parsing use_replica_primary_as_rw from the "
-      "router.options: options.use_replica_primary_as_rw='" +
+      "Error parsing use_replica_primary_as_rw from the "
+      "router_options: options.use_replica_primary_as_rw='" +
       GetParam() + "'; not a boolean. Using default value 'false'";
 
-  EXPECT_TRUE(wait_log_contains(router, warning, 1s)) << warning;
+  // the warning should be logged only once
+  check_log_contains(router, warning, 1);
 }
 
 INSTANTIATE_TEST_SUITE_P(UseReplicaPrimaryAsRwNodeInvalid,
                          ClusterSetUseReplicaPrimaryAsRwNodeInvalidTest,
                          ::testing::Values("\"\"", "0", "1", "\"foo\"",
                                            "\"false\""));
+
 /**
  * @test Checks that switching between fetch_whole_topology on and off works as
  * expected when it comes to routing new connections and keeping/closing
@@ -2496,19 +2658,44 @@ TEST_F(ClusterSetTest, FetchWholeTopologyConnections) {
 
   // RO connections should be routed to the first replica
   std::vector<std::unique_ptr<MySQLSession>> ro_cons_to_target_cluster;
-  for (const auto &node :
+  for ([[maybe_unused]] const auto &node :
        cs_options.topology.clusters[kFirstReplicaClusterId].nodes) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
-    ASSERT_NO_FATAL_FAILURE(verify_port(conn_res->get(), node.classic_port));
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(),
+                    get_cluster_classic_ro_nodes(
+                        cs_options.topology.clusters[kFirstReplicaClusterId])));
 
     ro_cons_to_target_cluster.emplace_back(std::move(*conn_res));
   }
 
   EXPECT_EQ(3, ro_cons_to_target_cluster.size());
 
-  // switch the mode to fetch_whole_topology
-  set_fetch_whole_topology(true);
+  const std::string custom_routing_guidelines = guidelines_builder::create(
+      {{"d1", "$.server.memberRole = PRIMARY"},
+       {"d2",
+        "$.server.memberRole = SECONDARY OR $.server.memberRole = REPLICA"}},
+      {{"r1",
+        "$.session.targetPort =" + std::to_string(router_port_rw),
+        {{"round-robin", {"d1"}}}},
+       {"r2",
+        "$.session.targetPort =" + std::to_string(router_port_ro),
+        {{"round-robin", {"d2", "d1"}}}}});
+
+  SCOPED_TRACE("Set routing guidelines");
+  // switch on the mode fetch_whole_topology by setting the routing guidelines
+  for (unsigned cluster_id = 0;
+       cluster_id < cs_options.topology.clusters.size(); ++cluster_id) {
+    auto &cluster = cs_options.topology.clusters[cluster_id];
+    for (unsigned node_id = 0; node_id < cluster.nodes.size(); ++node_id) {
+      auto &node = cluster.nodes[node_id];
+
+      set_mock_clusterset_metadata(node.http_port, cluster_id, node_id,
+                                   cs_options, custom_routing_guidelines);
+    }
+  }
+
   EXPECT_TRUE(wait_for_transaction_count_increase(
       cs_options.topology.clusters[0].nodes[0].http_port, 3));
 
@@ -2536,8 +2723,8 @@ TEST_F(ClusterSetTest, FetchWholeTopologyConnections) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(),
-        cs_options.topology.clusters[kPrimaryClusterId].nodes[i].classic_port));
+        conn_res->get(), get_cluster_classic_ro_nodes(
+                             cs_options.topology.clusters[kPrimaryClusterId])));
 
     ro_cons_to_primary.emplace_back(std::move(*conn_res));
   }
@@ -2549,10 +2736,10 @@ TEST_F(ClusterSetTest, FetchWholeTopologyConnections) {
        ++i) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
-    ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[kFirstReplicaClusterId]
-                             .nodes[i]
-                             .classic_port));
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(),
+                    get_cluster_classic_ro_nodes(
+                        cs_options.topology.clusters[kFirstReplicaClusterId])));
     ro_cons_to_first_replica.emplace_back(std::move(*conn_res));
   }
   EXPECT_EQ(2, ro_cons_to_first_replica.size());
@@ -2564,16 +2751,26 @@ TEST_F(ClusterSetTest, FetchWholeTopologyConnections) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
     ASSERT_NO_FATAL_FAILURE(verify_port(
-        conn_res->get(), cs_options.topology.clusters[kSecondReplicaClusterId]
-                             .nodes[i]
-                             .classic_port));
+        conn_res->get(),
+        get_cluster_classic_ro_nodes(
+            cs_options.topology.clusters[kSecondReplicaClusterId])));
 
     ro_cons_to_second_replica.emplace_back(std::move(*conn_res));
   }
   EXPECT_EQ(2, ro_cons_to_second_replica.size());
 
-  // switch off the mode fetch_whole_topology
-  set_fetch_whole_topology(false);
+  // switch off the mode fetch_whole_topology by reseting routing guidelines
+  for (unsigned cluster_id = 0;
+       cluster_id < cs_options.topology.clusters.size(); ++cluster_id) {
+    auto &cluster = cs_options.topology.clusters[cluster_id];
+    for (unsigned node_id = 0; node_id < cluster.nodes.size(); ++node_id) {
+      auto &node = cluster.nodes[node_id];
+
+      set_mock_clusterset_metadata(node.http_port, cluster_id, node_id,
+                                   cs_options, "");
+    }
+  }
+
   EXPECT_TRUE(wait_for_transaction_count_increase(
       cs_options.topology.clusters[0].nodes[0].http_port, 3));
 
@@ -2601,11 +2798,14 @@ TEST_F(ClusterSetTest, FetchWholeTopologyConnections) {
   // again no new RW connection should be possible
   verify_new_connection_fails(router_port_rw);
   // new RO connections should be directed to our target_cluster
-  for (const auto &node :
+  for ([[maybe_unused]] const auto &node :
        cs_options.topology.clusters[kFirstReplicaClusterId].nodes) {
     auto conn_res = make_new_connection(router_port_ro);
     ASSERT_NO_ERROR(conn_res);
-    ASSERT_NO_FATAL_FAILURE(verify_port(conn_res->get(), node.classic_port));
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(),
+                    get_cluster_classic_ro_nodes(
+                        cs_options.topology.clusters[kFirstReplicaClusterId])));
 
     ro_cons_to_target_cluster.emplace_back(std::move(*conn_res));
   }
@@ -2651,9 +2851,30 @@ TEST_F(ClusterSetTest, UseMultipleClustersGrNotifications) {
   }
 
   // switch to use multiple clusters now
-  set_fetch_whole_topology(true);
+  const std::string custom_routing_guidelines = guidelines_builder::create(
+      {{"d1", "$.server.memberRole = PRIMARY"},
+       {"d2",
+        "$.server.memberRole = SECONDARY OR $.server.memberRole = REPLICA"}},
+      {{"r1",
+        "$.session.targetPort =" + std::to_string(router_port_rw),
+        {{"round-robin", {"d1"}}}},
+       {"r2",
+        "$.session.targetPort =" + std::to_string(router_port_ro),
+        {{"round-robin", {"d2", "d1"}}}}});
+
+  // switch on the mode fetch_whole_topology by setting the routing guidelines
+  for (unsigned cluster_id = 0;
+       cluster_id < cs_options.topology.clusters.size(); ++cluster_id) {
+    auto &cluster = cs_options.topology.clusters[cluster_id];
+    for (unsigned node_id = 0; node_id < cluster.nodes.size(); ++node_id) {
+      auto &node = cluster.nodes[node_id];
+
+      set_mock_clusterset_metadata(node.http_port, cluster_id, node_id,
+                                   cs_options, custom_routing_guidelines);
+    }
+  }
   EXPECT_TRUE(wait_for_transaction_count_increase(
-      cs_options.topology.clusters[0].nodes[0].http_port, 2));
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
 
   // now we expect the GR notification listener to be opened once on each
   // ClusterSet node
@@ -2669,6 +2890,560 @@ TEST_F(ClusterSetTest, UseMultipleClustersGrNotifications) {
                 count_str_occurences(log_content, log_entry));
     }
   }
+}
+
+struct ServerCompatTestParam {
+  std::string description;
+  std::string server_version;
+  bool expect_failure;
+  std::string expected_error_msg;
+};
+
+class CheckServerCompatibilityTest
+    : public ClusterSetTest,
+      public ::testing::WithParamInterface<ServerCompatTestParam> {};
+
+/**
+ * @test
+ *       Verifies that the server version is checked for compatibility when the
+ * Router is running with the ClusterSet
+ */
+TEST_P(CheckServerCompatibilityTest, Spec) {
+  RecordProperty("Description", GetParam().description);
+
+  const auto target_cluster_id = 0;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  auto &router =
+      launch_router(cs_options.topology, EXIT_SUCCESS, 10s, kTTL, true);
+
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 2));
+
+  auto conn_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(conn_res);
+  ASSERT_NO_FATAL_FAILURE(verify_port(
+      conn_res->get(), cs_options.topology.clusters[0].nodes[0].classic_port));
+
+  conn_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(conn_res);
+  ASSERT_NO_FATAL_FAILURE(verify_port(
+      conn_res->get(), cs_options.topology.clusters[0].nodes[1].classic_port));
+
+  for (const auto &cluster : cs_options.topology.clusters) {
+    for (const auto &node : cluster.nodes) {
+      set_mock_server_version(node.http_port, GetParam().server_version);
+    }
+  }
+
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 2));
+
+  if (GetParam().expect_failure) {
+    verify_new_connection_fails(router_port_rw);
+    verify_new_connection_fails(router_port_ro);
+
+    EXPECT_TRUE(wait_log_contains(router, GetParam().expected_error_msg, 5s));
+  } else {
+    conn_res = make_new_connection(router_port_rw);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(),
+                    cs_options.topology.clusters[0].nodes[0].classic_port));
+
+    conn_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(conn_res);
+    ASSERT_NO_FATAL_FAILURE(
+        verify_port(conn_res->get(),
+                    cs_options.topology.clusters[0].nodes[2].classic_port));
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Spec, CheckServerCompatibilityTest,
+    ::testing::Values(
+        ServerCompatTestParam{"Server is the same version as Router - OK",
+                              std::to_string(MYSQL_ROUTER_VERSION_MAJOR) + "." +
+                                  std::to_string(MYSQL_ROUTER_VERSION_MINOR) +
+                                  "." +
+                                  std::to_string(MYSQL_ROUTER_VERSION_PATCH),
+                              false, ""},
+        ServerCompatTestParam{
+            "Server major version is higher than Router - "
+            "we should log a warning",
+            std::to_string(MYSQL_ROUTER_VERSION_MAJOR + 1) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_MINOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_PATCH),
+            false,
+            "WARNING .* MySQL Server version .* is higher than the Router "
+            "version. You should upgrade the Router to match the MySQL Server "
+            "version."},
+        ServerCompatTestParam{
+            "Server minor version is higher than Router - "
+            "we should log a warning",
+            std::to_string(MYSQL_ROUTER_VERSION_MAJOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_MINOR + 1) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_PATCH),
+            false,
+            "WARNING .* MySQL Server version .* is higher than the Router "
+            "version. You should upgrade the Router to match the MySQL Server "
+            "version."},
+        ServerCompatTestParam{
+            "Server patch version is higher than Router - OK",
+            std::to_string(MYSQL_ROUTER_VERSION_MAJOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_MINOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_PATCH + 1),
+            false, ""}));
+
+TEST_F(ClusterSetTest, MatchReplicaNodes) {
+  const std::string target_cluster = "00000000-0000-0000-0000-0000000000g2";
+  const auto target_cluster_id = 1;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  /*auto &router = */ launch_router(cs_options.topology);
+
+  const std::string custom_routing_guidelines = guidelines_builder::create(
+      {{"d", "$.server.clusterRole = REPLICA"}},
+      {{"r",
+        "$.session.targetPort = " + std::to_string(router_port_ro),
+        {{"round-robin", {"d"}}}}});
+
+  SCOPED_TRACE("Set routing guidelines");
+  set_mock_metadata_on_all_cs_nodes(cs_options, custom_routing_guidelines);
+  ASSERT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  SCOPED_TRACE("Set up RO connections to replica nodes");
+  // Let's make a bunch of new RO connections, they should go to the RO nodes of
+  // replica Clusters of the ClusterSet
+  std::vector<std::unique_ptr<MySQLSession>> ro_cons_to_replica;
+
+  const auto replica_nodes1 = get_cluster_classic_ro_nodes(
+      cs_options.topology.clusters[kFirstReplicaClusterId]);
+  const auto replica_nodes2 = get_cluster_classic_ro_nodes(
+      cs_options.topology.clusters[kSecondReplicaClusterId]);
+  auto all_replica_nodes = replica_nodes1;
+  all_replica_nodes.insert(std::end(all_replica_nodes),
+                           std::begin(replica_nodes2),
+                           std::end(replica_nodes2));
+
+  for (size_t i = 0; i < all_replica_nodes.size() + 1; ++i) {
+    auto client_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client_res);
+    auto port_res = select_port(client_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_THAT(all_replica_nodes, ::Contains(*port_res));
+    ro_cons_to_replica.push_back(std::move(client_res.value()));
+  }
+  EXPECT_EQ(ro_cons_to_replica.size(), all_replica_nodes.size() + 1);
+}
+
+TEST_F(ClusterSetTest, MatchClusterName) {
+  const std::string target_cluster = "primary";
+  const auto target_cluster_id = 0;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  /*auto &router = */ launch_router(cs_options.topology);
+
+  // Policy matching nodes from kSecondReplicaClusterId
+  const std::string custom_routing_guidelines = guidelines_builder::create(
+      {{"d", "$.server.clusterName = 'cluster-name-3'"}},
+      {{"r",
+        "$.session.targetPort = " + std::to_string(router_port_ro),
+        {{"round-robin", {"d"}}}}});
+
+  SCOPED_TRACE("Set routing guidelines");
+  set_mock_metadata_on_all_cs_nodes(cs_options, custom_routing_guidelines);
+  ASSERT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  SCOPED_TRACE("Set up connections to cluster-name-3 cluster");
+  // Let's make a bunch of new connections, they should go to the nodes of
+  // cluster-name-3 Cluster
+  std::vector<std::unique_ptr<MySQLSession>> connections;
+
+  const auto cnt =
+      cs_options.topology.clusters[kSecondReplicaClusterId].nodes.size();
+  for (size_t i = 0; i < cnt; ++i) {
+    auto client_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client_res);
+    auto port_res = select_port(client_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_THAT(get_cluster_classic_ro_nodes(
+                    cs_options.topology.clusters[kSecondReplicaClusterId]),
+                ::Contains(*port_res));
+    connections.push_back(std::move(client_res.value()));
+  }
+
+  EXPECT_EQ(cnt, connections.size());
+}
+
+TEST_F(ClusterSetTest, MatchClusterSetName) {
+  const std::string target_cluster = "00000000-0000-0000-0000-0000000000g2";
+  const auto target_cluster_id = 1;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  auto &router = launch_router(cs_options.topology);
+
+  // Policy matching nodes from kSecondReplicaClusterId
+  const std::string custom_routing_guidelines = guidelines_builder::create(
+      {{"d", "$.server.clusterSetName = 'clusterset-name'"}},
+      {{"r",
+        "$.session.targetPort = " + std::to_string(router_port_ro),
+        {{"round-robin", {"d"}}}}});
+
+  SCOPED_TRACE("Set routing guidelines");
+  set_mock_metadata_on_all_cs_nodes(cs_options, custom_routing_guidelines);
+  EXPECT_TRUE(
+      wait_log_contains(router, "Routing guidelines document updated", 5s));
+
+  SCOPED_TRACE("Set up connections matching the whole ClusterSet");
+  // Let's make a bunch of new connections, they should go to all of the
+  // ClusterSet nodes
+  std::vector<std::unique_ptr<MySQLSession>> connections;
+
+  std::vector<std::uint16_t> nodes_ports;
+  const auto get_nodes_ports = [&nodes_ports](const auto &nodes) {
+    for (const auto &node : nodes) nodes_ports.push_back(node.classic_port);
+  };
+  get_nodes_ports(cs_options.topology.clusters[kPrimaryClusterId].nodes);
+  get_nodes_ports(cs_options.topology.clusters[kFirstReplicaClusterId].nodes);
+  get_nodes_ports(cs_options.topology.clusters[kSecondReplicaClusterId].nodes);
+
+  const auto cnt = nodes_ports.size();
+  for (size_t i = 0; i < cnt; ++i) {
+    auto client_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client_res);
+    auto port_res = select_port(client_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_THAT(nodes_ports, ::Contains(*port_res));
+    connections.push_back(std::move(client_res.value()));
+  }
+
+  EXPECT_EQ(cnt, connections.size());
+}
+
+struct InvalidClusterSetTest
+    : public ClusterSetTest,
+      public ::testing::WithParamInterface<std::string> {};
+
+TEST_P(InvalidClusterSetTest, MatchInvalidatedCluster) {
+  const std::string target_cluster = "00000000-0000-0000-0000-0000000000g2";
+  const auto target_cluster_id = 1;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  const std::string policy = GetParam();
+  cs_options.router_options = R"({"target_cluster" : ")" + target_cluster +
+                              R"(", "invalidated_cluster_policy" : ")" +
+                              policy + "\" }";
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  /*auto &router = */ launch_router(cs_options.topology);
+
+  SCOPED_TRACE(
+      "// Mark our PRIMARY cluster as invalidated in the metadata, also set "
+      "the selected invalidatedClusterRoutingPolicy");
+  cs_options.topology.clusters[kPrimaryClusterId].invalid = true;
+
+  cs_options.view_id = ++view_id;
+  cs_options.target_cluster_id = kPrimaryClusterId;
+  cs_options.router_options =
+      R"({"target_cluster" : "primary", "invalidated_cluster_policy" : ")" +
+      policy + "\" }";
+
+  // Policy matching nodes from kSecondReplicaClusterId
+  const std::string custom_routing_guidelines = guidelines_builder::create(
+      {{"d", "$.server.isClusterInvalidated = TRUE"}},
+      {{"r",
+        "$.session.targetPort = " + std::to_string(router_port_ro),
+        {{"round-robin", {"d"}}}}});
+
+  SCOPED_TRACE("Set routing guidelines");
+  set_mock_metadata_on_all_cs_nodes(cs_options, custom_routing_guidelines);
+  ASSERT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  if (policy == "drop_all") {
+    verify_new_connection_fails(router_port_ro);
+  } else {
+    for (std::size_t i = 0;
+         i < cs_options.topology.clusters[kPrimaryClusterId].nodes.size();
+         i++) {
+      auto client_res = make_new_connection(router_port_ro);
+      ASSERT_NO_ERROR(client_res);
+      auto port_res = select_port(client_res->get());
+      ASSERT_NO_ERROR(port_res);
+      EXPECT_THAT(get_cluster_classic_ro_nodes(
+                      cs_options.topology.clusters[kPrimaryClusterId]),
+                  ::Contains(*port_res));
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(MatchInvalidClusterSet, InvalidClusterSetTest,
+                         ::testing::Values("drop_all", "accept_ro"),
+                         [](const auto &info) { return info.param; });
+
+TEST_F(ClusterSetTest, MatchNodesFromDifferentClusters) {
+  const std::string target_cluster = "00000000-0000-0000-0000-0000000000g2";
+  const auto target_cluster_id = 1;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  /*auto &router = */ launch_router(cs_options.topology);
+
+  // Policy matching nodes from kSecondReplicaClusterId
+  const std::string custom_routing_guidelines = guidelines_builder::create(
+      {{"d", "$.server.clusterName = 'clusterset-1' OR $.server.port = " +
+                 std::to_string(
+                     cs_options.topology.clusters[0].nodes[0].classic_port)}},
+      {{"r",
+        "$.session.targetPort = " + std::to_string(router_port_ro),
+        {{"round-robin", {"d"}}}}});
+
+  SCOPED_TRACE("Set routing guidelines");
+  set_mock_metadata_on_all_cs_nodes(cs_options, custom_routing_guidelines);
+  ASSERT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  SCOPED_TRACE("Set up connections matching the whole ClusterSet");
+  // Let's make a bunch of new connections, they should go to all of the
+  // ClusterSet nodes
+  std::vector<std::unique_ptr<MySQLSession>> connections;
+
+  std::vector<std::uint16_t> nodes_ports = get_cluster_classic_ro_nodes(
+      cs_options.topology.clusters[kFirstReplicaClusterId]);
+  nodes_ports.push_back(cs_options.topology.clusters[0].nodes[0].classic_port);
+
+  const auto cnt = nodes_ports.size();
+  for (size_t i = 0; i < cnt; ++i) {
+    auto client_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client_res);
+    auto port_res = select_port(client_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_THAT(nodes_ports, ::Contains(*port_res));
+    connections.push_back(std::move(client_res.value()));
+  }
+
+  EXPECT_EQ(cnt, connections.size());
+}
+
+TEST_F(ClusterSetTest, HiddenNodes) {
+  const std::string target_cluster = "primary";
+  const auto target_cluster_id = 0;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  /*auto &router = */ launch_router(cs_options.topology);
+
+  // Policy matching nodes from kSecondReplicaClusterId
+  const std::string custom_routing_guidelines = guidelines_builder::create(
+      {{"d", "$.server.clusterName = 'cluster-name-3'"}},
+      {{"r",
+        "$.session.targetPort = " + std::to_string(router_port_ro),
+        {{"round-robin", {"d"}}}}});
+
+  SCOPED_TRACE("Set routing guidelines");
+  set_mock_metadata_on_all_cs_nodes(cs_options, custom_routing_guidelines);
+  ASSERT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  SCOPED_TRACE("Set up connections to cluster-name-3 cluster");
+  // Let's make a bunch of new connections, they should go to the nodes of
+  // cluster-name-3 Cluster
+  std::vector<std::unique_ptr<MySQLSession>> connections;
+  std::vector<uint16_t> connection_ports;
+
+  const auto node_cnt =
+      cs_options.topology.clusters[kSecondReplicaClusterId].nodes.size();
+  for (size_t i = 0; i < node_cnt; ++i) {
+    auto client_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client_res);
+    auto port_res = select_port(client_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_THAT(get_cluster_classic_ro_nodes(
+                    cs_options.topology.clusters[kSecondReplicaClusterId]),
+                ::Contains(*port_res));
+    connection_ports.push_back(*port_res);
+    connections.push_back(std::move(client_res.value()));
+  }
+
+  SCOPED_TRACE("Hide two nodes from cluster-name-3 cluster");
+  auto &node1 = cs_options.topology.clusters[kSecondReplicaClusterId].nodes[1];
+  auto &node2 = cs_options.topology.clusters[kSecondReplicaClusterId].nodes[2];
+
+  node1.is_hidden = true;
+  node1.disconnect_when_hidden = false;
+  node2.is_hidden = true;
+  node2.disconnect_when_hidden = true;
+
+  set_mock_metadata_on_all_cs_nodes(cs_options, custom_routing_guidelines);
+  ASSERT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 2));
+
+  SCOPED_TRACE("Verify existing connections");
+  for (std::size_t i = 0; i < connections.size(); i++) {
+    if (connection_ports[i] == node2.classic_port) {
+      verify_existing_connection_dropped(connections[i].get());
+    } else {
+      verify_existing_connection_ok(connections[i].get());
+    }
+  }
+
+  SCOPED_TRACE("New connections should go to the visible nodes only");
+  std::vector<std::uint16_t> visible_nodes_ports;
+  for (const auto &node :
+       cs_options.topology.clusters[kSecondReplicaClusterId].nodes) {
+    if (!node.is_hidden.has_value() || !node.is_hidden.value()) {
+      visible_nodes_ports.push_back(node.classic_port);
+    }
+  }
+
+  for (size_t i = 0; i < visible_nodes_ports.size(); ++i) {
+    auto client_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client_res);
+    auto port_res = select_port(client_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_THAT(visible_nodes_ports, ::Contains(*port_res));
+  }
+
+  SCOPED_TRACE("Unhide nodes");
+  node1.is_hidden = false;
+  node2.is_hidden = false;
+  set_mock_metadata_on_all_cs_nodes(cs_options, custom_routing_guidelines);
+  ASSERT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 2));
+
+  for (size_t i = 0; i < node_cnt; ++i) {
+    auto client_res = make_new_connection(router_port_ro);
+    ASSERT_NO_ERROR(client_res);
+    auto port_res = select_port(client_res->get());
+    ASSERT_NO_ERROR(port_res);
+    EXPECT_THAT(get_cluster_classic_ro_nodes(
+                    cs_options.topology.clusters[kSecondReplicaClusterId]),
+                ::Contains(*port_res));
+  }
+}
+
+/**
+ * @test Checks that warning about invalid value of "stats_updates_frequency"
+ * in the metadata is only logged once by the Router
+ */
+TEST_F(ClusterSetTest, InvalidStatsUpdateFrequency) {
+  const int target_cluster_id = 0;
+
+  std::string inv = "\"\"";
+  std::string router_options =
+      R"({"target_cluster" : "00000000-0000-0000-0000-0000000000g1",
+          "stats_updates_frequency": null} )";
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options = router_options;
+  create_clusterset(cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  auto &router = launch_router(cs_options.topology);
+
+  // wait for a few md refresh rounds
+  EXPECT_TRUE(wait_for_transaction_count_increase(
+      cs_options.topology.clusters[0].nodes[0].http_port, 3));
+
+  const std::string warning =
+      "Error parsing stats_updates_frequency from the "
+      "router_options: options.stats_updates_frequency='null'; not an unsigned "
+      "int. Using default value";
+
+  // the warning should be logged only once
+  check_log_contains(router, warning, 1);
+}
+
+/**
+ * @test Checks that the Router still is operating as expected if the first node
+ * on the metadata servers list is lagging to replicate the metadata from the
+ * primary after the boostrap. (BUG#38132603)
+ */
+TEST_F(ClusterSetTest, FirstMdServerLagsReplicatingMetadata) {
+  const std::string target_cluster = "primary";
+  const auto target_cluster_id = 0;
+
+  /* create a clusterset where the first node (also a first metadata server) is
+   * a SECONDARY node */
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "metadata_clusterset.js";
+  cs_options.router_options =
+      R"({"target_cluster" : ")" + target_cluster + "\" }";
+  cs_options.primary_node_id = 1;
+  create_clusterset(cs_options);
+
+  /* instrument the first metadata server to return no rows when queried for
+   * options from the `routers` table. This emulates a scenario where this
+   * node is lagging in replicating the metadata from the primary node where the
+   * Router was bootstrapped. */
+  cs_options.simulate_router_options_no_rows = true;
+  set_mock_clusterset_metadata(
+      cs_options.topology.clusters[0].nodes[0].http_port,
+      /*this_cluster_id*/ 0,
+      /*this_node_id*/ 0, cs_options);
+
+  SCOPED_TRACE("// Launch the Router");
+  auto &router = launch_router(cs_options.topology);
+
+  const std::string warning =
+      "WARNING .* Failed determining the type of the cluster: No row in "
+      "v2_routers table "
+      "for router with id 1";
+
+  EXPECT_TRUE(wait_log_contains(router, warning, 5s));
+
+  auto conn_res = make_new_connection(router_port_rw);
+  ASSERT_NO_ERROR(conn_res);
+
+  conn_res = make_new_connection(router_port_ro);
+  ASSERT_NO_ERROR(conn_res);
 }
 
 int main(int argc, char *argv[]) {

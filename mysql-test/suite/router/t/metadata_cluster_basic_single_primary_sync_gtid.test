@@ -1,0 +1,36 @@
+--source include/have_router.inc
+--source include/have_group_replication_plugin.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes to DB_OBJECTS.
+--let $extra_mrs_router_id=1
+
+--source ../include/predefined_setup/configure_innodb_cluster_gr.inc
+--source ../include/innodb_cluster/wait_for_update_of_metadata.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--echo
+--echo #
+--echo ## 1. GTID synchronization using SELECT WAIT_FOR..
+--let $test_schema=basic
+--let $test_options='{"sqlQuery":{"wait":5}}'
+--let $test_obj1=t1
+--let $test_obj2=t2
+--source ../include/test_metadata_cluster_basic_single_primary_gtid.inc
+
+# Cleanup
+--remove_file $MYSQL_TMP_DIR/gtid.inc
+--source ../include/mrs/cleanup.inc
+--source ../include/innodb_cluster/cleanup.inc
+--source include/rpl/sync.inc
+--source include/group_replication_end.inc

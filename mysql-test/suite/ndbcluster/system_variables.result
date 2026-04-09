@@ -34,6 +34,8 @@ ndb_log_exclusive_reads	#
 ndb_log_fail_terminate	#
 ndb_log_orig	#
 ndb_log_purge_rate	#
+ndb_log_row_slice_count	#
+ndb_log_row_slice_id	#
 ndb_log_transaction_compression	#
 ndb_log_transaction_compression_level_zstd	#
 ndb_log_transaction_dependency	#

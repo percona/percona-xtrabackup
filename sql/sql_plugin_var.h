@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,7 +45,6 @@
 class Item;
 class THD;
 struct MEM_ROOT;
-struct SYS_VAR;
 struct TYPELIB;
 struct st_plugin_int;
 
@@ -200,13 +199,6 @@ unsigned long *mysql_sys_var_ulong(THD *thd, int offset);
 unsigned long long *mysql_sys_var_ulonglong(THD *thd, int offset);
 char **mysql_sys_var_str(THD *thd, int offset);
 double *mysql_sys_var_double(THD *thd, int offset);
-
-/*
-  skeleton of a plugin variable - portion of structure common to all.
-*/
-struct SYS_VAR {
-  MYSQL_PLUGIN_VAR_HEADER;
-};
 
 inline void convert_underscore_to_dash(char *str, size_t len) {
   for (char *p = str; p <= str + len; p++)

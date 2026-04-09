@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -274,7 +274,7 @@ inline void test_heap(RandomAccessIterator first, RandomAccessIterator last) {
 
   // test constructor with iterators
   {
-    queue pq2(first, last);
+    queue const pq2(first, last);
     ASSERT_TRUE(pq2.is_valid());
     os << "queue (constructor with iterators): " << pq2 << std::endl;
   }
@@ -284,7 +284,7 @@ inline void test_heap(RandomAccessIterator first, RandomAccessIterator last) {
   ASSERT_TRUE(pq.top() == pq[0]);
 
   // test push
-  value_type new_value = *std::min_element(pq.begin(), pq.end()) - 1;
+  value_type const new_value = *std::min_element(pq.begin(), pq.end()) - 1;
   EXPECT_FALSE(pq.push(new_value));
   ASSERT_TRUE(pq.is_valid());
   os << "pushed " << new_value << "; new queue: " << pq << std::endl;
@@ -297,7 +297,7 @@ inline void test_heap(RandomAccessIterator first, RandomAccessIterator last) {
   // test decrease
   // decrease priority of element at position 3
   {
-    size_type pos = 3;
+    size_type const pos = 3;
     value_type old_priority = pq[pos];
     value_type new_priority = pq[pos];
     pq.decrease(pos, new_priority);
@@ -328,7 +328,7 @@ inline void test_heap(RandomAccessIterator first, RandomAccessIterator last) {
   // test increase
   // increase priority of element at position 4
   {
-    size_type pos = 4;
+    size_type const pos = 4;
     value_type old_priority = pq[pos];
     value_type new_priority = pq[pos];
     pq.increase(pos, new_priority);
@@ -359,7 +359,7 @@ inline void test_heap(RandomAccessIterator first, RandomAccessIterator last) {
   // test update
   // update priority of element at position 2
   {
-    size_type pos = 2;
+    size_type const pos = 2;
     value_type old_priority = pq[pos];
     value_type new_priority = pq[pos];
     pq.update(pos, new_priority);
@@ -452,8 +452,8 @@ inline void test_heap(RandomAccessIterator first, RandomAccessIterator last) {
   // now use the non-const top() method to update the root element
   os << "testing non-const top()" << std::endl;
   {
-    value_type old_priority = pq.top();
-    value_type new_priority = pq.top() - 40;
+    value_type const old_priority = pq.top();
+    value_type const new_priority = pq.top() - 40;
     pq.top() = pq.top() - 40;
     pq.update(0);
     ASSERT_TRUE(pq.is_valid());
@@ -505,7 +505,7 @@ inline void test_heap_of_handles(RandomAccessIterator first,
   }
 
   {
-    queue pq2(handles.begin(), handles.end());
+    queue const pq2(handles.begin(), handles.end());
     ASSERT_TRUE(pq2.is_valid());
     os << "queue: " << pq2 << std::endl;
   }
@@ -588,14 +588,14 @@ TEST_F(PriorityQueueTest, DifferentCtors) {
   Priority_queue<int, std::vector<int>, My_less> pql;
   std::vector<int> intvec;
   for (int ix = 0; ix < 10; ++ix) {
-    Priority_queue<int> pq_ix(intvec.begin(), intvec.end());
+    Priority_queue<int> const pq_ix(intvec.begin(), intvec.end());
     EXPECT_TRUE(pq_ix.is_valid());
     EXPECT_FALSE(pql.push(ix));
     EXPECT_EQ(ix, pql.top());
     intvec.push_back(ix);
   }
-  Priority_queue<int, std::vector<int>, My_less> pql_range(intvec.begin(),
-                                                           intvec.end());
+  Priority_queue<int, std::vector<int>, My_less> const pql_range(intvec.begin(),
+                                                                 intvec.end());
 
   EXPECT_EQ(10U, pql.size());
   EXPECT_FALSE(pql.empty());
@@ -631,7 +631,7 @@ TEST_F(PriorityQueueTest, DecreaseNoop) {
   ss1 << pq;
   for (size_t ix = 0; ix < 10; ++ix) {
     pq.decrease(ix);
-    int val = pq[ix];
+    int const val = pq[ix];
     pq.decrease(ix, val);
     *(pq.begin() + ix) = val;
     pq.decrease(ix);
@@ -646,7 +646,7 @@ TEST_F(PriorityQueueTest, IncreaseNoop) {
   ss1 << pq;
   for (size_t ix = 0; ix < 10; ++ix) {
     pq.increase(ix);
-    int val = pq[ix];
+    int const val = pq[ix];
     pq.increase(ix, val);
     *(pq.begin() + ix) = val;
     pq.increase(ix);
@@ -661,7 +661,7 @@ TEST_F(PriorityQueueTest, UpdateNoop) {
   ss1 << pq;
   for (size_t ix = 0; ix < 10; ++ix) {
     pq.update(ix);
-    int val = pq[ix];
+    int const val = pq[ix];
     pq.update(ix, val);
     *(pq.begin() + ix) = val;
     pq.update(ix);
@@ -802,8 +802,8 @@ TEST_F(PriorityQueueTest, Sort) {
 
   std::stringstream ss1, ss2;
   ss1 << pqcopy;
-  for (size_t i = 0; i < keyscopy.size(); ++i) {
-    ss2 << keyscopy[i] << " ";
+  for (int i : keyscopy) {
+    ss2 << i << " ";
   }
   EXPECT_STREQ(ss1.str().c_str(), ss2.str().c_str());
 }
@@ -843,7 +843,7 @@ TEST_F(PriorityQueueTest, RandomIntegerGenerator) {
   std::vector<int> many_keys;
 
   for (int i = 0; i < 200; ++i) {
-    int value = g(0, 300);
+    int const value = g(0, 300);
     many_keys.push_back(value);
   }
 

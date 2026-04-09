@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -152,26 +152,6 @@ std::string ROUTER_UTILS_EXPORT substitute_variable(const std::string &s,
                                                     const std::string &value);
 
 bool my_check_access(const std::string &path);
-
-/** @brief Copy contents of one file to another.
- *
- * Exception thrown if open, create read or write operation fails.
- */
-void ROUTER_UTILS_EXPORT copy_file(const std::string &from,
-                                   const std::string &to);
-
-/**
- * renames file.
- *
- * The function will overwrite the 'to' file if already exists.
- *
- * @param from old filename
- * @param to   new filename
- *
- * @returns stdx::expected<void, std::error_code>
- */
-stdx::expected<void, std::error_code> ROUTER_UTILS_EXPORT
-rename_file(const std::string &from, const std::string &to);
 
 /** @brief Returns whether the socket name passed as parameter is valid
  */

@@ -127,6 +127,8 @@ include/rpl/reset.inc
 -- Bug#43748
 -- make a user on the slave that can list but not kill system threads.
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE USER user43748@127.0.0.1 IDENTIFIED BY 'meow';
 GRANT PROCESS ON *.* TO user43748@127.0.0.1;
 -- try to KILL system-thread as that non-privileged user (on slave).

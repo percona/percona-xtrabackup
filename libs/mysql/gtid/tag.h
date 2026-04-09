@@ -1,4 +1,4 @@
-// Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,6 @@
 
 #include "mysql/gtid/gtid_constants.h"  // tag_max_length
 #include "mysql/gtid/gtid_format.h"
-#include "mysql/utils/nodiscard.h"
 
 /// @addtogroup GroupLibsMysqlGtid
 /// @{
@@ -79,7 +78,7 @@ class Tag {
   /// @param[in] text Textual representation of a tag
   /// @returns Number of characters read, 0 means that either tag is empty or
   /// invalid
-  [[NODISCARD]] std::size_t from_string(const std::string &text);
+  [[nodiscard]] std::size_t from_string(const std::string &text);
 
   /// @brief Creates Tag object from a given text. If passed text is not a valid
   /// tag representation, object remains empty (empty tag)
@@ -87,7 +86,7 @@ class Tag {
   /// @param[in] text Textual representation of a tag
   /// @returns Number of characters read, 0 means that either tag is empty or
   /// invalid
-  [[NODISCARD]] std::size_t from_cstring(const char *text);
+  [[nodiscard]] std::size_t from_cstring(const char *text);
 
   /// @brief Indicates whether transaction tag is empty
   /// @returns Answer to question: is tag empty?
@@ -123,7 +122,7 @@ class Tag {
   /// tag information for untagged GTIDs. When using
   /// untagged, tag is required to be empty.
   /// @return the number of bytes written into the buf
-  [[NODISCARD]] std::size_t encode_tag(unsigned char *buf,
+  [[nodiscard]] std::size_t encode_tag(unsigned char *buf,
                                        const Gtid_format &gtid_format) const;
 
   /// @brief returns length of encoded tag, based on defined format
@@ -158,7 +157,7 @@ class Tag {
   /// function will read bytes. For Gtid_format::tagged, 0 means
   /// that an error occurred (e.g. not enough bytes in the buffer to read the
   /// tag - corrupted bytes in the buffer).
-  [[NODISCARD]] std::size_t decode_tag(const unsigned char *buf,
+  [[nodiscard]] std::size_t decode_tag(const unsigned char *buf,
                                        std::size_t buf_len,
                                        const Gtid_format &gtid_format);
 

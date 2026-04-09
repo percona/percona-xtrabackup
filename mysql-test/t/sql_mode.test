@@ -248,8 +248,8 @@ set sql_mode=4194304;
 select @@sql_mode;
 set sql_mode=32+(65536*4);
 select @@sql_mode;
---error 1231
-set sql_mode=4294967296*2; # that mode does not exist
+--error ER_WRONG_VALUE_FOR_VAR
+set sql_mode=cast(power(2,34) as unsigned); # that mode does not exist
 select @@sql_mode;
 
 #
@@ -671,3 +671,41 @@ SELECT LENGTH(authentication_string) FROM mysql.user WHERE user= 'user1';
 #Cleanup
 DROP USER 'user1'@'localhost';
 SET sql_mode= DEFAULT;
+
+--echo #
+--echo # Bug#38235957: failure to DROP TABLE with an invalid CONSTRAINT
+--echo #
+
+--echo
+call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* \\[Server\\] Incorrect information in file: '.frm'");
+
+SET sql_mode='';          # ignore warnings about null timestamp.
+
+CREATE TABLE t1 (
+  id INT PRIMARY KEY,
+  a TIMESTAMP NOT NULL,
+  CONSTRAINT `t1_con`
+  CHECK (GET_FORMAT(DATETIME, 'internal') <=> ('0000-00-00 00:00:00' <= a))
+) ENGINE=InnoDB;
+
+--echo
+--echo # Restart server. Not only do we want sql_mode back to DEFAULT (which we
+--echo # could do manually), we also need for the table not to be cached for
+--echo # this issue to show.
+--source include/restart_mysqld.inc
+
+--echo
+--echo # t1_con is not valid, so we can't open the table, and so can't DROP it.
+
+--error ER_WRONG_VALUE
+DROP DATABASE test;
+
+--error ER_WRONG_VALUE
+DROP TABLE t1;
+
+--echo
+--echo # Change sql_mode so t1_con is valid again, then DROP TABLE t1.
+SET sql_mode='';
+DROP TABLE t1;
+
+# EOT

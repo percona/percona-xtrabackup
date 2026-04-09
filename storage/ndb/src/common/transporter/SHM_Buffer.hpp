@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -243,7 +243,7 @@ inline Uint32 SHM_Writer::writev(const struct iovec *vec, int count) {
    */
   Uint32 total = 0;
   for (int i = 0; i < count; i++) {
-    unsigned char *ptr = (unsigned char *)vec[i].iov_base;
+    auto *ptr = (unsigned char *)vec[i].iov_base;
     Uint32 remain = vec[i].iov_len;
     Uint32 segment;
     Uint32 maxBytes;

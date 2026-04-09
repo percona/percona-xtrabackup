@@ -1,5 +1,8 @@
 -- source include/have_log_bin.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 call mtr.add_suppression('Unsafe statement written to the binary log using statement format since BINLOG_FORMAT = STATEMENT.');
 
 SET @old_log_output=@@global.log_output;
@@ -3393,7 +3396,7 @@ INSERT INTO bug19894382 SELECT * FROM client_test_db.bug19894382;
 --echo # Replay binlog events
 let $MYSQLD_DATADIR= `select @@datadir`;
 --exec $MYSQL_BINLOG --force-if-open -d client_test_db $MYSQLD_DATADIR/binlog.000001 > $MYSQLTEST_VARDIR/tmp/mysqlbinlog_bug19894382.binlog
---exec $MYSQL -e "source $MYSQLTEST_VARDIR/tmp/mysqlbinlog_bug19894382.binlog"
+--exec $MYSQL --commands -e "source $MYSQLTEST_VARDIR/tmp/mysqlbinlog_bug19894382.binlog"
 
 --echo # Insert tuples from the client_test_db.bug19894382 to the test.bug19894382.
 --echo # Tuples in the client_test_db.bug19894382 are inserted from the binlog.
@@ -3703,3 +3706,5 @@ SHOW STATUS LIKE 'Com_stmt_reprepare';
 deallocate prepare ps;
 
 DROP TABLE t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

@@ -1,0 +1,3 @@
+!include ../my.cnf
+[mysqld]
+default-storage-engine=ndbcluster

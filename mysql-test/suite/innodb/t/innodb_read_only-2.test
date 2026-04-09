@@ -19,6 +19,12 @@
 # chnage but could not find way to do.(with perl we could run test on windows too)
 -- source include/not_windows.inc
 
+let $messages =
+Failed to compress the gtid_executed table
+;
+--let $suppress_on_current_connection = 1
+--source include/suppress_messages.inc
+
 let MYSQLD_DATADIR =`SELECT @@datadir`;
 let $innodb_file_per_table = `SELECT @@innodb_file_per_table`;
 

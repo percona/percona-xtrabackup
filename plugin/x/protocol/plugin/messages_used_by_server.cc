@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -49,14 +49,14 @@ bool Messages_used_by_server::begin_validate_field(const FieldDescriptor *field,
     const auto &message_options = message->options();
 
     if (!message_options.HasExtension(Mysqlx::server_message_id)) {
-      if (0 == m_forced_packages.count(message->file()->package()))
+      if (0 == m_forced_packages.count(std::string(message->file()->package())))
         return false;
     }
   }
 
   // Check against cycles in Message dependencies graph
   const bool was_node_visited =
-      message && 0 != m_types_done.count(message->full_name());
+      message && 0 != m_types_done.count(std::string(message->full_name()));
 
   if (nullptr == message || was_node_visited) {
     return false;

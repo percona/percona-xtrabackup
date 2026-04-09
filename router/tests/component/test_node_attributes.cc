@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -110,7 +110,7 @@ class NodeAttributesTest : public RouterComponentMetadataTest {
                     const bool read_only = false) {
     const std::string metadata_cache_section =
         get_metadata_cache_section(cluster_type, ttl);
-    std::string routing_rw_section{""};
+    std::string routing_rw_section;
     if (!read_only) {
       routing_rw_section = get_metadata_cache_routing_section(
           router_rw_port, "PRIMARY", "first-available", "rw");
@@ -1203,32 +1203,17 @@ TEST_P(InvalidAttributesTagsTest, InvalidAttributesTags) {
 
   SCOPED_TRACE("// Check the expected warnings were logged once");
   check_log_contains(
-      *router,
-      "Error parsing _hidden from attributes JSON string: not a valid JSON "
-      "object",
-      1);
-  check_log_contains(
-      *router,
-      "Error parsing _disconnect_existing_sessions_when_hidden from "
-      "attributes "
-      "JSON string: not a valid JSON object",
+      *router, "Error parsing attributes JSON string: not a valid JSON object",
       1);
 
   SCOPED_TRACE("// Set the node's attributes.tags to invalid JSON");
   set_nodes_attributes({R"({"tags" : false})"});
 
   SCOPED_TRACE("// Check the expected warnings were logged once");
-  check_log_contains(
-      *router,
-      "Error parsing _hidden from attributes JSON string: tags - not a valid "
-      "JSON object",
-      1);
-  check_log_contains(
-      *router,
-      "Error parsing _disconnect_existing_sessions_when_hidden from "
-      "attributes "
-      "JSON string: tags - not a valid JSON object",
-      1);
+  check_log_contains(*router,
+                     "Error parsing attributes JSON string: tags field is not "
+                     "a valid JSON object",
+                     1);
 
   SCOPED_TRACE("// Set the attributes.tags to be invalid types");
   set_nodes_attributes(

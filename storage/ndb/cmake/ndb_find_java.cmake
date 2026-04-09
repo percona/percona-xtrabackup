@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ ELSE()
   MESSAGE(STATUS "Looking for Java in standard locations")
 ENDIF()
 
-FIND_PACKAGE(Java 1.8 COMPONENTS Development)
+FIND_PACKAGE(Java 11 COMPONENTS Development)
 IF(NOT JAVA_FOUND)
   IF(DEFINED ENV{JAVA_HOME})
     # Could not find Java in the specific location set by JAVA_HOME
@@ -47,9 +47,6 @@ IF(NOT JAVA_FOUND)
   # well known locations
   #
 
-  # Prefer Java with same bit size as current build
-  SET(_bit_suffix "-64")
-
   # Use well known standard base
   SET(_base_path /usr/local/java/)
   IF(WINDOWS)
@@ -57,12 +54,16 @@ IF(NOT JAVA_FOUND)
   ENDIF()
 
   # Search for version in specified order
-  SET(_preferred_versions 1.8)
+  SET(_preferred_versions 11)
 
   FOREACH(_version ${_preferred_versions})
-    SET(_path ${_base_path}jdk${_version}${_bit_suffix})
+    SET(_path ${_base_path}jdk-${_version})
     MESSAGE(STATUS "Looking for Java in ${_path}...")
     SET(ENV{JAVA_HOME} ${_path})
+    # Forget any previously found java (which in such case had wrong version)
+    UNSET(Java_JAVA_EXECUTABLE CACHE)
+    UNSET(Java_JAVAC_EXECUTABLE CACHE)
+    UNSET(Java_JAR_EXECUTABLE CACHE)
     FIND_PACKAGE(Java ${_version} COMPONENTS Development)
     IF(JAVA_FOUND)
       # Found java, no need to search further

@@ -150,7 +150,7 @@ if ($RECOVERED_LSN == 0) {
 
 --echo # Start MySQL...
 --error 1,42
---exec $MYSQLD_CMD $MYSQLD_ARGS --innodb_page_size=$INNODB_PAGE_SIZE --$UNKNOWN_PARAM --innodb-log-checksums=OFF
+--exec $MYSQLD_CMD $MYSQLD_ARGS --innodb_page_size=$INNODB_PAGE_SIZE --$UNKNOWN_PARAM --innodb-log-checksums=OFF --debug=+d,stop_scan_on_corrupt_log
 
 --echo # Verify...
 
@@ -169,6 +169,10 @@ let SEARCH_PATTERN = $PATTERN_APPLY_BATCH_COMPLETED;
 
 let SEARCH_PATTERN = $PATTERN_UNKNOWN_PARAM;
 # Expected: not found
+--source include/search_pattern.inc
+
+let SEARCH_PATTERN =  Doing recovery: scanned up to log sequence number .* start_lsn:.* end_lsn:.* log_segments_read:1;
+# Expected: found
 --source include/search_pattern.inc
 
 --echo ############################################################################################

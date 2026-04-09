@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -43,7 +43,6 @@
 
 #include "my_inttypes.h"
 #include "my_sys.h"
-#include "mysql/utils/nodiscard.h"
 #include "plugin/group_replication/include/gcs_plugin_messages.h"
 #include "plugin/group_replication/include/member_version.h"
 #include "plugin/group_replication/include/plugin_constants.h"
@@ -160,8 +159,11 @@ class Group_member_info : public Plugin_gcs_message {
     // Length of the paylod item: 1 byte
     PIT_PREEMPTIVE_GARBAGE_COLLECTION = 25,
 
+    // Length of the paylod item: 1 byte
+    PIT_COMPONENT_PRIMARY_ELECTION_ENABLED = 26,
+
     // No valid type codes can appear after this one.
-    PIT_MAX = 26
+    PIT_MAX = 27
   };
 
   /*
@@ -296,6 +298,8 @@ class Group_member_info : public Plugin_gcs_message {
     @param[in] preemptive_garbage_collection          member's
     group_replication_preemptive_garbage_collection value
     not to use single-leader behavior
+    @param[in] component_primary_election_enabled      member's has enabled
+    primary election component
     @param[in] psi_mutex_key_arg                      mutex key
    */
   Group_member_info(const char *hostname_arg, uint port_arg,
@@ -312,6 +316,7 @@ class Group_member_info : public Plugin_gcs_message {
                     const char *recovery_endpoints_arg,
                     const char *view_change_uuid_arg, bool allow_single_leader,
                     bool preemptive_garbage_collection,
+                    bool component_primary_election_enabled,
                     PSI_mutex_key psi_mutex_key_arg =
                         key_GR_LOCK_group_member_info_update_lock);
 
@@ -367,6 +372,8 @@ class Group_member_info : public Plugin_gcs_message {
     not to use single-leader behavior
     @param[in] preemptive_garbage_collection          member's
     group_replication_preemptive_garbage_collection value
+    @param[in] component_primary_election_enabled      member's has enabled
+    primary election component
    */
   void update(const char *hostname_arg, uint port_arg, const char *uuid_arg,
               int write_set_extraction_algorithm,
@@ -381,7 +388,8 @@ class Group_member_info : public Plugin_gcs_message {
               bool default_table_encryption_arg,
               const char *recovery_endpoints_arg,
               const char *view_change_uuid_arg, bool allow_single_leader,
-              bool preemptive_garbage_collection);
+              bool preemptive_garbage_collection,
+              bool component_primary_election_enabled);
 
   /**
     Update Group_member_info.
@@ -711,6 +719,17 @@ class Group_member_info : public Plugin_gcs_message {
   */
   bool get_preemptive_garbage_collection();
 
+  /**
+    Get value of variable enabled from component
+    'group_replication_primary_election' on this member.
+
+    @return true  enabled
+            false disabled
+  */
+  bool get_component_primary_election_enabled();
+
+  void set_component_primary_election_enabled(bool enabled);
+
  protected:
   void encode_payload(std::vector<unsigned char> *buffer) const override;
   void decode_payload(const unsigned char *buffer,
@@ -758,6 +777,7 @@ class Group_member_info : public Plugin_gcs_message {
   std::string m_group_action_running_name;
   std::string m_group_action_running_description;
   bool m_preemptive_garbage_collection{PREEMPTIVE_GARBAGE_COLLECTION_DEFAULT};
+  bool m_component_primary_election_enabled{false};
 #ifndef NDEBUG
  public:
   bool skip_encode_default_table_encryption;
@@ -822,7 +842,7 @@ class Group_member_info_manager_interface {
     @return true  if the member is not found.
             false if the member is found.
    */
-  [[NODISCARD]] virtual bool get_group_member_info(
+  [[nodiscard]] virtual bool get_group_member_info(
       const std::string &uuid, Group_member_info &member_info_arg) = 0;
 
   /**
@@ -838,7 +858,7 @@ class Group_member_info_manager_interface {
     @return true  if the member is not found.
             false if the member is found.
    */
-  [[NODISCARD]] virtual bool get_group_member_info_by_index(
+  [[nodiscard]] virtual bool get_group_member_info_by_index(
       int idx, Group_member_info &member_info_arg) = 0;
 
   /**
@@ -860,7 +880,7 @@ class Group_member_info_manager_interface {
     @return true  if the member is not found.
             false if the member is found.
    */
-  [[NODISCARD]] virtual bool get_group_member_info_by_member_id(
+  [[nodiscard]] virtual bool get_group_member_info_by_member_id(
       const Gcs_member_identifier &id, Group_member_info &member_info_arg) = 0;
 
   /**
@@ -1055,7 +1075,7 @@ class Group_member_info_manager_interface {
     @return true  if the member is not found.
             false if the member is found.
   */
-  [[NODISCARD]] virtual bool get_primary_member_info(
+  [[nodiscard]] virtual bool get_primary_member_info(
       Group_member_info &member_info_arg) = 0;
 
   /**
@@ -1101,6 +1121,31 @@ class Group_member_info_manager_interface {
     @return update_lock reference
   */
   virtual mysql_mutex_t *get_update_lock() = 0;
+
+  /**
+  Updates the component primary failover
+
+  @param[in] uuid        member uuid
+  @param[in] enabled     uptodate election enabled
+*/
+  virtual void update_component_primary_election_enabled(
+      const std::string &uuid, bool enabled) = 0;
+
+  /**
+  All members have component primary election enabled.
+
+  @return true       all members have component enabled
+          false      otherwise
+*/
+  virtual bool is_group_replication_elect_prefers_most_updated_enabled() = 0;
+
+  /**
+  Return last timestamp since epoch when a view change updated the group
+  members info.
+
+  @return timestamp of last view change
+*/
+  virtual uint64_t get_timestamp_last_view_change() = 0;
 };
 
 /**
@@ -1181,15 +1226,15 @@ class Group_member_info_manager : public Group_member_info_manager_interface {
 
   bool is_member_info_present(const std::string &uuid) override;
 
-  [[NODISCARD]] bool get_group_member_info(
+  [[nodiscard]] bool get_group_member_info(
       const std::string &uuid, Group_member_info &member_info_arg) override;
 
-  [[NODISCARD]] bool get_group_member_info_by_index(
+  [[nodiscard]] bool get_group_member_info_by_index(
       int idx, Group_member_info &member_info_arg) override;
 
   Member_version get_group_lowest_online_version() override;
 
-  [[NODISCARD]] bool get_group_member_info_by_member_id(
+  [[nodiscard]] bool get_group_member_info_by_member_id(
       const Gcs_member_identifier &id,
       Group_member_info &member_info_arg) override;
 
@@ -1245,7 +1290,7 @@ class Group_member_info_manager : public Group_member_info_manager_interface {
 
   bool get_primary_member_uuid(std::string &primary_member_uuid) override;
 
-  [[NODISCARD]] bool get_primary_member_info(
+  [[nodiscard]] bool get_primary_member_info(
       Group_member_info &member_info_arg) override;
 
   bool is_majority_unreachable() override;
@@ -1258,6 +1303,14 @@ class Group_member_info_manager : public Group_member_info_manager_interface {
 
   mysql_mutex_t *get_update_lock() override { return &update_lock; }
 
+  void update_component_primary_election_enabled(const std::string &uuid,
+                                                 bool enabled) override;
+
+  [[nodiscard]] bool is_group_replication_elect_prefers_most_updated_enabled()
+      override;
+
+  uint64_t get_timestamp_last_view_change() override;
+
  private:
   void clear_members();
 
@@ -1268,6 +1321,8 @@ class Group_member_info_manager : public Group_member_info_manager_interface {
   Group_member_info *local_member_info;
 
   mysql_mutex_t update_lock;
+
+  uint64_t view_change_timestamp{0};
 };
 
 /**

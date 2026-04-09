@@ -79,13 +79,13 @@ SET @insert_tbl =CONCAT('INSERT INTO ', tab_name, '( `col01`, `col02`,
 	`col11`, `col12`, `col13`, `col14`, `col15`, `col16`, `col17`, `col18`,
 	`col19`, `col20`, `col21`, `col22`, `col23`, `col24`, `col25`, `col26`,
 	`col27`, `col28`, `col29`, `col30`)
-	VALUES ( MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()),
-	MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()),
-	MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()),
-	MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()),
-	MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()),
-	MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()), MD5(RAND()),
-	MD5(RAND()))');
+	VALUES ( SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256),
+	SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256),
+	SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256),
+	SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256),
+	SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256),
+	SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256), SHA2(RAND(),256),
+	SHA2(RAND(),256))');
 PREPARE ins_stmt FROM @insert_tbl;
 while (i <= 2000) DO
 EXECUTE ins_stmt;

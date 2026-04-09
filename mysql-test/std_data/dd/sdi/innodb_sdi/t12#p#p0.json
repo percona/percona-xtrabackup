@@ -329,7 +329,7 @@
                 "description_utf8": "6",
                 "engine": "InnoDB",
                 "comment": "",
-                "options": "",
+                "options": "secondary_load=0;",
                 "se_private_data": "",
                 "values": [
                     {
@@ -358,7 +358,7 @@
                 "description_utf8": "11",
                 "engine": "InnoDB",
                 "comment": "",
-                "options": "",
+                "options": "secondary_load=0;",
                 "se_private_data": "",
                 "values": [
                     {
@@ -387,7 +387,7 @@
                 "description_utf8": "16",
                 "engine": "InnoDB",
                 "comment": "",
-                "options": "",
+                "options": "secondary_load=0;",
                 "se_private_data": "",
                 "values": [
                     {
@@ -416,7 +416,7 @@
                 "description_utf8": "21",
                 "engine": "InnoDB",
                 "comment": "",
-                "options": "",
+                "options": "secondary_load=0;",
                 "se_private_data": "",
                 "values": [
                     {

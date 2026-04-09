@@ -1,0 +1,248 @@
+# Validate handling of url_host configured for a given service instance
+#
+# We create 3 services with the same name "svc". Each has different url_host
+# entry assigned in the metadata. Each exposes the same path "/tab" but there
+# is a different database table/procedure underneath for each, so that we could
+# see if the expected service is handling the request. Using 
+# --request-header-host or --encoded-request-header-host parametrs to
+# the mrs_client we test different requests scenarios and check if the url_host
+# is honoured as expected.
+#
+
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+--echo create 3 different tables in the test schema, each will be exposed by a different
+--echo sercvice instance so that we could see which service handles the request
+create database host_tests;
+create table host_tests.table1(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into host_tests.table1 values(1, "TABLE1");
+
+create table host_tests.table2(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into host_tests.table2 values(1, "TABLE2");
+
+create table host_tests.table3(id int unsigned NOT NULL AUTO_INCREMENT, value VARCHAR(30), PRIMARY KEY (id));
+insert into host_tests.table3 values(1, "TABLE3");
+
+DELIMITER $$;
+CREATE PROCEDURE host_tests.procedure1() BEGIN select "PROCEDURE1"; END;$$
+CREATE PROCEDURE host_tests.procedure2() BEGIN select "PROCEDURE2"; END;$$
+CREATE PROCEDURE host_tests.procedure3() BEGIN select "PROCEDURE3"; END;$$
+
+CREATE FUNCTION host_tests.function1() RETURNS VARCHAR(20) BEGIN RETURN "FUNCTION1"; END;$$
+CREATE FUNCTION host_tests.function2() RETURNS VARCHAR(20) BEGIN RETURN "FUNCTION2"; END;$$
+CREATE FUNCTION host_tests.function3() RETURNS VARCHAR(20) BEGIN RETURN "FUNCTION3"; END;$$
+DELIMITER ;$$
+
+--let $mrs_host_and_port=127.0.0.1:$HTTP_SERVER_PORT
+--let MRS_CLIENT_ARGS=$MRS_CLIENT --url https://$mrs_host_and_port --display REQUEST,BODY,RESULT
+
+
+--source ../include/mrs/start_object_definition.inc
+
+##########################################
+#Create 4 services of the same name,
+# last has different protocol,
+# each has different url_host:
+#respectively: "", "HOST1", "HOST2", "HOST3"
+##########################################
+
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_protocol="HTTPS"
+--source ../include/mrs/service/add.inc
+SET @service_id1=@service_id;
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name="HOST1"
+--let $mrs_add_service_protocol="HTTPS"
+--source ../include/mrs/service/add.inc
+SET @service_id2=@service_id;
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name="HOST2"
+--let $mrs_add_service_protocol="HTTPS"
+--source ../include/mrs/service/add.inc
+SET @service_id3=@service_id;
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name="HOST3"
+--let $mrs_add_service_protocol="HTTP"
+--source ../include/mrs/service/add.inc
+SET @service_id4=@service_id;
+
+
+--echo ##########################################
+--echo # Add our test schema to each service
+--echo ##########################################
+--let $mrs_add_schema=host_tests
+--let $mrs_add_schema_path=/hostTests
+--let $mrs_service_id_sql_variable=@service_id1
+--source ../include/mrs/db_schema/add.inc
+SET @schema_id1=@schema_id;
+
+--let $mrs_add_schema=host_tests
+--let $mrs_add_schema_path=/hostTests
+--let $mrs_service_id_sql_variable=@service_id2
+--source ../include/mrs/db_schema/add.inc
+SET @schema_id2=@schema_id;
+
+--let $mrs_add_schema=host_tests
+--let $mrs_add_schema_path=/hostTests
+--let $mrs_service_id_sql_variable=@service_id3
+--source ../include/mrs/db_schema/add.inc
+SET @schema_id3=@schema_id;
+
+--let $mrs_add_schema=host_tests
+--let $mrs_add_schema_path=/hostTests
+--let $mrs_service_id_sql_variable=@service_id4
+--source ../include/mrs/db_schema/add.inc
+SET @schema_id4=@schema_id;
+
+
+--echo ##########################################
+--echo # Expose the table objects
+--echo ##########################################
+--let $mrs_schema_id_sql_variable=@schema_id1
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id2
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id3
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id4
+--let $mrs_add_db_object_type=TABLE
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+--echo ##########################################
+--echo # Expose the procedure objects
+--echo ##########################################
+--let $mrs_schema_id_sql_variable=@schema_id1
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=procedure1
+--let $mrs_add_db_object_path=/proc
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id2
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=procedure2
+--let $mrs_add_db_object_path=/proc
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id3
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=procedure3
+--let $mrs_add_db_object_path=/proc
+--source ../include/mrs/db_object/add.inc
+
+--echo ##########################################
+--echo # Expose the function objects
+--echo ##########################################
+--let $mrs_schema_id_sql_variable=@schema_id1
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object=function1
+--let $mrs_add_db_object_path=/func
+--let $mrs_add_db_object_format=ITEM
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id2
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object=function2
+--let $mrs_add_db_object_path=/func
+--let $mrs_add_db_object_format=ITEM
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_schema_id_sql_variable=@schema_id3
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object=function3
+--let $mrs_add_db_object_path=/func
+--let $mrs_add_db_object_format=ITEM
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo "Default host - should use "svc" with url_host="" that exposes table1/procedure1/function1
+--exec $MRS_CLIENT_ARGS --path /svc/hostTests/tab
+--exec $MRS_CLIENT_ARGS --path /svc/hostTests/proc
+--exec $MRS_CLIENT_ARGS --path /svc/hostTests/func
+
+--echo Force host=HOST1 for the request - should use "svc" configured for HOST1 that exposes table2/procedure2/function2
+--echo verifies that protocol in links is HTTPS
+--exec $MRS_CLIENT_ARGS --request-header-host HOST1 --path /svc/hostTests/tab
+--exec $MRS_CLIENT_ARGS --request-header-host HOST1 --path /svc/hostTests/proc
+--exec $MRS_CLIENT_ARGS --request-header-host HOST1 --path /svc/hostTests/func
+
+--echo Force host=HOST3 for the request - should use "svc" configured for HOST3 that exposes table2
+--echo verifies that protocol in links is is HTTP
+--exec $MRS_CLIENT_ARGS --request-header-host HOST3 --path /svc/hostTests/tab
+
+--echo Force host=HOST2:<numeric_port> for the request - should use "svc" configured for HOST2 that exposes function3
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:0 --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:8848 --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:3123123123122 --path /svc/hostTests/func
+
+--echo Force host=HOST2:<non_port> for the request - should use "svc" configured for url_host="" that exposes function1
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2: --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:nan --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:22a --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:+23 --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:!#!@ --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:8000: --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2:8000:8000 --path /svc/hostTests/func
+
+--echo Force various unknown host variations for the request - should use "svc" configured for url_host="" that exposes function1
+--exec $MRS_CLIENT_ARGS --request-header-host : --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host 123 --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host ::: --path /svc/hostTests/func
+--exec $MRS_CLIENT_ARGS --request-header-host 1:1:1: --path /svc/hostTests/func
+
+--let $mrs_client_arg_path='/svc/hostTests/func'
+--let $mrs_client_arg_request_header_host='[]:12'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/hostTests/func'
+--let $mrs_client_arg_request_header_host='[::1]:'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/hostTests/func'
+--let $mrs_client_arg_request_header_host='[::1]'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/hostTests/func'
+--let $mrs_client_arg_request_header_host='[::1]:123'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/hostTests/func'
+--let $mrs_client_arg_request_header_host='[::1]:aa'
+--source ../include/mrs/mrs_client.inc
+
+--echo Force host=HOST2 for the request - should use "svc" configured for HOST2 that exposes table3/procedure3/function3
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2 --path /svc/hostTests/tab
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2 --path /svc/hostTests/proc
+--exec $MRS_CLIENT_ARGS --request-header-host HOST2 --path /svc/hostTests/func
+
+--echo Force host=HOSTUNKNOW for the request - should use "svc" configured for url_host="" that exposes table1/procedure1/function1
+--echo as there is no service for that sepcific host
+--exec $MRS_CLIENT_ARGS --request-header-host HOSTUNKNOWN --path /svc/hostTests/tab
+--exec $MRS_CLIENT_ARGS --request-header-host HOSTUNKNOWN --path /svc/hostTests/proc
+--exec $MRS_CLIENT_ARGS --request-header-host HOSTUNKNOWN --path /svc/hostTests/func
+
+# Cleanup
+DROP SCHEMA host_tests;
+--source ../include/mrs/cleanup.inc

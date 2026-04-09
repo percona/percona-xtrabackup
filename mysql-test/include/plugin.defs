@@ -40,8 +40,6 @@ ha_example                              plugin_output_directory  no EXAMPLE_PLUG
 conflicting_variables                   plugin_output_directory  no CONFLICTING_VARIABLES
 semisync_source                         plugin_output_directory  no SEMISYNC_SOURCE_PLUGIN
 semisync_replica                        plugin_output_directory  no SEMISYNC_REPLICA_PLUGIN
-semisync_master                         plugin_output_directory  no SEMISYNC_MASTER_PLUGIN
-semisync_slave                          plugin_output_directory  no SEMISYNC_SLAVE_PLUGIN
 ha_archive                              plugin_output_directory  no ARCHIVE_PLUGIN
 ha_blackhole                            plugin_output_directory  no BLACKHOLE_PLUGIN
 ha_federated                            plugin_output_directory  no FEDERATED_PLUGIN
@@ -64,7 +62,6 @@ test_udf_services  			plugin_output_directory  no TESTUDFREGISTRATION test_udf_r
 test_udf_services  			plugin_output_directory  no TESTUDFEXTENSIONSERVICES test_udf_extension_services
 group_replication  			plugin_output_directory  no GROUP_REPLICATION
 locking_service    			plugin_output_directory  no LOCKING_SERVICE
-version_token      			plugin_output_directory  no VERSION_TOKEN
 # Test services framework
 libtest_services                        plugin_output_directory  no TESTSERVICES
 libtest_services_threaded               plugin_output_directory  no TESTSERVICESTHREADED
@@ -146,6 +143,9 @@ component_test_mysql_current_thread_reader  plugin_output_directory  no  TEST_MY
 # test mysql_runtime_error service
 component_test_mysql_runtime_error  plugin_output_directory  no  TEST_MYSQL_RUNTIME_ERROR_COMPONENT
 
+# test mysql_udf_aggregate_error service
+component_test_udf_aggregate  plugin_output_directory  no  TEST_UDF_AGGREGATE
+
 # mysqlbackup component
 component_mysqlbackup           plugin_output_directory  no  MYSQLBACKUP_COMPONENT
 
@@ -196,3 +196,18 @@ component_test_execute_prepared_statement  plugin_output_directory  no  COMPONEN
 
 # component_test_execute_regular_statement
 component_test_execute_regular_statement  plugin_output_directory  no  COMPONENT_TEST_EXECUTE_REGULAR_STATEMENT
+
+# connection control component
+component_connection_control     plugin_output_directory  no  COMPONENT_CONNECTION_CONTROL
+
+# init before register test component
+component_test_component_init_then_register     plugin_output_directory  no  COMPONENT_TEST_COMPONENT_INIT_THEN_REGISTER
+
+# deinit no deadlock test component
+component_test_component_deinit_no_deadlock     plugin_output_directory  no  COMPONENT_TEST_COMPONENT_DEINIT_NO_DEADLOCK
+
+# init fail test component
+component_test_component_init_fail     plugin_output_directory  no  COMPONENT_TEST_COMPONENT_INIT_FAIL
+
+# component_test_mysql_file_service
+component_test_mysql_file_service     plugin_output_directory  no  COMPONENT_TEST_MYSQL_FILE_SERVICE

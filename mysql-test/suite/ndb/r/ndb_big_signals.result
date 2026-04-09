@@ -1,4 +1,4 @@
-select now() into @now;
+select utc_timestamp() into @now;
 section size 3x32768: DB(1) -> DB(1)
 Sending dump signal with data:
 0x0001925d 0x00000001 0x00000001 0x499602d2 
@@ -114,17 +114,22 @@ create temporary table ndb_output (
 idx int auto_increment primary key,
 output_line blob
 );
+select locate(' ',substring(output_line, 20))+20 into @tslen
+from ndb_output where output_line like '____-__-_____:__:__% %' limit 1;
+select @tslen as 'timestamp length';
+timestamp length
+29
 select
-substr(output_line, 21)
+substr(output_line, @tslen)
 from ndb_output
 where
 output_line like '%Dummy%'
-  and substr(output_line, 1, 20) >= @now
+  and replace(substr(output_line, 1, 19),'T',' ') >= @now
 group by output_line
 order by
 substr(output_line, instr(output_line, 'size')),
-substr(output_line, 21) desc;
-substr(output_line, 21)
+substr(output_line, @tslen) desc;
+substr(output_line, @tslen)
 Node 1: Sending CmvmiDummySignal (size 7+1+8175+0+0) from 16 to 1.
 Node 1: Receiving CmvmiDummySignal (size 7+1+8175+0+0) from 16 to 1.
 Node 1: Sending CmvmiDummySignal (size 7+1+8175+0+0) from 3 to 1.

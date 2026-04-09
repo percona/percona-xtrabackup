@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,7 +22,7 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
-#include <stdio.h>
+#include <cstdio>
 /**
  * LCP Simulation program
  * ----------------------
@@ -124,7 +124,7 @@ static void calculate_lcp_sizes(long double &lcp_size,
   long double recovery_work = 60.0;
   long double insert_work = 45.0;
   long double delete_work = 120.0;
-  if (1) {
+  if (true) {
     long double rate = update_rate;
     rate /= (long double)db_size;
     rate *= (long double)2048.0;

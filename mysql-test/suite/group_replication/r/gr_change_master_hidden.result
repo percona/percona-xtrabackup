@@ -11,6 +11,8 @@ GRANT REPLICATION SLAVE ON *.* TO 'manish'@'%';
 CREATE USER 'internal_usr'@'%' IDENTIFIED BY 'unique_password';
 GRANT GROUP_REPLICATION_STREAM ON *.* TO 'internal_usr'@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET sql_log_bin=1;
 CHANGE REPLICATION SOURCE TO SOURCE_USER='internal_usr', SOURCE_PASSWORD='unique_password' FOR CHANNEL 'group_replication_recovery';
 SET @old_log_output= @@log_output;

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -403,7 +403,7 @@ void Properties::print(FILE *out, const char *prefix) const {
     prefix = "";
   }
 
-  for (auto i : impl->content) {
+  for (const auto &i : impl->content) {
     switch (i.second.valueType) {
       case PropertiesType_Uint32:
         fprintf(out, "%s%s = (Uint32) %d\n", prefix, i.second.name,
@@ -456,9 +456,8 @@ const char *IteratorImpl::next() {
     const char *ret = m_iterator->second.name;
     ++m_iterator;
     return ret;
-  } else {
-    return nullptr;
   }
+  return nullptr;
 }
 
 /**
@@ -555,7 +554,7 @@ void PropertiesImpl::clear() { content.clear(); }
 Uint32 PropertiesImpl::getTotalItems() const {
   int ret = 0;
 
-  for (auto &x : content) {
+  for (const auto &x : content) {
     if (x.second.valueType == PropertiesType_Properties) {
       ret += ((Properties *)x.second.value)->impl->getTotalItems();
     } else {
@@ -571,26 +570,25 @@ const char *PropertiesImpl::getProps(const char *name, PropertiesImpl **impl) {
   if (tmp == nullptr) {
     *impl = this;
     return ret;
-  } else {
-    Uint32 sz = Uint32(tmp - name);
-    char *tmp2 = (char *)malloc(sz + 1);
-    memcpy(tmp2, name, sz);
-    tmp2[sz] = 0;
-
-    PropertyImpl *nvp = get(tmp2);
-
-    free(tmp2);
-
-    if (nvp == nullptr) {
-      *impl = nullptr;
-      return nullptr;
-    }
-    if (nvp->valueType != PropertiesType_Properties) {
-      *impl = nullptr;
-      return name;
-    }
-    return ((Properties *)nvp->value)->impl->getProps(tmp + 1, impl);
   }
+  auto sz = Uint32(tmp - name);
+  char *tmp2 = (char *)malloc(sz + 1);
+  memcpy(tmp2, name, sz);
+  tmp2[sz] = 0;
+
+  PropertyImpl *nvp = get(tmp2);
+
+  free(tmp2);
+
+  if (nvp == nullptr) {
+    *impl = nullptr;
+    return nullptr;
+  }
+  if (nvp->valueType != PropertiesType_Properties) {
+    *impl = nullptr;
+    return name;
+  }
+  return ((Properties *)nvp->value)->impl->getProps(tmp + 1, impl);
 }
 
 const char *PropertiesImpl::getPropsPut(const char *name,
@@ -600,31 +598,30 @@ const char *PropertiesImpl::getPropsPut(const char *name,
   if (tmp == nullptr) {
     *impl = this;
     return ret;
-  } else {
-    Uint32 sz = Uint32(tmp - name);
-    char *tmp2 = (char *)malloc(sz + 1);
-    memcpy(tmp2, name, sz);
-    tmp2[sz] = 0;
-
-    PropertyImpl *nvp = get(tmp2);
-
-    if (nvp == nullptr) {
-      Properties *tmpP = new Properties();
-      PropertyImpl tmpPI = PropertyImpl(tmp2, tmpP);
-      PropertyImpl *nvp2 = put(tmpPI);
-
-      delete tmpP;
-      free(tmp2);
-
-      return ((Properties *)nvp2->value)->impl->getPropsPut(tmp + 1, impl);
-    }
-    free(tmp2);
-    if (nvp->valueType != PropertiesType_Properties) {
-      *impl = nullptr;
-      return name;
-    }
-    return ((Properties *)nvp->value)->impl->getPropsPut(tmp + 1, impl);
   }
+  auto sz = Uint32(tmp - name);
+  char *tmp2 = (char *)malloc(sz + 1);
+  memcpy(tmp2, name, sz);
+  tmp2[sz] = 0;
+
+  PropertyImpl *nvp = get(tmp2);
+
+  if (nvp == nullptr) {
+    auto *tmpP = new Properties();
+    PropertyImpl tmpPI = PropertyImpl(tmp2, tmpP);
+    PropertyImpl *nvp2 = put(tmpPI);
+
+    delete tmpP;
+    free(tmp2);
+
+    return ((Properties *)nvp2->value)->impl->getPropsPut(tmp + 1, impl);
+  }
+  free(tmp2);
+  if (nvp->valueType != PropertiesType_Properties) {
+    *impl = nullptr;
+    return name;
+  }
+  return ((Properties *)nvp->value)->impl->getPropsPut(tmp + 1, impl);
 }
 
 struct CharBuf {

@@ -68,7 +68,7 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (b = 2 OR b = 15) AND (c = 3 OR c IS NULL) GROUP BY a;
 EXPLAIN
--> Filter: (((t.b = 2) or (t.b = 15)) and ((t.c = 3) or (t.c is null)))  (rows=12)
+-> Filter: (((t.c = 3) or (t.c is null)) and ((t.b = 2) or (t.b = 15)))  (rows=12)
     -> Covering index skip scan for grouping on t using k1  (rows=51)
 
 FLUSH STATUS;
@@ -315,8 +315,8 @@ drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
 GROUP BY a, b;
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=17)
-    -> Covering index skip scan for grouping on t using k1 over (a = 1 AND b = 2) OR (a = 1 AND b = 15) OR (2 more)  (rows=17)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for grouping on t using k1 over (a = 1 AND b = 2) OR (a = 1 AND b = 15) OR (2 more)  (rows=1)
 
 FLUSH STATUS;
 SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
@@ -364,8 +364,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT DISTINCT a, b FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40);
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=17)
-    -> Covering index skip scan for deduplication on t using k1 over (a = 1 AND b = 2) OR (a = 1 AND b = 15) OR (2 more)  (rows=17)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for deduplication on t using k1 over (a = 1 AND b = 2) OR (a = 1 AND b = 15) OR (2 more)  (rows=1)
 
 FLUSH STATUS;
 SELECT DISTINCT a, b FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40);
@@ -387,8 +387,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT DISTINCT a FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15);
 EXPLAIN
--> Filter: (((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=12)
-    -> Covering index skip scan for deduplication on t using k1 over (a = 1) OR (a = 12)  (rows=12)
+-> Filter: (((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for deduplication on t using k1 over (a = 1) OR (a = 12)  (rows=1)
 
 FLUSH STATUS;
 SELECT DISTINCT a FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15);
@@ -437,8 +437,8 @@ drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a > 9) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
 GROUP BY a;
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a > 9)))  (rows=12)
-    -> Covering index skip scan for grouping on t using k1 over (a = 1) OR (9 < a)  (rows=12)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a > 9)))  (rows=1.73)
+    -> Covering index skip scan for grouping on t using k1 over (a = 1) OR (9 < a)  (rows=3)
 
 FLUSH STATUS;
 SELECT a, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a > 9) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
@@ -703,7 +703,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d) FROM t  WHERE (a > 5) AND (c = 3 OR c = 
 (d  < -24 OR d = 3 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 5) and ((t.c = 3) or (t.c = 40)) and ((t.d < <cache>(-(24))) or (t.d = 3) or (t.d is null)))  (rows=29)
+-> Filter: ((t.a > 5) and ((t.c = 3) or (t.c = 40)) and ((t.d < <cache>(-(24))) or (t.d = 3) or (t.d is null)))  (rows=24.6)
     -> Covering index skip scan for grouping on t using k1 over (NULL <= d < -24) OR (d = 3)  (rows=57)
 
 FLUSH STATUS;
@@ -803,7 +803,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  =  1 OR d = 9 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 1) or (t.d = 9) or (t.d is null)))  (rows=1.28)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 1) or (t.d = 9) or (t.d is null)))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = 1) OR (d = 9)  (rows=11)
 
 FLUSH STATUS;
@@ -833,7 +833,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d), MAX(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  =  0 OR d = 9 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 0) or (t.d = 9) or (t.d is null)))  (rows=1.28)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 0) or (t.d = 9) or (t.d is null)))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = 0) OR (d = 9)  (rows=11)
 
 FLUSH STATUS;
@@ -863,7 +863,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d), MAX(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  > 0 AND d < 2 OR d > 3 AND d < 5 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and (((t.d > 0) and (t.d < 2)) or ((t.d > 3) and (t.d < 5)) or (t.d is null)))  (rows=2.06)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and (((t.d > 0) and (t.d < 2)) or ((t.d > 3) and (t.d < 5)) or (t.d is null)))  (rows=1.78)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (0 < d < 2) OR (3 < d < 5)  (rows=11)
 
 FLUSH STATUS;
@@ -893,7 +893,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d) FROM t  WHERE (a > 9) AND (c = 3 OR c = 
 (d < 2 OR d > 5 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d < 2) or (t.d > 5) or (t.d is null)))  (rows=2.97)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d < 2) or (t.d > 5) or (t.d is null)))  (rows=2.87)
     -> Covering index skip scan for grouping on t using k1 over (NULL <= d < 2) OR (5 < d)  (rows=11)
 
 FLUSH STATUS;
@@ -927,7 +927,7 @@ EXPLAIN FORMAT=TREE SELECT a, b , max(d) FROM t  WHERE (a >= 10) AND (c = 3 or c
 (d is NULL or d = -10 or d = -23)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=1.28)
+-> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = -23) OR (d = -10)  (rows=11)
 
 FLUSH STATUS;
@@ -953,7 +953,7 @@ EXPLAIN FORMAT=TREE SELECT a, b , min(d) FROM t  WHERE (a >= 10) AND (c = 3 or c
 (d is NULL or d = -10 or d = -23)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=1.28)
+-> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = -23) OR (d = -10)  (rows=11)
 
 FLUSH STATUS;
@@ -977,8 +977,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MIN(b), MAX(b) FROM t  WHERE a > 9 GROUP BY a;
 EXPLAIN
--> Filter: (t.a > 9)  (rows=12)
-    -> Covering index skip scan for grouping on t using k1 over (9 < a)  (rows=12)
+-> Filter: (t.a > 9)  (rows=1)
+    -> Covering index skip scan for grouping on t using k1 over (9 < a)  (rows=1)
 
 FLUSH STATUS;
 SELECT a, MIN(b), MAX(b) FROM t  WHERE a > 9 GROUP BY a;
@@ -1194,7 +1194,7 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (b = 2 OR b = 15) AND (c = 3 OR c IS NULL) GROUP BY a;
 EXPLAIN
--> Filter: (((t.b = 2) or (t.b = 15)) and ((t.c = 3) or (t.c is null)))  (rows=12)
+-> Filter: (((t.c = 3) or (t.c is null)) and ((t.b = 2) or (t.b = 15)))  (rows=12)
     -> Covering index skip scan for grouping on t using k1  (rows=51)
 
 FLUSH STATUS;
@@ -1441,8 +1441,8 @@ drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
 GROUP BY a, b;
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=17)
-    -> Covering index skip scan for grouping on t using k1 over (a = 12 AND b = 2) OR (a = 12 AND b = 15) OR (2 more)  (rows=17)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for grouping on t using k1 over (a = 12 AND b = 2) OR (a = 12 AND b = 15) OR (2 more)  (rows=1)
 
 FLUSH STATUS;
 SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
@@ -1490,8 +1490,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT DISTINCT a, b FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40);
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=17)
-    -> Covering index skip scan for deduplication on t using k1 over (a = 12 AND b = 2) OR (a = 12 AND b = 15) OR (2 more)  (rows=17)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for deduplication on t using k1 over (a = 12 AND b = 2) OR (a = 12 AND b = 15) OR (2 more)  (rows=1)
 
 FLUSH STATUS;
 SELECT DISTINCT a, b FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40);
@@ -1513,8 +1513,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT DISTINCT a FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15);
 EXPLAIN
--> Filter: (((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=12)
-    -> Covering index skip scan for deduplication on t using k1 over (a = 12) OR (a = 1)  (rows=12)
+-> Filter: (((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for deduplication on t using k1 over (a = 12) OR (a = 1)  (rows=1)
 
 FLUSH STATUS;
 SELECT DISTINCT a FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15);
@@ -1563,8 +1563,8 @@ drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a > 9) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
 GROUP BY a;
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a > 9)))  (rows=12)
-    -> Covering index skip scan for grouping on t using k1 over (a < 9) OR (a = 1)  (rows=12)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a > 9)))  (rows=1.73)
+    -> Covering index skip scan for grouping on t using k1 over (a < 9) OR (a = 1)  (rows=3)
 
 FLUSH STATUS;
 SELECT a, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a > 9) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
@@ -1829,7 +1829,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d) FROM t  WHERE (a > 5) AND (c = 3 OR c = 
 (d  < -24 OR d = 3 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 5) and ((t.c = 3) or (t.c = 40)) and ((t.d < <cache>(-(24))) or (t.d = 3) or (t.d is null)))  (rows=29)
+-> Filter: ((t.a > 5) and ((t.c = 3) or (t.c = 40)) and ((t.d < <cache>(-(24))) or (t.d = 3) or (t.d is null)))  (rows=24.6)
     -> Covering index skip scan for grouping on t using k1 over (NULL <= d < -24) OR (d = 3)  (rows=57)
 
 FLUSH STATUS;
@@ -1929,7 +1929,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  =  1 OR d = 9 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 1) or (t.d = 9) or (t.d is null)))  (rows=1.28)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 1) or (t.d = 9) or (t.d is null)))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = 1) OR (d = 9)  (rows=11)
 
 FLUSH STATUS;
@@ -1959,7 +1959,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d), MAX(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  =  0 OR d = 9 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 0) or (t.d = 9) or (t.d is null)))  (rows=1.28)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 0) or (t.d = 9) or (t.d is null)))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = 0) OR (d = 9)  (rows=11)
 
 FLUSH STATUS;
@@ -1989,7 +1989,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d), MAX(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  > 0 AND d < 2 OR d > 3 AND d < 5 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and (((t.d > 0) and (t.d < 2)) or ((t.d > 3) and (t.d < 5)) or (t.d is null)))  (rows=2.06)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and (((t.d > 0) and (t.d < 2)) or ((t.d > 3) and (t.d < 5)) or (t.d is null)))  (rows=1.78)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (0 < d < 2) OR (3 < d < 5)  (rows=11)
 
 FLUSH STATUS;
@@ -2019,7 +2019,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d) FROM t  WHERE (a > 9) AND (c = 3 OR c = 
 (d < 2 OR d > 5 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d < 2) or (t.d > 5) or (t.d is null)))  (rows=2.97)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d < 2) or (t.d > 5) or (t.d is null)))  (rows=2.87)
     -> Covering index skip scan for grouping on t using k1 over (NULL <= d < 2) OR (5 < d)  (rows=11)
 
 FLUSH STATUS;
@@ -2053,7 +2053,7 @@ EXPLAIN FORMAT=TREE SELECT a, b , max(d) FROM t  WHERE (a >= 10) AND (c = 3 or c
 (d is NULL or d = -10 or d = -23)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=1.28)
+-> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = -23) OR (d = -10)  (rows=11)
 
 FLUSH STATUS;
@@ -2079,7 +2079,7 @@ EXPLAIN FORMAT=TREE SELECT a, b , min(d) FROM t  WHERE (a >= 10) AND (c = 3 or c
 (d is NULL or d = -10 or d = -23)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=1.28)
+-> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = -23) OR (d = -10)  (rows=11)
 
 FLUSH STATUS;
@@ -2103,8 +2103,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MIN(b), MAX(b) FROM t  WHERE a > 9 GROUP BY a;
 EXPLAIN
--> Filter: (t.a > 9)  (rows=12)
-    -> Covering index skip scan for grouping on t using k1 over (a < 9)  (rows=12)
+-> Filter: (t.a > 9)  (rows=1)
+    -> Covering index skip scan for grouping on t using k1 over (a < 9)  (rows=1)
 
 FLUSH STATUS;
 SELECT a, MIN(b), MAX(b) FROM t  WHERE a > 9 GROUP BY a;
@@ -2195,7 +2195,7 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (b = 2 OR b = 15) AND (c = 3 OR c IS NULL) GROUP BY a;
 EXPLAIN
--> Filter: (((t.b = 2) or (t.b = 15)) and ((t.c = 3) or (t.c is null)))  (rows=12)
+-> Filter: (((t.c = 3) or (t.c is null)) and ((t.b = 2) or (t.b = 15)))  (rows=12)
     -> Covering index skip scan for grouping on t using k1  (rows=51)
 
 FLUSH STATUS;
@@ -2442,8 +2442,8 @@ drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
 GROUP BY a, b;
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=17)
-    -> Covering index skip scan for grouping on t using k1 over (a = 1 AND b = 15) OR (a = 1 AND b = 2) OR (2 more)  (rows=17)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for grouping on t using k1 over (a = 1 AND b = 15) OR (a = 1 AND b = 2) OR (2 more)  (rows=1)
 
 FLUSH STATUS;
 SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
@@ -2491,8 +2491,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT DISTINCT a, b FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40);
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=17)
-    -> Covering index skip scan for deduplication on t using k1 over (a = 1 AND b = 15) OR (a = 1 AND b = 2) OR (2 more)  (rows=17)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for deduplication on t using k1 over (a = 1 AND b = 15) OR (a = 1 AND b = 2) OR (2 more)  (rows=1)
 
 FLUSH STATUS;
 SELECT DISTINCT a, b FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40);
@@ -2514,8 +2514,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT DISTINCT a FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15);
 EXPLAIN
--> Filter: (((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=12)
-    -> Covering index skip scan for deduplication on t using k1 over (a = 1) OR (a = 12)  (rows=12)
+-> Filter: (((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for deduplication on t using k1 over (a = 1) OR (a = 12)  (rows=1)
 
 FLUSH STATUS;
 SELECT DISTINCT a FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15);
@@ -2564,8 +2564,8 @@ drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a > 9) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
 GROUP BY a;
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a > 9)))  (rows=12)
-    -> Covering index skip scan for grouping on t using k1 over (a = 1) OR (9 < a)  (rows=12)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a > 9)))  (rows=1.73)
+    -> Covering index skip scan for grouping on t using k1 over (a = 1) OR (9 < a)  (rows=3)
 
 FLUSH STATUS;
 SELECT a, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a > 9) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
@@ -2830,7 +2830,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d) FROM t  WHERE (a > 5) AND (c = 3 OR c = 
 (d  < -24 OR d = 3 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 5) and ((t.c = 3) or (t.c = 40)) and ((t.d < <cache>(-(24))) or (t.d = 3) or (t.d is null)))  (rows=29)
+-> Filter: ((t.a > 5) and ((t.c = 3) or (t.c = 40)) and ((t.d < <cache>(-(24))) or (t.d = 3) or (t.d is null)))  (rows=24.6)
     -> Covering index skip scan for grouping on t using k1 over (NULL <= d < -24) OR (d = 3)  (rows=57)
 
 FLUSH STATUS;
@@ -2930,7 +2930,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  =  1 OR d = 9 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 1) or (t.d = 9) or (t.d is null)))  (rows=1.28)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 1) or (t.d = 9) or (t.d is null)))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = 1) OR (d = 9)  (rows=11)
 
 FLUSH STATUS;
@@ -2960,7 +2960,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d), MAX(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  =  0 OR d = 9 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 0) or (t.d = 9) or (t.d is null)))  (rows=1.28)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 0) or (t.d = 9) or (t.d is null)))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = 0) OR (d = 9)  (rows=11)
 
 FLUSH STATUS;
@@ -2990,7 +2990,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d), MAX(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  > 0 AND d < 2 OR d > 3 AND d < 5 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and (((t.d > 0) and (t.d < 2)) or ((t.d > 3) and (t.d < 5)) or (t.d is null)))  (rows=2.06)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and (((t.d > 0) and (t.d < 2)) or ((t.d > 3) and (t.d < 5)) or (t.d is null)))  (rows=1.78)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (0 < d < 2) OR (3 < d < 5)  (rows=11)
 
 FLUSH STATUS;
@@ -3020,7 +3020,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d) FROM t  WHERE (a > 9) AND (c = 3 OR c = 
 (d < 2 OR d > 5 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d < 2) or (t.d > 5) or (t.d is null)))  (rows=2.97)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d < 2) or (t.d > 5) or (t.d is null)))  (rows=2.87)
     -> Covering index skip scan for grouping on t using k1 over (NULL <= d < 2) OR (5 < d)  (rows=11)
 
 FLUSH STATUS;
@@ -3054,7 +3054,7 @@ EXPLAIN FORMAT=TREE SELECT a, b , max(d) FROM t  WHERE (a >= 10) AND (c = 3 or c
 (d is NULL or d = -10 or d = -23)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=1.28)
+-> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = -23) OR (d = -10)  (rows=11)
 
 FLUSH STATUS;
@@ -3080,7 +3080,7 @@ EXPLAIN FORMAT=TREE SELECT a, b , min(d) FROM t  WHERE (a >= 10) AND (c = 3 or c
 (d is NULL or d = -10 or d = -23)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=1.28)
+-> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=0.282)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = -23) OR (d = -10)  (rows=11)
 
 FLUSH STATUS;
@@ -3104,8 +3104,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MIN(b), MAX(b) FROM t  WHERE a > 9 GROUP BY a;
 EXPLAIN
--> Filter: (t.a > 9)  (rows=12)
-    -> Covering index skip scan for grouping on t using k1 over (9 < a)  (rows=12)
+-> Filter: (t.a > 9)  (rows=1)
+    -> Covering index skip scan for grouping on t using k1 over (9 < a)  (rows=1)
 
 FLUSH STATUS;
 SELECT a, MIN(b), MAX(b) FROM t  WHERE a > 9 GROUP BY a;
@@ -3196,7 +3196,7 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (b = 2 OR b = 15) AND (c = 3 OR c IS NULL) GROUP BY a;
 EXPLAIN
--> Filter: (((t.b = 2) or (t.b = 15)) and ((t.c = 3) or (t.c is null)))  (rows=12)
+-> Filter: (((t.c = 3) or (t.c is null)) and ((t.b = 2) or (t.b = 15)))  (rows=12)
     -> Covering index skip scan for grouping on t using k1  (rows=51)
 
 FLUSH STATUS;
@@ -3443,8 +3443,8 @@ drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
 GROUP BY a, b;
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=24)
-    -> Covering index skip scan for grouping on t using k1 over (a = 1 AND b = 2) OR (a = 1 AND b = 15) OR (2 more)  (rows=24)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for grouping on t using k1 over (a = 1 AND b = 2) OR (a = 1 AND b = 15) OR (2 more)  (rows=1)
 
 FLUSH STATUS;
 SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
@@ -3492,8 +3492,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT DISTINCT a, b FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40);
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=24)
-    -> Covering index skip scan for deduplication on t using k1 over (a = 1 AND b = 2) OR (a = 1 AND b = 15) OR (2 more)  (rows=24)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for deduplication on t using k1 over (a = 1 AND b = 2) OR (a = 1 AND b = 15) OR (2 more)  (rows=1)
 
 FLUSH STATUS;
 SELECT DISTINCT a, b FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40);
@@ -3515,8 +3515,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT DISTINCT a FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15);
 EXPLAIN
--> Filter: (((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=12)
-    -> Covering index skip scan for deduplication on t using k1 over (a = 1) OR (a = 12)  (rows=12)
+-> Filter: (((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a = 12)))  (rows=1)
+    -> Covering index skip scan for deduplication on t using k1 over (a = 1) OR (a = 12)  (rows=1)
 
 FLUSH STATUS;
 SELECT DISTINCT a FROM t  WHERE (a = 1 OR a = 12) AND (b = 2 OR b = 15);
@@ -3565,8 +3565,8 @@ drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a > 9) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
 GROUP BY a;
 EXPLAIN
--> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a > 9)))  (rows=12)
-    -> Covering index skip scan for grouping on t using k1 over (a = 1) OR (9 < a)  (rows=12)
+-> Filter: (((t.c = 3) or (t.c = 40)) and ((t.b = 2) or (t.b = 15)) and ((t.a = 1) or (t.a > 9)))  (rows=2.65)
+    -> Covering index skip scan for grouping on t using k1 over (a = 1) OR (9 < a)  (rows=7)
 
 FLUSH STATUS;
 SELECT a, MAX(d), MIN(d) FROM t  WHERE (a = 1 OR a > 9) AND (b = 2 OR b = 15) AND (c = 3 OR c = 40)
@@ -3658,8 +3658,9 @@ EXPLAIN FORMAT=TREE SELECT a, MAX(d), MIN(d) FROM t  WHERE (a > 11) AND (b = 2 O
 (c = 3 OR c = 1 OR c = 2 OR c = 4)
 GROUP BY a;
 EXPLAIN
--> Filter: ((t.a > 11) and ((t.b = 2) or (t.b = 15)) and ((t.c = 3) or (t.c = 1) or (t.c = 2) or (t.c = 4)))  (rows=0.178)
-    -> Covering index skip scan for grouping on t using k1 over (11 < a)  (rows=7)
+-> Group aggregate: max(t.d), min(t.d)  (rows=0.178)
+    -> Filter: (((t.b = 2) or (t.b = 15)) and ((t.c = 3) or (t.c = 1) or (t.c = 2) or (t.c = 4)))  (rows=0.178)
+        -> Covering index range scan on t using k1 over (11 < a)  (rows=13)
 
 FLUSH STATUS;
 SELECT a, MAX(d), MIN(d) FROM t  WHERE (a > 11) AND (b = 2 OR b = 15) AND
@@ -3671,9 +3672,9 @@ a	MAX(d)	MIN(d)
 SHOW STATUS LIKE 'handler_read%';
 Variable_name	Value
 Handler_read_first	0
-Handler_read_key	13
-Handler_read_last	1
-Handler_read_next	0
+Handler_read_key	1
+Handler_read_last	0
+Handler_read_next	4
 Handler_read_prev	0
 Handler_read_rnd	0
 Handler_read_rnd_next	0
@@ -3830,7 +3831,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d) FROM t  WHERE (a > 5) AND (c = 3 OR c = 
 (d  < -24 OR d = 3 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 5) and ((t.c = 3) or (t.c = 40)) and ((t.d < <cache>(-(24))) or (t.d = 3) or (t.d is null)))  (rows=29.6)
+-> Filter: ((t.a > 5) and ((t.c = 3) or (t.c = 40)) and ((t.d < <cache>(-(24))) or (t.d = 3) or (t.d is null)))  (rows=25.1)
     -> Covering index skip scan for grouping on t using k1 over (NULL <= d < -24) OR (d = 3)  (rows=55)
 
 FLUSH STATUS;
@@ -3930,7 +3931,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MAX(d), MIN(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  =  1 OR d = 9 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 1) or (t.d = 9) or (t.d is null)))  (rows=1.35)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 1) or (t.d = 9) or (t.d is null)))  (rows=0.307)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = 1) OR (d = 9)  (rows=11)
 
 FLUSH STATUS;
@@ -3960,7 +3961,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d), MAX(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  =  0 OR d = 9 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 0) or (t.d = 9) or (t.d is null)))  (rows=1.35)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d = 0) or (t.d = 9) or (t.d is null)))  (rows=0.307)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = 0) OR (d = 9)  (rows=11)
 
 FLUSH STATUS;
@@ -3990,7 +3991,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d), MAX(d) FROM t  WHERE (a > 9) AND (c = 3
 (d  > 0 AND d < 2 OR d > 3 AND d < 5 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and (((t.d > 0) and (t.d < 2)) or ((t.d > 3) and (t.d < 5)) or (t.d is null)))  (rows=2.17)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and (((t.d > 0) and (t.d < 2)) or ((t.d > 3) and (t.d < 5)) or (t.d is null)))  (rows=1.87)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (0 < d < 2) OR (3 < d < 5)  (rows=11)
 
 FLUSH STATUS;
@@ -4020,7 +4021,7 @@ EXPLAIN FORMAT=TREE SELECT a, b, MIN(d) FROM t  WHERE (a > 9) AND (c = 3 OR c = 
 (d < 2 OR d > 5 OR d IS NULL)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d < 2) or (t.d > 5) or (t.d is null)))  (rows=3.13)
+-> Filter: ((t.a > 9) and ((t.c = 3) or (t.c = 40)) and ((t.d < 2) or (t.d > 5) or (t.d is null)))  (rows=3.02)
     -> Covering index skip scan for grouping on t using k1 over (NULL <= d < 2) OR (5 < d)  (rows=11)
 
 FLUSH STATUS;
@@ -4054,7 +4055,7 @@ EXPLAIN FORMAT=TREE SELECT a, b , max(d) FROM t  WHERE (a >= 10) AND (c = 3 or c
 (d is NULL or d = -10 or d = -23)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=1.35)
+-> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=0.307)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = -23) OR (d = -10)  (rows=11)
 
 FLUSH STATUS;
@@ -4080,7 +4081,7 @@ EXPLAIN FORMAT=TREE SELECT a, b , min(d) FROM t  WHERE (a >= 10) AND (c = 3 or c
 (d is NULL or d = -10 or d = -23)
 GROUP BY a, b;
 EXPLAIN
--> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=1.35)
+-> Filter: ((t.a >= 10) and ((t.c = 3) or (t.c = 40)) and ((t.d is null) or (t.d = <cache>(-(10))) or (t.d = <cache>(-(23)))))  (rows=0.307)
     -> Covering index skip scan for grouping on t using k1 over (d = NULL) OR (d = -23) OR (d = -10)  (rows=11)
 
 FLUSH STATUS;
@@ -4104,8 +4105,8 @@ include/diff_tables.inc [test.group_query, test.no_group_query]
 drop tables test.group_query, test.no_group_query;
 EXPLAIN FORMAT=TREE SELECT a, MIN(b), MAX(b) FROM t  WHERE a > 9 GROUP BY a;
 EXPLAIN
--> Filter: (t.a > 9)  (rows=12)
-    -> Covering index skip scan for grouping on t using k1 over (9 < a)  (rows=12)
+-> Filter: (t.a > 9)  (rows=1)
+    -> Covering index skip scan for grouping on t using k1 over (9 < a)  (rows=1)
 
 FLUSH STATUS;
 SELECT a, MIN(b), MAX(b) FROM t  WHERE a > 9 GROUP BY a;

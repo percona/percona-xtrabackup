@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,6 +27,7 @@
 #include <bit>
 #include <cstddef>
 #include <functional>
+#include <ranges>
 #include <type_traits>
 
 #include "map_helpers.h"
@@ -197,7 +198,7 @@ LogicalOrderings::LogicalOrderings(THD *thd)
       m_dfsm_states(thd->mem_root),
       m_dfsm_edges(thd->mem_root),
       m_elements_pool(thd->mem_root) {
-  GetHandle(nullptr);  // Always has the zero handle.
+  GetHandle(static_cast<Item *>(nullptr));  // Always has the zero handle.
 
   // Add the empty ordering/grouping.
   m_orderings.push_back(OrderingWithInfo{Ordering(),
@@ -446,7 +447,8 @@ void LogicalOrderings::PruneUninterestingOrders(THD *thd) {
       m_orderings[new_length++] = m_orderings[ordering_idx];
     }
   }
-  m_orderings.resize(new_length);
+
+  m_orderings.erase(m_orderings.begin() + new_length, m_orderings.end());
 }
 
 void LogicalOrderings::PruneFDs(THD *thd) {
@@ -515,7 +517,7 @@ void LogicalOrderings::PruneFDs(THD *thd) {
     m_fds[new_length++] = m_fds[fd_idx];
   }
 
-  m_fds.resize(new_length);
+  m_fds.erase(m_fds.begin() + new_length, m_fds.end());
 }
 
 void LogicalOrderings::BuildEquivalenceClasses() {
@@ -1030,6 +1032,12 @@ void LogicalOrderings::CreateHomogenizedOrderings(THD *thd) {
   }
   seen_tables &= ~PSEUDO_TABLE_BITS;
 
+  if (std::popcount(seen_tables) <= 1) {
+    // Since homogenization is about reducing the number of tables in the
+    // orderings, there's nothing to do if we haven't seen more than one table.
+    return;
+  }
+
   // Build a reverse table of canonical items to items,
   // and sort it, so that we can fairly efficiently make lookups into it.
   auto reverse_canonical =
@@ -1192,6 +1200,19 @@ ItemHandle LogicalOrderings::GetHandle(Item *item) {
     }
   }
   m_items.push_back(ItemInfo{item, /*canonical_item=*/0});
+  return m_items.size() - 1;
+}
+
+ItemHandle LogicalOrderings::GetHandle(Field *field) {
+  for (size_t i = 1; i < m_items.size(); ++i) {
+    if (Item *item = m_items[i].item->real_item();
+        item->type() == Item::FIELD_ITEM &&
+        down_cast<Item_field *>(item)->field == field) {
+      return i;
+    }
+  }
+  m_items.push_back(
+      ItemInfo{.item = new Item_field(field), .canonical_item = 0});
   return m_items.size() - 1;
 }
 
@@ -1850,27 +1871,22 @@ void LogicalOrderings::PruneNFSM(THD *thd) {
         }
         if (!can_reach_other_interesting) {
           // Remove this edge.
-          state.outgoing_edges[j] =
-              state.outgoing_edges[state.outgoing_edges.size() - 1];
-          state.outgoing_edges.resize(state.outgoing_edges.size() - 1);
+          state.outgoing_edges[j] = state.outgoing_edges.back();
+          state.outgoing_edges.pop_back();
           pruned_anything = true;
         }
       }
     }
 
     // Remove any edges to deleted m_states.
-    for (int i = 0; i < N; ++i) {
-      NFSMState &state = m_states[i];
+    for (NFSMState &state : m_states) {
       if (state.type == NFSMState::DELETED) {
         continue;
       }
-      int num_kept = 0;
-      for (const NFSMEdge &edge : state.outgoing_edges) {
-        if (edge.state(this)->type != NFSMState::DELETED) {
-          state.outgoing_edges[num_kept++] = edge;
-        }
-      }
-      state.outgoing_edges.resize(num_kept);
+      const auto removed = std::ranges::remove(
+          state.outgoing_edges, NFSMState::DELETED,
+          [this](const NFSMEdge &edge) { return edge.state(this)->type; });
+      state.outgoing_edges.erase(removed.begin(), removed.end());
     }
   } while (pruned_anything);
 
@@ -2018,18 +2034,12 @@ void LogicalOrderings::ConvertNFSMToDFSM(THD *thd) {
     {
       // Sort and deduplicate the edges. Note that we sort on FD first,
       // since we'll be grouping on that when creating new m_states.
-      sort(nfsm_edges.begin(), nfsm_edges.end(),
-           [](const NFSMEdge &a, const NFSMEdge &b) {
-             return make_pair(a.required_fd_idx, a.state_idx) <
-                    make_pair(b.required_fd_idx, b.state_idx);
-           });
-      auto new_end =
-          unique(nfsm_edges.begin(), nfsm_edges.end(),
-                 [](const NFSMEdge &a, const NFSMEdge &b) {
-                   return make_pair(a.required_fd_idx, a.state_idx) ==
-                          make_pair(b.required_fd_idx, b.state_idx);
-                 });
-      nfsm_edges.resize(distance(nfsm_edges.begin(), new_end));
+      const auto edge_as_pair = [](const NFSMEdge &edge) {
+        return make_pair(edge.required_fd_idx, edge.state_idx);
+      };
+      std::ranges::sort(nfsm_edges, {}, edge_as_pair);
+      const auto removed = std::ranges::unique(nfsm_edges, {}, edge_as_pair);
+      nfsm_edges.erase(removed.begin(), removed.end());
     }
 
     // For each relevant FD, find out which set of m_states we could reach.
@@ -2059,9 +2069,9 @@ void LogicalOrderings::ConvertNFSMToDFSM(THD *thd) {
                                    nfsm_edges[edge_idx].required_fd_idx);
 
       // Canonicalize: Sort and deduplicate.
-      sort(nfsm_states.begin(), nfsm_states.end());
-      auto new_end = unique(nfsm_states.begin(), nfsm_states.end());
-      nfsm_states.resize(distance(nfsm_states.begin(), new_end));
+      std::ranges::sort(nfsm_states);
+      const auto removed = std::ranges::unique(nfsm_states);
+      nfsm_states.erase(removed.begin(), removed.end());
 
       // Add a new DFSM state for the NFSM states we've collected.
       int target_dfsm_state_idx = m_dfsm_states.size();

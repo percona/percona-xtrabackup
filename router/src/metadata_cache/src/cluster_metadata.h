@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,14 +26,16 @@
 #ifndef METADATA_CACHE_CLUSTER_METADATA_INCLUDED
 #define METADATA_CACHE_CLUSTER_METADATA_INCLUDED
 
+#include "mysqlrouter/metadata_cache_datatypes.h"
 #include "mysqlrouter/metadata_cache_export.h"
 
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/metadata.h"
 #include "mysqlrouter/metadata_cache.h"
 #include "mysqlrouter/mysql_session.h"
+#include "mysqlrouter/routing_guidelines_datatypes.h"
+#include "mysqlrouter/routing_guidelines_version.h"
 #include "router_options.h"
-#include "tcp_address.h"
 
 #include <chrono>
 #include <memory>
@@ -45,10 +47,11 @@ struct GroupReplicationMember;
 
 namespace mysqlrouter {
 class MySQLSession;
-}
+}  // namespace mysqlrouter
+
 namespace xcl {
 class XSession;
-}
+}  // namespace xcl
 
 using ConnectCallback =
     std::function<bool(mysqlrouter::MySQLSession &connection,
@@ -100,6 +103,23 @@ class METADATA_CACHE_EXPORT ClusterMetadata : public MetaData {
    */
   void disconnect() noexcept override { metadata_connection_.reset(); }
 
+  /**
+   * check if the metadata_connection_ connection is connected to
+   * metadata_server and alive.
+   */
+  [[nodiscard]] bool is_connected_to(
+      const metadata_cache::metadata_server_t &metadata_server) const;
+
+  /**
+   * make a connection to metadata_server.
+   *
+   * if the metadata_connection_ already is connected to metadata_server, return
+   * that instead.
+   */
+  stdx::expected<std::shared_ptr<mysqlrouter::MySQLSession>, std::string>
+  make_connection_shared(
+      const metadata_cache::metadata_server_t &metadata_server);
+
   /** @brief Gets the object representing the session to the metadata server
    */
   std::shared_ptr<mysqlrouter::MySQLSession> get_connection() override {
@@ -115,9 +135,19 @@ class METADATA_CACHE_EXPORT ClusterMetadata : public MetaData {
       const metadata_cache::metadata_server_t &rw_server,
       const unsigned router_id) override;
 
+  void report_guideline_name(const std::string &guideline_name,
+                             const metadata_cache::metadata_server_t &rw_server,
+                             const unsigned router_id) override;
+
   auth_credentials_t fetch_auth_credentials(
       const metadata_cache::metadata_server_t &md_server,
       const mysqlrouter::TargetCluster &target_cluster) override;
+
+  std::optional<routing_guidelines::Router_info> fetch_router_info(
+      const uint16_t router_id) override;
+
+  stdx::expected<std::string, std::error_code>
+  fetch_routing_guidelines_document(const uint16_t router_id) override;
 
   std::optional<metadata_cache::metadata_server_t> find_rw_server(
       const std::vector<metadata_cache::ManagedInstance> &instances);
@@ -140,6 +170,30 @@ class METADATA_CACHE_EXPORT ClusterMetadata : public MetaData {
   // MetadataUpgradeInProgressException
   mysqlrouter::MetadataSchemaVersion get_and_check_metadata_schema_version(
       mysqlrouter::MySQLSession &session);
+
+  stdx::expected<std::string, std::error_code>
+  get_select_routing_guidelines_query(
+      const mysqlrouter::MetadataSchemaVersion &schema_version,
+      const uint16_t router_id) {
+    if (schema_version >= mysqlrouter::kRoutingGuidelinesMetadataVersion) {
+      return R"(SELECT guideline FROM
+mysql_innodb_cluster_metadata.routing_guidelines WHERE guideline_id = (
+  SELECT COALESCE(RO.router_options->>'$.guideline',
+                  CS.router_options->>'$.guideline',
+                  CL.router_options->>'$.guideline')
+  FROM
+    mysql_innodb_cluster_metadata.v2_router_options AS RO
+  LEFT JOIN
+    mysql_innodb_cluster_metadata.clustersets AS CS ON RO.clusterset_id = CS.clusterset_id
+  LEFT JOIN
+    mysql_innodb_cluster_metadata.clusters AS CL ON RO.cluster_id = CL.cluster_id
+  WHERE RO.router_id = )" +
+             std::to_string(router_id) + ")";
+    } else {
+      return stdx::unexpected(make_error_code(
+          routing_guidelines::routing_guidelines_errc::not_supported_in_md));
+    }
+  }
 
   // Metadata node generic information
   mysql_ssl_mode ssl_mode_;

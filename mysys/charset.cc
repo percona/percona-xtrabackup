@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,13 +31,15 @@
 */
 
 #include <fcntl.h>
+#include <stdlib.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 
 #include <cassert>
 #include <cstdarg>
 #include <cstdint>
 #include <cstring>
-#include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -65,6 +67,16 @@
 #include "strings/collations_internal.h"
 #include "strmake.h"
 #include "strxmov.h"
+
+#ifdef MYSQL_SERVER
+#include "mysql/components/services/log_builtins.h"
+#include "mysqld_error.h"
+#include "sql/current_thd.h"
+#include "sql/mysqld.h"
+#include "sql/sql_class.h"
+#endif
+
+using myf = int;
 
 /*
   The code below implements this functionality:
@@ -132,7 +144,7 @@ void *Mysys_charset_loader::read_file(const char *path, size_t *size) {
     return nullptr;
   }
 
-  size_t len = stat_info.st_size;
+  size_t const len = stat_info.st_size;
   if (len > MY_MAX_ALLOWED_BUF) {
     return nullptr;
   }
@@ -143,12 +155,12 @@ void *Mysys_charset_loader::read_file(const char *path, size_t *size) {
     return nullptr;
   }
 
-  int fd = mysql_file_open(key_file_charset, path, O_RDONLY, 0);
+  int const fd = mysql_file_open(key_file_charset, path, O_RDONLY, 0);
   if (fd < 0) {
     return nullptr;
   }
 
-  size_t tmp_len = mysql_file_read(fd, buf.get(), len, 0);
+  size_t const tmp_len = mysql_file_read(fd, buf.get(), len, 0);
   mysql_file_close(fd, 0);
   if (tmp_len != len) {
     return nullptr;
@@ -198,13 +210,13 @@ static void init_available_charsets() {
 
 uint get_collation_number(const char *collation_name) {
   std::call_once(charsets_initialized, init_available_charsets);
-  mysql::collation::Name name{collation_name};
+  mysql::collation::Name const name{collation_name};
   return entry()->get_collation_id(name);
 }
 
 unsigned get_charset_number(const char *cs_name, uint cs_flags) {
   std::call_once(charsets_initialized, init_available_charsets);
-  mysql::collation::Name name{cs_name};
+  mysql::collation::Name const name{cs_name};
   if ((cs_flags & MY_CS_PRIMARY)) {
     return entry()->get_primary_collation_id(name);
   }
@@ -252,10 +264,69 @@ CHARSET_INFO *get_charset(uint cs_number, myf flags) {
 
 namespace {
 
-template <size_t N>
-bool starts_with(std::string_view name, const char (&prefix)[N]) {
-  size_t len = N - 1;
-  return name.size() >= len && memcmp(name.data(), prefix, len) == 0;
+bool starts_with_utf8(const char *name) {
+  // See normalization of names in mysql::collation::Name::Name()
+  const uint8_t *map = my_charset_latin1.to_lower;
+  constexpr const char prefix[] = "UTF8_";
+  if (strlen(name) < strlen(prefix)) return false;
+  for (unsigned int ix = 0; ix < strlen(prefix); ++ix) {
+    if (map[static_cast<uint8_t>(name[ix])] !=
+        map[static_cast<uint8_t>(prefix[ix])]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+  What does "utf8" mean, "utf8mb3" or "utf8mb4"?
+
+  We ask 'current_thd' whether MODE_INTERPRET_UTF8_AS_UTF8MB4 has been
+  set in SQL_MODE.
+
+  We return 3 or 4 to indicate what alias is active.  A special value
+  42 is used during bootstrap: reject command line arguments, and
+  abort. There are no lookups during shutdown.
+
+  For client-side requests (e.g. mysql --default-character-set=utf8)
+  we always return 3.
+
+  @param [in] cname Charset/Collation name, used during bootstrap
+              to give the desired error message.
+
+  @return 3,4,42 to indicate what alias to use, or to abort.
+ */
+int utf8_alias_lookup(const char *cname [[maybe_unused]]) {
+#ifdef MYSQL_SERVER
+  enum_server_operational_state server_state = get_server_state();
+  if (server_state == SERVER_BOOTING) {
+    if (native_strcasecmp(cname, "utf8") == 0) {
+      LogErr(ERROR_LEVEL, ER_INVALID_SERVER_OPTION_CHARSET);
+      return 42;  // abort
+    }
+    if (native_strncasecmp(cname, "utf8_", 5) == 0) {
+      LogErr(ERROR_LEVEL, ER_INVALID_SERVER_OPTION_COLLATION, cname);
+      return 42;  // abort
+    }
+    assert(false);
+    return 3;
+  }
+  if (server_state == SERVER_OPERATING) {
+    assert(current_thd != nullptr);
+    return (current_thd->interpret_utf8_as_utf8mb4() ? 4 : 3);
+  }
+  if (server_state == SERVER_SHUTTING_DOWN) {
+    assert(false);
+    return 42;
+  }
+  assert(false);
+  return 42;
+#else
+  // We do not want to report an error
+  //    Character set 'utf8' is not a compiled character set ...
+  // whenever a client is invoked with --default-character-set=utf8
+  return 3;
+#endif  // MYSQL_SERVER
 }
 
 }  // namespace
@@ -275,18 +346,48 @@ CHARSET_INFO *my_collation_get_by_name(const char *collation_name, myf flags,
   std::call_once(charsets_initialized, init_available_charsets);
 
   std::string collation_name_string(collation_name);
-  if (starts_with(collation_name_string, "utf8_")) {
-    // insert "mb3" to get "utf8mb3_xxxx"
-    collation_name_string.insert(4, "mb3");
+  if (starts_with_utf8(collation_name)) {
+    int retval = utf8_alias_lookup(collation_name);
+    // abort, assume that utf8_alias_lookup has logged something
+    if (retval == 42) return nullptr;
+    assert(retval == 3 || retval == 4);
+
+    // Insert "mb3" to get "utf8mb3_xxxx" or
+    //        "mb4" to get "utf8mb4_xxxx"
+    // These have no utf8mb4 counterparts:
+    //   utf8mb3_general_mysql500_ci
+    //   utf8mb3_tolower_ci
+    // So for retval 4 we return an error.
+    const char *mb3_or_mb4 = nullptr;
+    if (retval == 4) {
+      // See normalization of names in mysql::collation::Name::Name()
+      if (0 == my_strcasecmp(&my_charset_latin1, collation_name,
+                             "utf8_general_mysql500_ci") ||
+          0 == my_strcasecmp(&my_charset_latin1, collation_name,
+                             "utf8_tolower_ci")) {
+        errmsg->errcode = EE_COLLATION_ALIAS_ERROR;
+        collation_name_string.insert(4, "mb3");
+        snprintf(errmsg->errarg, sizeof(errmsg->errarg),
+                 "Collation '%s' must be specified explicitly as '%s'",
+                 collation_name, collation_name_string.c_str());
+        return nullptr;
+      }
+      mb3_or_mb4 = "mb4";
+    } else {
+      mb3_or_mb4 = "mb3";
+    }
+
+    collation_name_string.insert(4, mb3_or_mb4);
     collation_name = collation_name_string.c_str();
   }
 
-  mysql::collation::Name name{collation_name};
+  mysql::collation::Name const name{collation_name};
   CHARSET_INFO *cs = entry()->find_by_name(name, flags, errmsg);
   if (cs == nullptr && (flags & MY_WME)) {
     char index_file[FN_REFLEN + sizeof(MY_CHARSET_INDEX)];
     my_stpcpy(get_charsets_dir(index_file), MY_CHARSET_INDEX);
-    my_error(EE_UNKNOWN_COLLATION, MYF(0), name().c_str(), index_file);
+    my_error(EE_UNKNOWN_COLLATION, MYF(0),
+             std::string(name.to_string_view()).c_str(), index_file);
   }
   return cs;
 }
@@ -313,22 +414,34 @@ CHARSET_INFO *my_charset_get_by_name(const char *cs_name, uint cs_flags,
 
   std::call_once(charsets_initialized, init_available_charsets);
 
-  mysql::collation::Name name{cs_name};
+  mysql::collation::Name const name{cs_name};
   CHARSET_INFO *cs = nullptr;
   if (cs_flags & MY_CS_PRIMARY) {
     cs = entry()->find_primary(name, flags, errmsg);
-    if (cs == nullptr && name() == "utf8") {
+
+    if (cs == nullptr && name.to_string_view() == "utf8") {
+      int retval = utf8_alias_lookup("utf8");
+      // abort, assume that utf8_alias_lookup has logged something
+      if (retval == 42) return nullptr;
+      assert(retval == 3 || retval == 4);
+
       // The parser does get_charset_by_csname().
       // Also needed for e.g. SET character_set_client= 'utf8'.
       // Also needed by the lexer for: "select _utf8 0xD0B0D0B1D0B2;"
-      cs = entry()->find_primary(mysql::collation::Name("utf8mb3"), flags,
-                                 errmsg);
+      cs = entry()->find_primary(
+          mysql::collation::Name(retval == 4 ? "utf8mb4" : "utf8mb3"), flags,
+          errmsg);
     }
   } else if (cs_flags & MY_CS_BINSORT) {
     cs = entry()->find_default_binary(name, flags, errmsg);
-    if (cs == nullptr && name() == "utf8") {
-      cs = entry()->find_default_binary(mysql::collation::Name("utf8mb3"),
-                                        flags, errmsg);
+    if (cs == nullptr && name.to_string_view() == "utf8") {
+      int retval = utf8_alias_lookup("utf8");
+      if (retval == 42) return nullptr;
+      assert(retval == 3 || retval == 4);
+
+      cs = entry()->find_default_binary(
+          mysql::collation::Name(retval == 4 ? "utf8mb4" : "utf8mb3"), flags,
+          errmsg);
     }
   }
   if (!cs && (flags & MY_WME)) {

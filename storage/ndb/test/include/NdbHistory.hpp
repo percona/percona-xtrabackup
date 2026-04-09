@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,7 +52,7 @@ class WorkerIdentifier : public NdbLockable {
 
  public:
   WorkerIdentifier();
-  void init(const Uint32 totalWorkers);
+  void init(Uint32 totalWorkers);
 
   Uint32 getTotalWorkers() const;
 
@@ -256,8 +256,7 @@ class NdbHistory {
      * Set the updates values of the row(s) to the passed value
      * Row range must be contained within the version's range
      */
-    void setRows(const Uint32 start, const Uint32 updatesValue,
-                 const Uint32 len = 1);
+    void setRows(Uint32 start, Uint32 updatesValue, Uint32 len = 1);
 
     /**
      * clearRows
@@ -266,7 +265,7 @@ class NdbHistory {
      * The passed range must be contained within the version's
      * range
      */
-    void clearRows(const Uint32 start, const Uint32 len = 1);
+    void clearRows(Uint32 start, Uint32 len = 1);
 
     /**
      * diffRowCount
@@ -299,8 +298,8 @@ class NdbHistory {
     void dumpDiff(const Version *other) const;
 
    private:
-    void setRowsImpl(const Uint32 start, const Uint32 rowState,
-                     const Uint32 updatesValue, const Uint32 len);
+    void setRowsImpl(Uint32 start, Uint32 rowState, Uint32 updatesValue,
+                     Uint32 len);
   };
 
   /**
@@ -316,7 +315,7 @@ class NdbHistory {
     VT_OTHER          // Version is none of the above
   };
 
-  static const char *getVersionTypeName(const VersionType vt);
+  static const char *getVersionTypeName(VersionType vt);
 
   /**
    * VersionMeta
@@ -407,7 +406,7 @@ class NdbHistory {
     GR_ALL
   };
 
-  static const char *getGranularityName(const Granularity gr);
+  static const char *getGranularityName(Granularity gr);
 
   /** Creation + Deletion **/
 
@@ -418,7 +417,7 @@ class NdbHistory {
    * TODO : Bound history length by # versions, #GCIs, # epochs, manually
    #        etc
    */
-  NdbHistory(const Granularity granularity, const RecordRange range);
+  NdbHistory(Granularity granularity, RecordRange range);
 
   ~NdbHistory();
 
@@ -438,8 +437,7 @@ class NdbHistory {
    * If false is returned, the type of the last version is
    * unmodified
    */
-  bool checkVersionBoundary(const Uint64 epoch,
-                            VersionType &lastVersionType) const;
+  bool checkVersionBoundary(Uint64 epoch, VersionType &lastVersionType) const;
 
   /**
    * commitVersion
@@ -554,7 +552,7 @@ class NdbHistory {
    * Helper for dumping out a history
    * full gives all version info as well as summary
    */
-  void dump(const bool full = false) const;
+  void dump(bool full = false) const;
 
   /**
    * dumpClosestMatch

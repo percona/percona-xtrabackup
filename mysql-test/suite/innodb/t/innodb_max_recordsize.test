@@ -3,7 +3,7 @@
 #
 
 --disable_query_log
-call mtr.add_suppression("Cannot add field .* in table .* because after adding it, the row size is");
+call mtr.add_suppression("Cannot create the table .* because the record size will exceed the maximum allowed size for a record.");
 --enable_query_log
 
 SET @saved_innodb_strict_mode=@@SESSION.innodb_strict_mode;

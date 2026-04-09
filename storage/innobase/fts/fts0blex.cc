@@ -2,7 +2,7 @@
 #line 2 "fts0blex.l"
 /*****************************************************************************
 
-Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -55,11 +55,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 /* First, we deal with  platform-specific or compiler-specific issues. */
 
-#include <errno.h>
+#include <cerrno>
 /* begin standard C headers. */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 /* end standard C headers. */
 
@@ -725,7 +725,7 @@ YY_DECL
         yy_state_type yy_current_state;
         char *yy_cp, *yy_bp;
         int yy_act;
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
 
         if ( !yyg->yy_init )
                 {
@@ -1006,7 +1006,7 @@ case YY_STATE_EOF(INITIAL):
  */
 static int yy_get_next_buffer (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
         char *dest = YY_CURRENT_BUFFER_LVALUE->yy_ch_buf;
         char *source = yyg->yytext_ptr;
         int number_to_move, i;
@@ -1143,7 +1143,7 @@ static int yy_get_next_buffer (yyscan_t yyscanner)
 {
         yy_state_type yy_current_state;
         char *yy_cp;
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
 
         yy_current_state = yyg->yy_start;
 
@@ -1175,7 +1175,8 @@ static int yy_get_next_buffer (yyscan_t yyscanner)
     static yy_state_type yy_try_NUL_trans  (yy_state_type yy_current_state , yyscan_t yyscanner)
 {
         int yy_is_jam;
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner; /* This var may be unused depending upon options. */
+        auto *yyg = (struct yyguts_t *)
+            yyscanner; /* This var may be unused depending upon options. */
         char *yy_cp = yyg->yy_c_buf_p;
 
         YY_CHAR yy_c = 1;
@@ -1279,7 +1280,7 @@ static int yy_get_next_buffer (yyscan_t yyscanner)
  */
     void fts0brestart  (FILE * input_file , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
 
         if ( ! YY_CURRENT_BUFFER ){
         fts0bensure_buffer_stack (yyscanner);
@@ -1297,7 +1298,7 @@ static int yy_get_next_buffer (yyscan_t yyscanner)
  */
     void fts0b_switch_to_buffer  (YY_BUFFER_STATE  new_buffer , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
 
         /* TODO. We should be able to replace this entire function body
          * with
@@ -1329,7 +1330,7 @@ static int yy_get_next_buffer (yyscan_t yyscanner)
 
 static void fts0b_load_buffer_state  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
         yyg->yy_n_chars = YY_CURRENT_BUFFER_LVALUE->yy_n_chars;
         yyg->yytext_ptr = yyg->yy_c_buf_p = YY_CURRENT_BUFFER_LVALUE->yy_buf_pos;
         yyin = YY_CURRENT_BUFFER_LVALUE->yy_input_file;
@@ -1372,7 +1373,7 @@ static void fts0b_load_buffer_state  (yyscan_t yyscanner)
  */
     void fts0b_delete_buffer (YY_BUFFER_STATE  b , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
 
         if ( ! b )
                 return;
@@ -1394,7 +1395,7 @@ static void fts0b_load_buffer_state  (yyscan_t yyscanner)
 
 {
         int oerrno = errno;
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
 
         fts0b_flush_buffer(b ,yyscanner);
 
@@ -1421,7 +1422,7 @@ static void fts0b_load_buffer_state  (yyscan_t yyscanner)
  */
     void fts0b_flush_buffer (YY_BUFFER_STATE  b , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
         if ( ! b )
                 return;
 
@@ -1451,17 +1452,17 @@ static void fts0b_load_buffer_state  (yyscan_t yyscanner)
  */
 void fts0bpush_buffer_state (YY_BUFFER_STATE new_buffer , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
-    if (new_buffer == nullptr) return;
+        auto *yyg = (struct yyguts_t *)yyscanner;
+        if (new_buffer == nullptr) return;
 
-    fts0bensure_buffer_stack(yyscanner);
+        fts0bensure_buffer_stack(yyscanner);
 
-    /* This block is copied from fts0b_switch_to_buffer. */
-    if (YY_CURRENT_BUFFER) {
-      /* Flush out information for old buffer. */
-      *yyg->yy_c_buf_p = yyg->yy_hold_char;
-      YY_CURRENT_BUFFER_LVALUE->yy_buf_pos = yyg->yy_c_buf_p;
-      YY_CURRENT_BUFFER_LVALUE->yy_n_chars = yyg->yy_n_chars;
+        /* This block is copied from fts0b_switch_to_buffer. */
+        if (YY_CURRENT_BUFFER) {
+        /* Flush out information for old buffer. */
+        *yyg->yy_c_buf_p = yyg->yy_hold_char;
+        YY_CURRENT_BUFFER_LVALUE->yy_buf_pos = yyg->yy_c_buf_p;
+        YY_CURRENT_BUFFER_LVALUE->yy_n_chars = yyg->yy_n_chars;
                 }
 
         /* Only push if top exists. Otherwise, replace top. */
@@ -1480,7 +1481,7 @@ void fts0bpush_buffer_state (YY_BUFFER_STATE new_buffer , yyscan_t yyscanner)
  */
 void fts0bpop_buffer_state (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
         if (!YY_CURRENT_BUFFER)
                 return;
 
@@ -1501,7 +1502,7 @@ void fts0bpop_buffer_state (yyscan_t yyscanner)
 static void fts0bensure_buffer_stack (yyscan_t yyscanner)
 {
         yy_size_t num_to_alloc;
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+        auto *yyg = (struct yyguts_t *)yyscanner;
 
         if (!yyg->yy_buffer_stack) {
 
@@ -1662,8 +1663,8 @@ static void yy_fatal_error (yyconst char* msg ,  yyscan_t yyscanner [[maybe_unus
  */
 YY_EXTRA_TYPE fts0bget_extra  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
-    return yyextra;
+        auto *yyg = (struct yyguts_t *)yyscanner;
+        return yyextra;
 }
 
 /** Get the current line number.
@@ -1671,8 +1672,8 @@ YY_EXTRA_TYPE fts0bget_extra  (yyscan_t yyscanner)
  */
 int fts0bget_lineno  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
-    
+        auto *yyg = (struct yyguts_t *)yyscanner;
+
         if (! YY_CURRENT_BUFFER)
             return 0;
     
@@ -1684,10 +1685,9 @@ int fts0bget_lineno  (yyscan_t yyscanner)
  */
 int fts0bget_column  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
-    
-        if (! YY_CURRENT_BUFFER)
-            return 0;
+    auto *yyg = (struct yyguts_t *)yyscanner;
+
+    if (!YY_CURRENT_BUFFER) return 0;
     
     return yycolumn;
 }
@@ -1697,7 +1697,7 @@ int fts0bget_column  (yyscan_t yyscanner)
  */
 FILE *fts0bget_in  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     return yyin;
 }
 
@@ -1706,7 +1706,7 @@ FILE *fts0bget_in  (yyscan_t yyscanner)
  */
 FILE *fts0bget_out  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     return yyout;
 }
 
@@ -1715,7 +1715,7 @@ FILE *fts0bget_out  (yyscan_t yyscanner)
  */
 yy_size_t fts0bget_leng  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     return yyleng;
 }
 
@@ -1725,7 +1725,7 @@ yy_size_t fts0bget_leng  (yyscan_t yyscanner)
 
 char *fts0bget_text  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     return yytext;
 }
 
@@ -1735,7 +1735,7 @@ char *fts0bget_text  (yyscan_t yyscanner)
  */
 void fts0bset_extra (YY_EXTRA_TYPE  user_defined , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     yyextra = user_defined ;
 }
 
@@ -1745,11 +1745,11 @@ void fts0bset_extra (YY_EXTRA_TYPE  user_defined , yyscan_t yyscanner)
  */
 void fts0bset_lineno (int  line_number , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
 
-        /* lineno is only valid if an input buffer exists. */
-        if (! YY_CURRENT_BUFFER )
-           YY_FATAL_ERROR( "fts0bset_lineno called with no buffer" );
+    /* lineno is only valid if an input buffer exists. */
+    if (!YY_CURRENT_BUFFER)
+                YY_FATAL_ERROR("fts0bset_lineno called with no buffer");
     
     yylineno = line_number;
 }
@@ -1760,11 +1760,11 @@ void fts0bset_lineno (int  line_number , yyscan_t yyscanner)
  */
 void fts0bset_column (int  column_no , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
 
-        /* column is only valid if an input buffer exists. */
-        if (! YY_CURRENT_BUFFER )
-           YY_FATAL_ERROR( "fts0bset_column called with no buffer" );
+    /* column is only valid if an input buffer exists. */
+    if (!YY_CURRENT_BUFFER)
+                YY_FATAL_ERROR("fts0bset_column called with no buffer");
     
     yycolumn = column_no;
 }
@@ -1777,25 +1777,25 @@ void fts0bset_column (int  column_no , yyscan_t yyscanner)
  */
 void fts0bset_in (FILE *  in_str , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     yyin = in_str ;
 }
 
 void fts0bset_out (FILE *  out_str , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     yyout = out_str ;
 }
 
 int fts0bget_debug  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     return yy_flex_debug;
 }
 
 void fts0bset_debug (int  bdebug , yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     yy_flex_debug = bdebug ;
 }
 
@@ -1867,7 +1867,7 @@ int fts0blex_init_extra(YY_EXTRA_TYPE yy_user_defined,yyscan_t* ptr_yy_globals )
 
 static int yy_init_globals (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
     /* Initialization is the same as for the non-reentrant scanner.
      * This function is called from fts0blex_destroy(), so don't allocate here.
      */
@@ -1901,7 +1901,7 @@ static int yy_init_globals (yyscan_t yyscanner)
 /* fts0blex_destroy is for both reentrant and non-reentrant scanners. */
 int fts0blex_destroy  (yyscan_t yyscanner)
 {
-    struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
+    auto *yyg = (struct yyguts_t *)yyscanner;
 
     /* Pop the buffer stack, destroying each element. */
         while(YY_CURRENT_BUFFER){

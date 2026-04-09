@@ -116,9 +116,13 @@ static inline struct cno_buffer_t cno_buffer_cut(struct cno_buffer_t *x,
 }
 
 static inline void cno_buffer_dyn_clear(struct cno_buffer_dyn_t *x) {
-  free(x->data - x->offset);
-  struct cno_buffer_dyn_t result = {NULL, 0, 0, 0};
-  *x = result;
+  if (x) {
+    if (x->data) {
+      free(x->data - x->offset);
+    }
+    struct cno_buffer_dyn_t result = {NULL, 0, 0, 0};
+    *x = result;
+  }
 }
 
 static inline void cno_buffer_dyn_shift(struct cno_buffer_dyn_t *x,
@@ -146,8 +150,10 @@ static inline int cno_buffer_dyn_reserve(struct cno_buffer_dyn_t *x, size_t n) {
 
   char *m = (char *)malloc(n);
   if (m == NULL) return CNO_ERROR(NO_MEMORY, "%zu bytes", n);
-  if (x->data != NULL) memcpy(m, x->data, x->size);
-  free(x->data - x->offset);
+  if (x->data != NULL) {
+    memcpy(m, x->data, x->size);
+    free(x->data - x->offset);
+  }
 
   x->data = m;
   x->cap = n;

@@ -65,6 +65,10 @@ INSERT INTO test.t6 VALUES(1, 'FOO');
 SELECT test_mysql_command_services_udf("INSERT INTO test.t6(c2) VALUES('BAR')");
 SELECT test_mysql_command_services_udf("SELECT c1,c2 FROM test.t6");
 
+--echo # Test: reusing the same connection to run several queries should not crash
+SELECT test_mysql_command_services_udf("SELECT 1");
+SELECT test_mysql_command_services_udf("SELECT 1", 2);
+
 SELECT test_mysql_command_services_apis_udf();
 SELECT test_mysql_command_services_apis_udf("SELECT 1+1");
 --echo The test.my_demo_transaction table is created inside above udf function
@@ -76,5 +80,18 @@ DROP TABLE t3;
 DROP TABLE t4;
 DROP TABLE t5;
 DROP TABLE t6;
+
+--echo # Test : sql_errno() should get the error code (1146) BUG#38178087
+# Set debug trap
+--source include/have_debug.inc
+SET @@GLOBAL.DEBUG = '+d, mysql_command_services_component_test_errno';
+# Should return the error code: 1146
+SELECT test_mysql_command_services_error_code_udf("SELECT * FROM test.no_such_table");
+SET @@GLOBAL.DEBUG = '-d, mysql_command_services_component_test_errno';
+
+--echo # Test : failing connect() when running in an initialized thread; cleanup (cmd_factory->close() + cmd_thread->end()) must not leak the session
+SELECT test_mysql_command_services_explicit_connect_fail_cleanup_udf();
+
+# Error-log must not contain: [ERROR] [MY-010470] [Server] Closed forcefully 1 session left opened by plugin server_service
 
 UNINSTALL COMPONENT "file://component_test_mysql_command_services";

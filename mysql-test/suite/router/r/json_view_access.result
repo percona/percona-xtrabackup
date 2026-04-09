@@ -1,0 +1,605 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `sakila` - created 
+# DB `sakila` - filled
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/sakila
+# Registred DB_OBJECT at path: /svc/sakila/city
+# Registred OBJECT_REF at sakila.country
+# Registred DB_OBJECT at path: /svc/sakila/city_C
+# Registred OBJECT_REF at sakila.country
+# Registred DB_OBJECT at path: /svc/sakila/city_R
+# Registred OBJECT_REF at sakila.country
+# Registred DB_OBJECT at path: /svc/sakila/city_U
+# Registred OBJECT_REF at sakila.country
+# Registred DB_OBJECT at path: /svc/sakila/city_D
+# Registred OBJECT_REF at sakila.country
+# Registered MRS ROLE: AllRead
+# Registered MRS Role Grant: * * * => READ
+# Registered MRS ROLE: AllUpdate
+# Registered MRS Role Grant: * * * => UPDATE
+# Registered MRS ROLE: AllCreate
+# Registered MRS Role Grant: * * * => CREATE
+# Registered MRS ROLE: AllDelete
+# Registered MRS Role Grant: * * * => DELETE
+# Registred AUTH APP at path: NULL
+# Registred MRS USER: 'admin'
+# Registred MRS USER: 'updater'
+# Registred MRS USER: 'creater'
+# Registred MRS USER: 'reader'
+# Registred MRS USER: 'deleter'
+PUT /svc/authentication/login
+
+OK
+PUT /svc/authentication/login
+
+OK
+PUT /svc/authentication/login
+
+OK
+PUT /svc/authentication/login
+
+OK
+PUT /svc/authentication/login
+
+OK
+GET
+GET /svc/sakila/city/55
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc/sakila/city/55
+{
+    "city": "Barcelona",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/55"
+        }
+    ],
+    "city_id": 55,
+    "country": {
+        "country": "Venezuela",
+        "country_id": 104,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 104,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag": ETAG
+    }
+}
+OK
+GET /svc/sakila/city/55
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+# PUT that results in an UPDATE
+PUT /svc/sakila/city/55 (payload-size:199)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+PUT /svc/sakila/city/55 (payload-size:199)
+{
+    "city": "Barcelona1",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/55"
+        }
+    ],
+    "city_id": 55,
+    "country": {
+        "country": "Venezuela",
+        "country_id": 104,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 104,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag": ETAG
+        "gtid":GTID
+    }
+}
+OK
+PUT /svc/sakila/city/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+# PUT that results in an INSERT
+PUT /svc/sakila/city/1000 (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city/1000 (payload-size:201)
+{
+    "city": "New City 1",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/1000"
+        }
+    ],
+    "city_id": 1000,
+    "country": {
+        "country": "Venezuela",
+        "country_id": 104,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 104,
+    "last_update": "2025-02-25 04:45:25.000000",
+    "_metadata": {
+        "etag": ETAG
+        "gtid":GTID
+    }
+}
+OK
+Check crud_operations column vs user privilege vs REST method
+GET /svc/sakila/city_C
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_C?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_C (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_C/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_C
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_C?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_C (payload-size:201)
+{
+    "city": "New City 2",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city_C/1001"
+        }
+    ],
+    "city_id": 1001,
+    "country": {
+        "country": "Venezuela",
+        "country_id": 104,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 104,
+    "last_update": "2025-02-25 04:45:25.000000",
+    "_metadata": {
+        "etag": "456544B70D3A29FE81454411BD334134C397F75C5956C8DACBAC031C93F982EA",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/sakila/city_C/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_C?limit=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_C?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_C (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_C/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_C
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_C?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_C (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_C/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_R
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_R?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_R (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_R/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_R
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_R?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_R (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_R/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_R?limit=1
+{
+    "items": [
+        {
+            "city": "A Corua (La Corua)",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city_R/1"
+                }
+            ],
+            "city_id": 1,
+            "country": {
+                "country": "Spain",
+                "country_id": 87,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 87,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag": "CD6F179CF6284340928FD4C2A133A621B680425D4CE7D47B2927F1390E40442B"
+            }
+        }
+    ],
+    "limit": 1,
+    "offset": 0,
+    "hasMore": true,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city_R/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/sakila/city_R/?offset=1&limit=1"
+        }
+    ]
+}
+OK
+DELETE /svc/sakila/city_R?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_R (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_R/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_R
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_R?id=999
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_R (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_R/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_U
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_U?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_U (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_U/55 (payload-size:199)
+{
+    "city": "Barcelona1",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city_U/55"
+        }
+    ],
+    "city_id": 55,
+    "country": {
+        "country": "Venezuela",
+        "country_id": 104,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 104,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag": "6408A89578CAF3B8A8B4B0976CC05B369580007909620451FE6C0B4173F582A7"
+    }
+}
+OK
+GET /svc/sakila/city_U
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_U?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_U (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_U/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_U?limit=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_U?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_U (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_U/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_U
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_U?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_U (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_U/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_D
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_D?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_D (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_D/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_D
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_D?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_D (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_D/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_D?limit=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_D?id=1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/sakila/city_D (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_D/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/sakila/city_D
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/sakila/city_D?q=%7B%22city_id%22:999%7D
+{
+    "itemsDeleted": 0
+}
+OK
+POST /svc/sakila/city_D (payload-size:201)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/sakila/city_D/55 (payload-size:199)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DROP SCHEMA sakila;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

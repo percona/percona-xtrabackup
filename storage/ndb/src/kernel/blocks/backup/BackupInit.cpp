@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -346,8 +346,8 @@ void Backup::execREAD_CONFIG_REQ(Signal *signal) {
    */
   c_nodePool.setSize(MAX_NDB_NODES);
   c_backupPool.setSize(noBackups + 1);
-  c_backupFilePool.setSize(3 * noBackups + 4 +
-                           (2 * BackupFormat::NDB_MAX_FILES_PER_LCP));
+  c_backupFilePool.setSize(3 * noBackups + 5 +
+                           BackupFormat::NDB_MAX_FILES_PER_LCP);
   c_tablePool.setSize(noBackups * noTables + 2);
   c_triggerPool.setSize(noBackups * 3 * noTables);
   c_fragmentPool.setSize(noBackups * noFrags + 2);
@@ -466,7 +466,7 @@ void Backup::execREAD_CONFIG_REQ(Signal *signal) {
   Uint32 noPages =
       (szDataBuf + sizeof(Page32) - 1) / sizeof(Page32) +
       (szLogBuf + sizeof(Page32) - 1) / sizeof(Page32) +
-      ((2 * BackupFormat::NDB_MAX_FILES_PER_LCP) *
+      ((1 + BackupFormat::NDB_MAX_FILES_PER_LCP) *
        ((c_defaults.m_lcp_buffer_size + sizeof(Page32) - 1) / sizeof(Page32)));
 
   Uint32 seizeNumPages = noPages + (1 * NO_OF_PAGES_META_FILE) + 9;

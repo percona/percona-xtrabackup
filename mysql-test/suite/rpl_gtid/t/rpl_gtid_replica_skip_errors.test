@@ -1,0 +1,470 @@
+# ==== Purpose ====
+#
+# Verify that transactions skipped due to replica-skip-errors produce empty
+# transactions in the replica's binary log when needed.
+#
+# ==== Requirements ====
+#
+# When one of the following errors occurs while the replica applies a
+# transaction, and the error is skipped because of replica-skip-errors, the
+# replica shall write the GTID to its binary log:
+#
+#  R1.1. CREATE TABLE fails because the table exists
+#  R1.2. CREATE TABLE ... SELECT fails because the table exists, when
+#        binlog_format=STATEMENT
+#  R1.3. CREATE TABLE ... SELECT fails because the table exists, when
+#        binlog_format=ROW
+#  R2. ALTER TABLE fails because the table does not exist
+#  R3. OPTIMIZE TABLE fails because the table does not exist
+#  R4. CREATE TRIGGER fails because the table does not exist
+#  R5. DROP TABLE fails because the table does not exist
+#  R6. INSERT fails because the table does not exist
+#        R6.1. binlog_format=ROW
+#        R6.2. binlog_format=STATEMENT
+#  R7. INSERT fails because the row already exists
+#        R7.1. binlog_format=ROW
+#        R7.2. binlog_format=STATEMENT
+#  R8. A DDL statement fails with parse error
+#  R9. A DML statement fails with parse error
+#  R10. CREATE USER fails because the user exists
+#  R11. XA COMMIT fails because the XID does not exist
+#  R12. XA ROLLBACK fails becasue the XID does not exist
+#  R13. INSERT fails within XA START ... XA END ; XA PREPARE
+#  R14. CREATE DATABASE fails because the database exists
+#  R15. DROP DATABASE fails because the database is not empty
+#  R16. Incident event fails because that's what incident event do
+#
+# In all cases except R3, it shall write an empty transaction to the replica's
+# binary log. In case R3, OPTIMIZE TABLE is written instead, because that is a
+# special statement that is written even when it fails.
+#
+# Note: we can't test every possible error for every possible statement. These
+# requirements are chosen with the intention to be representative for a variety
+# of code paths.
+#
+# We do not test failures in XA START, because replica_skip_errors doesn't work
+# with XA START: if we skip the error, there is no transaction for the next
+# event to execute in, which results in other, non-skippable errors.
+#
+# ==== Implementation ====
+#
+# For each of the requirements except R3:
+# - Execute the scenario
+# - Check that it replicates. This verifies that the replica did not stop, and
+#   that the GTID was added to gtid_executed.
+# - Check that the GTID was written to the replica's binary log as an empty
+#   transaction.
+#
+# For R3, the replica will write OPTIMIZE TABLE to its binary log, because
+# OPTIMIZE TABLE is a special statement that gets written even when it fails.
+# So instead of checking for an empty transaction, we check for OPTIMIZE TABLE.
+
+--source include/have_binlog_format_row.inc
+--source include/have_debug.inc
+--source include/rpl/init_source_replica.inc
+
+--echo #
+--echo # Initialize
+--echo #
+
+--source include/rpl/connection_replica.inc
+--let $messages = Replica SQL for channel .*: Worker 1 failed executing transaction.*
+--let $suppress_on_current_connection = 1
+--source include/suppress_messages.inc
+
+--echo #
+--echo # R1.1. CREATE TABLE fails because table exists on replica
+--echo #
+
+--source include/rpl/connection_replica.inc
+CREATE TABLE t (a INT PRIMARY KEY);
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+CREATE TABLE t (a INT PRIMARY KEY);
+
+# Replica will observe and ignore error 1050 = ER_TABLE_EXISTS_ERROR
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Clean up
+--source include/rpl/connection_source.inc
+DROP TABLE t;
+--source include/rpl/sync_to_replica.inc
+
+--echo #
+--echo # R1.2. CREATE TABLE ... SELECT fails because table exists on replica
+--echo #       with binlog_format=STATEMENT
+--echo #
+
+--source include/rpl/connection_source.inc
+CREATE TABLE t0 (a INT PRIMARY KEY);
+INSERT INTO t0 VALUES (1), (2);
+--source include/rpl/sync_to_replica.inc
+
+CREATE TABLE t (a TEXT);
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+SET @@session.binlog_format = STATEMENT;
+CREATE TABLE t (a INT PRIMARY KEY) SELECT * FROM t0;
+SET @@session.binlog_format = ROW;
+
+# Replica will observe and ignore error 1050 = ER_TABLE_EXISTS_ERROR
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Clean up
+--source include/rpl/connection_source.inc
+DROP TABLE t;
+--source include/rpl/sync_to_replica.inc
+
+# Reuse t0 in the next scenario
+
+--echo #
+--echo # R1.3. CREATE TABLE ... SELECT fails because table exists on replica
+--echo #       with binlog_format=ROW
+--echo #
+
+--source include/rpl/connection_replica.inc
+CREATE TABLE t (a TEXT);
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+CREATE TABLE t (a INT PRIMARY KEY) SELECT * FROM t0;
+
+# Replica will:
+# - when applying the CREATE, observe and ignore error 1050 =
+#   ER_TABLE_EXISTS_ERROR;
+# - but it is ignoring that error, so it will proceed and try to apply the row
+#   insertion;
+# - when applying the row insertion, the table exists but does not have the
+#   same data type in the first column as the event, so it will observe and
+#   ignore error 13146 = ER_SERVER_REPLICA_CONVERSION_FAILED.
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Clean up
+--source include/rpl/connection_source.inc
+DROP TABLE t0;
+--source include/rpl/sync_to_replica.inc
+
+# Reuse t in the next scenario
+
+--echo #
+--echo # R2. ALTER TABLE fails because table does not exist on replica
+--echo #
+
+--source include/rpl/connection_replica.inc
+DROP TABLE t;
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+ALTER TABLE t ADD COLUMN b INT;
+
+# Replica will observe and ignore error 1146 = ER_NO_SUCH_TABLE
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+--source include/rpl/save_binlog_file_position.inc
+
+# Reuse t, which exists only on source, in the next scenario
+
+--echo #
+--echo # R3. OPTIMIZE TABLE fails because table does not exist on replica
+--echo #
+
+--source include/rpl/connection_source.inc
+OPTIMIZE TABLE t;
+
+# Replica will observe and ignore error 1050 = ER_TABLE_EXISTS_ERROR
+--source include/rpl/sync_to_replica.inc
+# Because OPTIMIZE TABLE is special, it actually gets logged on errors.
+# Verify that it got logged and that no empty transaction got logged.
+--let $event_sequence = Gtid # Query/.*OPTIMIZE TABLE t
+--source include/rpl/assert_binlog_events.inc
+--source include/rpl/save_binlog_file_position.inc
+
+# Reuse t, which exists only on source, in the next scenario
+
+--echo #
+--echo # R4. CREATE TRIGGER fails because table does not exist on replica
+--echo #
+
+--source include/rpl/connection_source.inc
+CREATE TRIGGER trig BEFORE UPDATE ON t FOR EACH ROW SET @tmp := 1;
+
+# Replica will observe and ignore error 1146 = ER_NO_SUCH_TABLE
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+--source include/rpl/save_binlog_file_position.inc
+
+# Reuse t, which exists only on source, in the next scenario
+
+--echo #
+--echo # R5. DROP TABLE fails because table does not exist on replica
+--echo #
+
+--source include/rpl/connection_source.inc
+DROP TABLE t;
+
+# Replica will observe and ignore error 1051 = ER_BAD_TABLE_ERROR
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+#### R6, R7: use rpl_gtid_replica_skip_errors_dml.test ####
+
+--let $engine = InnoDB
+--source common/rpl/rpl_gtid_replica_skip_errors_dml.test
+
+--echo #
+--echo # R8. A DDL statement fails with parse error
+--echo #
+
+--source include/rpl/connection_replica.inc
+--source include/rpl/save_binlog_file_position.inc
+--source include/rpl/connection_source.inc
+
+# This removes the first character from the query before writing to the binlog,
+# so replica will see `REATE TABLE t (a INT)`
+--let $debug_point = binlog_corrupt_query
+--source include/add_debug_point.inc
+CREATE TABLE t (a INT);
+--let $debug_point = binlog_corrupt_query
+--source include/remove_debug_point.inc
+
+# Replica will observe and ignore error 1064 = ER_PARSE_ERROR
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Clean up
+--source include/rpl/connection_source.inc
+DROP TABLE IF EXISTS t;
+--source include/rpl/sync_to_replica.inc
+
+--echo #
+--echo # R9. A DML statement fails with parse error
+--echo #
+
+--source include/rpl/connection_source.inc
+CREATE TABLE t (a INT);
+--source include/rpl/sync_to_replica.inc
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+# This removes the first character from the query before writing to the binlog,
+# so replica will see `NSERT INTO t VALUES (1)`
+SET @@session.binlog_format = STATEMENT;
+--let $debug_point = binlog_corrupt_query
+--source include/add_debug_point.inc
+INSERT INTO t VALUES (1);
+--let $debug_point = binlog_corrupt_query
+--source include/remove_debug_point.inc
+SET @@session.binlog_format = ROW;
+
+# Replica will observe and ignore error 1064 = ER_PARSE_ERROR
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Clean up
+--source include/rpl/connection_source.inc
+DROP TABLE t;
+--source include/rpl/sync_to_replica.inc
+
+--echo #
+--echo # R10. CREATE USER fails because the user exists
+--echo #
+
+--source include/rpl/connection_replica.inc
+CREATE USER user1;
+
+--source include/rpl/save_binlog_file_position.inc
+--source include/rpl/connection_source.inc
+CREATE USER user1;
+
+# Replica will observe and ignore error 1396 = ER_CANNOT_USER
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Clean up
+--source include/rpl/connection_source.inc
+DROP USER user1;
+--source include/rpl/sync_to_replica.inc
+
+--echo #
+--echo # R11. XA COMMIT fails because the XID does not exist
+--echo #
+
+--source include/rpl/connection_source.inc
+CREATE TABLE t (a INT PRIMARY KEY);
+XA START 'a';
+INSERT INTO t VALUES (2);
+XA END 'a';
+XA PREPARE 'a';
+--source include/rpl/sync_to_replica.inc
+
+--source include/rpl/connection_replica.inc
+--let $xa_prepared_count = 1
+--source include/wait_for_xa_prepared_count.inc
+XA ROLLBACK 'a';
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+XA COMMIT 'a';
+
+# Replica will observe and ignore error 1397 = ER_XAER_NOTA
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Reuse t in the next scenario
+
+--echo #
+--echo # R12. XA ROLLBACK fails because the XID does not exist
+--echo #
+
+--source include/rpl/connection_source.inc
+XA START 'a';
+INSERT INTO t VALUES (3);
+XA END 'a';
+XA PREPARE 'a';
+--source include/rpl/sync_to_replica.inc
+--let $xa_prepared_count = 1
+--source include/wait_for_xa_prepared_count.inc
+XA ROLLBACK 'a';
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+XA ROLLBACK 'a';
+
+# Replica will observe and ignore error 1397 = ER_XAER_NOTA
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Reuse t in the next scenario
+
+--echo #
+--echo # R13. INSERT fails within XA START ... XA END ; XA PREPARE
+--echo #
+
+--source include/rpl/connection_replica.inc
+INSERT INTO t VALUES (4);
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+XA START 'a';
+INSERT INTO t VALUES (4);
+XA END 'a';
+XA PREPARE 'a';
+
+# Replica will observe and ignore error 1146 = ER_NO_SUCH_TABLE
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Clean up
+--source include/rpl/connection_source.inc
+XA ROLLBACK 'a';
+DROP TABLE t;
+--source include/rpl/sync_to_replica.inc
+
+--echo #
+--echo # R14. CREATE DATABASE fails because the database exists
+--echo #
+
+--source include/rpl/connection_replica.inc
+CREATE DATABASE db;
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+CREATE DATABASE db;
+
+# Replica will observe and ignore error 1007 = ER_DB_CREATE_EXISTS
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+# Reuse db in the next scenario
+
+--echo #
+--echo # R15. DROP DATABASE fails because the database does not exist
+--echo #
+
+--source include/rpl/connection_replica.inc
+DROP DATABASE db;
+--source include/rpl/save_binlog_file_position.inc
+
+--source include/rpl/connection_source.inc
+DROP DATABASE db;
+
+# Replica will observe and ignore error 1008 = ER_DB_DROP_EXISTS
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--source include/rpl/assert_binlog_events.inc
+
+--echo #
+--echo # R16. Incident fails
+--echo #
+
+--source include/rpl/connection_replica.inc
+--source include/rpl/save_binlog_file_position.inc
+--let $replica_binlog_file = $binlog_file
+--let $replica_binlog_position = $binlog_position
+
+--source include/rpl/connection_source.inc
+--source include/rpl/save_binlog_file_position.inc
+--source include/save_error_log_position.inc
+
+--let $debug_point = binlog_inject_incident
+--source include/add_debug_point.inc
+CREATE TABLE t (a INT);
+--let $debug_point = binlog_inject_incident
+--source include/remove_debug_point.inc
+
+--let $event_sequence = Gtid # Incident
+--source include/rpl/assert_binlog_events.inc
+
+--let $error_pattern = Non-transactional changes were not written to the binlog. An incident event has been written to the binary log which will stop the replicas.
+--source include/assert_error_log.inc
+
+# Replica will observe and ignore error 13119 = ER_REPLICA_INCIDENT
+--source include/rpl/sync_to_replica.inc
+# Replica will write empty transaction.
+--let $event_sequence = Gtid # Query/BEGIN # Query/COMMIT
+--let $binlog_file = $replica_binlog_file
+--let $binlog_position = $replica_binlog_position
+--source include/rpl/assert_binlog_events.inc
+
+# Clean up
+--source include/rpl/connection_source.inc
+DROP TABLE IF EXISTS t;
+--source include/rpl/sync_to_replica.inc
+
+--echo #
+--echo # Clean up
+--echo #
+
+--source include/rpl/deinit.inc

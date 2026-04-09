@@ -1087,9 +1087,13 @@ c1	c2	right(c3, 20)
 CREATE USER encryptprivuser@localhost IDENTIFIED BY 'auth';
 GRANT ALL PRIVILEGES ON *.* to encryptprivuser@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE USER encryptnonprivuser@localhost IDENTIFIED BY 'noauth';
 GRANT SELECT ON *.* to encryptnonprivuser@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT c1,c2,right(c3, 20) FROM tde_db.t_encrypt LIMIT 10;
 c1	c2	right(c3, 20)
 0	aaaaa	AAAAAAAAAAAAAAAAAAAA

@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,8 +35,8 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <stddef.h>
 #include <sys/types.h>
+#include <cstddef>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -108,13 +108,13 @@ class MDLTest : public ::testing::Test, public Test_MDL_context_owner {
  protected:
   MDLTest() : m_null_ticket(nullptr), m_null_request(nullptr) {}
 
-  static void SetUpTestCase() {
+  static void SetUpTestSuite() {
     /* Save original and install our custom error hook. */
     m_old_error_handler_hook = error_handler_hook;
     error_handler_hook = test_error_handler_hook;
   }
 
-  static void TearDownTestCase() {
+  static void TearDownTestSuite() {
     error_handler_hook = m_old_error_handler_hook;
   }
 
@@ -214,8 +214,6 @@ class MDL_thread : public Thread, public Test_MDL_context_owner {
       is blocked.
     */
     if (m_lock_blocked) m_lock_blocked->notify();
-
-    return;
   }
 
   MDL_context &get_mdl_context() { return m_mdl_context; }
@@ -451,7 +449,7 @@ TEST_F(MDLTest, SavePoint) {
 
   EXPECT_FALSE(m_mdl_context.try_acquire_lock(&m_request));
   EXPECT_FALSE(m_mdl_context.try_acquire_lock(&request_2));
-  MDL_savepoint savepoint = m_mdl_context.mdl_savepoint();
+  MDL_savepoint const savepoint = m_mdl_context.mdl_savepoint();
   EXPECT_FALSE(m_mdl_context.try_acquire_lock(&request_3));
   EXPECT_FALSE(m_mdl_context.try_acquire_lock(&request_4));
 
@@ -642,13 +640,15 @@ TEST_F(MDLTest, UpgradableConcurrency) {
 */
 
 TEST_F(MDLTest, SharedWriteLowPrioCompatibility) {
-  enum_mdl_type compatible[] = {
+  enum_mdl_type const compatible[] = {
       MDL_SHARED,       MDL_SHARED_HIGH_PRIO,      MDL_SHARED_READ,
       MDL_SHARED_WRITE, MDL_SHARED_WRITE_LOW_PRIO, MDL_SHARED_UPGRADABLE};
-  enum_mdl_type incompatible[] = {MDL_SHARED_READ_ONLY, MDL_SHARED_NO_WRITE,
-                                  MDL_SHARED_NO_READ_WRITE, MDL_EXCLUSIVE};
-  enum_mdl_type higher_prio[] = {MDL_SHARED_READ_ONLY, MDL_SHARED_NO_WRITE,
-                                 MDL_SHARED_NO_READ_WRITE, MDL_EXCLUSIVE};
+  enum_mdl_type const incompatible[] = {
+      MDL_SHARED_READ_ONLY, MDL_SHARED_NO_WRITE, MDL_SHARED_NO_READ_WRITE,
+      MDL_EXCLUSIVE};
+  enum_mdl_type const higher_prio[] = {MDL_SHARED_READ_ONLY,
+                                       MDL_SHARED_NO_WRITE,
+                                       MDL_SHARED_NO_READ_WRITE, MDL_EXCLUSIVE};
   Notification lock_grabbed;
   Notification release_lock;
   MDL_thread mdl_thread(table_name1, MDL_SHARED_WRITE_LOW_PRIO, &lock_grabbed,
@@ -809,13 +809,15 @@ TEST_F(MDLTest, SharedWriteLowPrioCompatibility) {
 */
 
 TEST_F(MDLTest, SharedReadOnlyCompatibility) {
-  enum_mdl_type compatible[] = {MDL_SHARED,           MDL_SHARED_HIGH_PRIO,
-                                MDL_SHARED_READ,      MDL_SHARED_UPGRADABLE,
-                                MDL_SHARED_READ_ONLY, MDL_SHARED_NO_WRITE};
-  enum_mdl_type incompatible[] = {MDL_SHARED_WRITE, MDL_SHARED_WRITE_LOW_PRIO,
-                                  MDL_SHARED_NO_READ_WRITE, MDL_EXCLUSIVE};
-  enum_mdl_type higher_prio[] = {MDL_SHARED_WRITE, MDL_SHARED_NO_READ_WRITE,
-                                 MDL_EXCLUSIVE};
+  enum_mdl_type const compatible[] = {
+      MDL_SHARED,           MDL_SHARED_HIGH_PRIO,
+      MDL_SHARED_READ,      MDL_SHARED_UPGRADABLE,
+      MDL_SHARED_READ_ONLY, MDL_SHARED_NO_WRITE};
+  enum_mdl_type const incompatible[] = {
+      MDL_SHARED_WRITE, MDL_SHARED_WRITE_LOW_PRIO, MDL_SHARED_NO_READ_WRITE,
+      MDL_EXCLUSIVE};
+  enum_mdl_type const higher_prio[] = {MDL_SHARED_WRITE,
+                                       MDL_SHARED_NO_READ_WRITE, MDL_EXCLUSIVE};
   Notification lock_grabbed;
   Notification release_lock;
   MDL_thread mdl_thread(table_name1, MDL_SHARED_READ_ONLY, &lock_grabbed,
@@ -2797,7 +2799,7 @@ TEST_F(MDLTest, UnusedMinRatio) {
   EXPECT_EQ(0, mdl_get_unused_locks_count());
 
   /* Take a savepoint to be able to release part of the locks in future. */
-  MDL_savepoint savepoint = m_mdl_context.mdl_savepoint();
+  MDL_savepoint const savepoint = m_mdl_context.mdl_savepoint();
 
   /* Acquire a few more locks. */
   for (i = 0; i < TABLES; ++i) {
@@ -3624,7 +3626,6 @@ class MDL_weight_thread : public Thread, public Test_MDL_context_owner {
                                        src_function, src_file, src_line);
 
     m_lock_blocked->notify();
-    return;
   }
 
  private:
@@ -3731,7 +3732,7 @@ TEST_F(MDLTest, FindLockOwner) {
                      nullptr, nullptr);
   MDL_thread thread2(table_name1, MDL_EXCLUSIVE, &second_grabbed,
                      &second_release, &second_blocked, nullptr);
-  MDL_key mdl_key(MDL_key::TABLE, db_name, table_name1);
+  MDL_key const mdl_key(MDL_key::TABLE, db_name, table_name1);
 
   /* There should be no lock owner before we have started any threads. */
   MDLTestContextVisitor visitor1;
@@ -3851,7 +3852,7 @@ class MDLHtonNotifyTest : public MDLTest {
 */
 
 TEST_F(MDLHtonNotifyTest, NotifyNamespaces) {
-  bool notify_or_not[] = {
+  bool const notify_or_not[] = {
       false,  // GLOBAL
       false,  // BACKUP_LOCK
       true,   // TABLESPACE
@@ -3869,7 +3870,8 @@ TEST_F(MDLHtonNotifyTest, NotifyNamespaces) {
       false,  // COLUMN_STATISTICS
       false,  // RESOURCE_GROUPS
       false,  // FOREIGN_KEY
-      false   // CHECK_CONSTRAINT
+      false,  // CHECK_CONSTRAINT
+      false   // LIBRARY
   };
   static_assert(
       sizeof(notify_or_not) == MDL_key::NAMESPACE_END,
@@ -3879,6 +3881,7 @@ TEST_F(MDLHtonNotifyTest, NotifyNamespaces) {
     MDL_request request;
     if (static_cast<MDL_key::enum_mdl_namespace>(i) == MDL_key::FUNCTION ||
         static_cast<MDL_key::enum_mdl_namespace>(i) == MDL_key::PROCEDURE ||
+        static_cast<MDL_key::enum_mdl_namespace>(i) == MDL_key::LIBRARY ||
         static_cast<MDL_key::enum_mdl_namespace>(i) == MDL_key::TRIGGER ||
         static_cast<MDL_key::enum_mdl_namespace>(i) == MDL_key::EVENT ||
         static_cast<MDL_key::enum_mdl_namespace>(i) ==
@@ -3898,12 +3901,12 @@ TEST_F(MDLHtonNotifyTest, NotifyNamespaces) {
     m_mdl_context.release_transactional_locks();
 
     if (notify_or_not[i]) {
-      EXPECT_EQ(1U, pre_acquire_count());
-      EXPECT_EQ(1U, post_release_count());
+      EXPECT_EQ(1U, pre_acquire_count()) << "index:" << i;
+      EXPECT_EQ(1U, post_release_count()) << "index:" << i;
       reset_counts_and_keys();
     } else {
-      EXPECT_EQ(0U, pre_acquire_count());
-      EXPECT_EQ(0U, post_release_count());
+      EXPECT_EQ(0U, pre_acquire_count()) << "index:" << i;
+      EXPECT_EQ(0U, post_release_count()) << "index:" << i;
     }
   }
 }
@@ -4319,14 +4322,12 @@ class MDL_skip_find_deadlock_thread : public Thread,
                                        src_function, src_file, src_line);
 
     m_lock_blocked->notify();
-    return;
   }
 
   void exit_cond(const PSI_stage_info *stage, const char *src_function,
                  const char *src_file, int src_line) override {
     Test_MDL_context_owner::exit_cond(stage, src_function, src_file, src_line);
     if (m_wait_resume) m_wait_resume->wait_for_notification();
-    return;
   }
 
   bool might_have_commit_order_waiters() const override {
@@ -4686,7 +4687,7 @@ static Name_vec make_name_vec(size_t t) {
   Helper function for benchmark.
  */
 static void lock_bench(MDL_context &ctx, const Name_vec &names) {
-  for (auto &name : names) {
+  for (const auto &name : names) {
     MDL_request request;
     MDL_REQUEST_INIT(&request, MDL_key::TABLE, "S", name.c_str(),
                      MDL_INTENTION_EXCLUSIVE, MDL_TRANSACTION);

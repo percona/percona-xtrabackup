@@ -201,9 +201,7 @@
 # The test changes binlog_format, so there is no reason to run it
 # under more than one binlog format.
 --source include/have_binlog_format_row.inc
-# Disable multi threaded slave since an error in a worker slave leads to an
-# upper-level error in the coordinator
---source include/not_replica_parallel_workers.inc
+
 # The test does not support group replication plugin since binlog_format is
 # not equal to 'ROW' for some test cases
 --source include/not_group_replication_plugin.inc
@@ -215,6 +213,7 @@
 --disable_query_log
 CALL mtr.add_suppression("Unsafe statement written to the binary log using statement format since binlog_format = STATEMENT");
 CALL mtr.add_suppression("Cannot execute statement: impossible to write to binary log");
+CALL mtr.add_suppression("Replica SQL for channel '': ... The replica coordinator and worker threads are stopped, possibly leaving data in inconsistent state.*Error_code: MY-001756");
 --enable_query_log
 
 --echo ==== Initialize ====
@@ -298,7 +297,7 @@ SELECT * FROM t_slave_stmt /* should be empty */;
 --echo * TC4: Row injection and stmt-only table: use BINLOG statement
 # This is a Table_map_event and a Write_rows_event. Together, they are
 # equivalent to 'INSERT INTO t_stmt VALUES (1)'
---error ER_BINLOG_ROW_INJECTION_AND_STMT_ENGINE
+--error ER_ONLY_FD_AND_RBR_EVENTS_ALLOWED_IN_BINLOG_STATEMENT
 BINLOG '
 1gRVShMBAAAALwAAAEABAAAAABcAAAAAAAAABHRlc3QABnRfc3RtdAABDwJkAAE=
 1gRVShcBAAAAIAAAAGABAAAQABcAAAAAAAEAAf/+ATE=
@@ -373,17 +372,19 @@ SELECT * FROM t_row /* should contain the value 1 */;
 --echo * TC11: Row injection and binlog_format=statement: BINLOG statement
 # This is a Table_map_event and a Write_rows_event. Together, they are
 # equivalent to 'INSERT INTO t VALUES (1)'.
---error ER_BINLOG_ROW_INJECTION_AND_STMT_MODE
+--error ER_ONLY_FD_AND_RBR_EVENTS_ALLOWED_IN_BINLOG_STATEMENT
 BINLOG '
 cNpVShMBAAAAKgAAADYBAAAAABcAAAAAAAAABHRlc3QAAXQAAQ8CZAAB
 cNpVShcBAAAAIAAAAFYBAAAQABcAAAAAAAEAAf/+ATE=
 ';
 SELECT * FROM t /* should be empty */;
 
---echo * TC12: Same statement, but db filtered out - no error
+--echo * TC12: Same statement, but db filtered out, still errors
+--echo since the error is before read the event content.
 # This is a Table_map_event and a Write_rows_event. Together, they are
 # equivalent to 'INSERT INTO t VALUES (1)'.
 USE other;
+--error ER_ONLY_FD_AND_RBR_EVENTS_ALLOWED_IN_BINLOG_STATEMENT
 BINLOG '
 cNpVShMBAAAAKgAAADYBAAAAABcAAAAAAAAABHRlc3QAAXQAAQ8CZAAB
 cNpVShcBAAAAIAAAAFYBAAAQABcAAAAAAAEAAf/+ATE=

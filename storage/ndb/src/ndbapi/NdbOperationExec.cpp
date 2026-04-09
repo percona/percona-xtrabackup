@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,6 @@
 #include <ndb_version.h>
 
 #include <NdbOut.hpp>
-#include "API.hpp"
 
 /**
  * Old NdbApi KeyInfo Section Iterator
@@ -100,7 +99,7 @@ class OldNdbApiSectionIterator : public GenericSectionIterator {
       /* Second signal is KeyInfo or AttrInfo
        * Ignore header words
        */
-      NdbApiSignal *sig = (NdbApiSignal *)currentPos;
+      auto *sig = (NdbApiSignal *)currentPos;
       assert(sig->getLength() >= KeyAndAttrInfoHeaderLength);
       sz = sig->getLength() - KeyAndAttrInfoHeaderLength;
       currentPos = sig->next();
@@ -112,7 +111,7 @@ class OldNdbApiSectionIterator : public GenericSectionIterator {
 };
 
 void NdbOperation::setLastFlag(NdbApiSignal *signal, Uint32 lastFlag) {
-  TcKeyReq *const req = CAST_PTR(TcKeyReq, signal->getDataPtrSend());
+  auto *const req = CAST_PTR(TcKeyReq, signal->getDataPtrSend());
   TcKeyReq::setExecuteFlag(req->requestInfo, lastFlag);
 }
 
@@ -122,7 +121,7 @@ void NdbOperation::setLastFlag(NdbApiSignal *signal, Uint32 lastFlag) {
  * NdbRecord or not.
  */
 void NdbOperation::setRequestInfoTCKEYREQ(bool lastFlag, bool longSignal) {
-  TcKeyReq *const req = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
+  auto *const req = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
   Uint32 requestInfo = req->requestInfo;
   TcKeyReq::setExecuteFlag(requestInfo, lastFlag);
   TcKeyReq::setSimpleFlag(requestInfo, theSimpleIndicator);
@@ -177,101 +176,99 @@ int NdbOperation::doSendKeyReq(int aNodeId, GenericSectionPtr *secs,
     const Uint32 long_sections_size = keyInfoLen + attrInfoLen;
     if (long_sections_size <= NDB_MAX_LONG_SECTIONS_SIZE) {
       return impl->sendSignal(request, aNodeId, secs, numSecs);
-    } else if (ndbd_frag_tckeyreq(tcNodeVersion)) {
+    }
+    if (ndbd_frag_tckeyreq(tcNodeVersion)) {
       return impl->sendFragmentedSignal(request, aNodeId, secs, numSecs);
-    } else {
-      /* It should not be possible to see a table definition that supports
-       * big rows unless all data nodes that are started also can handle it.
-       */
-      require(ndbd_frag_tckeyreq(tcNodeVersion));
-      return -1;
     }
-  } else {
-    /* Send signal as short request - either for backwards
-     * compatibility or testing
-     *
-     * This means that Read Committed Base flag will be
-     * overwritten and thus ignored.
+    /* It should not be possible to see a table definition that supports
+     * big rows unless all data nodes that are started also can handle it.
      */
-    Uint32 sigCount = 1;
-
-    Uint32 keyInfoInReq = MIN(keyInfoLen, TcKeyReq::MaxKeyInfo);
-    Uint32 attrInfoInReq = MIN(attrInfoLen, TcKeyReq::MaxAttrInfo);
-    TcKeyReq *tcKeyReq = (TcKeyReq *)request->getDataPtrSend();
-    Uint32 connectPtr = tcKeyReq->apiConnectPtr;
-    Uint32 transId1 = tcKeyReq->transId1;
-    Uint32 transId2 = tcKeyReq->transId2;
-    bool indexReq = (request->theVerId_signalNumber == GSN_TCINDXREQ);
-
-    Uint32 reqLen = request->theLength;
-
-    /* Set TCKEYREQ flags */
-    TcKeyReq::setKeyLength(tcKeyReq->requestInfo, keyInfoLen);
-    TcKeyReq::setAIInTcKeyReq(tcKeyReq->requestInfo, attrInfoInReq);
-    TcKeyReq::setAttrinfoLen(tcKeyReq->attrLen, attrInfoLen);
-
-    Uint32 *writePtr = request->getDataPtrSend() + reqLen;
-
-    GSIReader keyInfoReader(secs[0].sectionIter);
-    GSIReader attrInfoReader(secs[1].sectionIter);
-
-    keyInfoReader.copyNWords(writePtr, keyInfoInReq);
-    writePtr += keyInfoInReq;
-    attrInfoReader.copyNWords(writePtr, attrInfoInReq);
-
-    reqLen += keyInfoInReq + attrInfoInReq;
-    assert(reqLen <= TcKeyReq::SignalLength);
-
-    request->setLength(reqLen);
-
-    if (impl->sendSignal(request, aNodeId) == -1) return -1;
-
-    keyInfoLen -= keyInfoInReq;
-    attrInfoLen -= attrInfoInReq;
-
-    if (keyInfoLen) {
-      request->theVerId_signalNumber = indexReq ? GSN_INDXKEYINFO : GSN_KEYINFO;
-      KeyInfo *keyInfo = (KeyInfo *)request->getDataPtrSend();
-      keyInfo->connectPtr = connectPtr;
-      keyInfo->transId[0] = transId1;
-      keyInfo->transId[1] = transId2;
-
-      while (keyInfoLen) {
-        Uint32 dataWords = MIN(keyInfoLen, KeyInfo::DataLength);
-
-        keyInfoReader.copyNWords(&keyInfo->keyData[0], dataWords);
-        request->setLength(KeyInfo::HeaderLength + dataWords);
-
-        if (impl->sendSignal(request, aNodeId) == -1) return -1;
-
-        keyInfoLen -= dataWords;
-        sigCount++;
-      }
-    }
-
-    if (attrInfoLen) {
-      request->theVerId_signalNumber =
-          indexReq ? GSN_INDXATTRINFO : GSN_ATTRINFO;
-      AttrInfo *attrInfo = (AttrInfo *)request->getDataPtrSend();
-      attrInfo->connectPtr = connectPtr;
-      attrInfo->transId[0] = transId1;
-      attrInfo->transId[1] = transId2;
-
-      while (attrInfoLen) {
-        Uint32 dataWords = MIN(attrInfoLen, AttrInfo::DataLength);
-
-        attrInfoReader.copyNWords(&attrInfo->attrData[0], dataWords);
-        request->setLength(AttrInfo::HeaderLength + dataWords);
-
-        if (impl->sendSignal(request, aNodeId) == -1) return -1;
-
-        attrInfoLen -= dataWords;
-        sigCount++;
-      }
-    }
-
-    return sigCount;
+    require(ndbd_frag_tckeyreq(tcNodeVersion));
+    return -1;
   }
+  /* Send signal as short request - either for backwards
+   * compatibility or testing
+   *
+   * This means that Read Committed Base flag will be
+   * overwritten and thus ignored.
+   */
+  Uint32 sigCount = 1;
+
+  Uint32 keyInfoInReq = MIN(keyInfoLen, TcKeyReq::MaxKeyInfo);
+  Uint32 attrInfoInReq = MIN(attrInfoLen, TcKeyReq::MaxAttrInfo);
+  auto *tcKeyReq = (TcKeyReq *)request->getDataPtrSend();
+  Uint32 connectPtr = tcKeyReq->apiConnectPtr;
+  Uint32 transId1 = tcKeyReq->transId1;
+  Uint32 transId2 = tcKeyReq->transId2;
+  bool indexReq = (request->theVerId_signalNumber == GSN_TCINDXREQ);
+
+  Uint32 reqLen = request->theLength;
+
+  /* Set TCKEYREQ flags */
+  TcKeyReq::setKeyLength(tcKeyReq->requestInfo, keyInfoLen);
+  TcKeyReq::setAIInTcKeyReq(tcKeyReq->requestInfo, attrInfoInReq);
+  TcKeyReq::setAttrinfoLen(tcKeyReq->attrLen, attrInfoLen);
+
+  Uint32 *writePtr = request->getDataPtrSend() + reqLen;
+
+  GSIReader keyInfoReader(secs[0].sectionIter);
+  GSIReader attrInfoReader(secs[1].sectionIter);
+
+  keyInfoReader.copyNWords(writePtr, keyInfoInReq);
+  writePtr += keyInfoInReq;
+  attrInfoReader.copyNWords(writePtr, attrInfoInReq);
+
+  reqLen += keyInfoInReq + attrInfoInReq;
+  assert(reqLen <= TcKeyReq::SignalLength);
+
+  request->setLength(reqLen);
+
+  if (impl->sendSignal(request, aNodeId) == -1) return -1;
+
+  keyInfoLen -= keyInfoInReq;
+  attrInfoLen -= attrInfoInReq;
+
+  if (keyInfoLen) {
+    request->theVerId_signalNumber = indexReq ? GSN_INDXKEYINFO : GSN_KEYINFO;
+    auto *keyInfo = (KeyInfo *)request->getDataPtrSend();
+    keyInfo->connectPtr = connectPtr;
+    keyInfo->transId[0] = transId1;
+    keyInfo->transId[1] = transId2;
+
+    while (keyInfoLen) {
+      Uint32 dataWords = MIN(keyInfoLen, KeyInfo::DataLength);
+
+      keyInfoReader.copyNWords(&keyInfo->keyData[0], dataWords);
+      request->setLength(KeyInfo::HeaderLength + dataWords);
+
+      if (impl->sendSignal(request, aNodeId) == -1) return -1;
+
+      keyInfoLen -= dataWords;
+      sigCount++;
+    }
+  }
+
+  if (attrInfoLen) {
+    request->theVerId_signalNumber = indexReq ? GSN_INDXATTRINFO : GSN_ATTRINFO;
+    auto *attrInfo = (AttrInfo *)request->getDataPtrSend();
+    attrInfo->connectPtr = connectPtr;
+    attrInfo->transId[0] = transId1;
+    attrInfo->transId[1] = transId2;
+
+    while (attrInfoLen) {
+      Uint32 dataWords = MIN(attrInfoLen, AttrInfo::DataLength);
+
+      attrInfoReader.copyNWords(&attrInfo->attrData[0], dataWords);
+      request->setLength(AttrInfo::HeaderLength + dataWords);
+
+      if (impl->sendSignal(request, aNodeId) == -1) return -1;
+
+      attrInfoLen -= dataWords;
+      sigCount++;
+    }
+  }
+
+  return sigCount;
 }
 
 /******************************************************************************
@@ -315,12 +312,10 @@ int NdbOperation::doSend(int aNodeId, Uint32 lastFlag) {
      * We use special iterators to extract this
      */
 
-    TcKeyReq *tcKeyReq = (TcKeyReq *)theTCREQ->getDataPtrSend();
-    const Uint32 inlineKIOffset =
-        Uint32(tcKeyReq->keyInfo - (Uint32 *)tcKeyReq);
+    auto *tcKeyReq = (TcKeyReq *)theTCREQ->getDataPtrSend();
+    const auto inlineKIOffset = Uint32(tcKeyReq->keyInfo - (Uint32 *)tcKeyReq);
     const Uint32 inlineKILength = MIN(TcKeyReq::MaxKeyInfo, theTupKeyLen);
-    const Uint32 inlineAIOffset =
-        Uint32(tcKeyReq->attrInfo - (Uint32 *)tcKeyReq);
+    const auto inlineAIOffset = Uint32(tcKeyReq->attrInfo - (Uint32 *)tcKeyReq);
     const Uint32 inlineAILength =
         MIN(TcKeyReq::MaxAttrInfo, theTotalCurrAI_Len);
 
@@ -419,7 +414,8 @@ int NdbOperation::prepareSend(Uint32 aTC_ConnectPtr, Uint64 aTransId,
       if (tStatus != GetValue) {
         setErrorCodeAbort(4116);
         return -1;
-      } else if (unlikely(tDirtyIndicator && tTotalCurrAI_Len == 0)) {
+      }
+      if (unlikely(tDirtyIndicator && tTotalCurrAI_Len == 0)) {
         getValue(NdbDictionary::Column::FRAGMENT);
         tTotalCurrAI_Len = theTotalCurrAI_Len;
         assert(theTotalCurrAI_Len);
@@ -448,7 +444,7 @@ int NdbOperation::prepareSend(Uint32 aTC_ConnectPtr, Uint64 aTransId,
   // We start by filling in the first 9 unconditional words of the
   // TCKEYREQ signal.
   //-------------------------------------------------------------
-  TcKeyReq *const tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
+  auto *const tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
 
   Uint32 tTableId = m_accessTable->m_id;
   Uint32 tSchemaVersion = m_accessTable->m_version;
@@ -547,7 +543,7 @@ Uint32 NdbOperation::repack_read(Uint32 len) {
   Uint32 save = len;
   Bitmask<MAXNROFATTRIBUTESINWORDS> mask;
   NdbApiSignal *tSignal = theFirstATTRINFO;
-  TcKeyReq *const tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
+  auto *const tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
   Uint32 cols = m_currentTable->m_columns.size();
 
   Uint32 *ptr = tcKeyReq->attrInfo;
@@ -591,7 +587,7 @@ Uint32 NdbOperation::repack_read(Uint32 len) {
      * or READ_PACKED
      * (Correct NdbRecAttrs will be used when data is received)
      */
-    if (all == false && ((1 + newlen) > TcKeyReq::MaxAttrInfo)) {
+    if (!all && ((1 + newlen) > TcKeyReq::MaxAttrInfo)) {
       return save;
     }
 
@@ -602,11 +598,10 @@ Uint32 NdbOperation::repack_read(Uint32 len) {
     if (all) {
       AttributeHeader::init(ptr, AttributeHeader::READ_ALL, cols);
       return 1;
-    } else {
-      AttributeHeader::init(ptr, AttributeHeader::READ_PACKED, 4 * newlen);
-      memcpy(ptr + 1, &mask, 4 * newlen);
-      return 1 + newlen;
     }
+    AttributeHeader::init(ptr, AttributeHeader::READ_PACKED, 4 * newlen);
+    memcpy(ptr + 1, &mask, 4 * newlen);
+    return 1 + newlen;
   }
 
   return save;
@@ -765,7 +760,7 @@ int NdbOperation::prepareSendInterpreted() {
   Uint32 tSubroutineSize = theSubroutineSize;
   if (theOperationType != OpenScanRequest &&
       theOperationType != OpenRangeScanRequest) {
-    TcKeyReq *const tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
+    auto *const tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
 
     tcKeyReq->attrInfo[0] = tInitialReadSize;
     tcKeyReq->attrInfo[1] = tInterpretedSize;
@@ -811,7 +806,7 @@ int NdbOperation::buildSignalsNdbRecord(Uint32 aTC_ConnectPtr, Uint64 aTransId,
   const bool isScanTakeover = (key_rec == nullptr);
   const bool isUnlock = (theOperationType == UnlockRequest);
 
-  TcKeyReq *tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
+  auto *tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
   Uint32 hdrSize = fillTcKeyReqHdr(tcKeyReq, aTC_ConnectPtr, aTransId);
   /* No KeyInfo goes in the TCKEYREQ signal - it all goes into
    * a separate KeyInfo section
@@ -954,7 +949,7 @@ int NdbOperation::buildSignalsNdbRecord(Uint32 aTC_ConnectPtr, Uint64 aTransId,
       /* Blob head reads are defined as extra GetValues,
        * processed below, not here.
        */
-      if (unlikely(col->flags & NdbRecord::IsBlob)) continue;
+      if (unlikely(col->flags & NdbRecord::UsesBlobHandle)) continue;
 
       if (col->flags & NdbRecord::IsDisk) no_disk_flag = 0;
 
@@ -1048,6 +1043,8 @@ int NdbOperation::buildSignalsNdbRecord(Uint32 aTC_ConnectPtr, Uint64 aTransId,
     NdbBlob *currentBlob = theBlobList;
 
     for (Uint32 i = 0; i < attr_rec->noOfColumns; i++) {
+      char prefix[2];
+      Uint32 prefix_length = 0;
       const NdbRecord::Attr *col;
 
       col = &attr_rec->columns[i];
@@ -1063,10 +1060,10 @@ int NdbOperation::buildSignalsNdbRecord(Uint32 aTC_ConnectPtr, Uint64 aTransId,
       if (col->flags & NdbRecord::IsDisk) no_disk_flag = 0;
 
       Uint32 length;
-      const char *data;
+      const char *data = nullptr;
 
-      if (likely(!(col->flags &
-                   (NdbRecord::IsBlob | NdbRecord::IsMysqldBitfield)))) {
+      if (likely(!(col->flags & (NdbRecord::UsesBlobHandle |
+                                 NdbRecord::IsMysqldBitfield)))) {
         int idxColNum = -1;
         const NdbRecord::Attr *idxCol = nullptr;
 
@@ -1084,14 +1081,39 @@ int NdbOperation::buildSignalsNdbRecord(Uint32 aTC_ConnectPtr, Uint64 aTransId,
            * This allows scan-takeover update to update pk within
            * collation rules
            */
+          data = &updRow[col->offset];
           if (col->is_null(updRow))
             length = 0;
-          else if (!col->get_var_length(updRow, length)) {
+          else if (col->flags & NdbRecord::IsMysqldBlob) {
+            /*
+             * Convert user supplied 'MySQL LongBlob' format data (4 byte
+             * length, data ptr) into expected NdbApi VAR* format for
+             * sending (2 byte length, data).
+             */
+            assert(col->flags & NdbRecord::IsVar2ByteLen);
+            static constexpr int length_bytes = 4;  // MySQL Longblob
+            assert(col->maxSize == length_bytes + 8 /* portable ptr size */);
+            length = 0;
+            for (int i = length_bytes - 1; i >= 0; i--)
+              length = 256 * length + (uchar)updRow[col->offset + i];
+            // Extract data pointer from user supplied row.
+            memcpy(&data, updRow + col->offset + length_bytes, 8);
+            /*
+             * max size in AttributeHeader 0xFFFC and minus two length bytes
+             * for Longvarbinary
+             */
+            if (length > 0xFFFC - 2) {
+              setErrorCodeAbort(4209);
+              return -1;
+            }
+            prefix[0] = length % 256;
+            prefix[1] = length / 256;
+            prefix_length = 2;
+          } else if (!col->get_var_length(updRow, length)) {
             /* Hm, corrupt varchar length. */
             setErrorCodeAbort(4209);
             return -1;
           }
-          data = &updRow[col->offset];
         } else {
           /* For Insert/Write where user provides key columns,
            * take them from the key record row to avoid sending different
@@ -1175,10 +1197,14 @@ int NdbOperation::buildSignalsNdbRecord(Uint32 aTC_ConnectPtr, Uint64 aTransId,
         }
       }  // if Blob or Bitfield
 
-      res = insertATTRINFOHdr_NdbRecord(attrId, length);
+      res = insertATTRINFOHdr_NdbRecord(attrId, prefix_length + length);
       if (res) return res;
-      if (length > 0) {
-        res = insertATTRINFOData_NdbRecord(data, length);
+      if (prefix_length + length > 0) {
+        if (prefix_length == 0)
+          res = insertATTRINFOData_NdbRecord(data, length);
+        else
+          res =
+              insertATTRINFOData_NdbRecord(prefix, prefix_length, data, length);
         if (res) return res;
       }
     }  // for noOfColumns
@@ -1294,7 +1320,7 @@ int NdbOperation::prepareSendNdbRecord(AbortOption ao) {
   // There are a number of flags in the TCKEYREQ header that
   // we have to set at this point...they are not correctly
   // defined before the call to execute().
-  TcKeyReq *tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
+  auto *tcKeyReq = CAST_PTR(TcKeyReq, theTCREQ->getDataPtrSend());
 
   Uint8 abortOption =
       (ao == DefaultAbortOption) ? (Uint8)m_abortOption : (Uint8)ao;
@@ -1486,6 +1512,52 @@ int NdbOperation::insertATTRINFOHdr_NdbRecord(Uint32 attrId, Uint32 attrLen) {
   return 0;
 }
 
+int NdbOperation::insertATTRINFOData_NdbRecord(const char *value1,
+                                               Uint32 byteSize1,
+                                               const char *value2,
+                                               Uint32 byteSize2) {
+  /* Words are added to a list of Signal objects pointed to
+   * by theFirstATTRINFO
+   * This list is then used to form the ATTRINFO
+   * section of the TCKEYREQ long signal
+   * No ATTRINFO signal train is sent.
+   *
+   * This method variant first copies data from two sources and then pads with
+   * zeros to even words.
+   */
+  theTotalCurrAI_Len += (byteSize1 + byteSize2 + 3) / 4;
+
+  Uint32 space_bytes = attrInfoRemain * 4;
+  auto *space_ptr = (unsigned char *)theATTRINFOptr;
+
+  for (int i = 0; i < 2; i++) {
+    Uint32 value_bytes = (i == 0) ? byteSize1 : byteSize2;
+    const char *value_ptr = (i == 0) ? value1 : value2;
+    while (value_bytes > 0) {
+      if (space_bytes == 0) {
+        int res = allocAttrInfo();
+        if (res) return res;
+        space_bytes = attrInfoRemain * 4;
+        space_ptr = (unsigned char *)theATTRINFOptr;
+      }
+      Uint32 copy_bytes = std::min(value_bytes, space_bytes);
+      memcpy(space_ptr, value_ptr, copy_bytes);
+      space_ptr += copy_bytes;
+      value_ptr += copy_bytes;
+      space_bytes -= copy_bytes;
+      value_bytes -= copy_bytes;
+    }
+  }
+  while (space_bytes % 4) {
+    *space_ptr++ = 0;
+    space_bytes--;
+  }
+  theATTRINFOptr = (Uint32 *)space_ptr;
+  attrInfoRemain = space_bytes / 4;
+  theCurrentATTRINFO->setLength(NdbApiSignal::MaxSignalWords - attrInfoRemain);
+  return 0;
+}
+
 int NdbOperation::insertATTRINFOData_NdbRecord(const char *value,
                                                Uint32 byteSize) {
   /* Words are added to a list of Signal objects pointed to
@@ -1574,7 +1646,7 @@ int NdbOperation::receiveTCKEYREF(const NdbApiSignal *aSignal) {
   theReceiver.m_received_result_length = ~0;
 
   // not dirty read
-  if (!(theOperationType == ReadRequest && theDirtyIndicator)) {
+  if (theOperationType != ReadRequest || !theDirtyIndicator) {
     theNdbCon->OpCompleteFailure();
     return -1;
   }

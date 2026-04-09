@@ -225,6 +225,7 @@ DROP TABLE t1;
 CREATE TABLE t(pka INT NOT NULL AUTO_INCREMENT, a1 INT, a2 INT, PRIMARY KEY(pka));
 INSERT INTO t(a1,a2) VALUES (1,3), (2,5), (3,7), (4,8), (5,9), (6,10), (7,11);
 INSERT INTO t(a1,a2) SELECT a1,a2 FROM t;
+ANALYZE TABLE t;
 let $query =
 SELECT * FROM ( (SELECT a1,a2 FROM t ORDER BY a1,a2 ASC)
                 ORDER BY a2/a1 DESC LIMIT 7 ) AS derived;
@@ -283,3 +284,100 @@ SELECT JSON_PRETTY(JSON_EXTRACT(
 FROM information_schema.OPTIMIZER_TRACE AS t;
 SET optimizer_trace='enabled=default';
 DROP TABLE t;
+
+--echo #
+--echo # Bug#37341055 MySQL version 9.1.0 crash with query thats works on version 8
+--echo #
+SELECT 'a' AS f1, 'b' AS f2, 'c' AS f3
+UNION
+SELECT 'a' AS f1 , NULL AS f2, 'c' AS f3
+ORDER BY f2, f3;
+
+--echo #
+--echo # Bug#37742092 Limit number of spill sets in set operations spill-to-disk handling
+--echo #
+
+CREATE TABLE t1(
+  c1 TEXT,
+  c2 CHAR(255) DEFAULT NULL
+);
+LOAD DATA INFILE '../../std_data/t1_2cols.csv' INTO TABLE t1 FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n';
+
+INSERT INTO t1 SELECT CONCAT('1', c1), c2 FROM t1;
+INSERT INTO t1 SELECT CONCAT('2', c1), c2 FROM t1;
+INSERT INTO t1 SELECT CONCAT('3', c1), c2 FROM t1;
+INSERT INTO t1 SELECT CONCAT('4', c1), c2 FROM t1;
+ANALYZE TABLE t1;
+
+SET set_operations_buffer_size = 16384;
+SET optimizer_trace="enabled=on";
+
+let $show_trace=
+   SELECT JSON_PRETTY(JSON_EXTRACT(trace,"$.steps[*].join_execution"))
+   FROM information_schema.optimizer_trace;
+
+let $pattern=$elide_trace_costs_and_rows;
+# elide some sorting statistics:
+let $pattern=$pattern /num_initial_chunks_spilled_to_disk\": [0-9.]+/num_initial_chunks_spilled_to_disk\": "elided"/;
+let $pattern=$pattern /peak_memory_used\": [0-9.]+/peak_memory_used\": "elided"/;
+let $pattern=$pattern /num_rows_estimate\": [0-9.]+/num_rows_estimate\": "elided"/;
+let $pattern=$pattern /to 65536/to xxxxx/;
+let $pattern=$pattern /to 131072/to xxxxx/;
+let $pattern=$pattern /\"chunk files\": [0-9]+/\"chunk files\": xxx/;
+let $pattern=$pattern /\"chunk files\": [0-9]+/\"chunk files\": xxx/;
+
+SELECT MAX( c1 ) OVER ( ORDER BY c2 ROWS CURRENT ROW ) FROM t1
+INTERSECT DISTINCT
+SELECT "can't" OR 447938560 FROM t1;
+
+--replace_regex $pattern
+--skip_if_hypergraph
+eval $show_trace;
+
+SET set_operations_buffer_size= 131072; # trace recommended 65536, but
+                                        # doesn't only works
+                                        # sometimes, so double it
+
+SELECT MAX( c1 ) OVER ( ORDER BY c2 ROWS CURRENT ROW ) FROM t1
+INTERSECT DISTINCT
+SELECT "can't" OR 447938560 FROM t1;
+
+--replace_regex $pattern
+--skip_if_hypergraph
+eval $show_trace;
+
+# Trace also recommends increasing further to avoid spill totally,
+# a factor of 64-128 (~ max # chunks)
+SET set_operations_buffer_size= 131072*32;  # is too little, still spill
+
+SELECT MAX( c1 ) OVER ( ORDER BY c2 ROWS CURRENT ROW ) FROM t1
+INTERSECT DISTINCT
+SELECT "can't" OR 447938560 FROM t1;
+
+--replace_regex $pattern
+--skip_if_hypergraph
+eval $show_trace;
+
+SET set_operations_buffer_size= 131072*64;  # enough for no spill
+
+SELECT MAX( c1 ) OVER ( ORDER BY c2 ROWS CURRENT ROW ) FROM t1
+INTERSECT DISTINCT
+SELECT "can't" OR 447938560 FROM t1;
+
+--replace_regex $pattern
+--skip_if_hypergraph
+eval $show_trace;
+
+SET set_operations_buffer_size=default;   # spills
+
+SELECT MAX( c1 ) OVER ( ORDER BY c2 ROWS CURRENT ROW ) FROM t1
+INTERSECT DISTINCT
+SELECT "can't" OR 447938560 FROM t1;
+
+--replace_regex $pattern
+--skip_if_hypergraph
+eval $show_trace;
+
+SET optimizer_trace=default;
+
+DROP TABLE t1;

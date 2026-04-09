@@ -11,6 +11,10 @@ Warning	1681	Integer display width is deprecated and will be removed in a future
 INSERT INTO t1 VALUES (1,1,'a'),(2,2,'b'),(2,3,'c'),(3,4,'E'),(3,5,'C'),(3,6,'D'),(NULL,NULL,'');
 create table t2 (id int, a bigint unsigned not null, c char(10), d int, primary key (a));
 insert into t2 values (1,1,"a",1),(3,4,"A",4),(3,5,"B",5),(3,6,"C",6),(4,7,"D",7);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 select t1.*,t2.* from t1 JOIN t2 where t1.a=t2.a;
 grp	a	c	id	a	c	d
 1	1	a	1	1	a	1
@@ -343,6 +347,10 @@ Warning	1681	Integer display width is deprecated and will be removed in a future
 INSERT INTO t2 VALUES (1,1,'El Gato');
 INSERT INTO t2 VALUES (2,1,'Perrito');
 INSERT INTO t2 VALUES (3,3,'Happy');
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 select t1.name, t2.name, t2.id from t1 left join t2 on (t1.id = t2.owner);
 name	name	id
 Antonio Paz	El Gato	1
@@ -421,6 +429,9 @@ Thimble Smith	Happy	3	3	3
 drop table t1,t2;
 create table t1 (id int not null, str char(10), index(str));
 insert into t1 values (1, null), (2, null), (3, "foo"), (4, "bar");
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 select * from t1 where str is not null order by id;
 id	str
 3	foo
@@ -697,6 +708,10 @@ Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 INSERT INTO t2 VALUES (1,1);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 explain SELECT * from t1 left join t2 on t1.id=t2.id where t2.id IS NULL;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
@@ -988,6 +1003,12 @@ INSERT INTO t0 VALUES (1);
 INSERT INTO t1 VALUES (1);
 INSERT INTO t2 VALUES (1), (2);
 INSERT INTO t3 VALUES (1), (2);
+ANALYZE TABLE t0, t1, t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t0	analyze	status	OK
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 SELECT * FROM t1 LEFT JOIN t2 ON a1=0;
 a1	a2
 1	NULL
@@ -1020,6 +1041,10 @@ Warnings:
 Note	1003	/* select#1 */ select `test`.`t0`.`a0` AS `a0`,`test`.`t1`.`a1` AS `a1`,`test`.`t2`.`a2` AS `a2`,`test`.`t3`.`a3` AS `a3` from `test`.`t0` join `test`.`t1` left join (`test`.`t2` join `test`.`t3`) on(((`test`.`t0`.`a0` = 0) and (`test`.`t1`.`a1` = 0))) where (`test`.`t1`.`a1` = `test`.`t0`.`a0`)
 INSERT INTO t0 VALUES (0);
 INSERT INTO t1 VALUES (0);
+ANALYZE TABLE t0, t1;
+Table	Op	Msg_type	Msg_text
+test.t0	analyze	status	OK
+test.t1	analyze	status	OK
 SELECT * FROM t0, t1 LEFT JOIN (t2,t3) ON a1=5 WHERE a0=a1 AND a0=1;
 a0	a1	a2	a3
 1	1	NULL	NULL
@@ -1129,6 +1154,11 @@ Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 insert t3 values (0, 1, 'a'), (1, 1, 'b'), (0, 2, 'c'), (1, 2, 'd'), (1, 3, 'e'), (1, 4, 'f'), (1, 5, 'g'), (1, 6, 'h');
+ANALYZE TABLE t1, t2, t3;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
 explain select name from t1 left join t2 on t1.x = t2.x and t1.y = t2.y
 left join t3 on t1.art = t3.id where t2.id =1 and t2.x = -5 and t2.y =-8
 and t1.gid =1 and t2.gid =1 and t3.set_id =1;
@@ -1170,6 +1200,10 @@ CREATE TABLE t1 (a int PRIMARY KEY, b int);
 CREATE TABLE t2 (a int PRIMARY KEY, b int);
 INSERT INTO t1 VALUES (1,2), (2,1), (3,2), (4,3), (5,6), (6,5), (7,8), (8,7), (9,10);
 INSERT INTO t2 VALUES (3,0), (4,1), (6,4), (7,5);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 SELECT * FROM t1 LEFT JOIN t2 ON t1.a = t2.a WHERE t2.b <= t1.a AND t1.a <= t1.b;
 a	b	a	b
 7	8	7	5
@@ -1485,6 +1519,10 @@ CREATE TABLE t1(f1 INT, f2 INT, f3 INT);
 INSERT INTO t1 VALUES (1, NULL, 3);
 CREATE TABLE t2(f1 INT, f2 INT);
 INSERT INTO t2 VALUES (2, 1);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN SELECT * FROM t1 LEFT JOIN t2 ON t1.f2 = t2.f2
 WHERE (COALESCE(t1.f1, t2.f1), f3) IN ((1, 3), (2, 2));
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -1504,6 +1542,9 @@ DROP TABLE t1, t2;
 CREATE TABLE t1( a INT );
 INSERT INTO t1 VALUES (1),(2);
 SET optimizer_search_depth = 0;
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 # Should not core dump on query preparation
 EXPLAIN
 SELECT 1
@@ -1559,6 +1600,9 @@ DROP TABLE t1, t2;
 #
 CREATE TABLE t1(f1 INT, PRIMARY KEY (f1));
 INSERT INTO t1 VALUES (1),(2);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 EXPLAIN SELECT STRAIGHT_JOIN jt1.f1 FROM t1 AS jt1
 LEFT JOIN t1 AS jt2
 RIGHT JOIN t1 AS jt3
@@ -1602,6 +1646,10 @@ CREATE TABLE t2 (f1 INT NOT NULL, f2 INT NOT NULL, PRIMARY KEY (f1, f2));
 INSERT INTO t1 VALUES (4);
 INSERT INTO t2 VALUES (3, 3);
 INSERT INTO t2 VALUES (7, 7);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN SELECT * FROM t1 LEFT JOIN t2 ON t2.f1 = t1.f1
 WHERE t1.f1 = 4
 GROUP BY t2.f1, t2.f2;
@@ -1639,6 +1687,10 @@ CREATE TABLE t2 (pk INT PRIMARY KEY,
 col_int INT,
 col_int_unique INT UNIQUE KEY);
 INSERT INTO t2 VALUES (1,0,1), (2,0,2);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN
 SELECT * FROM t1 LEFT JOIN t2
 ON t1.col_int_unique = t2.col_int_unique AND t1.col_int = t2.col_int 
@@ -1875,6 +1927,12 @@ CREATE TABLE t2 (a int);
 CREATE TABLE t3 (a int);
 CREATE TABLE t4 (a int);
 INSERT INTO t1 VALUES (null),(null);
+ANALYZE TABLE t1, t2, t3, t4;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
+test.t4	analyze	status	OK
 explain SELECT t1.a FROM t1 LEFT JOIN (t2 LEFT JOIN t3 ON t2.a)
 ON 0 WHERE t1.a OR t3.a;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
@@ -1928,6 +1986,12 @@ PRIMARY KEY (pk)
 );
 INSERT INTO t4 VALUES (1);
 INSERT INTO t4 VALUES (2);
+ANALYZE TABLE t1, t2, t3, t4;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
+test.t4	analyze	status	OK
 SELECT t1.col_int
 FROM t1
 LEFT JOIN t2
@@ -2106,6 +2170,14 @@ Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 INSERT INTO t6 VALUES (1,'1',1);
+ANALYZE TABLE t1, t2, t3, t4, t5, t6;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
+test.t4	analyze	status	OK
+test.t5	analyze	status	OK
+test.t6	analyze	status	OK
 SELECT STRAIGHT_JOIN t6a.pk, t2.pk
 FROM
 t6 AS t6a
@@ -2288,6 +2360,10 @@ CREATE TABLE t1(a INT);
 CREATE TABLE t2(a INT NOT NULL);
 INSERT INTO t1 VALUES(1),(2);
 INSERT INTO t2 VALUES(1),(2);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN SELECT * FROM t1 LEFT JOIN t2 ON t1.a=t2.a WHERE t2.a IS NULL;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
@@ -2327,6 +2403,10 @@ DROP TABLE t1, t2;
 # Bug#13980954 Missing data on left join + null value + where..in
 #
 CREATE TABLE t1 (ik INT, vc varchar(1)) charset utf8mb4 ENGINE=Innodb;
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SET explain_json_format_version = 1;
 explain format=json SELECT straight_join t1.vc, t1.ik
 FROM t1 JOIN t1 AS t2 ON t1.vc=t2.vc LEFT JOIN t1 AS t3 ON t1.vc=t3.vc;
 EXPLAIN
@@ -2401,6 +2481,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	/* select#1 */ select straight_join `test`.`t1`.`vc` AS `vc`,`test`.`t1`.`ik` AS `ik` from `test`.`t1` join `test`.`t1` `t2` left join `test`.`t1` `t3` on((`test`.`t3`.`vc` = `test`.`t1`.`vc`)) where (`test`.`t2`.`vc` = `test`.`t1`.`vc`)
+SET explain_json_format_version = DEFAULT;
 SELECT straight_join t1.vc, t1.ik
 FROM t1 JOIN t1 AS t2 ON t1.vc=t2.vc LEFT JOIN t1 AS t3 ON t1.vc=t3.vc;
 vc	ik
@@ -2417,6 +2498,9 @@ DROP TABLE t1;
 #
 create table t1(a int, unique key(a)) engine=innodb;
 insert into t1 values(1);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 explain select * from t1 left join t1 as t2
 on t2.a=12
 where t1.a=1;
@@ -2970,6 +3054,10 @@ PRIMARY KEY (pk)
 INSERT INTO t2 VALUES
 (1,0), (2,0), (3,2), (4,NULL), (5,2),
 (6,3), (7,3), (8,100), (9,3), (10,6);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 explain SELECT table2.pk, table1.col_int
 FROM t2 AS table1
 LEFT JOIN t1 AS table2
@@ -3082,6 +3170,10 @@ PRIMARY KEY (b1)
 );
 INSERT INTO tb (b1, b2, b3) VALUES
 (1, 'text1', 0), (2, 'text2', 0), (3, 'text3', 1), (4, 'text4', 1);
+ANALYZE TABLE ta, tb;
+Table	Op	Msg_type	Msg_text
+test.ta	analyze	status	OK
+test.tb	analyze	status	OK
 explain SELECT ta.a1, tb.b1, tb.b2
 FROM ta LEFT OUTER JOIN tb
 ON ta.a2 = tb.b1 AND tb.b3 = 0;
@@ -3382,6 +3474,10 @@ CREATE TABLE t1 (id INT);
 CREATE TABLE t2 (id INT);
 INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (1);
+ANALYZE TABLE t1, t2;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
 EXPLAIN SELECT *
 FROM (SELECT id
 FROM t1) AS a
@@ -3570,6 +3666,12 @@ col_int_unique INT DEFAULT NULL,
 UNIQUE KEY col_int_unique (col_int_unique)
 ) ENGINE=InnoDB;
 INSERT INTO t4 VALUES (9,5);
+ANALYZE TABLE t1, t2, t3, t4;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+test.t2	analyze	status	OK
+test.t3	analyze	status	OK
+test.t4	analyze	status	OK
 explain SELECT STRAIGHT_JOIN
 t3.col_int, t4.col_int,
 t3.col_int = t4.col_int or t4.col_int IS NULL

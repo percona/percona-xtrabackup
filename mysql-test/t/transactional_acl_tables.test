@@ -1,6 +1,8 @@
 
 --source include/not_valgrind.inc
 --source include/have_debug_sync.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 CALL mtr.add_suppression("Storage engine '.*' does not support system tables. \\[mysql.*\\]");
 CALL mtr.add_suppression("Column count of mysql.* is wrong. "
@@ -2185,6 +2187,9 @@ call mtr.add_suppression("mysql.user has no `Event_priv` column at position 28")
 
 --source include/start_mysqld.inc
 
+# Start will restore the gtid_mode to ON so setting it to OFF again
+--source include/rpl/set_gtid_mode_off.inc
+
 --echo
 --echo # Check that any ACL statement is failed when privilege tables
 --echo # have engine type MyISAM
@@ -2221,6 +2226,9 @@ ORDER BY table_name;
 --let $restart_parameters = restart:--upgrade=FORCE
 --let $wait_counter= 10000
 --source include/restart_mysqld.inc
+
+# Restart will restore the gtid_mode to ON so setting it to OFF again
+--source include/rpl/set_gtid_mode_off.inc
 
 --echo
 --echo # The ACL tables must have been upgraded.
@@ -2321,3 +2329,5 @@ WHERE state = 'Waiting for table metadata lock' AND
 
 DROP USER u1;
 DROP TABLE t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

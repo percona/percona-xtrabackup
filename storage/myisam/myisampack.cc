@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,12 +25,12 @@
 
 #include "my_config.h"
 
-#include <assert.h>
 #include <fcntl.h>
-#include <stdlib.h>
 #include <sys/types.h>
-#include <time.h>
 #include <algorithm>
+#include <cassert>
+#include <cstdlib>
+#include <ctime>
 
 #include "m_string.h"
 #include "my_byteorder.h"
@@ -178,9 +178,9 @@ static char *make_new_name(char *new_name, char *old_name);
 static char *make_old_name(char *new_name, char *old_name);
 static void init_file_buffer(File file, bool read_buffer);
 static int flush_buffer(ulong neaded_length);
-static void end_file_buffer(void);
+static void end_file_buffer();
 static void write_bits(ulonglong value, uint bits);
-static void flush_bits(void);
+static void flush_bits();
 static int save_state(MI_INFO *isam_file, PACK_MRG_INFO *mrg,
                       my_off_t new_length, ha_checksum crc);
 static int save_state_mrg(File file, PACK_MRG_INFO *isam_file,
@@ -310,7 +310,7 @@ static struct my_option my_long_options[] = {
     {nullptr, 0, nullptr, nullptr, nullptr, nullptr, GET_NO_ARG, NO_ARG, 0, 0,
      0, nullptr, 0, nullptr}};
 
-static void usage(void) {
+static void usage() {
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2002"));
 
@@ -389,7 +389,6 @@ static void get_options(int *argc, char ***argv) {
     backup = false; /* Not needed */
     tmp_dir[0] = 0;
   }
-  return;
 }
 
 static MI_INFO *open_isam_file(char *name, int mode) {
@@ -800,7 +799,6 @@ static void free_counts_and_tree_and_queue(HUFF_TREE *huff_trees, uint trees,
     my_free(huff_counts);
   }
   delete_queue(&queue); /* This is safe to free */
-  return;
 }
 
 /* Read through old file and gather some statistics */
@@ -954,14 +952,17 @@ static int get_statistic(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts) {
 
         /* Calculate pos, end_pos, and max_length for variable length fields. */
         if (count->field_type == FIELD_BLOB) {
-          uint field_length = count->field_length - portable_sizeof_char_ptr;
-          ulong blob_length = _mi_calc_blob_length(field_length, start_pos);
+          uint const field_length =
+              count->field_length - portable_sizeof_char_ptr;
+          ulong const blob_length =
+              _mi_calc_blob_length(field_length, start_pos);
           memcpy(&pos, start_pos + field_length, sizeof(char *));
           end_pos = pos + blob_length;
           tot_blob_length += blob_length;
           count->max_length = std::max(count->max_length, blob_length);
         } else if (count->field_type == FIELD_VARCHAR) {
-          uint pack_length = HA_VARCHAR_PACKLENGTH(count->field_length - 1);
+          uint const pack_length =
+              HA_VARCHAR_PACKLENGTH(count->field_length - 1);
           length = (pack_length == 1 ? (uint) * (uchar *)start_pos
                                      : uint2korr(start_pos));
           pos = start_pos + pack_length;
@@ -1536,8 +1537,8 @@ static int make_huff_tree(HUFF_TREE *huff_tree, HUFF_COUNTS *huff_counts) {
 static int compare_tree(const void *cmp_arg [[maybe_unused]], const void *a,
                         const void *b) {
   uint length;
-  const uchar *s = (const uchar *)a;
-  const uchar *t = (const uchar *)b;
+  const auto *s = (const uchar *)a;
+  const auto *t = (const uchar *)b;
   for (length = global_count->field_length; length--;)
     if (*s++ != *t++) return (int)s[-1] - (int)t[-1];
   return 0;
@@ -1566,8 +1567,8 @@ static int compare_tree(const void *cmp_arg [[maybe_unused]], const void *a,
 
 static int save_counts_in_queue(void *v_key, element_count count,
                                 void *v_tree) {
-  uchar *key = static_cast<uchar *>(v_key);
-  HUFF_TREE *tree = static_cast<HUFF_TREE *>(v_tree);
+  auto *key = static_cast<uchar *>(v_key);
+  auto *tree = static_cast<HUFF_TREE *>(v_tree);
   HUFF_ELEMENT *new_huff_el;
 
   new_huff_el = tree->element_buffer + (tree->elements++);
@@ -1783,7 +1784,6 @@ static void make_traverse_code_tree(HUFF_TREE *huff_tree, HUFF_ELEMENT *element,
     make_traverse_code_tree(huff_tree, element->a.nod.right, size,
                             code + (((ulonglong)1) << size));
   }
-  return;
 }
 
 /*
@@ -1846,7 +1846,7 @@ static char *hexdigits(ulonglong value) {
 
 static int write_header(PACK_MRG_INFO *mrg, uint head_length, uint trees,
                         my_off_t tot_elements, my_off_t filelength) {
-  uchar *buff = (uchar *)file_buffer.pos;
+  auto *buff = (uchar *)file_buffer.pos;
 
   memset(buff, 0, HEAD_LENGTH);
   memcpy(buff, myisam_pack_file_magic, 4);
@@ -1931,7 +1931,6 @@ static void write_field_info(HUFF_COUNTS *counts, uint fields, uint trees) {
           counts->length_bits, counts->tree->tree_number, counts->field_length);
   }
   flush_bits();
-  return;
 }
 
 /* Write all huff_trees to new datafile. Return tot count of
@@ -2187,16 +2186,15 @@ static uint *make_offset_code_tree(HUFF_TREE *huff_tree, HUFF_ELEMENT *element,
     /* Store the byte code or the index of the column value. */
     prev_offset[1] = element->a.nod.right->a.leaf.element_nr;
     return offset;
-  } else {
-    /*
-      Recursively traverse the tree to the right. Mark it as an offset to
-      another tree node (in contrast to a byte code or column value index).
-    */
-    uint temp = (uint)(offset - prev_offset - 1);
-    prev_offset[1] = IS_OFFSET + temp;
-    if (huff_tree->max_offset < temp) huff_tree->max_offset = temp;
-    return make_offset_code_tree(huff_tree, element->a.nod.right, offset);
   }
+  /*
+  Recursively traverse the tree to the right. Mark it as an offset to
+  another tree node (in contrast to a byte code or column value index).
+  */
+  uint const temp = (uint)(offset - prev_offset - 1);
+  prev_offset[1] = IS_OFFSET + temp;
+  if (huff_tree->max_offset < temp) huff_tree->max_offset = temp;
+  return make_offset_code_tree(huff_tree, element->a.nod.right, offset);
 }
 
 /* Get number of bits needed to represent value */
@@ -2220,7 +2218,7 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts) {
   HUFF_COUNTS *count, *end_count;
   HUFF_TREE *tree;
   MI_INFO *isam_file = mrg->file[0];
-  uint pack_version = (uint)isam_file->s->pack.version;
+  uint const pack_version = (uint)isam_file->s->pack.version;
   DBUG_TRACE;
 
   /* Allocate a buffer for the records (excluding blobs). */
@@ -2437,7 +2435,7 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts) {
             start_pos = end_pos;
             break;
           case FIELD_BLOB: {
-            ulong blob_length = _mi_calc_blob_length(
+            ulong const blob_length = _mi_calc_blob_length(
                 field_length - portable_sizeof_char_ptr, start_pos);
             /* Empty blobs are encoded with a single 1 bit. */
             if (!blob_length) {
@@ -2471,9 +2469,9 @@ static int compress_isam_file(PACK_MRG_INFO *mrg, HUFF_COUNTS *huff_counts) {
             break;
           }
           case FIELD_VARCHAR: {
-            uint var_pack_length =
+            uint const var_pack_length =
                 HA_VARCHAR_PACKLENGTH(count->field_length - 1);
-            ulong col_length =
+            ulong const col_length =
                 (var_pack_length == 1 ? (uint) * (uchar *)start_pos
                                       : uint2korr(start_pos));
             /* Empty varchar are encoded with a single 1 bit. */
@@ -2624,7 +2622,7 @@ static int flush_buffer(ulong neaded_length) {
   return 0;
 }
 
-static void end_file_buffer(void) { my_free(file_buffer.buffer); }
+static void end_file_buffer() { my_free(file_buffer.buffer); }
 
 /* output `bits` low bits of `value' */
 
@@ -2655,12 +2653,11 @@ static void write_bits(ulonglong value, uint bits) {
     file_buffer.bits = (int)(BITS_SAVED - bits);
     file_buffer.bitbucket = value << (BITS_SAVED - bits);
   }
-  return;
 }
 
 /* Flush bits in bit_buffer to buffer */
 
-static void flush_bits(void) {
+static void flush_bits() {
   int bits;
   ulonglong bit_buffer;
 

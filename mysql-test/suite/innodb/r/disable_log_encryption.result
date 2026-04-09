@@ -4,6 +4,8 @@
 # Creating manifest file for current MySQL server instance
 # Re-starting mysql server with manifest file
 # ----------------------------------------------------------------------
+SET GLOBAL innodb_log_checkpoint_now = ON;
+SET GLOBAL innodb_checkpoint_disabled = ON;
 DO innodb_redo_log_consumer_register();
 SELECT @@global.innodb_redo_log_encrypt ;
 @@global.innodb_redo_log_encrypt

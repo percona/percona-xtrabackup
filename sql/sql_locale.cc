@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 
 #include "sql/sql_locale.h"
 
-#include <assert.h>
-#include <stddef.h>
+#include <cassert>
+#include <cstddef>
 
 #include "m_string.h"
 
@@ -2890,8 +2890,8 @@ MY_LOCALE *my_locale_by_name(THD *thd, const char *name, size_t length) {
     // Check that locale is on its correct position in the array
     assert(locale == my_locales[locale->number]);
     return locale;
-  } else if ((locale =
-                  my_locale_by_name(my_locales_deprecated, name, length))) {
+  }
+  if ((locale = my_locale_by_name(my_locales_deprecated, name, length))) {
     /*
       Replace the deprecated locale to the corresponding
       'fresh' locale with the same ID.

@@ -1,4 +1,4 @@
-# Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@ EXECUTE_PROCESS(
   OUTPUT_VARIABLE out1
   )
 EXECUTE_PROCESS(
-  COMMAND ${READELF_EXECUTABLE} -n ./build_id_test
+  COMMAND ${CMAKE_COMMAND} -E env LC_ALL=C ${READELF_EXECUTABLE} -n ./build_id_test
   OUTPUT_VARIABLE out2
   )
 

@@ -1,11 +1,10 @@
 #
-# Bug 1527081: xtrabackup 2.3 does not respect innodb_log_file_size
+# Bug 1527081: xtrabackup 2.3 does not respect innodb_redo_log_capacity
 #              stored in backup-my.cnf
 #
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
-innodb-log-files-in-group=4
-innodb-log-file-size=4M
+innodb-redo-log-capacity=100M
 "
 
 start_server

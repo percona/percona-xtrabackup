@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -153,5 +153,31 @@ BEGIN_SERVICE_DEFINITION(mysql_query_attribute_isnull)
 DECLARE_BOOL_METHOD(get, (mysqlh_query_attributes_iterator iterator,
                           bool *out_null));
 END_SERVICE_DEFINITION(mysql_query_attribute_isnull)
+
+/**
+  @ingroup group_components_services_inventory
+
+  A service to fetch the first query attribute
+
+  @sa mysql_component_mysql_query_attributes_imp
+*/
+BEGIN_SERVICE_DEFINITION(mysql_first_query_attribute)
+/**
+  Access the raw data of the first query attribute's name string.
+
+  Only ASCII compatible charsets are allowed for character_set_client and
+  this is the charset in which the name of the attribute is encoded.
+  So that, the raw buffer may be safely interpreted as ASCII string.
+
+  @param [out] name_buffer pointer to String raw buffer.
+  @param [out] name_length String raw buffer size.
+  Checks if the parameter value is a null
+
+  @retval false success (there is an attribute and the out parameters are set)
+  @retval true  failure (there is no attribute or an error occurred)
+*/
+DECLARE_BOOL_METHOD(get_name_data,
+                    (const char **name_buffer, size_t *name_length));
+END_SERVICE_DEFINITION(mysql_first_query_attribute)
 
 #endif /* MYSQL_QUERY_ATTRIBUTES_H */

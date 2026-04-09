@@ -2,6 +2,9 @@
 --echo # WL#9451 -- Backup Lock
 --echo #
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 CREATE TABLE t1 (a INT);
 
 --enable_connect_log
@@ -200,3 +203,6 @@ DROP DATABASE db1;
 
 --connection default
 --disable_connect_log
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -415,7 +415,7 @@ inline void Alter_stage::reestimate() {
   read yet, use stat_n_leaf_pages (approximate), otherwise
   use the exact number we gathered. */
   const page_no_t n_pk_pages =
-      m_cur_phase != READ_PK ? m_n_pk_pages : m_pk->stat_n_leaf_pages;
+      m_cur_phase != READ_PK ? m_n_pk_pages : m_pk->stats.n_leaf_pages;
 
   /* If flush phase has not started yet and we do not know how
   many pages are to be flushed, then use a wild guess - the

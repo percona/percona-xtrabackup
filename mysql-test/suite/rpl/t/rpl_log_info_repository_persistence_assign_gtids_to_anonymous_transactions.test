@@ -61,7 +61,6 @@
 --source include/not_rpl_gtid_only.inc
 # This test is unrelated to log format
 --source include/have_binlog_format_row.inc
---source include/not_replica_parallel_workers.inc
 --source include/rpl/init_source_replica.inc
 
 --echo

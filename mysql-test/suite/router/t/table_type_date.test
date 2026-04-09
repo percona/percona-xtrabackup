@@ -1,0 +1,173 @@
+RESET BINARY LOGS AND GTIDS;
+
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+CREATE TABLE `test`.`date_values` (
+             `id` int NOT NULL AUTO_INCREMENT, `dt` date DEFAULT NULL, PRIMARY KEY (`id`));
+INSERT INTO `test`.`date_values` (id, dt) VALUES 
+           (1, '2024-10-01'),
+           (2, '2025-10-01'),
+           (3, NULL),
+           (4, '2026-10-01'),
+           (5, '1908-10-01');
+
+
+--echo
+--echo
+--echo ## I. Verify JSON encoding of DATE type, returned in FEED response
+--echo #
+--echo # 1. Verify JSON response containing DATE values encoded as string generated from column of type DATE
+--echo #    returning single object.
+--echo # 2. Verify JSON response containing DATE values encoded as string generated from column of type DATE
+--echo #    returning multiple objects.
+--echo # 3. Verify that object can be updated with different datimetime-values encoded as string and response
+--echo #    contains same data.
+--echo # 4. Verify error message, in case of invalid DATE value.
+--echo #
+--echo ## II. Verify JSON encoding of DATE in filter object with eq operator.
+--echo # 1. Verify that objects can be filtered using DATE column using date-value encoded as string.
+--echo # 2. Verify that objects can be filtered with null value.
+--echo #
+--echo ## III. Verify JSON encoding of DATE in filter object with gt operator.
+--echo # 1. Verify that objects can be filtered using DATE column using date-value encoded as string
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=test
+--let $mrs_add_schema_path=/test
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=date_values
+--let $mrs_add_db_object_path=/date
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--exec $MRS_CLIENT_ARGS --path /svc/test/date/1 --wait-until-status 60 --display none
+
+--let $MRS_CLIENT_ARGS_LIST=$MRS_CLIENT_ARGS --json-pointer /items/*/dt
+--let $MRS_CLIENT_ARGS_OBJ=$MRS_CLIENT_ARGS --json-pointer /dt
+
+--echo
+--echo #
+--echo # I.1
+--exec $MRS_CLIENT_ARGS_OBJ --path /svc/test/date/2
+
+--echo
+--echo #
+--echo # I.2
+--exec $MRS_CLIENT_ARGS_LIST --path /svc/test/date
+
+--echo
+--echo #
+--echo # I.3
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_path='/svc/test/date/2'
+--let $mrs_client_arg_payload='{"id":2,"dt":"2002-02-02"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_path='/svc/test/date/2'
+--let $mrs_client_arg_payload='{"id":2,"dt":"2000-01-01"}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.4
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$date":"14:34:00.1000"}}'
+--let $mrs_client_arg_expected_status=BadRequest
+let $mrs_client_arg_json_schema='
+{
+  "type": "object",
+  "required": ["message", "status"],
+  "properties": {
+     "message":{"type":"string", "pattern":"DATE"}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$date":"TEST STRING"}}'
+--let $mrs_client_arg_expected_status=BadRequest
+let $mrs_client_arg_json_schema='
+{
+  "type": "object",
+  "required": ["message", "status"],
+  "properties": {
+     "message":{"type":"string", "pattern":"DATE"}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$date":20}}'
+--let $mrs_client_arg_expected_status=BadRequest
+let $mrs_client_arg_json_schema='
+{
+  "type": "object",
+  "required": ["message", "status"],
+  "properties": {
+     "message":{"type":"string", "pattern":"FilterObject"}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$date":false}}'
+--let $mrs_client_arg_expected_status=BadRequest
+let $mrs_client_arg_json_schema='
+{
+  "type": "object",
+  "required": ["message", "status"],
+  "properties": {
+     "message":{"type":"string", "pattern":"FilterObject"}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.1
+
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$date":"2024-10-01"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$date":"2024-10-01"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$date":"2000-01-01"}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$eq":{"\\\$date":"2024-10-01"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # II.2
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$null":null}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # III.1
+--let $mrs_client_arg_path='/svc/test/date/?q={"dt":{"\\\$gt":{"\\\$date":"2024-10-01"}}}'
+--let $mrs_client_arg_json_schema_file=$SCHEMA_DIR/db_object_table_items_non_empty.sch
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+DROP TABLE `test`.`date_values`;
+--source ../include/mrs/cleanup.inc

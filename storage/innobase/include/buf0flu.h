@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -174,14 +174,6 @@ static inline void buf_flush_note_modification(buf_block_t *block,
                                                lsn_t start_lsn, lsn_t end_lsn,
                                                Flush_observer *observer);
 
-/** This function should be called when recovery has modified a buffer page.
-@param[in]      block           block which is modified
-@param[in]      start_lsn       start lsn of the first mtr in a set of mtr's
-@param[in]      end_lsn         end lsn of the last mtr in the set of mtr's */
-static inline void buf_flush_recv_note_modification(buf_block_t *block,
-                                                    lsn_t start_lsn,
-                                                    lsn_t end_lsn);
-
 /** Returns true if the file page block is immediately suitable for replacement,
 i.e., the transition FILE_PAGE => NOT_USED allowed. The caller must hold the
 LRU list and block mutexes.
@@ -212,14 +204,6 @@ void buf_flush_page_cleaner_init();
  @return true if ok */
 bool buf_flush_validate(buf_pool_t *buf_pool);
 #endif /* UNIV_DEBUG || UNIV_BUF_DEBUG */
-
-/** Initialize the red-black tree to speed up insertions into the flush_list
- during recovery process. Should be called at the start of recovery
- process before any page has been read/written. */
-void buf_flush_init_flush_rbt(void);
-
-/** Frees up the red-black tree. */
-void buf_flush_free_flush_rbt(void);
 
 /** Writes a flushable page asynchronously from the buffer pool to a file.
 NOTE: 1. in simulated aio we must call os_aio_simulated_wake_handler_threads

@@ -40,7 +40,9 @@ ERROR HY000: Incorrect usage of LOAD DATA without BULK Algorithm and multiple fi
 load data infile '../../std_data/loaddata1.dat' count 10 into table t1;
 ERROR HY000: Incorrect usage of LOAD DATA without BULK Algorithm and multiple files
 load data url '../../std_data/loaddata1.dat' into table t1;
-ERROR HY000: Incorrect usage of LOAD DATA without BULK Algorithm and URL source
+ERROR HY000: Incorrect usage of LOAD DATA without BULK Algorithm and URI/URL source
+load data uri '../../std_data/loaddata1.dat' into table t1;
+ERROR HY000: Incorrect usage of LOAD DATA without BULK Algorithm and URI/URL source
 load data infile '../../std_data/loaddata1.dat' ignore into table t1 fields terminated by ',' LINES STARTING BY ',' (b,c,d);
 Warnings:
 Warning	1265	Data truncated for column 'c' at row 1

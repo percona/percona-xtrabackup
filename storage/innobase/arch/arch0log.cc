@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -578,6 +578,7 @@ Arch_State Arch_Log_Sys::check_set_state(bool is_abort, lsn_t *archived_lsn,
         /* If caller asked to abort, move to prepare idle state. Archiver
         thread will move to IDLE state eventually. */
         update_state(ARCH_STATE_PREPARE_IDLE);
+        ib::error(ER_IB_MSG_ABORTING_LOG_ARCHIVER, ulonglong{*archived_lsn});
         break;
       }
       [[fallthrough]];
@@ -865,6 +866,11 @@ bool Arch_Log_Sys::archive(bool init, Arch_File_Ctx *curr_ctx, lsn_t *arch_lsn,
     }
   }
 
+  // If async_abort_if_below(..) was called, we should abort
+  if (*arch_lsn < m_abort_if_below_lsn.load()) {
+    is_abort = true;
+  }
+
   /* Find archive system state and amount of log data to archive. */
   curr_state = check_set_state(is_abort, arch_lsn, &arch_len);
 
@@ -940,6 +946,11 @@ void Arch_Log_Sys::update_state_low(Arch_State state) {
   }
 }
 
+void Arch_Log_Sys::async_abort_if_below(lsn_t requested_lsn) {
+  m_abort_if_below_lsn.store(requested_lsn);
+  os_event_set(log_archiver_thread_event);
+}
+
 const std::string &Arch_log_consumer::get_name() const {
   static std::string name{"log_archiver"};
   return name;
@@ -955,4 +966,33 @@ lsn_t Arch_log_consumer::get_consumed_lsn() const {
   return archiver_lsn;
 }
 
-void Arch_log_consumer::consumption_requested() { arch_wake_threads(); }
+void Arch_log_consumer::consumption_requested(lsn_t request_lsn) {
+  /* The logic below accesses m_last_rushed_at and m_problem_started_at to
+  make comparison and arithmetic which assumes nobody else is modifying them
+  concurrently, so we need to protect it with some mutex. Thankfully,
+  the contract of consumption_requested() requires following both mutexes to be
+  held by the caller, and any single one of them would be sufficient here. */
+  ut_ad(log_files_mutex_own(*log_sys));
+  ut_ad(log_limits_mutex_own(*log_sys));
+  arch_wake_threads();
+
+  /* If we are lagging behind, the consumption_requested() will be called with a
+  frequency unknown to us, but hopefully at least once per second. We want to
+  abort if the problem lasts for longer than 2 seconds. The challenge here is to
+  define "a single instance of the problem", as the user might attempt CLONE
+  operation many times, and also we might make very slow but non-zero progress,
+  yet all we observe here are individual moments where "a problem" existed. We
+  use the following approach:
+  1. If two calls are not further than 2 seconds apart, we consider them to be
+  part of the same problem. A gap longer than 2 seconds between consecutive
+  calls, means the later call is for a different incident than the previous one.
+  2. If a single incident lasts longer than 2 seconds, we take an action. */
+  const auto now = std::chrono::system_clock::now();
+  if (m_last_rushed_at + std::chrono::seconds(2) < now) {
+    m_problem_started_at = now;
+  }
+  m_last_rushed_at = now;
+  if (m_problem_started_at + std::chrono::seconds(2) < now) {
+    arch_log_sys->async_abort_if_below(request_lsn);
+  }
+}

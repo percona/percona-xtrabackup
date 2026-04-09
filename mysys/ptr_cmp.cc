@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,12 +30,8 @@
   @file mysys/ptr_cmp.cc
 */
 
-#include "my_config.h"
-
-#include <assert.h>
-#include <stddef.h>
-
-#include "my_byteorder.h"
+#include <cassert>
+#include <cstddef>
 
 #include "my_inttypes.h"
 #include "my_sys.h"  // IWYU pragma: keep
@@ -70,7 +66,6 @@ void my_store_ptr(uchar *buff, size_t pack_length, my_off_t pos) {
     default:
       assert(0);
   }
-  return;
 }
 
 my_off_t my_get_ptr(uchar *ptr, size_t pack_length) {

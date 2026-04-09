@@ -11,12 +11,11 @@
 call mtr.add_suppression(".*Semi-sync source failed on net_flush.*before waiting for replica reply.*");
 call mtr.add_suppression(".*Timeout waiting for reply of binlog .* semi-sync up to file .*");
 
---source include/rpl/sync_to_replica.inc
 --source include/rpl/connection_replica.inc
---source include/rpl/stop_replica.inc
-
-CHANGE REPLICATION SOURCE TO SOURCE_SSL = 1;
---source include/rpl/start_replica.inc
+--let $current_source_ssl= query_get_value(SHOW REPLICA STATUS, Source_SSL_Allowed, 1)
+--let $assert_text= Source_SSL_Allowed must be YES by default
+--let $assert_cond= "$current_source_ssl" = "YES"
+--source include/assert.inc
 
 --echo
 --echo # Try replicating CREATE TABLE and verify that everything is fine.
@@ -59,8 +58,6 @@ DROP TABLE table1;
 --source include/rpl/sync_to_replica.inc
 
 --source include/rpl/uninstall_semisync.inc
---source include/rpl/stop_replica.inc
-CHANGE REPLICATION SOURCE TO SOURCE_SSL = 0;
 
 --let $rpl_only_running_threads= 1
 --source include/rpl/deinit.inc

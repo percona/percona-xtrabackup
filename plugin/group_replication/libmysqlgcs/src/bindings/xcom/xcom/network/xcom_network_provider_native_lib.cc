@@ -1,5 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates. All rights
-reserved.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -47,10 +46,10 @@ static inline void dump_error(int err) {
   if (err) {
 #ifndef XCOM_WITHOUT_OPENSSL
     if (is_ssl_err(err)) {
-      IFDBG(D_BUG, FN; NDBG(from_ssl_err(err), d));
+      XCOM_IFDBG(D_BUG, FN; NDBG(from_ssl_err(err), d));
     } else {
 #endif
-      IFDBG(D_BUG, FN; NDBG(from_errno(err), d); STREXP(strerror(err)));
+      XCOM_IFDBG(D_BUG, FN; NDBG(from_errno(err), d); STREXP(strerror(err)));
 #ifndef XCOM_WITHOUT_OPENSSL
     }
 #endif
@@ -127,7 +126,7 @@ result Xcom_network_provider_library::create_server_socket() {
   result fd = {0, 0};
   /* Create socket */
   if ((fd = xcom_checked_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)).val < 0) {
-    G_MESSAGE(
+    G_INFO(
         "Unable to create socket v6"
         "(socket=%d, errno=%d)!",
         fd.val, to_errno(GET_OS_ERR));
@@ -139,7 +138,7 @@ result Xcom_network_provider_library::create_server_socket() {
     if (setsockopt(fd.val, SOL_SOCKET, SOCK_OPT_REUSEADDR, (xcom_buf *)&reuse,
                    sizeof(reuse)) < 0) {
       fd.funerr = to_errno(GET_OS_ERR);
-      G_MESSAGE(
+      G_INFO(
           "Unable to set socket options "
           "(socket=%d, errno=%d)!",
           fd.val, to_errno(GET_OS_ERR));
@@ -160,7 +159,7 @@ result Xcom_network_provider_library::create_server_socket() {
     if (setsockopt(fd.val, IPPROTO_IPV6, IPV6_V6ONLY, (xcom_buf *)&mode,
                    sizeof(mode)) < 0) {
       fd.funerr = to_errno(GET_OS_ERR);
-      G_MESSAGE(
+      G_INFO(
           "Unable to set socket options "
           "(socket=%d, errno=%d)!",
           fd.val, to_errno(GET_OS_ERR));
@@ -178,7 +177,7 @@ result Xcom_network_provider_library::create_server_socket_v4() {
   result fd = {0, 0};
   /* Create socket */
   if ((fd = xcom_checked_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)).val < 0) {
-    G_MESSAGE(
+    G_INFO(
         "Unable to create socket v4"
         "(socket=%d, errno=%d)!",
         fd.val, to_errno(GET_OS_ERR));
@@ -190,7 +189,7 @@ result Xcom_network_provider_library::create_server_socket_v4() {
     if (setsockopt(fd.val, SOL_SOCKET, SOCK_OPT_REUSEADDR, (xcom_buf *)&reuse,
                    sizeof(reuse)) < 0) {
       fd.funerr = to_errno(GET_OS_ERR);
-      G_MESSAGE(
+      G_INFO(
           "Unable to set socket options "
           "(socket=%d, errno=%d)!",
           fd.val, to_errno(GET_OS_ERR));
@@ -246,8 +245,8 @@ result Xcom_network_provider_library::announce_tcp(xcom_port port) {
     init_server_addr(&sock_addr, &sock_addr_len, port, AF_INET);
     if (bind(fd.val, sock_addr, sock_addr_len) < 0) {
       int err = to_errno(GET_OS_ERR);
-      G_MESSAGE("Unable to bind to INADDR_ANY:%d (socket=%d, errno=%d)!", port,
-                fd.val, err);
+      G_INFO("Unable to bind to INADDR_ANY:%d (socket=%d, errno=%d)!", port,
+             fd.val, err);
       fd.val = -1;
       goto err;
     }
@@ -257,7 +256,7 @@ result Xcom_network_provider_library::announce_tcp(xcom_port port) {
   G_DEBUG("Successfully bound to %s:%d (socket=%d).", "INADDR_ANY", port,
           fd.val);
   if (listen(fd.val, 32) < 0) {
-    G_MESSAGE(
+    G_INFO(
         "Unable to listen backlog to 32. "
         "(socket=%d, errno=%d)!",
         fd.val, to_errno(GET_OS_ERR));
@@ -498,10 +497,10 @@ result Xcom_network_provider_library::checked_create_socket(int domain,
   if (retval.val == -1) {
     task_dump_err(retval.funerr);
 #if defined(_WIN32)
-    G_MESSAGE("Socket creation failed with error: %d", retval.funerr);
+    G_INFO("Socket creation failed with error: %d", retval.funerr);
 #else
-    G_MESSAGE("Socket creation failed with error %d - %s", retval.funerr,
-              strerror(retval.funerr));
+    G_INFO("Socket creation failed with error %d - %s", retval.funerr,
+           strerror(retval.funerr));
 #endif
   }
   return retval;

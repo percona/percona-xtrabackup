@@ -1,0 +1,429 @@
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/procedures_schema.sql
+CREATE USER user_valid@'%' IDENTIFIED BY 'pwd';
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+CREATE USER user2@'%' IDENTIFIED BY 'secretpass2';
+CREATE USER user3@'%' IDENTIFIED BY 'secretpass3';
+
+--source ../include/mrs/start_object_definition.inc
+
+# Service and schema
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=proc_schema
+--let $mrs_add_schema_path=/proc
+--source ../include/mrs/db_schema/add.inc
+
+# Roles
+--let $mrs_add_role_caption=NoRead
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=RU
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,UPDATE
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=RC
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=/svc
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE
+--source ../include/mrs/role/grant_privilege.inc
+
+# Auth
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+# Users
+--let $mrs_add_user_ext_uid='user1@%'
+--let $mrs_add_user_name='user1'
+--let $mrs_add_user_role=NoRead
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid='user2@%'
+--let $mrs_add_user_name='user2'
+--let $mrs_add_user_role=RC
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid='user3@%'
+--let $mrs_add_user_name='user3'
+--let $mrs_add_user_role=RU
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+# Procedure that needs authentication
+
+--let $mrs_add_db_object=one_resultset
+--let $mrs_add_db_object_path=/one
+--let $mrs_add_db_object_type=PROCEDURE
+--source ../include/mrs/db_object/add.inc
+SET @db_object_id_proc=@db_object_id;
+
+--let $mrs_modify_name=basicObject
+--let $mrs_modify_columns=id, name, comments, date
+--let $mrs_modify_fields=my_id, my_name, my_comments, my_date
+--source ../include/mrs/db_object/add_named_resultset.inc
+
+--let $mrs_sql_id_variable=@db_object_id_proc
+--let $mrs_db_object_requires_auth=1
+--source ../include/mrs/db_object/modify_auth.inc
+
+if ($mrs_schema_version>2)
+{
+  --disable_query_log
+  --disable_result_log
+  UPDATE `mysql_rest_service_metadata`.`service` SET name="" WHERE url_context_root="/svc";
+  --enable_query_log
+  --enable_result_log
+}
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Procedure DB Object requires authentication, user is not authenticated,
+--echo ##    OpenAPI does not contain description for the procedure.
+--echo #
+--echo # 1. At service level
+--echo # 2. At schema level
+--echo # 3. At object level
+--echo #
+--echo #
+--echo ## II. Procedure DB Object requires authentication, user is authenticated,
+--echo ##     OpenAPI does contains description for the procedure.
+--echo #
+--echo # 1. At service level
+--echo # 2. At schema level
+--echo # 3. At object level
+--echo #
+--echo #
+--echo ## III. User without READ privilege could not access OpenAPI spec
+--echo #
+--echo # 1. At service level
+--echo # 2. At schema level
+--echo # 3. At object level
+--echo #
+--echo #
+--echo ## IV. User without UPDATE privilege
+--echo #
+--echo # 1. At service level
+--echo # 2. At schema level
+--echo # 3. At object level
+--echo #
+--echo #
+--echo ## IV. User with READ and UPDATE privileges
+--echo #
+--echo # 1. At service level
+--echo # 2. At schema level
+--echo # 3. At object level
+--echo #
+--echo #
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/'
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # I.3
+exec $MRS_CLIENT_ARGS
+  -t GET
+  --path /svc/proc/open-api-catalog/one
+  --expected-status 401;
+
+
+--echo
+--echo #
+--echo # II.1
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user_valid
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/proc/one"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.2
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u root
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/proc/one"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # II.3
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u root
+  --session-file $MYSQL_TMP_DIR/user_session.dat;
+
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/one'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/proc/one"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # III.1
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session1.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/proc/one"]}}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # III.2
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session1.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/proc/one"]}}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # III.3
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user1
+  -p secretpass1
+  --session-file $MYSQL_TMP_DIR/user_session1.dat;
+
+exec $MRS_CLIENT_ARGS
+  -t GET
+  --path /svc/proc/open-api-catalog/one
+  --expected-status 401;
+
+
+--echo
+--echo #
+--echo # IV.1
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session2.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/proc/one/put"]}}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # IV.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session2.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/proc/one/put"]}}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # IV.3
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user2
+  -p secretpass2
+  --session-file $MYSQL_TMP_DIR/user_session2.dat;
+
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/one'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session2.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"not":{"required":["/svc/proc/one/put"]}}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # V.1
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user3
+  -p secretpass3
+  --session-file $MYSQL_TMP_DIR/user_session3.dat;
+
+--let $mrs_client_arg_path='/svc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session3.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/proc/one"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # V.2
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user3
+  -p secretpass3
+  --session-file $MYSQL_TMP_DIR/user_session3.dat;
+
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session3.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/proc/one"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo #
+--echo # V.3
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user3
+  -p secretpass3
+  --session-file $MYSQL_TMP_DIR/user_session3.dat;
+
+--let $mrs_client_arg_path='/svc/proc/open-api-catalog/one'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/user_session3.dat
+let $mrs_client_arg_json_schema='{
+  "type":"object",
+  "properties": {
+     "paths" : {"required":["/svc/proc/one"]}
+  }
+}';
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+DROP USER user_valid@'%';
+remove_file $MYSQL_TMP_DIR/user_session.dat;
+remove_file $MYSQL_TMP_DIR/user_session1.dat;
+remove_file $MYSQL_TMP_DIR/user_session2.dat;
+remove_file $MYSQL_TMP_DIR/user_session3.dat;
+drop user user1@'%';
+drop user user2@'%';
+drop user user3@'%';
+--source ../include/mrs/cleanup.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -368,7 +368,7 @@ int rtree_get_first(MI_INFO *info, uint keynr, uint key_length) {
 */
 
 int rtree_get_next(MI_INFO *info, uint keynr, uint key_length) {
-  my_off_t root = info->s->state.key_root[keynr];
+  my_off_t const root = info->s->state.key_root[keynr];
   MI_KEYDEF *keyinfo = info->s->keyinfo + keynr;
 
   if (root == HA_OFFSET_ERROR) {
@@ -377,7 +377,7 @@ int rtree_get_next(MI_INFO *info, uint keynr, uint key_length) {
   }
 
   if (!info->buff_used && !info->page_changed) {
-    uint k_len = keyinfo->keylength - info->s->base.rec_reflength;
+    uint const k_len = keyinfo->keylength - info->s->base.rec_reflength;
     /* rt_PAGE_NEXT_KEY(info->int_keypos) */
     uchar *key = info->buff + *(int *)info->int_keypos + k_len +
                  info->s->base.rec_reflength;
@@ -581,7 +581,7 @@ static int rtree_insert_level(MI_INFO *info, uint keynr, uchar *key,
       uchar *new_root_buf = info->buff + info->s->base.max_key_block_length;
       my_off_t new_root;
       uchar *new_key;
-      uint nod_flag = info->s->base.key_reflength;
+      uint const nod_flag = info->s->base.key_reflength;
 
       DBUG_PRINT("rtree", ("root was split, grow a new root"));
 
@@ -887,7 +887,7 @@ int rtree_delete(MI_INFO *info, uint keynr, uchar *key, uint key_length) {
       nod_flag = mi_test_if_nod(info->buff);
       page_size = mi_getint(info->buff);
       if (nod_flag && (page_size == 2 + key_length + nod_flag)) {
-        my_off_t new_root =
+        my_off_t const new_root =
             _mi_kpos(nod_flag, rt_PAGE_FIRST_KEY(info->buff, nod_flag));
         if (_mi_dispose(info, keyinfo, old_root, DFLT_INIT_HITS)) goto err1;
         info->s->state.key_root[keynr] = new_root;
@@ -948,7 +948,7 @@ ha_rows rtree_estimate(MI_INFO *info, uint keynr, uchar *key, uint key_length,
 
   for (; k < last; k = rt_PAGE_NEXT_KEY(k, k_len, nod_flag), ++i) {
     if (nod_flag) {
-      double k_area = rtree_rect_volume(keyinfo->seg, k, key_length);
+      double const k_area = rtree_rect_volume(keyinfo->seg, k, key_length);
 
       /* The following should be safe, even if we compare doubles */
       if (k_area == 0) {

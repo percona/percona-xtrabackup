@@ -278,18 +278,19 @@ SET GLOBAL innodb_monitor_reset_all = "module_sampling";
 
 
 --echo #
---echo # RAPID use case : Break from sampling after sampling half the records
+--echo # RAPID use case : Break from sampling after sampling five records
 --echo #
 
 CREATE TABLE t1 (id int);
 INSERT INTO t1 VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
 
-SET DEBUG = "+d,sample_read_sample_half";
+SET DEBUG = "+d,sample_read_sample_five";
+
 ANALYZE TABLE t1 UPDATE HISTOGRAM ON id WITH 50 BUCKETS;
 
 SELECT SCHEMA_NAME, TABLE_NAME, COLUMN_NAME, JSON_REMOVE(histogram, '$."last-updated"') FROM information_schema.column_statistics WHERE COLUMN_NAME = 'id';
 
-SET DEBUG = "-d, sample_read_sample_half";
+SET DEBUG = "-d,sample_read_sample_five";
 
 DROP TABLE t1;
 

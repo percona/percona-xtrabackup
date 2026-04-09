@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,7 +49,7 @@ void BM_Unhex(size_t num_iterations, size_t string_size) {
 
   StartBenchmarkTiming();
   for (size_t n = 0; n < num_iterations; n++) {
-    (void)unhex(s.data(), s.data() + s.size(), &output[0]);
+    (void)unhex(s.data(), s.data() + s.size(), output.data());
   }
   StopBenchmarkTiming();
   SetBytesProcessed(num_iterations * s.size());

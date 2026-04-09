@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include "unittest/gunit/benchmark.h"
+
 using mysqlrouter::URI;
 using mysqlrouter::URIAuthority;
 using mysqlrouter::URIError;
@@ -41,7 +43,7 @@ class URISimpleTests : public ::testing::Test {};
 // default constructor tests
 
 TEST_F(URISimpleTests, Constructor) {
-  URI u;
+  URI const u;
   ASSERT_TRUE(u.scheme.empty());
   ASSERT_TRUE(u.host.empty());
   ASSERT_EQ(u.port, 0);
@@ -634,7 +636,7 @@ class URIParseThrowingTests
 
 TEST_P(URIParseThrowingTests, FailsParseURI) {
   // call GetParam outside the ASSERT to actually make it work
-  URITestFailData test_data = GetParam();
+  URITestFailData const test_data = GetParam();
 
   try {
     auto u = URI(test_data.input.uri);
@@ -1220,6 +1222,33 @@ URIRootlessTestFailData uri_rootless_test_fail_data[] = {
 
 INSTANTIATE_TEST_SUITE_P(URITests, URIRootlessThrowingTests,
                          ::testing::ValuesIn(uri_rootless_test_fail_data));
+
+namespace {
+void UriStr(size_t iter) {
+  std::string const uri_str = "http://user:pass@host:80/path?query=val";
+  mysqlrouter::URI const uri(uri_str);
+
+  while ((iter--) != 0) {
+    if (uri_str != uri.str()) abort();
+  }
+}
+
+void UriOstream(size_t iter) {
+  std::string const uri_str = "http://user:pass@host:80/path?query=val";
+  mysqlrouter::URI const uri(uri_str);
+
+  while ((iter--) != 0) {
+    std::stringstream os;
+    os << uri;
+
+    if (uri_str != os.str()) abort();
+  }
+}
+
+}  // namespace
+
+BENCHMARK(UriStr)
+BENCHMARK(UriOstream)
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);

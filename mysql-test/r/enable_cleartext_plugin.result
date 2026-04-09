@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Bug #21235226 : THE --ENABLE-CLEARTEXT-PLUGIN IS NOT IMPLEMENTED
 #                 IN ALL CLIENT PROGRAMS
@@ -37,3 +38,4 @@ db21235226.t1                                      OK
 DROP TABLE t1;
 DROP DATABASE db21235226;
 DROP USER uplain@localhost;
+include/rpl/set_gtid_mode_on.inc

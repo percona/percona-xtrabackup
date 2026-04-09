@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +40,7 @@
 #include "sql/dd/impl/types/foreign_key_impl.h"
 #include "sql/dd/impl/types/function_impl.h"
 #include "sql/dd/impl/types/index_stat_impl.h"
+#include "sql/dd/impl/types/library_impl.h"
 #include "sql/dd/impl/types/parameter_impl.h"
 #include "sql/dd/impl/types/partition_impl.h"
 #include "sql/dd/impl/types/procedure_impl.h"

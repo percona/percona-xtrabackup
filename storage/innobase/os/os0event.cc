@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -33,8 +33,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "os0event.h"
 
-#include <errno.h>
-#include <time.h>
+#include <cerrno>
+#include <ctime>
 
 #include "ha_prototypes.h"
 #include "ut0mutex.h"
@@ -72,7 +72,7 @@ struct os_event {
   Destroys a condition variable */
   void destroy() UNIV_NOTHROW {
 #ifndef _WIN32
-    int ret = pthread_cond_destroy(&cond_var);
+    int const ret = pthread_cond_destroy(&cond_var);
     ut_a(ret == 0);
 #endif /* !_WIN32 */
 
@@ -113,7 +113,7 @@ struct os_event {
       m_set = false;
     }
 
-    int64_t ret = signal_count;
+    int64_t const ret = signal_count;
 
     mutex.exit();
 
@@ -611,7 +611,7 @@ bool os_event::global_initialized{false};
 std::atomic_size_t os_event::n_objects_alive{0};
 #endif /* UNIV_DEBUG */
 
-void os_event_global_init(void) {
+void os_event_global_init() {
   ut_ad(os_event::n_objects_alive.load() == 0);
 #ifndef _WIN32
   int ret = pthread_condattr_init(&os_event::cond_attr);
@@ -636,7 +636,7 @@ void os_event_global_init(void) {
   os_event::global_initialized = true;
 }
 
-void os_event_global_destroy(void) {
+void os_event_global_destroy() {
   ut_a(os_event::global_initialized);
   ut_ad(os_event::n_objects_alive.load() == 0);
 #ifndef _WIN32

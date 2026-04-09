@@ -9,6 +9,8 @@ struct MYSQL_LEX_CSTRING {
 };
 #include "plugin.h"
 #include "status_var.h"
+#include "mysql/components/services/bits/status_variables_bits.h"
+#include "mysql/components/services/bits/thd.h"
 enum enum_mysql_show_type {
   SHOW_UNDEF,
   SHOW_BOOL,
@@ -56,6 +58,7 @@ struct MYSQL_XID {
   char data[128];
 };
 #include <mysql/components/services/bits/system_variables_bits.h>
+#include "mysql/components/services/bits/thd.h"
 struct st_mysql_value {
   int (*value_type)(struct st_mysql_value *);
   const char *(*val_str)(struct st_mysql_value *, char *buffer, int *length);
@@ -68,6 +71,9 @@ typedef int (*mysql_var_check_func)(void * thd, SYS_VAR *var, void *save,
                                     struct st_mysql_value *value);
 typedef void (*mysql_var_update_func)(void * thd, SYS_VAR *var,
                                       void *var_ptr, const void *save);
+struct SYS_VAR {
+  int flags; const char *name; const char *comment; mysql_var_check_func check; mysql_var_update_func update;
+};
 struct st_mysql_plugin {
   int type;
   void *info;
@@ -128,7 +134,6 @@ void *thd_get_ha_data(const void * thd, const struct handlerton *hton);
 void thd_set_ha_data(void * thd, const struct handlerton *hton,
                      const void *ha_data);
 void remove_ssl_err_thread_state();
-unsigned int thd_get_num_vcpus();
 #include <mysql/components/services/bits/plugin_audit_connection_types.h>
 typedef enum {
   MYSQL_AUDIT_CONNECTION_CONNECT = 1 << 0,
@@ -336,6 +341,11 @@ enum enum_sql_command {
   SQLCOM_CREATE_SRS,
   SQLCOM_DROP_SRS,
   SQLCOM_SHOW_PARSE_TREE,
+  SQLCOM_CREATE_LIBRARY,
+  SQLCOM_DROP_LIBRARY,
+  SQLCOM_SHOW_CREATE_LIBRARY,
+  SQLCOM_ALTER_LIBRARY,
+  SQLCOM_SHOW_STATUS_LIBRARY,
   SQLCOM_END
 };
 #include "plugin_audit_message_types.h"

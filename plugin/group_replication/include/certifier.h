@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -77,7 +77,11 @@ class Gtid_set_ref : public Gtid_set {
   Gtid_set_ref(Tsid_map *tsid_map, int64 parallel_applier_sequence_number)
       : Gtid_set(tsid_map),
         reference_counter(0),
-        parallel_applier_sequence_number(parallel_applier_sequence_number) {}
+        parallel_applier_sequence_number(parallel_applier_sequence_number),
+        garbage_collect_counter(0) {
+    DBUG_EXECUTE_IF("group_replication_ci_rows_counter_high",
+                    { garbage_collect_counter = 1000; });
+  }
 
   virtual ~Gtid_set_ref() = default;
 
@@ -98,6 +102,22 @@ class Gtid_set_ref : public Gtid_set {
     return --reference_counter;
   }
 
+  /**
+    Set garbage collector counter when Gtid_set_ref was checked is subset no
+    equals of gtid_stable_set
+  */
+  void set_garbage_collect_counter(uint64 ver) {
+    garbage_collect_counter = ver;
+  }
+
+  /**
+    Get garbage collector counter when Gtid_set_ref was checked is subset no
+    equals of gtid_stable_set
+
+    @return garbage collect counter
+  */
+  uint64 get_garbage_collect_counter() { return garbage_collect_counter; }
+
   int64 get_parallel_applier_sequence_number() const {
     return parallel_applier_sequence_number;
   }
@@ -105,6 +125,7 @@ class Gtid_set_ref : public Gtid_set {
  private:
   size_t reference_counter;
   int64 parallel_applier_sequence_number;
+  uint64 garbage_collect_counter;
 };
 
 /**
@@ -148,12 +169,8 @@ class Certifier_broadcast_thread {
 
   /**
     Terminate broadcast thread.
-
-    @return the operation status
-      @retval 0      OK
-      @retval !=0    Error
   */
-  int terminate();
+  void terminate();
 
   /**
     Broadcast thread worker method.
@@ -246,15 +263,6 @@ class Certifier : public Certifier_interface {
       @retval !=0    Error
   */
   int initialize(ulonglong gtid_assignment_block_size);
-
-  /**
-    Terminate certifier.
-
-    @return the operation status
-      @retval 0      OK
-      @retval !=0    Error
-  */
-  int terminate();
 
   /**
     Handle view changes on certifier.

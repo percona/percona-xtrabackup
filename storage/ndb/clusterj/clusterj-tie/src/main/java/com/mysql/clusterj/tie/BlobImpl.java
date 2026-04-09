@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ *  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License, version 2.0,
@@ -76,7 +76,6 @@ class BlobImpl implements Blob {
     }
 
     /** Release any resources associated with this object.
-     * This method is called by the owner of this object when it is being finalized by garbage collection.
      */
     public void release() {
         if (logger.isDetailEnabled()) logger.detail("BlobImpl.release");
@@ -84,7 +83,7 @@ class BlobImpl implements Blob {
         this.operation = null;
         // return buffer to pool
         if (byteBufferForSetValue != null) {
-            this.byteBufferPool.returnBuffer(byteBufferForSetValueSize, byteBufferForSetValue);
+            this.byteBufferPool.returnBuffer(byteBufferForSetValue);
         }
     }
 
@@ -119,7 +118,7 @@ class BlobImpl implements Blob {
         } finally {
             // return buffer to pool
             if (buffer != null) {
-                this.byteBufferPool.returnBuffer(length, buffer);
+                this.byteBufferPool.returnBuffer(buffer);
             }
         }
     }
@@ -143,7 +142,7 @@ class BlobImpl implements Blob {
         } finally {
             // return buffer to pool
             if (buffer != null) {
-                this.byteBufferPool.returnBuffer(length, buffer);
+                this.byteBufferPool.returnBuffer(buffer);
             }
         }
     }
@@ -160,7 +159,7 @@ class BlobImpl implements Blob {
         buffer.flip();
         if (byteBufferForSetValue != null) {
             // free any existing buffer first (setValue was called again -- not likely)
-            byteBufferPool.returnBuffer(byteBufferForSetValueSize, byteBufferForSetValue);
+            byteBufferPool.returnBuffer(byteBufferForSetValue);
         }
         // the buffer will be returned to the pool when release is called
         byteBufferForSetValueSize = array.length;

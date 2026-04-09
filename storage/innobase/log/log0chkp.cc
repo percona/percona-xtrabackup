@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 Copyright (c) 2009, Google Inc.
 
 This program is free software; you can redistribute it and/or modify
@@ -135,19 +135,6 @@ static void log_checkpoint(log_t &log);
 @return Time duration elapsed since the last checkpoint */
 static std::chrono::steady_clock::duration log_checkpoint_time_elapsed(
     const log_t &log);
-
-/** Requests a checkpoint written for lsn greater or equal to provided one.
-The log.checkpointer_mutex has to be acquired before it is called, and it
-is not released within this function.
-@param[in,out]  log             redo log
-@param[in]      requested_lsn   provided lsn (checkpoint should be not older) */
-static void log_request_checkpoint_low(log_t &log, lsn_t requested_lsn);
-
-/** Requests a checkpoint written in the next log file (not in the one,
-to which current log.last_checkpoint_lsn belongs to). Prior to calling
-this function, caller must acquire the log.limits_mutex !
-@param[in,out]   log   redo log */
-static void log_request_checkpoint_in_next_file_low(log_t &log);
 
 /** Waits for checkpoint advanced to at least that lsn.
 @param[in]      log     redo log
@@ -546,7 +533,7 @@ dberr_t log_files_write_first_data_block_low(log_t &log,
                                OS_FILE_LOG_BLOCK_SIZE, block);
 }
 
-static void log_request_checkpoint_low(log_t &log, lsn_t requested_lsn) {
+void log_request_checkpoint_low(log_t &log, lsn_t requested_lsn) {
   ut_a(requested_lsn <= log_get_lsn(log));
   ut_ad(log_limits_mutex_own(log));
 
@@ -613,54 +600,6 @@ void log_request_checkpoint(log_t &log, bool sync) {
   if (sync) {
     log_wait_for_checkpoint(log, lsn);
   }
-}
-
-void log_request_checkpoint_in_next_file_low(log_t &log) {
-  ut_ad(log_limits_mutex_own(log));
-  ut_ad(log_files_mutex_own(log));
-
-  if (!log_request_checkpoint_validate(log)) {
-    return;
-  }
-
-  const auto oldest_file = log.m_files.begin();
-  if (oldest_file == log.m_files.end()) {
-    return;
-  }
-
-  oldest_file->lsn_validate();
-
-  const lsn_t checkpoint_lsn = log.last_checkpoint_lsn.load();
-  ut_a(log_is_data_lsn(checkpoint_lsn));
-
-  const lsn_t current_lsn = log_get_lsn(log);
-  ut_a(log_is_data_lsn(current_lsn));
-
-  if (oldest_file->m_end_lsn > checkpoint_lsn &&
-      current_lsn >= oldest_file->m_end_lsn) {
-    /* LOG_FILE_HDR_SIZE bytes of next file are not counted in the lsn
-    sequence, but the LOG_BLOCK_HDR_SIZE bytes of the first log data block
-    are counted. Because oldest_file->m_end_lsn % OS_FILE_LOG_BLOCK_SIZE == 0,
-    we need to add LOG_BLOCK_HDR_SIZE to build a proper lsn (pointing on data
-    byte). */
-    const lsn_t request_lsn = oldest_file->m_end_lsn + LOG_BLOCK_HDR_SIZE;
-    ut_a(log_is_data_lsn(request_lsn));
-
-    ut_a(current_lsn >= request_lsn);
-
-    DBUG_PRINT("ib_log",
-               ("Requesting checkpoint in the next file at LSN " LSN_PF
-                " because the oldest file ends at LSN " LSN_PF,
-                request_lsn, oldest_file->m_end_lsn));
-
-    log_request_checkpoint_low(log, request_lsn);
-  }
-}
-
-void log_request_checkpoint_in_next_file(log_t &log) {
-  log_limits_mutex_enter(log);
-  log_request_checkpoint_in_next_file_low(log);
-  log_limits_mutex_exit(log);
 }
 
 bool log_request_latest_checkpoint(log_t &log, lsn_t &requested_lsn) {
@@ -907,9 +846,9 @@ static bool log_should_checkpoint(log_t &log) {
   checkpoint_age = current_lsn + margin - last_checkpoint_lsn;
 
   /* Update checkpoint_lsn stored in header of log files if:
-          a) periodical checkpoints are enabled and either more than 1s
-             elapsed since the last checkpoint or checkpoint could be
-             written in the next redo log file,
+
+          a) periodical checkpoints are enabled and more than 1s
+             elapsed since the last checkpoint,
           b) or checkpoint age is greater than aggressive_checkpoint_min_age,
           c) or it was requested to have greater checkpoint_lsn,
              and oldest_lsn allows to satisfy the request. */
@@ -927,19 +866,7 @@ static bool log_should_checkpoint(log_t &log) {
     return false;
   }
 
-  /* Below is the check if a periodical checkpoint should be written. */
-  IB_mutex_guard files_lock{&log.m_files_mutex, UT_LOCATION_HERE};
-
-  const auto checkpoint_file = log.m_files.find(last_checkpoint_lsn);
-  ut_a(checkpoint_file != log.m_files.end());
-  ut_a(!checkpoint_file->m_consumed);
-
-  const auto checkpoint_time_elapsed = log_checkpoint_time_elapsed(log);
-
-  ut_a(last_checkpoint_lsn < checkpoint_file->m_end_lsn);
-
-  return checkpoint_time_elapsed >= get_srv_log_checkpoint_every() ||
-         checkpoint_file->m_end_lsn < oldest_lsn;
+  return get_srv_log_checkpoint_every() <= log_checkpoint_time_elapsed(log);
 }
 
 static void log_consider_checkpoint(log_t &log) {
@@ -1172,7 +1099,8 @@ void log_update_concurrency_margin(log_t &log) {
 }
 
 void log_update_limits_low(log_t &log) {
-  ut_ad(srv_is_being_started || log_limits_mutex_own(log));
+  ut_ad(srv_is_being_started ||
+        (log_files_mutex_own(log) && log_limits_mutex_own(log)));
 
   log_update_concurrency_margin(log);
 
@@ -1182,20 +1110,36 @@ void log_update_limits_low(log_t &log) {
     return;
   }
 
+  const lsn_t current_lsn = log_get_lsn(log);
   const lsn_t log_capacity = log_free_check_capacity(log);
+  lsn_t oldest_needed_lsn;
+  auto consumer = log_consumer_get_oldest(log, oldest_needed_lsn);
 
-  const lsn_t limit_lsn = log.last_checkpoint_lsn.load() + log_capacity;
+  const lsn_t limit_lsn = oldest_needed_lsn + log_capacity;
 
-  if (log.free_check_limit_lsn.load() < limit_lsn) {
-    log.free_check_limit_lsn.store(limit_lsn);
+  log.free_check_limit_lsn.store(limit_lsn);
+
+  /* During the server start, we do not own the limits mutex and the only
+  consumer here is checkpointer thread. We can't call consumption_requested()
+  without the mutex, and even if we could, it is not permitted to advance the
+  checkpoint during recovery. So we skip the consumption_requested() in the
+  recovery part. */
+  if (!srv_is_being_started && current_lsn > log.free_check_limit_lsn.load()) {
+    consumer->consumption_requested(current_lsn - log_capacity);
+    if (log.m_THREADS_WAITING_FOR_REDO_throttler.apply()) {
+      ib::log_warn(ER_IB_MSG_WAITING_ON_LAGGING_REDO_LOG_CONSUMER,
+                   consumer->get_name().c_str(), ulonglong{oldest_needed_lsn});
+      log_sync_point("threads_waiting_on_lagging_consumer");
+    }
   }
 }
-
 void log_set_dict_persist_margin(log_t &log, sn_t margin) {
+  log_files_mutex_enter(log);
   log_limits_mutex_enter(log);
   log.dict_persist_margin.store(margin);
   log_update_limits_low(*log_sys);
   log_limits_mutex_exit(log);
+  log_files_mutex_exit(log);
 }
 
 lsn_t log_free_check_margin(const log_t &log) {
@@ -1223,23 +1167,15 @@ void log_free_check_wait(log_t &log) {
 
   const lsn_t current_lsn = log_get_lsn(log);
 
-  bool request_chkp = true;
-#ifdef UNIV_DEBUG
-  request_chkp = !srv_checkpoint_disabled;
-#endif
-
-  if (request_chkp) {
-    log_limits_mutex_enter(log);
-
-    const lsn_t log_capacity = log_free_check_capacity(log);
-
-    if (current_lsn > LOG_START_LSN + log_capacity) {
-      log_request_checkpoint_low(log, current_lsn - log_capacity);
-    }
-
-    log_limits_mutex_exit(log);
-  }
-
+  /* We are not sure here if the Log Checkpointer is the most lagging consumer,
+  but checking that requires acquiring two mutexes, and is a job of
+  log_update_limits_low(), which is only executed infrequently from a few
+  background threads, to not cause congestion. Waking up Log Checkpointer
+  spuriously is not a big problem - it will check there's nothing to do and go
+  to sleep again. However, if the Log Checkpointer actually is the one blocking
+  everyone, then the sooner we wake it up, the better, so we don't want to wait
+  for background threads to do it. */
+  os_event_set(log.checkpointer_event);
   auto stop_condition = [&log, current_lsn](bool) {
     return current_lsn <= log.free_check_limit_lsn.load();
   };

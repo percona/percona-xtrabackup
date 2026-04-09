@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -133,3 +133,5 @@ static inline int ndb_poll_sockets(posix_poll_fd *fdarray, unsigned long nfds,
   }
   return r;
 }
+
+static constexpr int ndb_socket_can_disable_sigpipe() { return true; }

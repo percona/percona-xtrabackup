@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -2091,28 +2091,42 @@ bool Fixup_data::fix_one_object(THD *thd, const dd::Table *table,
     return (false);
   }
 
-  auto dc = dd::get_dd_client(thd);
-  Releaser releaser(dc);
+  /* Copy of schema name which will outlive the running of the Auto_releaser */
+  dd::String_type schema_name_copy;
 
-  const dd::Schema *table_schema = nullptr;
+  /* Temporarily set THD::system_thread to SYSTEM_THREAD_DD_INITIALIZE so that
+  DD MDL checks are disabled. This is ok beacuse the no DDL is permitted in
+  innobase_dict_recover. Note that restoring the old value of system_thread
+  needs to happen after the Auto_releaser has gone out of scope, since the same
+  DD MDL checks are run by ~Auto_releaser(). */
+  {
+    auto saved_thread_type = thd->system_thread;
+    auto sg = Scope_guard{[&]() { thd->system_thread = saved_thread_type; }};
+    thd->system_thread = SYSTEM_THREAD_DD_INITIALIZE;
 
-  auto saved_thread_type = thd->system_thread;
-  thd->system_thread = SYSTEM_THREAD_DD_INITIALIZE;
+    auto *dc = dd::get_dd_client(thd);
+    Releaser releaser(dc);
 
-  if (dc->acquire(table->schema_id(), &table_schema)) {
-    ++m_num_errors;
-    thd->system_thread = saved_thread_type;
-    return (true);
-  }
+    const dd::Schema *table_schema = nullptr;
+    if (dc->acquire(table->schema_id(), &table_schema)) {
+      ++m_num_errors;
+      return (true);
+    }
 
-  const auto schema_name = table_schema->name().c_str();
-  const auto table_name = table->name().c_str();
+    /* For performance schema drop the SDI table. */
+    if (is_drop() && is_performance_schema(table_schema->name().c_str())) {
+      dd::sdi::drop(thd, table);
+    }
 
-  /* For performance schema drop the SDI table. */
-  if (is_drop() && is_performance_schema(schema_name)) {
-    dd::sdi::drop(thd, table);
-  }
-  thd->system_thread = saved_thread_type;
+    /* Copy the schema name so that it will outlive the dd::Schema object */
+    schema_name_copy = table_schema->name();
+  } /* End Auto_releaser scope */
+
+  /* C-string referencing copy */
+  const char *schema_name = schema_name_copy.c_str();
+  /* C-string referencing dd::Table object being passed in
+  (not released by Auto_releaser) */
+  const char *table_name = table->name().c_str();
 
   if (skip_schema_tables(table, table_name, schema_name)) {
     return (false);
@@ -2123,7 +2137,6 @@ bool Fixup_data::fix_one_object(THD *thd, const dd::Table *table,
   if (!is_drop() && !is_system_schema(schema_name)) {
     ib::warn(ER_IB_CLONE_NON_INNODB_TABLE, schema_name, table_name);
   }
-
   auto ret_val =
       execute_sql(thd, schema_name, table_name, nullptr, thread_number);
   return (ret_val);
@@ -2489,8 +2502,7 @@ static void clone_init_compression(THD *thd) {
   ib::info(ER_IB_CLONE_SQL) << "Clone: Finished initializing compressed tables";
 }
 
-Clone_notify::Clone_notify(Clone_notify::Type type, space_id_t space,
-                           bool no_wait)
+Clone_notify::Clone_notify(Type type, space_id_t space, bool no_wait)
     : m_space_id(space),
       m_type(type),
       m_wait(Wait_at::NONE),

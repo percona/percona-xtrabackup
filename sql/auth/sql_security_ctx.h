@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -102,6 +102,7 @@ class Security_context {
                                        bool db_is_pattern = false) const;
   Access_bitmask procedure_acl(LEX_CSTRING db, LEX_CSTRING procedure_name);
   Access_bitmask function_acl(LEX_CSTRING db, LEX_CSTRING procedure_name);
+  Access_bitmask library_acl(LEX_CSTRING db, LEX_CSTRING procedure_name);
   Access_bitmask table_acl(LEX_CSTRING db, LEX_CSTRING table);
   Grant_table_aggregate table_and_column_acls(LEX_CSTRING db,
                                               LEX_CSTRING table);

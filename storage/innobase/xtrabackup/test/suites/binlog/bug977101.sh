@@ -4,6 +4,10 @@
 
 . inc/common.sh
 
+MYSQLD_EXTRA_MY_CNF_OPTS="
+gtid_mode=off
+enforce_gtid_consistency=off
+"
 master_id=1
 slave_id=2
 

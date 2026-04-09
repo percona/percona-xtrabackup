@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,7 @@
 #include "../include/util/random.h"
 #include "ndbapi/NdbInfo.hpp"
 
-#include <stdio.h>
+#include <cstdio>
 
 int main(int argc, const char **) {
   if (argc < 0) {
@@ -65,9 +65,9 @@ int main(int argc, const char **) {
     NdbInfo info(&cluster_con, "");
     ndb_std_print_version();
     (void)myRandom48(0);
-    (void)ndb_rand_r(0);
+    (void)ndb_rand_r(nullptr);
     (void)NdbDir::u_rwx();
-    (void)BitmaskImpl::getField(0, 0, 0, 64, 0);
+    (void)BitmaskImpl::getField(0, nullptr, 0, 64, nullptr);
     ndb_end(0);
   }
 }

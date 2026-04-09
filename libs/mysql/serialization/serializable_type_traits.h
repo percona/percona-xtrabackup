@@ -1,4 +1,4 @@
-// Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -32,8 +32,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "mysql/meta/is_specialization.h"
 #include "mysql/serialization/serializable.h"
-#include "mysql/utils/is_specialization.h"
 
 /// @file
 /// Experimental API header
@@ -64,8 +64,8 @@ static constexpr bool is_serializable_type() {
 /// @return Answer to question: is list or vector ?
 template <class T>
 static constexpr bool is_vector_list_type() {
-  return utils::Is_specialization<std::decay_t<T>, std::vector>::value ||
-         utils::Is_specialization<std::decay_t<T>, std::list>::value;
+  return meta::Is_specialization<std::decay_t<T>, std::vector> ||
+         meta::Is_specialization<std::decay_t<T>, std::list>;
 }
 
 /// @brief This function checks whether given type is STL map or unordered map
@@ -73,8 +73,8 @@ static constexpr bool is_vector_list_type() {
 /// @return Answer to question: is map or unordered_map ?
 template <class T>
 static constexpr bool is_map_type() {
-  return utils::Is_specialization<std::decay_t<T>, std::map>::value ||
-         utils::Is_specialization<std::decay_t<T>, std::unordered_map>::value;
+  return meta::Is_specialization<std::decay_t<T>, std::map> ||
+         meta::Is_specialization<std::decay_t<T>, std::unordered_map>;
 }
 
 template <class T>
@@ -97,8 +97,8 @@ static constexpr bool is_array_type_v() {
 /// @return Answer to question: is set or unordered_set ?
 template <class T>
 static constexpr bool is_set_type() {
-  return utils::Is_specialization<std::decay_t<T>, std::set>::value ||
-         utils::Is_specialization<std::decay_t<T>, std::unordered_set>::value;
+  return meta::Is_specialization<std::decay_t<T>, std::set> ||
+         meta::Is_specialization<std::decay_t<T>, std::unordered_set>;
 }
 
 /// @brief This function checks whether given type is simple serializable type

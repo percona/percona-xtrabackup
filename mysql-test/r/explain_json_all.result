@@ -1,5 +1,7 @@
 set optimizer_switch='semijoin=on,materialization=on,firstmatch=on,loosescan=on,index_condition_pushdown=on,mrr=on';
+include/rpl/set_gtid_mode_off.inc
 set end_markers_in_json=on;
+SET explain_json_format_version = 1;
 # new "FORMAT" keyword doesn't conflict with the FORMAT() function name:
 SELECT FORMAT(1, 2), FORMAT(1, 2, 3);
 FORMAT(1, 2)	FORMAT(1, 2, 3)
@@ -1007,11 +1009,11 @@ EXPLAIN SELECT * FROM t1 WHERE t1.a IN (SELECT c FROM t2 WHERE (SELECT e FROM t3
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
 1	PRIMARY	t2	NULL	ALL	NULL	NULL	NULL	NULL	2	50.00	Using where; FirstMatch(t1); Using join buffer (hash join)
-4	DEPENDENT SUBQUERY	t3	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where
+4	DEPENDENT SUBQUERY	t3	NULL	ALL	NULL	NULL	NULL	NULL	2	50.00	Using where
 3	SUBQUERY	t3	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	NULL
 Warnings:
 Note	1276	Field or reference 'test.t1.b' of SELECT #4 was resolved in SELECT #1
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` semi join (`test`.`t2`) where ((`test`.`t2`.`c` = `test`.`t1`.`a`) and <nop>(<in_optimizer>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`),<exists>(/* select#4 */ select `test`.`t3`.`e` from `test`.`t3` where ((0 <> `test`.`t1`.`b`) and <if>(outer_field_is_not_null, ((<cache>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`)) < `test`.`t3`.`e`) or (`test`.`t3`.`e` is null)), true)) having <if>(outer_field_is_not_null, <is_not_null_test>(`test`.`t3`.`e`), true)))))
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` semi join (`test`.`t2`) where ((`test`.`t2`.`c` = `test`.`t1`.`a`) and <nop>(<in_optimizer>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`),<exists>(/* select#4 */ select `test`.`t3`.`e` from `test`.`t3` where ((0 <> `test`.`t1`.`b`) and (<cache>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`)) < `test`.`t3`.`e`))))))
 EXPLAIN FORMAT=JSON SELECT * FROM t1 WHERE t1.a IN (SELECT c FROM t2 WHERE (SELECT e FROM t3) < SOME(SELECT e FROM t3 WHERE t1.b));;
 EXPLAIN
 {
@@ -1038,7 +1040,7 @@ EXPLAIN
             "a",
             "b"
           ] /* used_columns */,
-          "attached_condition": "<nop>(<in_optimizer>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`),<exists>(/* select#4 */ select `test`.`t3`.`e` from `test`.`t3` where ((0 <> `test`.`t1`.`b`) and <if>(outer_field_is_not_null, ((<cache>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`)) < `test`.`t3`.`e`) or (`test`.`t3`.`e` is null)), true)) having <if>(outer_field_is_not_null, <is_not_null_test>(`test`.`t3`.`e`), true))))",
+          "attached_condition": "<nop>(<in_optimizer>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`),<exists>(/* select#4 */ select `test`.`t3`.`e` from `test`.`t3` where ((0 <> `test`.`t1`.`b`) and (<cache>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`)) < `test`.`t3`.`e`)))))",
           "attached_subqueries": [
             {
               "dependent": true,
@@ -1052,18 +1054,18 @@ EXPLAIN
                   "table_name": "t3",
                   "access_type": "ALL",
                   "rows_examined_per_scan": 2,
-                  "rows_produced_per_join": 2,
-                  "filtered": "100.00",
+                  "rows_produced_per_join": 1,
+                  "filtered": "50.00",
                   "cost_info": {
                     "read_cost": "0.50",
-                    "eval_cost": "0.20",
+                    "eval_cost": "0.10",
                     "prefix_cost": "0.70",
-                    "data_read_per_join": "16"
+                    "data_read_per_join": "8"
                   } /* cost_info */,
                   "used_columns": [
                     "e"
                   ] /* used_columns */,
-                  "attached_condition": "((0 <> `test`.`t1`.`b`) and <if>(outer_field_is_not_null, ((<cache>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`)) < `test`.`t3`.`e`) or (`test`.`t3`.`e` is null)), true))"
+                  "attached_condition": "((0 <> `test`.`t1`.`b`) and (<cache>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`)) < `test`.`t3`.`e`))"
                 } /* table */
               } /* query_block */
             }
@@ -1124,7 +1126,7 @@ EXPLAIN
 }
 Warnings:
 Note	1276	Field or reference 'test.t1.b' of SELECT #4 was resolved in SELECT #1
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` semi join (`test`.`t2`) where ((`test`.`t2`.`c` = `test`.`t1`.`a`) and <nop>(<in_optimizer>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`),<exists>(/* select#4 */ select `test`.`t3`.`e` from `test`.`t3` where ((0 <> `test`.`t1`.`b`) and <if>(outer_field_is_not_null, ((<cache>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`)) < `test`.`t3`.`e`) or (`test`.`t3`.`e` is null)), true)) having <if>(outer_field_is_not_null, <is_not_null_test>(`test`.`t3`.`e`), true)))))
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b` from `test`.`t1` semi join (`test`.`t2`) where ((`test`.`t2`.`c` = `test`.`t1`.`a`) and <nop>(<in_optimizer>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`),<exists>(/* select#4 */ select `test`.`t3`.`e` from `test`.`t3` where ((0 <> `test`.`t1`.`b`) and (<cache>((/* select#3 */ select `test`.`t3`.`e` from `test`.`t3`)) < `test`.`t3`.`e`))))))
 DROP TABLE t1, t2, t3, t4;
 # semi-join materialization (if enabled)
 CREATE TABLE t1 (a INT);
@@ -8830,7 +8832,6 @@ DROP TABLE t;
 #
 #  WL#15684 System variable to select JSON EXPLAIN format
 #
-SET @saved_json_format_version = @@explain_json_format_version;
 SET @@end_markers_in_json=OFF;
 SET @@explain_json_format_version = 1;
 CREATE TABLE t (i INT);
@@ -8871,39 +8872,42 @@ SET @@explain_json_format_version = 2;
 EXPLAIN FORMAT=JSON SELECT * FROM t WHERE i IN (2, 3) LIMIT 1;
 EXPLAIN
 {
-  "limit": 1,
   "query": "/* select#1 */ select `test`.`t`.`i` AS `i` from `test`.`t` where (`test`.`t`.`i` in (2,3)) limit 1",
-  "inputs": [
-    {
-      "inputs": [
-        {
-          "operation": "Table scan on t",
-          "table_name": "t",
-          "access_type": "table",
-          "schema_name": "test",
-          "used_columns": [
-            "i"
-          ],
-          "estimated_rows": 3.0,
-          "estimated_total_cost": 0.8012817382812502
-        }
-      ],
-      "condition": "(t.i in (2,3))",
-      "operation": "Filter: (t.i in (2,3))",
-      "access_type": "filter",
-      "estimated_rows": 1.5,
-      "filter_columns": [
-        "test.t.i"
-      ],
-      "estimated_total_cost": 0.8012817382812502
-    }
-  ],
-  "operation": "Limit: 1 row(s)",
+  "query_plan": {
+    "limit": 1,
+    "inputs": [
+      {
+        "inputs": [
+          {
+            "operation": "Table scan on t",
+            "table_name": "t",
+            "access_type": "table",
+            "schema_name": "test",
+            "used_columns": [
+              "i"
+            ],
+            "estimated_rows": 3.0,
+            "estimated_total_cost": 0.8012817382812502
+          }
+        ],
+        "condition": "(t.i in (2,3))",
+        "operation": "Filter: (t.i in (2,3))",
+        "access_type": "filter",
+        "estimated_rows": 1.5,
+        "filter_columns": [
+          "test.t.i"
+        ],
+        "estimated_total_cost": 0.8012817382812502
+      }
+    ],
+    "operation": "Limit: 1 row(s)",
+    "access_type": "limit",
+    "limit_offset": 0,
+    "estimated_rows": 1.0,
+    "estimated_total_cost": 0.8012817382812502
+  },
   "query_type": "select",
-  "access_type": "limit",
-  "limit_offset": 0,
-  "estimated_rows": 1.0,
-  "estimated_total_cost": 0.8012817382812502
+  "json_schema_version": "2.0"
 }
 SET @@explain_json_format_version = 1;
 # Check changing system variable in stored procedure works as expected.
@@ -8955,11 +8959,10 @@ SELECT @@explain_json_format_version;
 DROP PROCEDURE p;
 DROP TABLE t;
 SET @@end_markers_in_json=ON;
-SET @@explain_json_format_version = @saved_json_format_version;
+SET @@explain_json_format_version = DEFAULT;
 #
 # Bug#36134568 Add query type to iterator-based EXPLAIN FORMAT=JSON
 #
-SET @saved_json_format_version = @@explain_json_format_version;
 SET @@explain_json_format_version = 2;
 CREATE TABLE t1 (i1 INT PRIMARY KEY, i2 INT);
 CREATE TABLE t2 (i3 INT, i4 INT);
@@ -9015,5 +9018,139 @@ JSON_EXTRACT(@v1, '$.query_type') = 'delete'
 1
 DROP TABLE t1, t2;
 SET @v1=NULL;
-SET @@explain_json_format_version = @saved_json_format_version;
+SET @@explain_json_format_version = DEFAULT;
+#
+# Bug#37126176 Add lookup references to iterator-based EXPLAIN FORMAT=JSON for index lookups
+#
+SET @@explain_json_format_version = 2;
+SET @v1 = NULL;
+CREATE TABLE t (pk INT PRIMARY KEY AUTO_INCREMENT, i INT DEFAULT NULL, INDEX idx(i));
+INSERT INTO t(i) VALUES (3), (2), (1), (NULL);
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+# Index lookup shows correct reference type in "lookup_references".
+EXPLAIN FORMAT=JSON INTO @v1 SELECT i FROM t WHERE i = 1;
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references[0]'))
+= "const"
+  AS index_lookup_references_const
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+index_lookup_references_const
+1
+SET @v1 = NULL;
+EXPLAIN FORMAT=JSON INTO @v1 SELECT t1.pk FROM t t1, t t2 WHERE t1.pk = t2.pk + 1;
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references[0]'))
+= "func"
+  AS index_lookup_references_func
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+index_lookup_references_func
+1
+SET @v1 = NULL;
+EXPLAIN FORMAT=JSON INTO @v1 SELECT t1.pk FROM t t1, t t2 WHERE t1.pk = t2.pk;
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references[0]'))
+IN ("test.t1.pk", "test.t2.pk")
+AS index_lookup_references_column
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+index_lookup_references_column
+1
+SET @v1 = NULL;
+EXPLAIN FORMAT=JSON INTO @v1 SELECT * FROM t WHERE i = 1 OR i IS NULL;
+SELECT JSON_UNQUOTE(JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_condition')))
+LIKE "% or NULL"
+  AS is_ref_or_null
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+is_ref_or_null
+1
+SET @v1 = NULL;
+SET @saved_optimizer_switch = @@optimizer_switch;
+SET optimizer_switch='batched_key_access=on,mrr=on,mrr_cost_based=off';
+EXPLAIN FORMAT=JSON INTO @v1 SELECT /*+ BKA(t2) */ * FROM t t1 LEFT JOIN t t2 ON t1.pk = t2.pk AND t1.i = 1 AND t1.i = 2;
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references')) IS NOT NULL
+AS mrr_has_lookup_references
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'multi_range_read')) AS index_access_type_path) AS t;
+mrr_has_lookup_references
+1
+SET optimizer_switch = @saved_optimizer_switch;
+SET @v1 = NULL;
+DROP TABLE t;
+# Fulltext search has "lookup_references", should only show "const"
+CREATE TABLE t (a VARCHAR(200), b TEXT, FULLTEXT (a,b)) ENGINE = InnoDB charset utf8mb4;
+INSERT INTO t VALUES  ('This is a sample text', 'I made up for this test.'),
+('We want to show that fulltext', 'search references a constant in the "lookup_condition".'),
+('In this test the EXPLAIN output', 'should contain a field called "lookup_references".'),
+('"lookup_references" should be an array.', 'That array should contain an element that is "const".'),
+('Function MATCH ... AGAINST()','is used to do a fulltext search.'),
+('Fulltext searches in MySQL', 'are confusing.');
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @v1 SELECT * FROM t WHERE MATCH(a,b) AGAINST ("fulltext");
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references[0]'))
+= "const"
+  AS fulltext_search_references_const
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'full_text_search')) AS index_access_type_path) AS t;
+fulltext_search_references_const
+1
+SET @v1 = NULL;
+DROP TABLE t;
+SET @@explain_json_format_version = DEFAULT;
+#
+# Bug#35239659 Separate query attributes and iterator attributes in iterator-based EXPLAIN JSON
+#
+CREATE TABLE t (i INT);
+EXPLAIN FORMAT=TREE SELECT * FROM t t1 JOIN t t2 WHERE t1.i = t2.i;
+EXPLAIN
+-> Zero rows (no matching row in const table)  (cost=0..0 rows=0)
+
+EXPLAIN FORMAT=JSON INTO @var SELECT * FROM t t1 JOIN t t2 WHERE t1.i = t2.i;
+SELECT JSON_KEYS(@var);
+JSON_KEYS(@var)
+["query", "query_plan", "query_type", "json_schema_version"]
+DROP TABLE t;
+SET @var = NULL;
+#
+# Bug#37838599 EXPLAIN ANALYZE FORMAT=JSON did not handle queries with
+# subqueries correctly when explain_json_format_version=1.
+#
+SET @@explain_json_format_version = 1;
+EXPLAIN ANALYZE FORMAT=JSON SELECT * FROM (SELECT 1) b;
+ERROR 0A000: EXPLAIN ANALYZE does not support FORMAT=JSON with explain_json_format_version=1.
+SET @@explain_json_format_version = DEFAULT;
+include/rpl/set_gtid_mode_on.inc
 set optimizer_switch=default;

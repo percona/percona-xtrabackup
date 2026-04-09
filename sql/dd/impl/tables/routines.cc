@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,15 +31,15 @@
 #include "sql/dd/impl/tables/dd_properties.h"  // TARGET_DD_VERSION
 #include "sql/dd/impl/types/object_table_definition_impl.h"
 #include "sql/dd/types/function.h"   // dd::Function
+#include "sql/dd/types/library.h"    // dd::Library
 #include "sql/dd/types/procedure.h"  // dd::Procedure
 
 struct CHARSET_INFO;
 
-namespace dd {
-namespace tables {
+namespace dd::tables {
 
 const Routines &Routines::instance() {
-  static Routines *s_instance = new Routines();
+  static auto *s_instance = new Routines();
   return *s_instance;
 }
 
@@ -61,8 +61,9 @@ Routines::Routines() {
   m_target_def.add_field(FIELD_NAME, "FIELD_NAME",
                          "name VARCHAR(64) NOT NULL COLLATE " +
                              String_type(name_collation()->m_coll_name));
-  m_target_def.add_field(FIELD_TYPE, "FIELD_TYPE",
-                         "type ENUM('FUNCTION', 'PROCEDURE') NOT NULL");
+  m_target_def.add_field(
+      FIELD_TYPE, "FIELD_TYPE",
+      "type ENUM('FUNCTION', 'PROCEDURE', 'LIBRARY') NOT NULL");
   m_target_def.add_field(FIELD_RESULT_DATA_TYPE, "FIELD_RESULT_DATA_TYPE",
                          "result_data_type ENUM(\n"
                          "    'MYSQL_TYPE_DECIMAL', 'MYSQL_TYPE_TINY',\n"
@@ -178,13 +179,15 @@ Routines::Routines() {
 ///////////////////////////////////////////////////////////////////////////
 
 Routine *Routines::create_entity_object(const Raw_record &r) const {
-  Routine::enum_routine_type routine_type =
-      (Routine::enum_routine_type)r.read_int(FIELD_TYPE);
+  auto routine_type = (Routine::enum_routine_type)r.read_int(FIELD_TYPE);
 
   if (routine_type == Routine::RT_FUNCTION)
     return dd::create_object<Function>();
-  else
+  if (routine_type == Routine::RT_PROCEDURE)
     return dd::create_object<Procedure>();
+  if (routine_type == Routine::RT_LIBRARY) return dd::create_object<Library>();
+  assert(false);
+  return {};
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -193,8 +196,7 @@ bool Routines::update_object_key(Routine_name_key *key, Object_id schema_id,
                                  Routine::enum_routine_type type,
                                  const String_type &routine_name) {
   key->update(INDEX_UK_SCHEMA_ID_TYPE_NAME, FIELD_SCHEMA_ID, schema_id,
-              FIELD_TYPE, type, FIELD_NAME, routine_name.c_str(),
-              name_collation());
+              FIELD_TYPE, type, FIELD_NAME, routine_name, name_collation());
   return false;
 }
 
@@ -214,5 +216,4 @@ Object_key *Routines::create_key_by_definer(const String_type &definer) {
 
 ///////////////////////////////////////////////////////////////////////////
 
-}  // namespace tables
-}  // namespace dd
+}  // namespace dd::tables

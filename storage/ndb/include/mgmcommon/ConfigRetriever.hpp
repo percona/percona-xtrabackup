@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -111,7 +111,7 @@ class ConfigRetriever {
   ErrorType latestErrorType;
 
   void setError(ErrorType, const char *errorMsg);
-  void setError(ErrorType, BaseString err);
+  void setError(ErrorType, const BaseString &err);
 
   bool m_end_session;
   Uint32 m_version;

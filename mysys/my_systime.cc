@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,16 +35,25 @@
 #include "my_systime.h"
 #include "my_config.h"
 
-#include <assert.h>
+#if SIZEOF_TIME_T < SIZEOF_LONG_LONG
 #include <algorithm>  // std::min
+#endif
+#include <cassert>
 #include <chrono>
 #include <cstdio>  // std::sprintf()
 #include <ctime>
-#include <limits>  // std::numeric_limits
+#include <limits>  // IWYU pragma: keep std::numeric_limits
+#include <thread>  // std::this_thread::sleep_for
 
-// Note that timespec is in time.h in C99, but std::timespec will not
-// be in ctime until C++17
-#include <time.h>  // time_t, timespec
+void my_sleep(int64_t micro_seconds) {
+  std::this_thread::sleep_for(std::chrono::microseconds{micro_seconds});
+}
+
+#ifdef _WIN32
+void sleep(unsigned long seconds) {
+  std::this_thread::sleep_for(std::chrono::seconds{seconds});
+}
+#endif  // _WIN32
 
 /**
    Set the value of a timespec object to the current time plus a
@@ -62,7 +71,7 @@ void set_timespec_nsec(struct timespec *abstime, Timeout_type nsec) {
     return;
   }
   const unsigned long long int now = my_getsystime() + (nsec / 100);
-  unsigned long long int tv_sec = now / 10000000ULL;
+  unsigned long long int const tv_sec = now / 10000000ULL;
 #if SIZEOF_TIME_T < SIZEOF_LONG_LONG
   /* Ensure that the number of seconds don't overflow. */
   tv_sec = std::min(tv_sec, static_cast<unsigned long long int>(

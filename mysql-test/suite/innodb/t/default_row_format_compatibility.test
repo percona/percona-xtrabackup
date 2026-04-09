@@ -24,7 +24,7 @@ let $MYSQLD_DATADIR = `SELECT @@datadir`;
 --source include/no_valgrind_without_big.inc
 
 --disable_query_log
-call mtr.add_suppression("Cannot add field .* in table .* because after adding it, the row size is");
+call mtr.add_suppression("Cannot alter the table .* because the record size will exceed the maximum allowed size for a record .*");
 --enable_query_log
 
 CREATE TABLE tab

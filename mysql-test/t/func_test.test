@@ -615,3 +615,16 @@ SELECT GREATEST(_latin1 'Ã¥', c) FROM t;
 SELECT GREATEST(dt.a, t.c) FROM t, (SELECT _latin1 'Ã¥') AS dt(a);
 
 DROP TABLE t;
+
+--echo #
+--echo # Bug#37083848: virtual longlong Item_func_min_max::int_op():
+--echo # Assertion `!unsigned_flag || !arg_val.is_negative()' failed
+--echo #
+
+CREATE TABLE t1 (
+  id INT UNSIGNED NOT NULL
+);
+INSERT INTO t1 VALUES(1);
+SELECT id FROM t1 WHERE LEAST(id, id) AND -1 = id;
+
+DROP TABLE t1;

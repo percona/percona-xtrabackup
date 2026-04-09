@@ -1,6 +1,6 @@
 /****************************************************************************
 
-Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -720,8 +720,9 @@ bool FTS::Parser::doc_tokenize(doc_id_t doc_id, fts_doc_t *doc,
 
     ut_a(t_ctx->m_handler_id < FTS_NUM_AUX_INDEX);
 
-    auto &fields = key_buffer->m_dtuples[key_buffer->m_n_tuples];
+    dfield_t *fields;
     auto field = fields = key_buffer->alloc(FTS_NUM_FIELDS_SORT);
+    key_buffer->m_dtuples.push_back(fields);
 
     /* The first field is the tokenized word */
     dfield_set_data(field, t_str.f_str, t_str.f_len);
@@ -795,8 +796,7 @@ bool FTS::Parser::doc_tokenize(doc_id_t doc_id, fts_doc_t *doc,
     for 1 bytes, larger than that 2 bytes. */
     cur_len += t_str.f_len < 128 ? 2 : 3;
 
-    /* Reserve one byte for the end marker of Aligned_buffer. */
-    if (key_buffer->m_total_size + cur_len >= key_buffer->m_buffer_size - 1) {
+    if (!key_buffer->will_fit(cur_len)) {
       buf_full = true;
       break;
     }
@@ -1416,7 +1416,7 @@ dberr_t FTS::Inserter::insert(Builder *builder,
       auto err = cursor.add_file(file, io_buffer_size);
 
       if (err != DB_SUCCESS) {
-        return err;
+        return func_exit(err);
       }
       total_rows += file.m_n_recs;
     }

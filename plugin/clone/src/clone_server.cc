@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -135,7 +135,7 @@ int Server::send_status(int err) {
 }
 
 int Server::init_storage(Ha_clone_mode mode, uchar *com_buf, size_t com_len) {
-  auto thd = get_thd();
+  auto *thd = get_thd();
 
   assert(thd != nullptr);
   assert(!m_pfs_initialized);
@@ -256,7 +256,7 @@ int Server::parse_command_buffer(uchar command, uchar *com_buf, size_t com_len,
                                    &loc);
 
       if (err == 0) {
-        auto hton = loc.m_hton;
+        auto *hton = loc.m_hton;
 
         err = hton->clone_interface.clone_ack(hton, get_thd(), loc.m_loc,
                                               loc.m_loc_len, 0, err_code,
@@ -416,7 +416,7 @@ int Server::send_key_value(Command_Response rcmd, String_Key &key_str,
 
   /* Allocate for response buffer */
   auto err = m_res_buff.allocate(buf_len);
-  auto buf_ptr = m_res_buff.m_buffer;
+  auto *buf_ptr = m_res_buff.m_buffer;
   if (err != 0) {
     return (true);
   }
@@ -448,7 +448,7 @@ int Server::send_params() {
 
   /* Send plugins */
   auto plugin_cbk = [](THD *, plugin_ref plugin, void *ctx) {
-    auto server = static_cast<Server *>(ctx);
+    auto *server = static_cast<Server *>(ctx);
 
     if (plugin == nullptr) {
       return false;
@@ -464,7 +464,7 @@ int Server::send_params() {
     /* Send plugin dynamic library name. */
     String_Key dstring;
 
-    auto plugin_dl = plugin_dlib(plugin);
+    auto *plugin_dl = plugin_dlib(plugin);
     if (plugin_dl != nullptr) {
       dstring.assign(plugin_dl->dl.str, plugin_dl->dl.length);
     }
@@ -560,7 +560,7 @@ int Server::send_locators() {
 
   /* Allocate for response buffer */
   auto err = m_res_buff.allocate(buf_len);
-  auto buf_ptr = m_res_buff.m_buffer;
+  auto *buf_ptr = m_res_buff.m_buffer;
 
   if (err != 0) {
     return (err);
@@ -606,7 +606,7 @@ int Server::send_descriptor(handlerton *hton, bool secure, uint loc_index,
     return (err);
   }
 
-  auto buf_ptr = m_res_buff.m_buffer;
+  auto *buf_ptr = m_res_buff.m_buffer;
 
   /* Store response command */
   *buf_ptr = static_cast<uchar>(COM_RES_DATA_DESC);
@@ -630,10 +630,10 @@ int Server::send_descriptor(handlerton *hton, bool secure, uint loc_index,
 }
 
 int Server_Cbk::send_descriptor() {
-  auto server = get_clone_server();
+  auto *server = get_clone_server();
 
   uint desc_len = 0;
-  auto desc = get_data_desc(&desc_len);
+  const auto *desc = get_data_desc(&desc_len);
 
   auto err = server->send_descriptor(get_hton(), is_secure(), get_loc_index(),
                                      desc, desc_len);
@@ -641,7 +641,7 @@ int Server_Cbk::send_descriptor() {
 }
 
 int Server_Cbk::file_cbk(Ha_clone_file from_file, uint len) {
-  auto server = get_clone_server();
+  auto *server = get_clone_server();
 
   /* Check if session is interrupted. */
   if (thd_killed(server->get_thd())) {
@@ -651,14 +651,14 @@ int Server_Cbk::file_cbk(Ha_clone_file from_file, uint len) {
 
   /* Add one byte for descriptor type */
   auto buf_len = len + 1;
-  auto buf_ptr = server->alloc_copy_buffer(buf_len + CLONE_OS_ALIGN);
+  auto *buf_ptr = server->alloc_copy_buffer(buf_len + CLONE_OS_ALIGN);
 
   if (buf_ptr == nullptr) {
     return (ER_OUTOFMEMORY);
   }
 
   /* Store response command */
-  auto data_ptr = buf_ptr + 1;
+  auto *data_ptr = buf_ptr + 1;
 
   /* Align buffer to CLONE_OS_ALIGN[4K] for O_DIRECT */
   data_ptr = clone_os_align(data_ptr);
@@ -687,7 +687,7 @@ int Server_Cbk::file_cbk(Ha_clone_file from_file, uint len) {
 }
 
 int Server_Cbk::buffer_cbk(uchar *from_buffer, uint buf_len) {
-  auto server = get_clone_server();
+  auto *server = get_clone_server();
 
   if (thd_killed(server->get_thd())) {
     my_error(ER_QUERY_INTERRUPTED, MYF(0));

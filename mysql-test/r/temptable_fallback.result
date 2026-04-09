@@ -1,3 +1,4 @@
+FLUSH STATUS;
 # Disable sorting by addon fields, as that will enable the
 # StreamingIterator in many of the test cases, resulting in
 # fewer materializations.

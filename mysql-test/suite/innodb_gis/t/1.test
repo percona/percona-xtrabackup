@@ -1429,4 +1429,4 @@ DROP DATABASE gis_ogs;
 --echo #
 
 --error ER_GIS_INVALID_DATA
-SELECT ST_Union('', ''), md5(1);
+SELECT ST_Union('', ''), SHA2(1,256);

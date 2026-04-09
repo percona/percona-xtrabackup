@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,7 @@
 #include "mysqlrouter/http_server_lib_export.h"
 
 #include "http/base/request.h"
+#include "http/base/uri_path_matcher.h"
 #include "http/http_server_context.h"
 
 class HTTP_SERVER_LIB_EXPORT HttpServerComponent {
@@ -47,9 +48,12 @@ class HTTP_SERVER_LIB_EXPORT HttpServerComponent {
   static void set_instance(std::unique_ptr<HttpServerComponent> component);
 
   virtual void init(HttpServerCtxtPtr srv) = 0;
-  virtual void *add_route(const std::string &url_regex,
-                          std::unique_ptr<http::base::RequestHandler> cb) = 0;
-  virtual void remove_route(const std::string &url_regex) = 0;
+  virtual void *add_regex_route(
+      const std::string &url_host, const std::string &url_regex,
+      std::unique_ptr<http::base::RequestHandler> cb) = 0;
+  virtual void *add_direct_match_route(
+      const std::string &url_host, const ::http::base::UriPathMatcher &url_path,
+      std::unique_ptr<http::base::RequestHandler> cb) = 0;
   virtual void remove_route(const void *handler) = 0;
 
   virtual bool is_ssl_configured() = 0;

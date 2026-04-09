@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,6 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
-#include <stdexcept>
 
 #include "mysql/strings/m_ctype.h"
 #include "strings/collations_internal.h"
@@ -48,52 +47,15 @@ mysql::collation::Name::Name(const char *name, size_t size) {
   }
 
   // TODO(gleb): fail instead of truncating too long names?
-  size_t truncated_size = std::min(size, MY_CS_BUFFER_SIZE);
-  char *normalized = new char[truncated_size + 1];
+  const size_t truncated_size = std::min(size, MY_CS_BUFFER_SIZE);
+  m_normalized.reserve(truncated_size);
 
   for (size_t i = 0; i < truncated_size; i++) {
     // TODO(gleb): use ASCII instead of Latin1?
-    normalized[i] = static_cast<char>(
-        my_charset_latin1.to_lower[static_cast<uint8_t>(name[i])]);
+    m_normalized.push_back(static_cast<char>(
+        my_charset_latin1.to_lower[static_cast<uint8_t>(name[i])]));
   }
-  normalized[truncated_size] = '\0';
-  m_normalized = normalized;
 }
-
-mysql::collation::Name::Name(const mysql::collation::Name &name) {
-  size_t size = strlen(name.m_normalized);
-  char *normalized = new char[size + 1];
-  memcpy(normalized, name.m_normalized, size + 1);
-  m_normalized = normalized;
-}
-
-mysql::collation::Name::Name(mysql::collation::Name &&name) noexcept
-    : m_normalized(name.m_normalized) {
-  name.m_normalized = nullptr;
-}
-
-mysql::collation::Name::~Name() { delete[] m_normalized; }
-
-/// @cond Doxygen_is_confused
-mysql::collation::Name &mysql::collation::Name::Name::operator=(
-    const Name &name) {
-  if (this == &name) {
-    return *this;
-  }
-  this->~Name();
-  new (this) Name(name);
-  return *this;
-}
-
-mysql::collation::Name &mysql::collation::Name::Name::operator=(
-    Name &&name) noexcept {
-  if (this != &name) {
-    this->~Name();
-    new (this) Name(std::move(name));
-  }
-  return *this;
-}
-/// @endcond
 
 void mysql::collation::initialize(const char *charset_dir,
                                   MY_CHARSET_LOADER *loader) {

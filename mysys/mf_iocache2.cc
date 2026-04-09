@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,10 +31,11 @@
   More functions to be used with IO_CACHE files
 */
 
-#include <stdarg.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cassert>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -113,10 +114,10 @@ void my_b_seek(IO_CACHE *info, my_off_t pos) {
       /* The read is in the current buffer; Reuse it */
       info->read_pos = info->buffer + offset;
       return;
-    } else {
-      /* Force a new read on next my_b_read */
-      info->read_pos = info->read_end = info->buffer;
     }
+    /* Force a new read on next my_b_read */
+    info->read_pos = info->read_end = info->buffer;
+
   } else if (info->type == WRITE_CACHE) {
     /* If write is in current buffer, reuse it */
     if ((ulonglong)offset <=

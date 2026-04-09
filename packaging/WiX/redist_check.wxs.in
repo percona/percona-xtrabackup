@@ -1,7 +1,7 @@
 <Include xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
 <!--
-   Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2020, 2025, Oracle and/or its affiliates.
    
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -71,6 +71,6 @@
         <Custom Action="DwordToNumber" Before="LaunchConditions"/>
       </InstallUISequence>
 
-      <Launch Condition="Installed OR (VS14REDISTX64_64_MAJOR = 14 AND VS14REDISTX64_64_MINOR &gt;= 20) OR (VS14REDISTX64_32_MAJOR = 14 AND VS14REDISTX64_32_MINOR &gt;= 20)" Message="This application requires Visual Studio 2019 x64 Redistributable. Please install the Redistributable then run this installer again." />
+      <Launch Condition="Installed OR (VS14REDISTX64_64_MAJOR = 14 AND VS14REDISTX64_64_MINOR &gt;= 42) OR (VS14REDISTX64_32_MAJOR = 14 AND VS14REDISTX64_32_MINOR &gt;= 42)" Message="This application requires latest Visual Studio 2019 x64 Redistributable. Please install it and then run this installer again." />
     <?endif?> 
 </Include>

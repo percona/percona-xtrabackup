@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -103,9 +103,9 @@ static int init_sock_probe(sock_probe *s) {
   while (curr_addresses) {
     PIP_ADAPTER_UNICAST_ADDRESS_LH curr_unicast_address;
 
-    IFDBG(D_TRANSPORT, STRLIT("Adapter status: ");
-          if (curr_addresses->OperStatus == IfOperStatusUp) STRLIT("UP");
-          else STRLIT("DOWN"););
+    XCOM_IFDBG(D_TRANSPORT, STRLIT("Adapter status: ");
+               if (curr_addresses->OperStatus == IfOperStatusUp) STRLIT("UP");
+               else STRLIT("DOWN"););
 
     curr_unicast_address = curr_addresses->FirstUnicastAddress;
     while (curr_unicast_address) {

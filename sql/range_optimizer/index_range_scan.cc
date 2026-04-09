@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -201,7 +201,7 @@ static bool has_blob_primary_key(const TABLE *table) {
                      });
 }
 
-bool IndexRangeScanIterator::Init() {
+bool IndexRangeScanIterator::DoInit() {
   empty_record(table());
 
   /*
@@ -357,7 +357,7 @@ bool IndexRangeScanIterator::shared_reset() {
   return false;
 }
 
-int IndexRangeScanIterator::Read() {
+int IndexRangeScanIterator::DoRead() {
   MY_BITMAP *const save_read_set = table()->read_set;
   MY_BITMAP *const save_write_set = table()->write_set;
   DBUG_TRACE;
@@ -438,7 +438,8 @@ int IndexRangeScanIterator::cmp_next(QUICK_RANGE *range_arg) {
   int cmp;
   if (range_arg->flag & NO_MAX_RANGE) return 0; /* key can't be to large */
 
-  cmp = key_cmp(key_part_info, range_arg->max_key, range_arg->max_length);
+  cmp = key_cmp(key_part_info, range_arg->max_key, range_arg->max_length,
+                /*is_reverse_multi_valued_index_scan=*/false);
   if (cmp < 0 || (cmp == 0 && !(range_arg->flag & NEAR_MAX))) return 0;
   return 1;  // outside of range
 }
@@ -451,7 +452,8 @@ int IndexRangeScanIterator::cmp_prev(QUICK_RANGE *range_arg) {
   int cmp;
   if (range_arg->flag & NO_MIN_RANGE) return 0; /* key can't be to small */
 
-  cmp = key_cmp(key_part_info, range_arg->min_key, range_arg->min_length);
+  cmp = key_cmp(key_part_info, range_arg->min_key, range_arg->min_length,
+                /*is_reverse_multi_valued_index_scan=*/false);
   if (cmp > 0 || (cmp == 0 && !(range_arg->flag & NEAR_MIN))) return 0;
   return 1;  // outside of range
 }

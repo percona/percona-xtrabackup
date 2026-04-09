@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,6 +21,10 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
+// Suppress the deprecation warning for gtidset.h, because this is the cpp file
+// where we define this deprecated functionality. When we remove the feature,
+// remove this entire file.
+#define NO_DEPRECATION_WARNING_FOR_HEADER_GTIDSET_H
 #include "mysql/gtid/gtidset.h"
 #include <map>
 #include <string>

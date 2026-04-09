@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "plugin/group_replication/include/sql_service/sql_service_interface.h"
 
-#include <stddef.h>
+#include <cstddef>
 
 #include <mysql/components/services/log_builtins.h>
 #include <mysql/components/services/mysql_admin_session.h>
@@ -189,7 +189,7 @@ long Sql_service_interface::execute_internal(
   return err;
 }
 
-long Sql_service_interface::execute_query(std::string sql_string) {
+long Sql_service_interface::execute_query(const std::string &sql_string) {
   DBUG_TRACE;
   assert(sql_string.length() <= UINT_MAX);
   COM_DATA cmd;
@@ -199,12 +199,13 @@ long Sql_service_interface::execute_query(std::string sql_string) {
   cmd.com_query.query = sql_string.c_str();
   cmd.com_query.length = static_cast<unsigned int>(sql_string.length());
 
-  long err = execute_internal(&rset, m_txt_or_bin, m_charset, cmd, COM_QUERY);
+  long const err =
+      execute_internal(&rset, m_txt_or_bin, m_charset, cmd, COM_QUERY);
 
   return err;
 }
 
-long Sql_service_interface::execute_query(std::string sql_string,
+long Sql_service_interface::execute_query(const std::string &sql_string,
                                           Sql_resultset *rset,
                                           enum cs_text_or_binary cs_txt_or_bin,
                                           const CHARSET_INFO *cs_charset) {
@@ -215,7 +216,8 @@ long Sql_service_interface::execute_query(std::string sql_string,
   cmd.com_query.query = sql_string.c_str();
   cmd.com_query.length = static_cast<unsigned int>(sql_string.length());
 
-  long err = execute_internal(rset, cs_txt_or_bin, cs_charset, cmd, COM_QUERY);
+  long const err =
+      execute_internal(rset, cs_txt_or_bin, cs_charset, cmd, COM_QUERY);
 
   return err;
 }
@@ -227,14 +229,15 @@ long Sql_service_interface::execute(COM_DATA cmd,
                                     const CHARSET_INFO *cs_charset) {
   DBUG_TRACE;
 
-  long err = execute_internal(rset, cs_txt_or_bin, cs_charset, cmd, cmd_type);
+  long const err =
+      execute_internal(rset, cs_txt_or_bin, cs_charset, cmd, cmd_type);
 
   return err;
 }
 
 int Sql_service_interface::wait_for_session_server(ulong total_timeout) {
   int number_of_tries = 0;
-  ulong wait_retry_sleep = total_timeout * 1000000 / MAX_NUMBER_RETRIES;
+  ulong const wait_retry_sleep = total_timeout * 1000000 / MAX_NUMBER_RETRIES;
   int err = 0;
 
   while (!srv_session_server_is_available()) {
@@ -245,14 +248,14 @@ int Sql_service_interface::wait_for_session_server(ulong total_timeout) {
 
       err = 1;
       break;
-    } else {
-      /*
-        If we have more tries.
-        Then sleep before new attempts are made.
-      */
-      my_sleep(wait_retry_sleep);
-      ++number_of_tries;
     }
+    /*
+     If we have more tries.
+     Then sleep before new attempts are made.
+    */
+    my_sleep(wait_retry_sleep);
+    ++number_of_tries;
+
     /* purecov: end */
   }
 
@@ -285,7 +288,8 @@ bool Sql_service_interface::is_acl_disabled() {
     return false; /* purecov: inspected */
 
   MYSQL_LEX_CSTRING value;
-  if (false != security_context_get_option(scontext, "priv_user", &value))
+  if (static_cast<bool>(
+          security_context_get_option(scontext, "priv_user", &value)))
     return false; /* purecov: inspected */
 
   return 0 != value.length && nullptr != strstr(value.str, "skip-grants ");

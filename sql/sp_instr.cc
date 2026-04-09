@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -890,7 +890,7 @@ bool sp_lex_instr::validate_lex_and_execute_core(THD *thd, uint *nextp,
     cleanup_items(m_arena.item_list());
     need_reprepare = true;
   }
-  thd->set_secondary_engine_statement_context(nullptr);
+  thd->cleanup_after_statement_execution();
 
   // Re-enable the general log if it was temporarily disabled while repreparing
   // and executing a statement for a secondary engine.

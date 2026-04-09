@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -193,7 +193,7 @@ typedef SSIZE_T ssize_t;
 #define XCOM_ISSYSERR (errno != 0 || WSAGetLastError() != 0)
 #define XCOM_SYSERRNUM (WSAGetLastError() ? WSAGetLastError() : (errno))
 #define XCOM_SYSERRSTR \
-  (WSAGetLastError() ? g_strerror(WSAGetLastError()) : g_strerror(errno))
+  (WSAGetLastError() ? strerror(WSAGetLastError()) : strerror(errno))
 #define xcom_gmtime_r(time, res) gmtime_s(res, time)
 #define xcom_localtime_r(time, res) localtime_s(res, time)
 
@@ -286,7 +286,7 @@ typedef void *xcom_sockoptptr_t;
 #define XCOM_CLRSYSERR errno = 0
 #define XCOM_ISSYSERR (errno != 0)
 #define XCOM_SYSERRNUM ((errno) + 0)
-#define XCOM_SYSERRSTR g_strerror(errno)
+#define XCOM_SYSERRSTR strerror(errno)
 
 #define xcom_gmtime_r(time, res) gmtime_r(time, res)
 #define xcom_localtime_r(time, res) localtime_r(time, res)

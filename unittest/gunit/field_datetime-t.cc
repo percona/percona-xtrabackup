@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -48,27 +48,13 @@ class FieldDatetimeTest : public ::testing::Test {
 
 class Mock_field_datetime : public Field_datetime {
  public:
-  Mock_field_datetime()
+  explicit Mock_field_datetime(uint scale)
       : Field_datetime(nullptr,                    // ptr_arg
                        &Field::dummy_null_buffer,  // null_ptr_arg
                        1,                          // null_bit_arg
-                       Field::NONE,                // auto_flags_arg
-                       "field_name")               // field_name_arg
-  {}
-
-  void make_writable() { bitmap_set_bit(table->write_set, field_index()); }
-  void make_readable() { bitmap_set_bit(table->read_set, field_index()); }
-};
-
-class Mock_field_datetimef : public Field_datetimef {
- public:
-  explicit Mock_field_datetimef(uint scale)
-      : Field_datetimef(nullptr,                    // ptr_arg
-                        &Field::dummy_null_buffer,  // null_ptr_arg
-                        1,                          // null_bit_arg
-                        Field::NONE,                // unireg_check_arg
-                        "field_name",               // field_name_arg
-                        scale) {}
+                       Field::NONE,                // unireg_check_arg
+                       "field_name",               // field_name_arg
+                       scale) {}
 
   void make_writable() { bitmap_set_bit(table->write_set, field_index()); }
   void make_readable() { bitmap_set_bit(table->read_set, field_index()); }
@@ -79,7 +65,7 @@ TEST_F(FieldDatetimeTest, StoreLegalStringValues) {
   String str(buff, sizeof(buff), &my_charset_bin);
   String unused;
 
-  Mock_field_datetime field_dt;
+  Mock_field_datetime field_dt(0);
   Fake_TABLE table(&field_dt);
   table.in_use = thd();
   field_dt.make_writable();
@@ -109,14 +95,14 @@ TEST_F(FieldDatetimeTest, TestTruncFrational) {
   String str(buff, sizeof(buff), &my_charset_bin);
   String unused;
   // fsp=6
-  Mock_field_datetimef field_dt(6);
+  Mock_field_datetime field_dt(6);
   Fake_TABLE table(&field_dt);
   table.in_use = thd();
   field_dt.make_writable();
   field_dt.make_readable();
 
   // fsp=0
-  Mock_field_datetimef field_dt0(0);
+  Mock_field_datetime field_dt0(0);
   Fake_TABLE table0(&field_dt0);
   table0.in_use = thd();
   field_dt0.make_writable();
@@ -164,7 +150,7 @@ TEST_F(FieldDatetimeTest, TestTruncFrational) {
 }
 
 TEST_F(FieldDatetimeTest, StoreIllegalStringValues) {
-  Mock_field_datetime field_dt;
+  Mock_field_datetime field_dt(0);
   Fake_TABLE table(&field_dt);
   table.in_use = thd();
   field_dt.make_writable();
@@ -242,7 +228,7 @@ static const sql_mode_t strict_modes[no_modes] = {
   no errors, warnings or notes.
 */
 TEST_F(FieldDatetimeTest, StoreZeroDateSqlModeNoZeroRestrictions) {
-  Mock_field_datetime field_dt;
+  Mock_field_datetime field_dt(0);
   Fake_TABLE table(&field_dt);
   table.in_use = thd();
   field_dt.make_writable();
@@ -285,7 +271,7 @@ static const type_conversion_status nozero_expected_status[] = {
   zero: "0000-00-00"
 */
 TEST_F(FieldDatetimeTest, StoreZeroDateSqlModeNoZeroDate) {
-  Mock_field_datetime field_dt;
+  Mock_field_datetime field_dt(0);
   Fake_TABLE table(&field_dt);
   table.in_use = thd();
   field_dt.make_writable();
@@ -331,7 +317,7 @@ TEST_F(FieldDatetimeTest, StoreZeroDateSqlModeNoZeroDate) {
   should be no errors unless either month or day is zero.
 */
 TEST_F(FieldDatetimeTest, StoreZeroDateSqlModeNoZeroInDate) {
-  Mock_field_datetime field_dt;
+  Mock_field_datetime field_dt(0);
   Fake_TABLE table(&field_dt);
   table.in_use = thd();
   field_dt.make_writable();

@@ -348,6 +348,8 @@ DROP DATABASE shared;
 --exec $MYSQLADMIN --no-defaults -u root -S $MASTER_MYSOCK -P $MASTER_MYPORT --default-auth=auth_test_plugin $PLUGIN_AUTH_OPT ping
 
 --echo # Executing 'mysqldump'
+--let $executed_gtid_set = `SELECT @@GLOBAL.GTID_EXECUTED`
+--replace_result $executed_gtid_set GTID_SET
 --exec $MYSQL_DUMP -u root -S $MASTER_MYSOCK -P $MASTER_MYPORT --compact --default-auth=auth_test_plugin $PLUGIN_AUTH_OPT test
 
 --echo #

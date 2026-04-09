@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@ void angel_run(const char *progname, const Vector<BaseString> &original_args,
                bool daemon, int connnect_retries, int connect_delay,
                const char *tls_search_path, int mgm_tls_level);
 
-void angel_stop(void);
+void angel_stop();
 
 #undef JAM_FILE_ID
 

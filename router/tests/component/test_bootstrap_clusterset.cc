@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -45,6 +45,7 @@
 #include "router_component_clusterset.h"
 #include "router_component_test.h"
 #include "router_component_testutils.h"
+#include "router_config.h"  // MYSQL_ROUTER_VERSION
 #include "socket_operations.h"
 #include "tcp_port_pool.h"
 
@@ -96,6 +97,8 @@ struct TargetClusterTestParams {
 
   // vector of strings expected on the console after the bootstrap
   std::vector<std::string> expected_output_strings;
+
+  bool new_executable{false};
 };
 
 class ClusterSetBootstrapTargetClusterTest
@@ -1160,7 +1163,7 @@ TEST_F(RouterClusterSetBootstrapTest, ConfigExposedInMetadata) {
 
   // Check if proper Configuration Defaults were written on bootstrap
   const std::string public_configuration_defaults_in_md =
-      get_config_defaults_stored_in_md(http_port);
+      get_config_defaults_stored_in_md(http_port) + "\n";
 
   const std::string public_configuration_defaults = get_file_output(
       get_data_dir().join("configuration_defaults_clusterset.json").str());
@@ -1168,6 +1171,129 @@ TEST_F(RouterClusterSetBootstrapTest, ConfigExposedInMetadata) {
   EXPECT_STREQ(public_configuration_defaults.c_str(),
                public_configuration_defaults_in_md.c_str());
 }
+
+struct ServerCompatTestParam {
+  std::string description;
+  std::string server_version;
+  std::string expected_warning_msg;
+};
+
+class CheckServerCompatibilityTest
+    : public RouterClusterSetBootstrapTest,
+      public ::testing::WithParamInterface<ServerCompatTestParam> {};
+
+/**
+ * @test
+ *      Verifies that the server version is checked for compatibility when the
+ * Router is bootstrapped against the ClusterSet
+ */
+TEST_P(CheckServerCompatibilityTest, Spec) {
+  RecordProperty("Description", GetParam().description);
+
+  ClusterSetOptions cs_options;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  create_clusterset(cs_options);
+
+  const auto http_port = cs_options.topology.clusters[0].nodes[0].http_port;
+
+  set_mock_server_version(http_port, GetParam().server_version);
+
+  std::vector<std::string> bootstrap_params = {
+      "--bootstrap=127.0.0.1:" +
+          std::to_string(cs_options.topology.clusters[0].nodes[0].classic_port),
+      "-d", bootstrap_directory.name()};
+
+  auto &router = launch_router_for_bootstrap(bootstrap_params, EXIT_SUCCESS);
+  check_exit_code(router, EXIT_SUCCESS);
+
+  if (!GetParam().expected_warning_msg.empty()) {
+    const std::string router_console_output = router.get_full_output();
+    EXPECT_TRUE(
+        pattern_found(router_console_output, GetParam().expected_warning_msg))
+        << router_console_output;
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Spec, CheckServerCompatibilityTest,
+    ::testing::Values(
+        ServerCompatTestParam{
+            "Server is the same version as Router - bootstrap OK",
+            std::to_string(MYSQL_ROUTER_VERSION_MAJOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_MINOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_PATCH),
+            ""},
+        ServerCompatTestParam{
+            "Server major version is higher than Router - bootstrap should "
+            "issue a warning",
+            std::to_string(MYSQL_ROUTER_VERSION_MAJOR + 1) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_MINOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_PATCH),
+            "WARNING: MySQL Server version .* is higher than the Router "
+            "version. You should upgrade the Router to match the MySQL Server "
+            "version."},
+        ServerCompatTestParam{
+            "Server minor version is higher than Router - bootstrap should "
+            "issue a warning",
+            std::to_string(MYSQL_ROUTER_VERSION_MAJOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_MINOR + 1) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_PATCH),
+            "WARNING: MySQL Server version .* is higher than the Router "
+            "version. You should upgrade the Router to match the MySQL Server "
+            "version."},
+        ServerCompatTestParam{
+            "Server patch version is higher than Router - bootstrap OK",
+            std::to_string(MYSQL_ROUTER_VERSION_MAJOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_MINOR) + "." +
+                std::to_string(MYSQL_ROUTER_VERSION_PATCH + 1),
+            ""}));
+
+struct LocalClusterTestParams {
+  std::string expected_local_cluster;
+  unsigned bootstrap_cluster_id;
+  unsigned bootstrap_node_id;
+};
+
+class LocalClusterTest
+    : public RouterClusterSetBootstrapTest,
+      public ::testing::WithParamInterface<LocalClusterTestParams> {};
+
+TEST_P(LocalClusterTest, LocalCluster) {
+  const auto target_cluster_id = 0;
+
+  ClusterSetOptions cs_options;
+  cs_options.target_cluster_id = target_cluster_id;
+  cs_options.tracefile = "bootstrap_clusterset.js";
+  cs_options.expected_local_cluster = GetParam().expected_local_cluster;
+  create_clusterset(cs_options);
+
+  const unsigned bootstrap_cluster_id = GetParam().bootstrap_cluster_id;
+  const unsigned bootstrap_node_id = GetParam().bootstrap_node_id;
+
+  std::vector<std::string> bootstrap_params = {
+      "--bootstrap=127.0.0.1:" +
+          std::to_string(cs_options.topology.clusters[bootstrap_cluster_id]
+                             .nodes[bootstrap_node_id]
+                             .classic_port),
+      "-d", bootstrap_directory.name()};
+
+  auto &router = launch_router_for_bootstrap(bootstrap_params, EXIT_SUCCESS);
+
+  check_exit_code(router, EXIT_SUCCESS);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    LocalCluster, LocalClusterTest,
+    ::testing::Values(LocalClusterTestParams{"cluster-name-1", /*cluster_id*/ 0,
+                                             /*node_id*/ 0},
+                      LocalClusterTestParams{"cluster-name-1", /*cluster_id*/ 0,
+                                             /*node_id*/ 1},
+                      LocalClusterTestParams{"cluster-name-2", /*cluster_id*/ 1,
+                                             /*node_id*/ 0},
+                      LocalClusterTestParams{"cluster-name-2", /*cluster_id*/ 1,
+                                             /*node_id*/ 2},
+                      LocalClusterTestParams{"cluster-name-3", /*cluster_id*/ 2,
+                                             /*node_id*/ 0}));
 
 int main(int argc, char *argv[]) {
   init_windows_sockets();

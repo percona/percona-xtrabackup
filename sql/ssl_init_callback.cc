@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -221,12 +221,12 @@ static Sys_var_bool Sys_var_opt_ssl_session_cache_mode(
     PERSIST_AS_READONLY GLOBAL_VAR(opt_ssl_session_cache_mode),
     CMD_LINE(OPT_ARG), DEFAULT(true), PFS_TRAILING_PROPERTIES);
 
-/* 84600 is 1 day in seconds */
+/* 86400 is 1 day in seconds */
 static Sys_var_long Sys_var_opt_ssl_session_cache_timeout(
     "ssl_session_cache_timeout",
     "The timeout to expire sessions in the TLS session cache",
     PERSIST_AS_READONLY GLOBAL_VAR(opt_ssl_session_cache_timeout),
-    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 84600), DEFAULT(300), BLOCK_SIZE(1),
+    CMD_LINE(REQUIRED_ARG), VALID_RANGE(0, 86400), DEFAULT(300), BLOCK_SIZE(1),
     PFS_TRAILING_PROPERTIES);
 
 /* Related to admin connection port */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,11 +45,11 @@ int Sql_service_context::field_metadata(struct st_send_field *field,
   DBUG_PRINT("info", ("field->type: %d", (int)field->type));
 
   if (resultset) {
-    Field_type ftype = {field->db_name,        field->table_name,
-                        field->org_table_name, field->col_name,
-                        field->org_col_name,   field->length,
-                        field->charsetnr,      field->flags,
-                        field->decimals,       field->type};
+    Field_type const ftype = {field->db_name,        field->table_name,
+                              field->org_table_name, field->col_name,
+                              field->org_col_name,   field->length,
+                              field->charsetnr,      field->flags,
+                              field->decimals,       field->type};
     resultset->set_metadata(ftype);
   }
   return 0;

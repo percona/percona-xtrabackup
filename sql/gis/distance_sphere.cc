@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -28,8 +28,8 @@
 #include "sql/gis/distance_sphere.h"
 #include "sql/gis/distance_sphere_functor.h"
 
-#include <assert.h>
 #include <boost/geometry.hpp>
+#include <cassert>
 #include <cmath>      // std::isinf, M_PI
 #include <stdexcept>  // std::overflow_error
 
@@ -51,13 +51,13 @@ namespace gis {
 /// Used when a SQL function needs to accept Cartesian coordinates as a
 /// shorthand for geographic with some default SRS.
 static Geographic_point reinterpret_as_degrees(const Cartesian_point &g) {
-  double lon_deg = g.x();
-  double lat_deg = g.y();
+  double const lon_deg = g.x();
+  double const lat_deg = g.y();
 
-  if (!(-180.0 < lon_deg && lon_deg <= 180.0))
+  if (-180.0 >= lon_deg || lon_deg > 180.0)
     throw longitude_out_of_range_exception(lon_deg, -180.0, 180.0);
 
-  if (!(-90.0 <= lat_deg && lat_deg <= 90.0))
+  if (-90.0 > lat_deg || lat_deg > 90.0)
     throw latitude_out_of_range_exception(lat_deg, -90.0, 90.0);
 
   return {lon_deg * M_PI / 180.0, lat_deg * M_PI / 180.0};
@@ -87,8 +87,8 @@ double Distance_sphere::eval(const Cartesian_point *g1,
   // The parser interprets SRID 0 coordinates as Cartesian. This is incorrect
   // for distance_sphere that takes spherical coordinates in degrees.
   // Convert to internal representation for geographic coordinates.
-  Geographic_point rg1 = reinterpret_as_degrees(*g1);
-  Geographic_point rg2 = reinterpret_as_degrees(*g2);
+  Geographic_point const rg1 = reinterpret_as_degrees(*g1);
+  Geographic_point const rg2 = reinterpret_as_degrees(*g2);
   return eval(&rg1, &rg2);
 }
 
@@ -100,15 +100,15 @@ double Distance_sphere::eval(const Cartesian_point *g1,
 
 double Distance_sphere::eval(const Cartesian_multipoint *g1,
                              const Cartesian_point *g2) const {
-  Geographic_multipoint rg1 = reinterpret_as_degrees(*g1);
-  Geographic_point rg2 = reinterpret_as_degrees(*g2);
+  Geographic_multipoint const rg1 = reinterpret_as_degrees(*g1);
+  Geographic_point const rg2 = reinterpret_as_degrees(*g2);
   return eval(&rg1, &rg2);
 }
 
 double Distance_sphere::eval(const Cartesian_multipoint *g1,
                              const Cartesian_multipoint *g2) const {
-  Geographic_multipoint rg1 = reinterpret_as_degrees(*g1);
-  Geographic_multipoint rg2 = reinterpret_as_degrees(*g2);
+  Geographic_multipoint const rg1 = reinterpret_as_degrees(*g1);
+  Geographic_multipoint const rg2 = reinterpret_as_degrees(*g2);
   return eval(&rg1, &rg2);
 }
 
@@ -133,7 +133,7 @@ double Distance_sphere::eval(const Geographic_multipoint *g1,
   // minimum by iterating over multipoint-point distances.
   double minimum = eval(g1, &(*g2)[0]);
   for (size_t i = 1; i < g2->size(); i++) {
-    double d = eval(g1, &(*g2)[i]);
+    double const d = eval(g1, &(*g2)[i]);
     if (d < minimum) minimum = d;
   }
   return minimum;

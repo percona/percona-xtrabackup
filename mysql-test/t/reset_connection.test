@@ -1,6 +1,9 @@
 --source include/have_debug.inc
 --source include/have_profiling.inc
 
+# Save the initial number of concurrent sessions
+--source include/count_sessions.inc
+
 --echo #
 --echo # WL#6797 Method for clearing session state
 --echo #
@@ -221,3 +224,33 @@ SHOW PROFILES;
 
 --echo
 --echo End of tests
+
+--echo #
+--echo # Bug#30381098: COM_RESET_CONNECTION DOES NOT RESPECT CLIENT_INTERACTIVE
+--echo #
+
+SET @saved_wait_timeout = @@global.wait_timeout;
+SET @saved_interactive_timeout = @@global.interactive_timeout;
+
+SET GLOBAL interactive_timeout = @@global.wait_timeout + 1000;
+connect(con_b30381098,localhost,root,,,,,INTERACTIVE);
+
+--echo # Test: should return 1000 (interactive timeout)
+SELECT @@session.wait_timeout - @@global.wait_timeout;
+
+--echo # Reset connection
+--reset_connection
+
+--echo # Test: should still return 1000 (interactive timeout)
+SELECT @@session.wait_timeout - @@global.wait_timeout;
+
+# Cleanup
+connection default;
+disconnect con_b30381098;
+
+SET GLOBAL wait_timeout = @saved_wait_timeout;
+SET GLOBAL interactive_timeout = @saved_interactive_timeout;
+# Wait till we reached the initial number of concurrent sessions
+--source include/wait_until_count_sessions.inc
+
+--echo # End of 9.6 tests

@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,14 +22,12 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
-#include "mysql/containers/buffers/rw_buffer_sequence.h"
-
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "mysql/containers/buffers/rw_buffer_sequence.h"
+#include "mysql/utils/concat.h"  // concat
 
-#include "mysql/utils/concat.h"
-
-using mysql::utils::concat;
+using mysql::utils::throwing::concat;
 
 namespace mysql::containers::buffers {
 namespace rw_buffer_sequence::unittest {

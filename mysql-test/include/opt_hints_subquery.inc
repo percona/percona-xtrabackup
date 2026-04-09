@@ -838,9 +838,11 @@ EXECUTE stmt1;
 SET optimizer_switch = 'duplicateweedout=off';
 --echo Will now use materialization
 --echo No effect for Hypergraph
+--replace_regex $elide_costs_and_rows
 EXECUTE stmt1;
 SET optimizer_switch = 'duplicateweedout=on';
 --echo Turn DuplicateWeedout back on
+--replace_regex $elide_costs_and_rows
 EXECUTE stmt1;
 DEALLOCATE PREPARE stmt1;
 

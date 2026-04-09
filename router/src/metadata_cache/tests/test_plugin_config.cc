@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -38,8 +38,6 @@ using ::testing::ContainerEq;
 using ::testing::Eq;
 using ::testing::StrEq;
 
-using mysql_harness::TCPAddress;
-
 // the Good
 
 struct GoodTestData {
@@ -57,13 +55,6 @@ struct GoodTestData {
 class MetadataCachePluginConfigGoodTest
     : public ::testing::Test,
       public ::testing::WithParamInterface<GoodTestData> {};
-
-namespace mysql_harness {
-// operator needs to be defined in the namespace of the printed type
-std::ostream &operator<<(std::ostream &os, const TCPAddress &addr) {
-  return os << addr.str();
-}
-}  // namespace mysql_harness
 
 std::ostream &operator<<(std::ostream &os, const GoodTestData &test_data) {
   return os << "user=" << test_data.expected.user << ", "
@@ -203,57 +194,68 @@ TEST_P(MetadataCachePluginConfigBadTest, BadConfigs) {
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(SomethingUseful, MetadataCachePluginConfigBadTest,
-                         ::testing::ValuesIn(std::vector<BadTestData>({
-                             // user option is required
-                             {{
-                                  std::map<std::string, std::string>(),
-                              },
+INSTANTIATE_TEST_SUITE_P(
+    SomethingUseful, MetadataCachePluginConfigBadTest,
+    ::testing::ValuesIn(std::vector<BadTestData>({
+        // user option is required
+        {{
+             std::map<std::string, std::string>(),
+         },
 
-                              {
-                                  typeid(mysql_harness::option_not_present),
-                                  "option user in [metadata_cache] is required",
-                              }},
-                             // ttl is garbage
-                             {{
-                                  std::map<std::string, std::string>({
-                                      {"user", "foo"},  // required
-                                      {"ttl", "garbage"},
-                                  }),
-                              },
-                              {
-                                  typeid(std::invalid_argument),
-                                  "option ttl in [metadata_cache] needs value "
-                                  "between 0 and 3600 inclusive, was 'garbage'",
-                              }},
-                             // ttl is too big
-                             {{
-                                  std::map<std::string, std::string>({
-                                      {"user", "foo"},  // required
-                                      {"ttl", "3600.1"},
-                                  }),
-                              },
+         {
+             typeid(mysql_harness::option_not_present),
+             "option user in [metadata_cache] is required",
+         }},
+        // ttl is garbage
+        {{
+             std::map<std::string, std::string>({
+                 {"user", "foo"},  // required
+                 {"ttl", "garbage"},
+             }),
+         },
+         {
+             typeid(std::invalid_argument),
+             "option ttl in [metadata_cache] needs value "
+             "between 0 and 3600 inclusive, was 'garbage'",
+         }},
+        // ttl is too big
+        {{
+             std::map<std::string, std::string>({
+                 {"user", "foo"},  // required
+                 {"ttl", "3600.1"},
+             }),
+         },
 
-                              {
-                                  typeid(std::invalid_argument),
-                                  "option ttl in [metadata_cache] needs value "
-                                  "between 0 and 3600 inclusive, was '3600.1'",
-                              }},
-                             // ttl is negative
-                             {{
-                                  std::map<std::string, std::string>({
-                                      {"user", "foo"},  // required
-                                      {"ttl", "-0.1"},
-                                  }),
-                              },
-                              {
-                                  typeid(std::invalid_argument),
-                                  "option ttl in [metadata_cache] needs value "
-                                  "between 0 and 3600 inclusive, was '-0.1'",
-                              }},
-                         })));
-
-using mysql_harness::BasePluginConfig;
+         {
+             typeid(std::invalid_argument),
+             "option ttl in [metadata_cache] needs value "
+             "between 0 and 3600 inclusive, was '3600.1'",
+         }},
+        // ttl is negative
+        {{
+             std::map<std::string, std::string>({
+                 {"user", "foo"},  // required
+                 {"ttl", "-0.1"},
+             }),
+         },
+         {
+             typeid(std::invalid_argument),
+             "option ttl in [metadata_cache] needs value "
+             "between 0 and 3600 inclusive, was '-0.1'",
+         }},
+        // close_connection_after_refresh
+        {{
+             std::map<std::string, std::string>({
+                 {"user", "foo"},  // required
+                 {"close_connection_after_refresh", "-0.1"},
+             }),
+         },
+         {
+             typeid(std::invalid_argument),
+             "option close_connection_after_refresh in [metadata_cache] needs "
+             "a value of either 0, 1, false or true, was '-0.1'",
+         }},
+    })));
 
 // Valid millisecond configuration values
 using GetOptionMillisecondsOkTestData =

@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 
 Bug#26141 mixing table types in trigger causes full
 table lock on innodb table
@@ -57,3 +58,4 @@ select * from t3;
 c
 1
 drop table t1, t2, t3;
+include/rpl/set_gtid_mode_on.inc

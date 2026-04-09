@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -257,7 +257,7 @@ void Protocol_encoder::log_protobuf(const unsigned id [[maybe_unused]],
   }
 #else
   log_debug("%u: %s, Type: %s", id, direction_name,
-            message->GetTypeName().c_str());
+            std::string(message->GetTypeName()).c_str());
 #endif
 }
 

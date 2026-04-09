@@ -1,0 +1,245 @@
+# Verify that authentication endpoints are created and avaiable
+# despite the number of authentication application assgined to
+# service.
+#
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+CREATE USER user1@'%' IDENTIFIED BY 'secret1';
+CREATE USER user2@'%' IDENTIFIED BY 'secret2';
+CREATE USER user3@'%' IDENTIFIED BY 'secret3';
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Create service that has 3 users
+--echo # 1. verify all users default username and emails
+--echo # 2. modify email of user 1, verify all users from different sessions
+--echo # 3. modify email of user 2, verify all users from different sessions
+--echo # 4. set name for user3, observer failure
+--echo # 5. set invalid email for user3, observer failure
+--echo # 6. set null email for user3, observer failure
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/a"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_auth_app=b_one
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/a
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/sch
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_user_name="user1"
+--let $mrs_add_user_ext_uid="user1@%"
+--let $mrs_add_user_email="user1@hub"
+--let $mrs_add_user_auth_string=" "
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_name="user2"
+--let $mrs_add_user_ext_uid="user2@%"
+--let $mrs_add_user_email="user2@hub"
+--let $mrs_add_user_auth_string=" "
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_name="user3"
+--let $mrs_add_user_ext_uid="user3@%"
+--let $mrs_add_user_email="user3@hub"
+--let $mrs_add_user_auth_string=" "
+--source ../include/mrs/user/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/a/authentication/login'
+--let $mrs_client_arg_authentication=basic
+--let $mrs_client_arg_user=user1
+--let $mrs_client_arg_password=secret1
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user1_session.dat'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/a/authentication/login'
+--let $mrs_client_arg_authentication=basic
+--let $mrs_client_arg_user=user2
+--let $mrs_client_arg_password=secret2
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user2_session.dat'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/a/authentication/login'
+--let $mrs_client_arg_authentication=basic
+--let $mrs_client_arg_user=user3
+--let $mrs_client_arg_password=secret3
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user3_session.dat'
+--source ../include/mrs/mrs_client.inc
+
+--let $test_user_idx=1
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=2
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=3
+--source ../include/test/test_verify_user_email.inc
+
+--echo
+--echo #
+--echo # I.2
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user1_session.dat'
+--let $mrs_client_arg_payload='{"email":"x@x1"}'
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the same session
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_json_pointer=/name,/email
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user1_session.dat'
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the different session
+--let $test_user_idx=1
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=2
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=3
+--source ../include/test/test_verify_user_email.inc
+
+--echo
+--echo #
+--echo # I.3
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user2_session.dat'
+--let $mrs_client_arg_payload='{"email":"x@x2"}'
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the same session
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_json_pointer=/name,/email
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user2_session.dat'
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the different session
+--let $test_user_idx=1
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=2
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=3
+--source ../include/test/test_verify_user_email.inc
+
+--echo
+--echo #
+--echo # I.4
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user3_session.dat'
+--let $mrs_client_arg_payload='{"name":"New Name"}'
+--let $mrs_client_arg_expected_status=BadRequest
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the same session
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_json_pointer=/name,/email
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user2_session.dat'
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the different session
+--let $test_user_idx=1
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=2
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=3
+--source ../include/test/test_verify_user_email.inc
+
+--echo
+--echo #
+--echo # I.5
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user3_session.dat'
+--let $mrs_client_arg_payload='{"email":"invalid-email"}'
+--let $mrs_client_arg_expected_status=BadRequest
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the same session
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_json_pointer=/name,/email
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user2_session.dat'
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the different session
+--let $test_user_idx=1
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=2
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=3
+--source ../include/test/test_verify_user_email.inc
+
+--echo
+--echo #
+--echo # I.6
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user3_session.dat'
+--let $mrs_client_arg_payload='{"email":null}'
+--let $mrs_client_arg_expected_status=BadRequest
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the same session
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/a/authentication/user'
+--let $mrs_client_arg_json_pointer=/name,/email
+--let $mrs_client_arg_session_file='$MYSQL_TMP_DIR/user2_session.dat'
+--source ../include/mrs/mrs_client.inc
+
+--echo # Use the different session
+--let $test_user_idx=1
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=2
+--source ../include/test/test_verify_user_email.inc
+
+--let $test_user_idx=3
+--source ../include/test/test_verify_user_email.inc
+
+
+# Cleanup
+DROP USER user1@'%';
+DROP USER user2@'%';
+DROP USER user3@'%';
+--remove_file $MYSQL_TMP_DIR/user1_session.dat
+--remove_file $MYSQL_TMP_DIR/user2_session.dat
+--remove_file $MYSQL_TMP_DIR/user3_session.dat
+--source ../include/mrs/cleanup.inc

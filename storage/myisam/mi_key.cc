@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -65,7 +65,7 @@ uint _mi_make_key(MI_INFO *info, uint keynr, uchar *key, const uchar *record,
   const uchar *pos;
   uchar *start;
   HA_KEYSEG *keyseg;
-  bool is_ft = info->s->keyinfo[keynr].flag & HA_FULLTEXT;
+  bool const is_ft = info->s->keyinfo[keynr].flag & HA_FULLTEXT;
   DBUG_TRACE;
 
   if (info->s->keyinfo[keynr].flag & HA_SPATIAL) {
@@ -77,7 +77,7 @@ uint _mi_make_key(MI_INFO *info, uint keynr, uchar *key, const uchar *record,
 
   start = key;
   for (keyseg = info->s->keyinfo[keynr].seg; keyseg->type; keyseg++) {
-    enum ha_base_keytype type = (enum ha_base_keytype)keyseg->type;
+    auto type = (enum ha_base_keytype)keyseg->type;
     uint length = keyseg->length;
     uint char_length;
     const CHARSET_INFO *cs = keyseg->charset;
@@ -96,8 +96,8 @@ uint _mi_make_key(MI_INFO *info, uint keynr, uchar *key, const uchar *record,
     pos = record + keyseg->start;
     if (type == HA_KEYTYPE_BIT) {
       if (keyseg->bit_length) {
-        uchar bits = get_rec_bits(record + keyseg->bit_pos, keyseg->bit_start,
-                                  keyseg->bit_length);
+        uchar const bits = get_rec_bits(record + keyseg->bit_pos,
+                                        keyseg->bit_start, keyseg->bit_length);
         *key++ = bits;
         length--;
       }
@@ -121,8 +121,8 @@ uint _mi_make_key(MI_INFO *info, uint keynr, uchar *key, const uchar *record,
       continue;
     }
     if (keyseg->flag & HA_VAR_LENGTH_PART) {
-      uint pack_length = (keyseg->bit_start == 1 ? 1 : 2);
-      uint tmp_length = (pack_length == 1 ? (uint)*pos : uint2korr(pos));
+      uint const pack_length = (keyseg->bit_start == 1 ? 1 : 2);
+      uint const tmp_length = (pack_length == 1 ? (uint)*pos : uint2korr(pos));
       pos += pack_length; /* Skip VARCHAR length */
       length = std::min(length, tmp_length);
       FIX_LENGTH(cs, pos, length, char_length);
@@ -130,8 +130,9 @@ uint _mi_make_key(MI_INFO *info, uint keynr, uchar *key, const uchar *record,
       memcpy((uchar *)key, pos, (size_t)char_length);
       key += char_length;
       continue;
-    } else if (keyseg->flag & HA_BLOB_PART) {
-      uint tmp_length = _mi_calc_blob_length(keyseg->bit_start, pos);
+    }
+    if (keyseg->flag & HA_BLOB_PART) {
+      uint const tmp_length = _mi_calc_blob_length(keyseg->bit_start, pos);
       memcpy(&pos, pos + keyseg->bit_start, sizeof(char *));
       length = std::min(length, tmp_length);
       FIX_LENGTH(cs, pos, length, char_length);
@@ -139,9 +140,10 @@ uint _mi_make_key(MI_INFO *info, uint keynr, uchar *key, const uchar *record,
       if (char_length > 0) memcpy((uchar *)key, pos, (size_t)char_length);
       key += char_length;
       continue;
-    } else if (keyseg->flag & HA_SWAP_KEY) { /* Numerical column */
+    }
+    if (keyseg->flag & HA_SWAP_KEY) { /* Numerical column */
       if (type == HA_KEYTYPE_FLOAT) {
-        float nr = float4get(pos);
+        float const nr = float4get(pos);
         if (std::isnan(nr)) {
           /* Replace NAN with zero */
           memset(key, 0, length);
@@ -149,7 +151,7 @@ uint _mi_make_key(MI_INFO *info, uint keynr, uchar *key, const uchar *record,
           continue;
         }
       } else if (type == HA_KEYTYPE_DOUBLE) {
-        double nr = float8get(pos);
+        double const nr = float8get(pos);
         if (std::isnan(nr)) {
           memset(key, 0, length);
           key += length;
@@ -198,7 +200,7 @@ uint _mi_pack_key(MI_INFO *info, uint keynr, uchar *key, const uchar *old,
                   key_part_map keypart_map, HA_KEYSEG **last_used_keyseg) {
   uchar *start_key = key;
   HA_KEYSEG *keyseg;
-  bool is_ft = info->s->keyinfo[keynr].flag & HA_FULLTEXT;
+  bool const is_ft = info->s->keyinfo[keynr].flag & HA_FULLTEXT;
   DBUG_TRACE;
 
   /* "one part" rtree key is 2*SPDIMS part key in MyISAM */
@@ -210,7 +212,7 @@ uint _mi_pack_key(MI_INFO *info, uint keynr, uchar *key, const uchar *old,
 
   for (keyseg = info->s->keyinfo[keynr].seg; keyseg->type && keypart_map;
        old += keyseg->length, keyseg++) {
-    enum ha_base_keytype type = (enum ha_base_keytype)keyseg->type;
+    auto type = (enum ha_base_keytype)keyseg->type;
     uint length = keyseg->length;
     uint char_length;
     const uchar *pos;
@@ -241,9 +243,10 @@ uint _mi_pack_key(MI_INFO *info, uint keynr, uchar *key, const uchar *old,
       memcpy((uchar *)key, pos, (size_t)char_length);
       key += char_length;
       continue;
-    } else if (keyseg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART)) {
+    }
+    if (keyseg->flag & (HA_VAR_LENGTH_PART | HA_BLOB_PART)) {
       /* Length of key-part used with mi_rkey() always 2 */
-      uint tmp_length = uint2korr(pos);
+      uint const tmp_length = uint2korr(pos);
       pos += 2;
       length = std::min(length, tmp_length); /* Safety */
       FIX_LENGTH(cs, pos, length, char_length);
@@ -252,7 +255,8 @@ uint _mi_pack_key(MI_INFO *info, uint keynr, uchar *key, const uchar *old,
       memcpy((uchar *)key, pos, (size_t)char_length);
       key += char_length;
       continue;
-    } else if (keyseg->flag & HA_SWAP_KEY) { /* Numerical column */
+    }
+    if (keyseg->flag & HA_SWAP_KEY) { /* Numerical column */
       pos += length;
       while (length--) *key++ = *--pos;
       continue;
@@ -312,7 +316,7 @@ static int _mi_put_key_in_record(MI_INFO *info, uint keynr, bool unpack_blobs,
       uint length = keyseg->length;
 
       if (keyseg->bit_length) {
-        uchar bits = *key++;
+        uchar const bits = *key++;
         set_rec_bits(bits, record + keyseg->bit_pos, keyseg->bit_start,
                      keyseg->bit_length);
         length--;
@@ -325,7 +329,7 @@ static int _mi_put_key_in_record(MI_INFO *info, uint keynr, bool unpack_blobs,
       continue;
     }
     if (keyseg->flag & HA_SPACE_PACK) {
-      uint length = get_key_length(&key);
+      uint const length = get_key_length(&key);
       if (length > keyseg->length || key + length > key_end) goto err;
       pos = record + keyseg->start;
       if (keyseg->type != (int)HA_KEYTYPE_NUM) {
@@ -341,7 +345,7 @@ static int _mi_put_key_in_record(MI_INFO *info, uint keynr, bool unpack_blobs,
     }
 
     if (keyseg->flag & HA_VAR_LENGTH_PART) {
-      uint length = get_key_length(&key);
+      uint const length = get_key_length(&key);
       if (length > keyseg->length || key + length > key_end) goto err;
       /* Store key length */
       if (keyseg->bit_start == 1)
@@ -352,7 +356,7 @@ static int _mi_put_key_in_record(MI_INFO *info, uint keynr, bool unpack_blobs,
       memcpy(record + keyseg->start + keyseg->bit_start, key, length);
       key += length;
     } else if (keyseg->flag & HA_BLOB_PART) {
-      uint length = get_key_length(&key);
+      uint const length = get_key_length(&key);
       if (length > keyseg->length || key + length > key_end) goto err;
       if (unpack_blobs) {
         memcpy(record + keyseg->start + keyseg->bit_start, &blob_ptr,
@@ -474,14 +478,14 @@ ulonglong retrieve_auto_increment(MI_INFO *info, const uchar *record) {
       break;
     case HA_KEYTYPE_FLOAT: /* This shouldn't be used */
     {
-      float f_1 = float4get(key);
+      float const f_1 = float4get(key);
       /* Ignore negative values */
       value = (f_1 < (float)0.0) ? 0 : (ulonglong)f_1;
       break;
     }
     case HA_KEYTYPE_DOUBLE: /* This shouldn't be used */
     {
-      double f_1 = float8get(key);
+      double const f_1 = float8get(key);
       /* Ignore negative values */
       value = (f_1 < 0.0) ? 0 : (ulonglong)f_1;
       break;

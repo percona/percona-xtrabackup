@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -56,6 +56,8 @@ ADD_HARNESS_TEST_FILE(test_certificate_handler.cc
 
 ADD_HARNESS_TEST_FILE(test_uri.cc
   MODULE ${TEST_MODULE}
+  EXTRA_SOURCES
+    ${CMAKE_SOURCE_DIR}/unittest/gunit/benchmark.cc
   LIB_DEPENDS
     test-helpers
     router_utils
@@ -65,6 +67,7 @@ ADD_HARNESS_TEST_FILE(test_utils.cc
   MODULE ${TEST_MODULE}
   LIB_DEPENDS
     test-helpers
+    router_mysql
     router_utils
   SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS})
 
@@ -169,7 +172,6 @@ ADD_HARNESS_TEST_FILE(test_keyring_frontend.cc
 DOWNGRADE_STRINGOP_WARNINGS(routertest_router_keyring_frontend)
 
 FOREACH(test_file
-    issues/test_bug22084430.cc
     issues/test_bug24909259.cc
     )
   ADD_HARNESS_TEST_FILE(${CMAKE_CURRENT_SOURCE_DIR}/${test_file}
@@ -187,6 +189,13 @@ ENDFOREACH()
 DOWNGRADE_STRINGOP_WARNINGS(routertest_issues_bug24909259)
 
 ADD_HARNESS_TEST_FILE(test_default_paths.cc
+  MODULE ${TEST_MODULE}
+  SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS}
+  LIB_DEPENDS
+    router_utils
+  )
+
+ADD_HARNESS_TEST_FILE(test_guidelines_version.cc
   MODULE ${TEST_MODULE}
   SYSTEM_INCLUDE_DIRS ${GMOCK_INCLUDE_DIRS}
   LIB_DEPENDS

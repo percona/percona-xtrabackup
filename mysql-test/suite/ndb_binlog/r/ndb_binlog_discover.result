@@ -28,8 +28,8 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000002	#	Query	#	#	BEGIN
 binlog.000002	#	Table_map	#	#	table_id: # (test.t1)
 binlog.000002	#	Table_map	#	#	table_id: # (mysql.ndb_apply_status)
-binlog.000002	#	Write_rows	#	#	table_id: #
-binlog.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000002	#	Write_rows	#	#	table_id: # flags: USE_SQL_FOREIGN_KEY_F
+binlog.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000002	#	Query	#	#	COMMIT
 # Cleanup
 drop table t1;

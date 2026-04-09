@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 #include "plugin/connection_control/connection_control.h"
 
 #include <mysql/plugin_audit.h> /* mysql_event_connection */
-#include <stddef.h>
+#include <cstddef>
 
 #include <mysql/components/services/log_builtins.h>
 #include "my_compiler.h"
@@ -97,17 +97,17 @@ static PSI_stage_info *all_connection_delay_stage_info[] = {
 static void init_performance_schema() {
   const char *category = "conn_delay";
 
-  int count_mutex = array_elements(all_connection_delay_mutex_info);
+  int const count_mutex = array_elements(all_connection_delay_mutex_info);
   mysql_mutex_register(category, all_connection_delay_mutex_info, count_mutex);
 
-  int count_rwlock = array_elements(all_connection_delay_rwlock_info);
+  int const count_rwlock = array_elements(all_connection_delay_rwlock_info);
   mysql_rwlock_register(category, all_connection_delay_rwlock_info,
                         count_rwlock);
 
-  int count_cond = array_elements(all_connection_delay_cond_info);
+  int const count_cond = array_elements(all_connection_delay_cond_info);
   mysql_cond_register(category, all_connection_delay_cond_info, count_cond);
 
-  int count_stage = array_elements(all_connection_delay_stage_info);
+  int const count_stage = array_elements(all_connection_delay_stage_info);
   mysql_stage_register(category, all_connection_delay_stage_info, count_stage);
 }
 
@@ -129,7 +129,7 @@ static int connection_control_notify(MYSQL_THD thd,
   DBUG_TRACE;
   try {
     if (event_class == MYSQL_AUDIT_CONNECTION_CLASS) {
-      const struct mysql_event_connection *connection_event =
+      const auto *connection_event =
           (const struct mysql_event_connection *)event;
       Connection_control_error_handler error_handler;
       /** Notify event coordinator */
@@ -165,6 +165,9 @@ static int connection_control_init(MYSQL_PLUGIN plugin_info) {
   reg_srv->acquire("registry_registration", &h_reg_svc);
   reg_reg = reinterpret_cast<SERVICE_TYPE(registry_registration) *>(h_reg_svc);
   if (connection_control_plugin_option_usage_init()) return 1;
+
+  LogPluginErr(WARNING_LEVEL, ER_SERVER_WARN_DEPRECATED,
+               "connection_control plugin", "component_connection_control");
 
   connection_control_plugin_info = plugin_info;
   Connection_control_error_handler error_handler;
@@ -285,7 +288,6 @@ static void update_failed_connections_threshold(MYSQL_THD thd [[maybe_unused]],
   Connection_control_error_handler error_handler;
   g_connection_event_coordinator->notify_sys_var(
       &error_handler, OPT_FAILED_CONNECTIONS_THRESHOLD, &new_value);
-  return;
 }
 
 /** Declaration of connection_control_failed_connections_threshold */
@@ -350,7 +352,6 @@ static void update_min_connection_delay(MYSQL_THD thd [[maybe_unused]],
   Connection_control_error_handler error_handler;
   g_connection_event_coordinator->notify_sys_var(
       &error_handler, OPT_MIN_CONNECTION_DELAY, &new_value);
-  return;
 }
 
 /** Declaration of connection_control_max_connection_delay */
@@ -414,7 +415,6 @@ static void update_max_connection_delay(MYSQL_THD thd [[maybe_unused]],
   Connection_control_error_handler error_handler;
   g_connection_event_coordinator->notify_sys_var(
       &error_handler, OPT_MAX_CONNECTION_DELAY, &new_value);
-  return;
 }
 
 /** Declaration of connection_control_max_connection_delay */
@@ -425,11 +425,58 @@ static MYSQL_SYSVAR_LONGLONG(
     connection_control::DEFAULT_MAX_DELAY, connection_control::MIN_DELAY,
     connection_control::MAX_DELAY, 1);
 
+/**
+  update() function for exempt_unknown_users
+
+  Updates g_connection_event_coordinator with new value.
+  Also notifies observers about the update.
+
+  @param thd        Not used.
+  @param var        Not used.
+  @param var_ptr    Variable information
+  @param save       New value for exempt_unknown_users
+*/
+
+static void update_exempt_unknown_users(MYSQL_THD thd [[maybe_unused]],
+                                        SYS_VAR *var [[maybe_unused]],
+                                        void *var_ptr [[maybe_unused]],
+                                        const void *save) {
+  bool new_value = *(reinterpret_cast<const bool *>(save));
+  g_variables.exempt_unknown_users = new_value;
+  Connection_control_error_handler error_handler;
+  g_connection_event_coordinator->notify_sys_var(
+      &error_handler, OPT_EXEMPT_UNKNOWN_USERS, &new_value);
+}
+
+/** Declaration of connection_control_max_connection_delay */
+static MYSQL_SYSVAR_BOOL(
+    exempt_unknown_users, g_variables.exempt_unknown_users, PLUGIN_VAR_RQCMDARG,
+    "Skip delay for unknown users (like load balancer checking service "
+    "availability). Default is OFF.",
+    nullptr, update_exempt_unknown_users, false);
+
 /** Array of system variables. Used in plugin declaration. */
 SYS_VAR *connection_control_system_variables[OPT_LAST + 1] = {
     MYSQL_SYSVAR(failed_connections_threshold),
     MYSQL_SYSVAR(min_connection_delay), MYSQL_SYSVAR(max_connection_delay),
-    nullptr};
+    MYSQL_SYSVAR(exempt_unknown_users), nullptr};
+
+/**
+  Helper function to display value for status variable defined by its index
+  within the array of all status variables.
+  @param var_index  Status variable index.
+  @param var  Status variable structure
+  @param buff Value buffer.
+  @returns Always returns success.
+*/
+static int show_status_variable(int var_index, SHOW_VAR *var, char *buff) {
+  var->type = SHOW_LONGLONG;
+  var->value = buff;
+  auto *value = reinterpret_cast<longlong *>(buff);
+  const int64 current_val = g_statistics.stats_array[var_index].load();
+  *value = static_cast<longlong>(current_val);
+  return 0;
+}
 
 /**
   Function to display value for status variable :
@@ -444,19 +491,32 @@ SYS_VAR *connection_control_system_variables[OPT_LAST + 1] = {
 
 static int show_delay_generated(MYSQL_THD thd [[maybe_unused]], SHOW_VAR *var,
                                 char *buff) {
-  var->type = SHOW_LONGLONG;
-  var->value = buff;
-  longlong *value = reinterpret_cast<longlong *>(buff);
-  const int64 current_val =
-      g_statistics.stats_array[STAT_CONNECTION_DELAY_TRIGGERED].load();
-  *value = static_cast<longlong>(current_val);
-  return 0;
+  return show_status_variable(STAT_CONNECTION_DELAY_TRIGGERED, var, buff);
+}
+
+/**
+  Function to display value for status variable :
+  Component_connection_control_exempted_unknown_users
+  @param thd  MYSQL_THD handle. Unused.
+  @param var  Status variable structure
+  @param buff Value buffer.
+  @returns Always returns success.
+*/
+static int show_exempted_users(MYSQL_THD thd [[maybe_unused]], SHOW_VAR *var,
+                               char *buff) {
+  return show_status_variable(STAT_CONNECTION_EXEMPTED_USERS, var, buff);
 }
 
 /** Array of status variables. Used in plugin declaration. */
 SHOW_VAR
 connection_control_status_variables[STAT_LAST + 1] = {
+    {"option_tracker_usage:Connection DoS control",
+     reinterpret_cast<char *>(
+         &opt_option_tracker_usage_connection_control_plugin),
+     SHOW_LONGLONG, SHOW_SCOPE_GLOBAL},
     {"Connection_control_delay_generated", (char *)&show_delay_generated,
+     SHOW_FUNC, SHOW_SCOPE_GLOBAL},
+    {"Connection_control_exempted_unknown_users", (char *)&show_exempted_users,
      SHOW_FUNC, SHOW_SCOPE_GLOBAL},
     {nullptr, nullptr, enum_mysql_show_type(0), enum_mysql_show_scope(0)}};
 

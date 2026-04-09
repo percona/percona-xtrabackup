@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,7 @@ const std::error_category &mcf_category() noexcept {
     }
   };
 
-  static socket_category_impl instance;
+  static socket_category_impl const instance;
   return instance;
 }
 

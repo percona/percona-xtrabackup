@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,23 +35,23 @@
 #ifdef MY_MSCRT_DEBUG
 #include <crtdbg.h>
 #endif
-#include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <climits>
+#include <cstdio>
+#include <cstdlib>
+#ifdef HAVE_GETRUSAGE
+#include <sys/resource.h>  // IWYU pragma: keep
+// IWYU pragma: no_include <bits/types/struct_rusage.h>
+#endif
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
 #include <sys/types.h>
-#include <unordered_map>
 
-#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_macros.h"
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "my_thread.h"
-#include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_file.h"
 #include "mysql/psi/mysql_memory.h"
@@ -60,19 +60,16 @@
 #include "mysql/psi/mysql_stage.h"
 #include "mysql/psi/mysql_thread.h"
 #include "mysql/psi/psi_cond.h"
-#include "mysql/psi/psi_file.h"
-#include "mysql/psi/psi_memory.h"
 #include "mysql/psi/psi_mutex.h"
 #include "mysql/psi/psi_rwlock.h"
-#include "mysql/psi/psi_stage.h"
 #include "mysql/psi/psi_thread.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysys/my_static.h"
 #include "mysys/mysys_priv.h"
 #include "mysys_err.h"
-#include "nulls.h"
+#include "nulls.h"  // IWYU pragma: keep
 #include "str2int.h"
-#include "strxmov.h"
+#include "strxmov.h"  // IWYU pragma: keep
 #include "template_utils.h"
 
 #ifdef HAVE_SYS_RESOURCE_H
@@ -91,6 +88,8 @@ static void my_win_init();
 
 #define SCALE_SEC 100
 #define SCALE_USEC 10000
+
+extern void my_main_thread_end();
 
 bool my_init_done = false;
 ulong my_thread_stack_size = 65536;
@@ -243,6 +242,9 @@ Voluntary context switches %ld, Involuntary context switches %ld\n",
     DBUG_END(); /* Must be done before my_thread_end */
   }
 
+#ifndef NDEBUG
+  if (infoflag & MY_END_PROXY_MAIN_THD) my_main_thread_end();
+#endif
   my_thread_end();
   my_thread_global_end();
 

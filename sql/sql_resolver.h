@@ -1,7 +1,7 @@
 #ifndef SQL_RESOLVER_INCLUDED
 #define SQL_RESOLVER_INCLUDED
 
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <functional>
+#include "sql/item.h"
 
-class Item;
 class THD;
 struct TABLE;
 class Table_ref;
@@ -58,6 +58,10 @@ bool find_order_in_list(THD *thd, Ref_item_array ref_item_array,
                         Table_ref *tables, ORDER *order,
                         mem_root_deque<Item *> *fields, bool is_group_field,
                         bool is_window_order);
+
+bool walk_join_conditions(mem_root_deque<Table_ref *> &list,
+                          std::function<bool(Item **expr_p)> action,
+                          Item::Collect_scalar_subquery_info *info);
 
 struct ReplaceResult {
   enum {
@@ -99,12 +103,14 @@ struct ReplaceResult {
   it's not safe to do this unconditionally under optimization. If adjusting the
   comparators is necessary, the caller of WalkAndReplace() will have to invoke
   set_cmp_func() manually.
+  @param[in]     thd          thread handle.
+  @param[in,out] item         Expression to look into.
+  @param         get_new_item Functor used to replace the expression.
 
   @return true on error.
  */
 bool WalkAndReplace(
     THD *thd, Item *item,
-    const std::function<ReplaceResult(Item *item, Item *parent,
-                                      unsigned argument_idx)> &get_new_item);
+    const std::function<ReplaceResult(Item *item)> &get_new_item);
 
 #endif /* SQL_RESOLVER_INCLUDED */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1158,13 +1158,13 @@ void kill_zombie_dump_threads(THD *thd) {
     */
     if (log_error_verbosity > 2) {
       if (replica_uuid.length()) {
-        LogErr(INFORMATION_LEVEL, ER_RPL_ZOMBIE_ENCOUNTERED, "UUID",
-               replica_uuid.c_ptr(), "UUID", tmp_ptr->thread_id());
+        LogErr(INFORMATION_LEVEL, ER_RPL_KILL_OLD_DUMP_THREAD_ENCOUNTERED,
+               "UUID", replica_uuid.c_ptr(), "UUID", tmp_ptr->thread_id());
       } else {
         char numbuf[32];
         snprintf(numbuf, sizeof(numbuf), "%u", thd->server_id);
-        LogErr(INFORMATION_LEVEL, ER_RPL_ZOMBIE_ENCOUNTERED, "server_id",
-               numbuf, "server_id", tmp_ptr->thread_id());
+        LogErr(INFORMATION_LEVEL, ER_RPL_KILL_OLD_DUMP_THREAD_ENCOUNTERED,
+               "server_id", numbuf, "server_id", tmp_ptr->thread_id());
       }
     }
     tmp_ptr->duplicate_slave_id = true;

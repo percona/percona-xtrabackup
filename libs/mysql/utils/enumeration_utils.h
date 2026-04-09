@@ -1,4 +1,4 @@
-// Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -36,15 +36,19 @@
 
 namespace mysql::utils {
 
+/// true if Enum_t is an enumeration type (scoped or not).
+///
+/// This is equivalent to is_enum_v, but as a concept, is syntactically valid in
+/// more contexts.
+template <class Enum_t>
+concept Is_enum = std::is_enum_v<Enum_t>;
+
 /// @brief Helper function that converts enum type to underlying integer type
 /// @note This function may be removed after switching to C++23
 /// @tparam Enum_type Type of the enumeration parameter that gets converted into
 /// the underlying type value
-template <typename Enum_type>
-constexpr inline decltype(auto) to_underlying(Enum_type enum_value) {
-  static_assert(
-      std::is_enum<Enum_type>::value,
-      "to_underlying conversion function called with non-enumeration argument");
+template <Is_enum Enum_type>
+constexpr decltype(auto) to_underlying(Enum_type enum_value) {
   using EnumValueType = std::underlying_type_t<Enum_type>;
   return static_cast<EnumValueType>(enum_value);
 }
@@ -54,22 +58,16 @@ constexpr inline decltype(auto) to_underlying(Enum_type enum_value) {
 /// enumeration type serialized
 /// @tparam Enum_type Type of the enumeration that will be returned
 /// @return Last valid enumeration constant within Enum_type
-template <typename Enum_type>
-constexpr inline Enum_type enum_max();
+template <Is_enum Enum_type>
+constexpr Enum_type enum_max();
 
 /// @brief Helper function that converts value of enumeration underlying type
 ///        into enumeration type constant
 /// @tparam Enum_type Type of the enumeration that Integral_type parameter is
 /// converted into
-/// @tparam Integral_type Type of the enumeration parameter that gets converted
-/// into the Enum_type
-template <typename Enum_type, typename Integral_type>
-constexpr inline std::pair<Enum_type, Return_status> to_enumeration(
-    Integral_type value) {
-  static_assert(std::is_enum_v<Enum_type>,
-                "to_enumeration conversion requested for non-enumeration type");
-  static_assert(std::is_integral_v<Integral_type>,
-                "to_enumeration conversion requested from non-integral type");
+template <Is_enum Enum_type>
+constexpr std::pair<Enum_type, Return_status> to_enumeration(
+    std::integral auto value) {
   if (value > to_underlying(enum_max<Enum_type>())) {
     return std::make_pair(enum_max<Enum_type>(), Return_status::error);
   }

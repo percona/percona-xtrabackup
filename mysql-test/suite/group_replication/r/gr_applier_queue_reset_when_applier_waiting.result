@@ -12,6 +12,8 @@ SET SESSION sql_log_bin= 0;
 CREATE USER "recovery_user" IDENTIFIED BY "recovery_password";
 GRANT GROUP_REPLICATION_STREAM ON *.* TO "recovery_user";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
 SET SESSION sql_log_bin= 1;
 INSERT INTO t1 VALUES (0);
@@ -22,6 +24,8 @@ CREATE USER "recovery_user" IDENTIFIED BY "recovery_password";
 GRANT REPLICATION SLAVE ON *.* TO "recovery_user";
 GRANT GROUP_REPLICATION_STREAM ON *.* TO "recovery_user";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
 SET SESSION sql_log_bin= 1;
 include/start_group_replication.inc
@@ -39,6 +43,8 @@ SET SESSION sql_log_bin= 0;
 CREATE USER "recovery_user" IDENTIFIED BY "recovery_password";
 GRANT GROUP_REPLICATION_STREAM ON *.* TO "recovery_user";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
 SET SESSION sql_log_bin= 1;
 SET SESSION sql_log_bin= 0;
@@ -85,17 +91,17 @@ server-binary-log.000001	#	Previous_gtids	#	#
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 [connection server2]
 include/rpl/deprecated/show_binlog_events.inc
@@ -104,17 +110,17 @@ server-binary-log.000001	#	Previous_gtids	#	#
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 [connection server3]
 include/rpl/deprecated/show_binlog_events.inc
@@ -123,17 +129,17 @@ server-binary-log.000001	#	Previous_gtids	#	#
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 server-binary-log.000001	#	Gtid	#	#	SET @@SESSION.GTID_NEXT= 'Gtid_set'
 server-binary-log.000001	#	Query	#	#	BEGIN
 server-binary-log.000001	#	Table_map	#	#	table_id: # (test.t1)
-server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+server-binary-log.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 server-binary-log.000001	#	Xid	#	#	COMMIT /* XID */
 
 # 8. Clean up.

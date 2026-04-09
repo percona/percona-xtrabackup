@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,10 @@
 
 #include "sql/dd/impl/system_views/partitions.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Partitions &Partitions::instance() {
-  static Partitions *s_instance = new Partitions();
+  static auto *s_instance = new Partitions();
   return *s_instance;
 }
 
@@ -207,5 +206,4 @@ Partitions::Partitions() {
   m_target_def.add_where("AND part.parent_partition_id IS NULL");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

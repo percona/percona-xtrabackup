@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -37,6 +37,11 @@
 
 using namespace std::string_literals;
 
+DestinationNodesStateNotifier *
+MySQLRoutingAPI::get_destinations_state_notifier() const {
+  return r_->destination_manager();
+}
+
 int MySQLRoutingAPI::get_max_connections() const {
   return r_->get_max_connections();
 }
@@ -58,7 +63,7 @@ int MySQLRoutingAPI::get_active_connections() const {
 }
 
 std::string MySQLRoutingAPI::get_bind_address() const {
-  return r_->get_context().get_bind_address().address();
+  return r_->get_context().get_bind_address().hostname();
 }
 
 std::chrono::milliseconds MySQLRoutingAPI::get_destination_connect_timeout()
@@ -66,9 +71,59 @@ std::chrono::milliseconds MySQLRoutingAPI::get_destination_connect_timeout()
   return r_->get_context().get_destination_connect_timeout();
 }
 
-std::vector<mysql_harness::TCPAddress> MySQLRoutingAPI::get_destinations()
+std::vector<mysql_harness::Destination>
+MySQLRoutingAPI::get_destination_candidates() const {
+  return r_->get_destination_candidates();
+}
+
+MySQLRoutingAPI::SslOptions MySQLRoutingAPI::get_destination_ssl_options()
     const {
-  return r_->get_destinations();
+  SslOptions result;
+  auto &ctxt = r_->get_context();
+  auto dest_ssl = ctxt.destination_ssl_config();
+  auto ssl_mode = ctxt.dest_ssl_mode();
+
+  if (!dest_ssl) {
+    result.ssl_mode = SSL_MODE_DISABLED;
+    return result;
+  }
+
+  switch (ssl_mode) {
+    case SslMode::kDisabled:
+      result.ssl_mode = SSL_MODE_DISABLED;
+      break;
+
+    case SslMode::kRequired:
+      result.ssl_mode = SSL_MODE_REQUIRED;
+      break;
+
+    case SslMode::kPreferred:
+    case SslMode::kDefault:
+    case SslMode::kAsClient:
+    case SslMode::kPassthrough:
+      result.ssl_mode = SSL_MODE_PREFERRED;
+      break;
+  }
+
+  switch (dest_ssl->get_verify()) {
+    case SslVerify::kDisabled:
+      break;
+    case SslVerify::kVerifyCa:
+      result.ssl_mode = SSL_MODE_VERIFY_CA;
+      break;
+    case SslVerify::kVerifyIdentity:
+      result.ssl_mode = SSL_MODE_VERIFY_IDENTITY;
+      break;
+  }
+
+  result.ca = dest_ssl->get_ca_file();
+  result.capath = dest_ssl->get_ca_path();
+  result.crl = dest_ssl->get_crl_file();
+  result.crlpath = dest_ssl->get_crl_path();
+  result.ssl_cipher = dest_ssl->get_ciphers();
+  result.curves = dest_ssl->get_curves();
+
+  return result;
 }
 
 bool MySQLRoutingAPI::is_accepting_connections() const {
@@ -88,9 +143,9 @@ std::string MySQLRoutingAPI::get_protocol_name() const {
 }
 
 std::string MySQLRoutingAPI::get_routing_strategy() const {
-  const auto strategy = r_->get_routing_strategy();
-  if (strategy == routing::RoutingStrategy::kUndefined) return "";
-  return routing::get_routing_strategy_name(strategy);
+  const auto strategy_maybe = r_->get_routing_strategy();
+  if (!strategy_maybe) return "";
+  return routing::get_routing_strategy_name(*strategy_maybe);
 }
 
 std::string MySQLRoutingAPI::get_destination_replicaset_name() const {
@@ -123,7 +178,9 @@ void MySQLRoutingAPI::restart_accepting_connections() {
   r_->restart_accepting_connections();
 }
 
-void MySQLRoutingAPI::stop_socket_acceptors() { r_->stop_socket_acceptors(); }
+void MySQLRoutingAPI::stop_socket_acceptors() {
+  r_->stop_socket_acceptors(/*shutting_down*/ false);
+}
 
 bool MySQLRoutingAPI::is_running() const { return r_->is_running(); }
 
@@ -139,19 +196,40 @@ void MySQLRoutingComponent::deinit() {
   DestinationStatusComponent::get_instance().unregister_quarantine_callbacks();
 }
 
+void MySQLRoutingComponent::set_routing_guidelines(
+    const std::string &routing_guidelines_document) {
+  std::lock_guard<std::mutex> lock(routing_guidelines_mtx_);
+  if (!routing_guidelines_) {
+    routing_guidelines_ =
+        std::make_unique<routing_guidelines::Routing_guidelines_engine>(
+            routing_guidelines::Routing_guidelines_engine::create(
+                routing_guidelines_document));
+  }
+
+  // Default routing guidelines are created based on Router's config, it may be
+  // used when user sends an empty guidelines (restore default)
+  routing_guidelines_->set_default_routing_guidelines(
+      routing_guidelines_document);
+}
+
+bool MySQLRoutingComponent::routing_guidelines_initialized() const {
+  std::lock_guard<std::mutex> lock(routing_guidelines_mtx_);
+  return routing_guidelines_ != nullptr;
+}
+
 void MySQLRoutingComponent::register_route(
     const std::string &name, std::shared_ptr<MySQLRoutingBase> srv) {
   auto &quarantine = srv->get_context().shared_quarantine();
 
-  quarantine.on_update([&](const mysql_harness::TCPAddress &addr,
+  quarantine.on_update([&](const mysql_harness::Destination &dest,
                            bool success) -> bool {
     return DestinationStatusComponent::get_instance().report_connection_result(
-        addr, success);
+        dest, success);
   });
 
-  quarantine.on_is_quarantined([&](const mysql_harness::TCPAddress &addr) {
+  quarantine.on_is_quarantined([&](const mysql_harness::Destination &dest) {
     return DestinationStatusComponent::get_instance()
-        .is_destination_quarantined(addr);
+        .is_destination_quarantined(dest);
   });
 
   quarantine.on_stop([&]() {
@@ -185,6 +263,21 @@ MySQLRoutingComponent &MySQLRoutingComponent::get_instance() {
   return instance;
 }
 
+MySQLRoutingConnectionBase *MySQLRoutingComponent::get_connection(
+    const std::string &client_endpoint) {
+  MySQLRoutingConnectionBase *result = nullptr;
+
+  std::lock_guard<std::mutex> lock(routes_mu_);
+
+  for (const auto &el : routes_) {
+    if (auto r = el.second.lock()) {
+      if ((result = r->get_connection(client_endpoint))) break;
+    }
+  }
+
+  return result;
+}
+
 std::vector<std::string> MySQLRoutingComponent::route_names() const {
   std::vector<std::string> names;
 
@@ -210,19 +303,16 @@ uint64_t MySQLRoutingComponent::current_total_connections() {
   return result;
 }
 
-MySQLRoutingConnectionBase *MySQLRoutingComponent::get_connection(
-    const std::string &client_endpoint) {
-  MySQLRoutingConnectionBase *result = nullptr;
+const rapidjson::Document &MySQLRoutingComponent::routing_guidelines_document()
+    const {
+  return routing_guidelines_->get_routing_guidelines_document();
+}
 
-  std::lock_guard<std::mutex> lock(routes_mu_);
-
-  for (const auto &el : routes_) {
-    if (auto r = el.second.lock()) {
-      if ((result = r->get_connection(client_endpoint))) break;
-    }
-  }
-
-  return result;
+rapidjson::Document MySQLRoutingComponent::routing_guidelines_document_schema()
+    const {
+  rapidjson::Document schema;
+  schema.Parse(routing_guidelines_->get_schema());
+  return schema;
 }
 
 MySQLRoutingAPI MySQLRoutingComponent::api(const std::string &name) {
@@ -265,9 +355,10 @@ void MySQLRoutingComponent::init(const mysql_harness::Config &config) {
                         routing::kDefaultMaxTotalConnections);
 
   QuarantineRoutingCallbacks quarantine_callbacks;
+
   quarantine_callbacks.on_get_destinations = [&](
       const std::string &route_name) -> auto{
-    return this->api(route_name).get_destinations();
+    return this->api(route_name).get_destination_candidates();
   };
 
   quarantine_callbacks.on_start_acceptors =

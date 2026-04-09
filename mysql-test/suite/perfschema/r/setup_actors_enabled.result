@@ -10,6 +10,8 @@ create user user1@localhost, user2@localhost;
 grant ALL on *.* to user1@localhost;
 grant ALL on *.* to user2@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Switch to (con1, localhost, user1, , )
 select NAME, TYPE, INSTRUMENTED, PROCESSLIST_USER, PROCESSLIST_HOST
 from performance_schema.threads
@@ -54,6 +56,8 @@ thread/sql/one_connection	FOREGROUND	YES	user2	localhost
 # Switch to connection default
 revoke update on *.* from 'user2'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Switch to (con2 localhost, user2, , )
 update performance_schema.setup_actors 
 set ENABLED='NO';
@@ -99,6 +103,8 @@ revoke all privileges, grant option from user2@localhost;
 drop user user1@localhost;
 drop user user2@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 truncate table performance_schema.setup_actors;
 insert into performance_schema.setup_actors
 values ('%', '%', '%', 'YES', 'YES');

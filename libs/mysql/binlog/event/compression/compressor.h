@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,6 @@
 #include "mysql/binlog/event/compression/base.h"       // type
 #include "mysql/containers/buffers/grow_constraint.h"  // Grow_constraint
 #include "mysql/containers/buffers/managed_buffer_sequence.h"  // Managed_buffer_sequence
-#include "mysql/utils/nodiscard.h"                             // NODISCARD
 
 #include <limits>  // std::numeric_limits
 
@@ -150,7 +149,7 @@ class Compressor {
   /// compression e.g.  after increasing the capacity, or resetting
   /// the output buffer (perhaps after moving existing data
   /// elsewhere), or using a different output buffer, or similar.
-  [[NODISCARD]] Compress_status compress(Managed_buffer_sequence_t &out);
+  [[nodiscard]] Compress_status compress(Managed_buffer_sequence_t &out);
 
   /// Consume all input, produce all output, and end the frame.
   ///
@@ -178,7 +177,7 @@ class Compressor {
   /// compression e.g.  after increasing the capacity, or resetting
   /// the output buffer (perhaps after moving existing data
   /// elsewhere), or using a different output buffer, or similar.
-  [[NODISCARD]] Compress_status finish(Managed_buffer_sequence_t &out);
+  [[nodiscard]] Compress_status finish(Managed_buffer_sequence_t &out);
 
   /// Return a `Grow_constraint` that may be used with the
   /// Managed_buffer_sequence storing the output, in order to
@@ -230,7 +229,7 @@ class Compressor {
   ///
   /// This differs from @c compress in that it does not have to reset
   /// the frame when returning out_of_memory; the caller does that.
-  [[NODISCARD]] virtual Compress_status do_compress(
+  [[nodiscard]] virtual Compress_status do_compress(
       Managed_buffer_sequence_t &out) = 0;
 
   /// Implement @c finish.
@@ -240,7 +239,7 @@ class Compressor {
   ///
   /// Implementations may assume that @c compress has been called,
   /// since @c finish does that.
-  [[NODISCARD]] virtual Compress_status do_finish(
+  [[nodiscard]] virtual Compress_status do_finish(
       Managed_buffer_sequence_t &out) = 0;
 
   /// Implement @c get_grow_constraint_hint.

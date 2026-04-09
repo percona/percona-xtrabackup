@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,8 +21,8 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <ctype.h>
 #include <gtest/gtest.h>
+#include <cctype>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -57,7 +57,7 @@ TEST(TemplateUtilsTest, DownCastReference) {
 }
 
 TEST(TemplateUtilsTest, DownCastRvalueReference) {
-  Descendent descendent;
+  Descendent const descendent;
   Base &&baseref = Descendent();
   auto descendentref = down_cast<Descendent &&>(baseref);
 
@@ -68,7 +68,7 @@ TEST(TemplateUtilsTest, DownCastRvalueReference) {
 TEST(TemplateUtilsTest, DownCastPointer) {
   Descendent descendent;
   Base *baseref = &descendent;
-  auto descendentref = down_cast<Descendent *>(baseref);
+  auto *descendentref = down_cast<Descendent *>(baseref);
 
   EXPECT_EQ(1, baseref->id());
   EXPECT_EQ(2, descendentref->id());
@@ -86,7 +86,7 @@ TEST(TemplateUtilsTest, FindTrimmedEndCstr) {
 }
 
 TEST(TemplateUtilsTest, FindTrimmedEndString) {
-  std::string s = "";
+  std::string s;
   EXPECT_EQ(s.end(), myu::FindTrimmedEnd(s.begin(), s.end(), myu::IsSpace));
 
   s = "foo";
@@ -112,7 +112,7 @@ TEST(TemplateUtilsTest, FindTrimmedRangeCstr) {
 }
 
 TEST(TemplateUtilsTest, FindTrimmedRangeString) {
-  std::string s = "";
+  std::string s;
   EXPECT_EQ(std::make_pair(s.begin(), s.end()),
             myu::FindTrimmedRange(s.begin(), s.end(), myu::IsSpace));
 
@@ -138,16 +138,16 @@ TEST(TemplateUtilsTest, SplitEmptyCstr) {
     elts.emplace_back(f, (l - f));
   });
 
-  EXPECT_EQ(0u, elts.size());
+  EXPECT_EQ(0U, elts.size());
 }
 
 TEST(TemplateUtilsTest, SplitEmptyString) {
-  std::string s = "";
+  std::string s;
   StrVec elts;
   myu::Split(s.begin(), s.end(), myu::IsComma,
              [&](const auto &f, const auto &l) { elts.emplace_back(f, l); });
 
-  EXPECT_EQ(0u, elts.size());
+  EXPECT_EQ(0U, elts.size());
 }
 
 TEST(TemplateUtilsTest, SplitSingleRangeCstr) {
@@ -176,8 +176,9 @@ TEST(TemplateUtilsTest, SplitCstr) {
     elts.emplace_back(f, (l - f));
   });
 
-  StrVec expected{" ", " ", "", " some text   ", "", "", "additional text", "",
-                  "",  "",  " "};
+  StrVec const expected{
+      " ", " ", "", " some text   ", "", "", "additional text", "",
+      "",  "",  " "};
   EXPECT_EQ(expected, elts);
 }
 
@@ -189,7 +190,7 @@ TEST(TemplateUtilsTest, SplitStringDiscardEmpty) {
                if (f != l) elts.emplace_back(f, l);
              });
 
-  StrVec expected{" ", " ", " some text   ", "additional text", " "};
+  StrVec const expected{" ", " ", " some text   ", "additional text", " "};
   EXPECT_EQ(expected, elts);
 }
 
@@ -203,7 +204,7 @@ TEST(TemplateUtilsTest, SplitStringTrimDiscardEmpty) {
                  elts.emplace_back(rng.first, rng.second);
              });
 
-  StrVec expected{"some text", "additional text"};
+  StrVec const expected{"some text", "additional text"};
   EXPECT_EQ(expected, elts);
 }
 
@@ -217,7 +218,7 @@ TEST(TemplateUtilsTest, SplitVector) {
         if (f != l) elts.emplace_back(f, l);
       });
 
-  std::vector<std::vector<int>> exp{{0, 1}, {3, 4}};
+  std::vector<std::vector<int>> const exp{{0, 1}, {3, 4}};
   EXPECT_EQ(exp, elts);
 }
 }  // namespace template_utils_unittest

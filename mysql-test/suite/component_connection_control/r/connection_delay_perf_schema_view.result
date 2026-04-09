@@ -1,0 +1,151 @@
+# Test to verify failed login attempts are correctly displayed in Performance Schema
+
+# ----------------------------------------------------------------------------------
+
+# Setup
+# Install component_connection_control
+INSTALL COMPONENT 'file://component_connection_control';
+# Performance schema
+# Verify the instrumentation provided
+SELECT * FROM performance_schema.setup_instruments
+WHERE NAME LIKE "%/conn_delay/%" OR NAME LIKE "%/connection_control/%"
+  ORDER BY NAME;
+NAME	ENABLED	TIMED	PROPERTIES	FLAGS	VOLATILITY	DOCUMENTATION
+memory/connection_control/component	YES	NULL			0	Memory allocated by connection_control component.
+wait/synch/cond/conn_delay/connection_delay_wait_condition	YES	YES		NULL	0	NULL
+wait/synch/mutex/conn_delay/connection_delay_mutex	YES	YES		NULL	0	NULL
+wait/synch/rwlock/conn_delay/connection_event_delay_lock	YES	YES	singleton	NULL	0	NULL
+# Create user accounts for testing
+CREATE USER u1@localhost IDENTIFIED BY 'abcd';
+CREATE USER u2@localhost IDENTIFIED BY 'abcd';
+CREATE USER u3@localhost IDENTIFIED BY 'abcd';
+# Save original values of connection_control variables
+SET @saved_connections_threshold = @@global.component_connection_control.failed_connections_threshold;
+# Avoid triggering delay
+SET @@global.component_connection_control.failed_connections_threshold = 100;
+
+# ----------------------------------------------------------------------
+
+connect(localhost,u1,,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u1'@'localhost' (using password: NO)
+connect(localhost,u1,haha,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u1'@'localhost' (using password: YES)
+connect(localhost,u2,efgh,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u2'@'localhost' (using password: YES)
+# component_connection_control.failed_login_attempts should contain entries
+# for u1@localhost and u2@localhost
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+USERHOST	FAILED_ATTEMPTS
+'u1'@'localhost'	2
+'u2'@'localhost'	1
+connect(localhost,u3,,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u3'@'localhost' (using password: NO)
+connect(localhost,u2,haha,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u2'@'localhost' (using password: YES)
+connect(localhost,u3,efgh,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u3'@'localhost' (using password: YES)
+# connection_control_failed_login_attempts should contain entries
+# for u1@localhost, u2@localhost and u3@localhost
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+USERHOST	FAILED_ATTEMPTS
+'u1'@'localhost'	2
+'u2'@'localhost'	2
+'u3'@'localhost'	2
+connect(localhost,u2,,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u2'@'localhost' (using password: NO)
+connect(localhost,u1,haha,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u1'@'localhost' (using password: YES)
+connect(localhost,u3,efgh,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u3'@'localhost' (using password: YES)
+# failed connection counts should have increased for all users
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+USERHOST	FAILED_ATTEMPTS
+'u1'@'localhost'	3
+'u2'@'localhost'	3
+'u3'@'localhost'	3
+connect(localhost,u2,,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u2'@'localhost' (using password: NO)
+connect(localhost,u1,haha,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u1'@'localhost' (using password: YES)
+connect(localhost,u3,efgh,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u3'@'localhost' (using password: YES)
+connect(localhost,u1,haha,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u1'@'localhost' (using password: YES)
+connect(localhost,u3,efgh,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u3'@'localhost' (using password: YES)
+connect(localhost,u1,haha,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u1'@'localhost' (using password: YES)
+# Try various queries
+SELECT * FROM performance_schema.connection_control_failed_login_attempts
+WHERE USERHOST = '\'u1\'@\'localhost\'';
+USERHOST	FAILED_ATTEMPTS
+'u1'@'localhost'	6
+SELECT * FROM performance_schema.connection_control_failed_login_attempts
+WHERE USERHOST LIKE '%u2%';
+USERHOST	FAILED_ATTEMPTS
+'u2'@'localhost'	4
+SELECT * FROM performance_schema.connection_control_failed_login_attempts
+WHERE FAILED_ATTEMPTS > 4;
+USERHOST	FAILED_ATTEMPTS
+'u1'@'localhost'	6
+'u3'@'localhost'	5
+SELECT * FROM performance_schema.connection_control_failed_login_attempts
+WHERE FAILED_ATTEMPTS > 5;
+USERHOST	FAILED_ATTEMPTS
+'u1'@'localhost'	6
+SELECT * FROM performance_schema.connection_control_failed_login_attempts
+WHERE FAILED_ATTEMPTS < 5;
+USERHOST	FAILED_ATTEMPTS
+'u2'@'localhost'	4
+CREATE USER viewer@localhost IDENTIFIED BY 'abcd';
+GRANT SELECT ON performance_schema.connection_control_failed_login_attempts TO viewer@localhost;
+# After successful login, corresponding entry should disappear
+# from the view
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+USERHOST	FAILED_ATTEMPTS
+'u3'@'localhost'	5
+DROP USER viewer@localhost;
+# A user without privileges should not be able to any information
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+ERROR 42000: SELECT command denied to user 'u3'@'localhost' for table 'connection_control_failed_login_attempts'
+connect(localhost,u1,,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u1'@'localhost' (using password: NO)
+connect(localhost,u3,haha,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u3'@'localhost' (using password: YES)
+connect(localhost,u2,efgh,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u2'@'localhost' (using password: YES)
+# Subsequent failed attempts should put entries back in the view
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+USERHOST	FAILED_ATTEMPTS
+'u1'@'localhost'	1
+'u2'@'localhost'	1
+'u3'@'localhost'	1
+connect(localhost,u4,,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u4'@'localhost' (using password: NO)
+connect(localhost,u5,haha,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u5'@'localhost' (using password: YES)
+connect(localhost,u6,efgh,test,SOURCE_PORT,SOURCE_SOCKET);
+ERROR 28000: Access denied for user 'u6'@'localhost' (using password: YES)
+# Attempts by invalid accounts should be shown in the view
+SELECT * FROM performance_schema.connection_control_failed_login_attempts;
+USERHOST	FAILED_ATTEMPTS
+'u1'@'localhost'	1
+'u2'@'localhost'	1
+'u3'@'localhost'	1
+'u4'@'localhost'	1
+'u5'@'localhost'	1
+'u6'@'localhost'	1
+
+# ----------------------------------------------------------------------
+
+# Cleanup
+# Restore original values of conenction_control variables
+SET @@global.component_connection_control.failed_connections_threshold = @saved_connections_threshold;
+# Remove user accounts created for the test
+DROP USER u1@localhost;
+DROP USER u2@localhost;
+DROP USER u3@localhost;
+# Uninstall component_connection_control
+UNINSTALL COMPONENT 'file://component_connection_control';
+
+# ----------------------------------------------------------------------

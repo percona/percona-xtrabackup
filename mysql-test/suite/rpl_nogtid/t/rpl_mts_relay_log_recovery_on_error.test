@@ -37,8 +37,6 @@
 # successful.
 --source include/force_restart.inc
 --source include/have_binlog_format_row.inc
---source include/have_replica_parallel_workers.inc
---source include/have_replica_parallel_type_database.inc
 --source include/rpl/init_source_replica.inc
 
 --source include/rpl/connection_replica.inc
@@ -71,6 +69,7 @@ START REPLICA;
 # Remove the affending rows from slave.
 --exec echo "Eliminate the cause of MTS error"
 DELETE FROM d2.t WHERE a=2;
+DELETE FROM d2.t WHERE a=3;
 DELETE FROM d1.t WHERE a=3;
 
 --let $table=d2.t

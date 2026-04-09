@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,7 @@ TEST(Table_histograms, insert_histogram) {
   Equi_height<longlong> *histogram = Equi_height<longlong>::create(
       &mem_root, "db1", "tbl1", "col1", Value_map_type::INT);
   ASSERT_TRUE(histogram != nullptr);
-  size_t num_buckets = 4;
+  size_t const num_buckets = 4;
   ASSERT_FALSE(histogram->build_histogram(values, num_buckets));
 
   EXPECT_FALSE(table_histograms->insert_histogram(1, histogram));

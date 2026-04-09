@@ -28,7 +28,7 @@ function bg_run()
 function mysql_select()
 {
     vlog "Run select query with duration $1 seconds"
-    ${MYSQL} ${MYSQL_ARGS} -c test  <<EOF
+    ${MYSQL} ${MYSQL_ARGS} --commands -c test  <<EOF
         /* Run background /*SELECT*\  */
         (
          SELECT SLEEP($1) FROM t1 FOR UPDATE
@@ -42,7 +42,7 @@ EOF
 function mysql_update()
 {
     vlog "Run update query with duration $1 seconds"
-    ${MYSQL} ${MYSQL_ARGS} -c test <<EOF
+    ${MYSQL} ${MYSQL_ARGS} --commands -c test <<EOF
         /* This is not SELECT but rather an /*UPDATE*\
         query  */
         UPDATE t1 SET a = SLEEP($1);
@@ -75,7 +75,7 @@ function kill_all_queries()
   # we really want to ignore errors
   # some connections can die by themselves
   # between SELECT and killall
-  run_cmd $MYSQL $MYSQL_ARGS --force --batch  test <<EOF
+  run_cmd $MYSQL $MYSQL_ARGS --commands --force --batch  test <<EOF
   select concat('KILL ',id,';') from information_schema.processlist
   where user='root' and time > 1 into outfile '$MYSQLD_TMPDIR/killall.sql';
   source $MYSQLD_TMPDIR/killall.sql;
@@ -89,7 +89,7 @@ function wait_for_connection_count()
   QUERY="SELECT COUNT(*) FROM PROCESSLIST \
 WHERE CURRENT_USER() LIKE CONCAT(USER, '%') AND ID <> CONNECTION_ID()"
   for i in {1..200} ; do
-    count=`${MYSQL} ${MYSQL_ARGS} -N -e "${QUERY}" information_schema`
+    count=`${MYSQL} ${MYSQL_ARGS} --commands -N -e "${QUERY}" information_schema`
     [ $count != $n ] || break
     sleep 0.3
   done
@@ -99,7 +99,7 @@ start_server
 
 has_backup_locks && skip_test "Requires a server without backup locks support"
 
-run_cmd $MYSQL $MYSQL_ARGS test <<EOF
+run_cmd $MYSQL $MYSQL_ARGS --commands test <<EOF
 CREATE TABLE t1(a INT) ENGINE=InnoDB;
 INSERT INTO t1 VALUES (1);
 CREATE TABLE t2(a INT) ENGINE=MyISAM;

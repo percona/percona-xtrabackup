@@ -1,4 +1,4 @@
-# Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -66,12 +66,13 @@ FUNCTION(FIND_SYSTEM_ZSTD)
         SYSTEM INTERFACE ${ZSTD_INCLUDE_DIR})
     ENDIF()
     FIND_ZSTD_VERSION(${ZSTD_INCLUDE_DIR})
+    ADD_LIBRARY(zstd::libzstd_shared ALIAS zstd_interface)
     # For EXTRACT_LINK_LIBRARIES
     SET(zstd_SYSTEM_LINK_FLAGS "-lzstd" CACHE STRING "Link flag for zstd")
   ENDIF()
 ENDFUNCTION(FIND_SYSTEM_ZSTD)
 
-SET(ZSTD_VERSION_DIR "zstd-1.5.5")
+SET(ZSTD_VERSION_DIR "zstd-1.5.7")
 SET(BUNDLED_ZSTD_PATH ${CMAKE_SOURCE_DIR}/extra/zstd/${ZSTD_VERSION_DIR}/lib)
 
 FUNCTION(MYSQL_USE_BUNDLED_ZSTD)
@@ -81,6 +82,7 @@ FUNCTION(MYSQL_USE_BUNDLED_ZSTD)
     ${BUNDLED_ZSTD_PATH})
 
   FIND_ZSTD_VERSION(${BUNDLED_ZSTD_PATH})
+  ADD_LIBRARY(zstd::libzstd_static ALIAS zstd_interface)
 
   ADD_SUBDIRECTORY(extra/zstd)
 ENDFUNCTION(MYSQL_USE_BUNDLED_ZSTD)
@@ -102,6 +104,7 @@ MACRO (MYSQL_CHECK_ZSTD)
   ENDIF()
 
   ADD_LIBRARY(ext::zstd ALIAS zstd_interface)
+  SET(zstd_FOUND 1)
 
   IF(ZSTD_VERSION VERSION_LESS MIN_ZSTD_VERSION_REQUIRED)
     MESSAGE(FATAL_ERROR

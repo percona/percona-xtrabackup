@@ -262,7 +262,7 @@ SET @@global.sql_mode = 3;
 SELECT @@global.sql_mode;
 
 --Error ER_WRONG_VALUE_FOR_VAR
-SET @@global.sql_mode = 8589934592;
+SET @@global.sql_mode = cast(pow(2,34) as unsigned);
 
 # use of decimal values
 

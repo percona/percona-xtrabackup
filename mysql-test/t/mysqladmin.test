@@ -166,4 +166,27 @@ remove_file $file;
 remove_file $file2;
 
 
+--echo #
+--echo # WL#16567: deprecate FLUSH PRIVILEGES
+--echo #
+
+exec $MYSQLADMIN -uroot -S $MASTER_MYSOCK -P $MASTER_MYPORT flush-privileges > $MYSQLTEST_VARDIR/tmp/wl16567.out 2>&1 ;
+--echo # check the output of mysqladmin for flush-privileges deprecation
+--let $assert_text= check mysqladmin flush-privileges deprecation warning
+--let $assert_file= $MYSQLTEST_VARDIR/tmp/wl16567.out
+--let $assert_select=deprecated
+--let $assert_count=1
+--source include/assert_grep.inc
+--remove_file $MYSQLTEST_VARDIR/tmp/wl16567.out
+
+exec $MYSQLADMIN -uroot -S $MASTER_MYSOCK -P $MASTER_MYPORT reload > $MYSQLTEST_VARDIR/tmp/wl16567.out 2>&1 ;
+--echo # check the output of mysqladmin for reload deprecation
+--let $assert_text= check mysqladmin reload deprecation warning
+--let $assert_file= $MYSQLTEST_VARDIR/tmp/wl16567.out
+--let $assert_select=deprecated
+--let $assert_count=1
+--source include/assert_grep.inc
+--remove_file $MYSQLTEST_VARDIR/tmp/wl16567.out
+
+
 --echo End of tests

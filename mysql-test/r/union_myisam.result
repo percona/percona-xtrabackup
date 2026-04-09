@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CREATE TABLE t1 (
 `pseudo` char(35) NOT NULL default '',
 `pseudo1` char(35) NOT NULL default '',
@@ -99,3 +100,4 @@ t2	CREATE TABLE `t2` (
   `a` varchar(12) DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci ROW_FORMAT=FIXED
 drop table t1,t2;
+include/rpl/set_gtid_mode_on.inc

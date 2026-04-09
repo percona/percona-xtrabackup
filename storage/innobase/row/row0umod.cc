@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -566,10 +566,11 @@ func_exit_no_pcur:
   return (err);
 }
 
-/** Delete unmarks a secondary index entry which must be found. It might not be
- delete-marked at the moment, but it does not harm to unmark it anyway. We also
- need to update the fields of the secondary index record if we updated its
- fields but alphabetically they stayed the same, e.g., 'abc' -> 'aBc'.
+/** Delete unmarks a secondary index entry if found, otherwise inserts.
+ It might not be delete-marked at the moment, but it does not harm to
+ unmark it anyway. We also need to update the fields of the secondary
+ index record if we updated its fields but alphabetically they stayed
+ the same, e.g., 'abc' -> 'aBc'.
  @retval DB_SUCCESS on success
  @retval DB_FAIL if BTR_MODIFY_TREE should be tried
  @retval DB_OUT_OF_FILE_SPACE when running out of tablespace
@@ -679,8 +680,9 @@ try_again:
             << " at: " << rec_index_print(btr_cur_get_rec(btr_cur), index);
       }
 
-      if (btr_cur->up_match >= dict_index_get_n_unique(index) ||
-          btr_cur->low_match >= dict_index_get_n_unique(index)) {
+      if ((btr_cur->up_match >= dict_index_get_n_unique(index) ||
+           btr_cur->low_match >= dict_index_get_n_unique(index)) &&
+          (index->n_nullable == 0 || !dtuple_contains_null(entry))) {
         if (index->is_committed()) {
           ib::warn(ER_IB_MSG_1040) << "Record in index " << index->name
                                    << " was not found on rollback, and"

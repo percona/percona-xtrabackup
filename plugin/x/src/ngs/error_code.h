@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@ namespace ngs {
 struct Error_code {
   static const int MAX_MESSAGE_LENGTH = 1024;
 
-  int error;
+  int error{};
   std::string message;
   std::string sql_state;
   enum Severity {

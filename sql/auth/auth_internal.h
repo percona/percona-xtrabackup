@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,8 +53,6 @@ struct TABLE;
 class Rewrite_params;
 
 typedef struct user_resources USER_RESOURCES;
-void append_identifier(const THD *thd, String *packet, const char *name,
-                       size_t length);
 typedef std::map<std::string, Access_bitmask> Column_map;
 struct Grant_table_aggregate {
   Grant_table_aggregate() : table_access(0l), cols(0l) {}
@@ -174,7 +172,9 @@ bool do_update_sctx(Security_context *sctx, LEX_USER *from_user);
 void update_sctx(Security_context *sctx, LEX_USER *to_user);
 
 void clear_and_init_db_cache();
-bool acl_reload(THD *thd, bool mdl_locked);
+bool acl_reload(THD *thd, bool mdl_locked,
+                bool preserve_temporary_account_locking,
+                Lock_state_list *modified_user_lock_state_list);
 bool grant_reload(THD *thd, bool mdl_locked);
 void clean_user_cache();
 bool set_user_salt(ACL_USER *acl_user);
@@ -201,7 +201,7 @@ int replace_table_table(THD *thd, GRANT_TABLE *grant_table,
                         bool all_current_privileges);
 int replace_routine_table(THD *thd, GRANT_NAME *grant_name, TABLE *table,
                           const LEX_USER &combo, const char *db,
-                          const char *routine_name, bool is_proc,
+                          const char *routine_name, Acl_type routine_acl_type,
                           Access_bitmask rights, bool revoke_grant,
                           bool all_current_privileges);
 int open_grant_tables(THD *thd, Table_ref *tables, bool *transactional_tables);
@@ -209,11 +209,12 @@ void acl_tables_setup_for_read(Table_ref *tables);
 
 void acl_print_ha_error(int handler_error);
 bool check_engine_type_for_acl_table(Table_ref *tables, bool report_error);
-bool log_and_commit_acl_ddl(THD *thd, bool transactional_tables,
-                            std::set<LEX_USER *> *extra_users = nullptr,
-                            Rewrite_params *rewrite_params = nullptr,
-                            bool extra_error = false,
-                            bool log_to_binlog = true);
+bool log_and_commit_acl_ddl(
+    THD *thd, bool transactional_tables,
+    std::set<LEX_USER *> *extra_users = nullptr,
+    Rewrite_params *rewrite_params = nullptr, bool extra_error = false,
+    bool log_to_binlog = true,
+    Lock_state_list *modified_user_lock_state_list = nullptr);
 void acl_notify_htons(THD *thd, enum_sql_command operation,
                       const List<LEX_USER> *users,
                       std::set<LEX_USER *> *rewrite_users = nullptr,
@@ -282,8 +283,9 @@ void get_privilege_access_maps(
     ACL_USER *acl_user, const List_of_auth_id_refs *using_roles,
     Access_bitmask *access, Db_access_map *db_map, Db_access_map *db_wild_map,
     Table_access_map *table_map, SP_access_map *sp_map, SP_access_map *func_map,
-    List_of_granted_roles *granted_roles, Grant_acl_set *with_admin_acl,
-    Dynamic_privileges *dynamic_acl, Restrictions &restrictions);
+    SP_access_map *lib_map, List_of_granted_roles *granted_roles,
+    Grant_acl_set *with_admin_acl, Dynamic_privileges *dynamic_acl,
+    Restrictions &restrictions);
 bool clear_default_roles(THD *thd, TABLE *table,
                          const Auth_id_ref &user_auth_id,
                          std::vector<Role_id> *default_roles);
@@ -325,6 +327,7 @@ void activate_all_granted_roles(const ACL_USER *acl_user,
                                 Security_context *sctx);
 void activate_all_granted_and_mandatory_roles(const ACL_USER *acl_user,
                                               Security_context *sctx);
+extern void activate_all_mandatory_roles(Security_context *sctx);
 
 bool alter_user_set_default_roles(THD *thd, TABLE *table, LEX_USER *user,
                                   const List_of_auth_id_refs &new_auth_ids);

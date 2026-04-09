@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -230,6 +230,7 @@ class Show_parse_tree {
 template <typename Context>
 class Parse_tree_node_tmpl {
   friend class Item;  // for direct access to the "contextualized" field
+  friend class Item_subselect;
 
   Parse_tree_node_tmpl(const Parse_tree_node_tmpl &);  // undefined
   void operator=(const Parse_tree_node_tmpl &);        // undefined
@@ -307,6 +308,7 @@ class Parse_tree_node_tmpl {
 
 #ifndef NDEBUG
   bool is_contextualized() const { return contextualized; }
+  void set_contextualized() { contextualized = true; }
 #endif  // NDEBUG
 
   // Derived classes should not override this. If needed, they should override

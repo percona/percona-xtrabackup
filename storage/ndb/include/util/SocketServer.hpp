@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -99,7 +99,7 @@ class SocketServer {
    *  then  close the socket
    * Returns true if succeeding in binding
    */
-  static bool tryBind(ndb_sockaddr serv_addr, char *error = nullptr,
+  static bool tryBind(const ndb_sockaddr &serv_addr, char *error = nullptr,
                       size_t error_size = 0);
 
   /**

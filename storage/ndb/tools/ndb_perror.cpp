@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,9 +50,9 @@ static struct my_option my_long_options[] = {
     NdbStdOpt::version,
     NdbStdOpt::end_of_options};
 
-const char *load_default_groups[] = {0};
+const char *load_default_groups[] = {nullptr};
 
-static void short_usage_sub(void) {
+static void short_usage_sub() {
   ndb_short_usage_sub("[ERRORCODE [ERRORCODE...]]");
 }
 
@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
 
   if (opt_silent) {
     // --silent overrides any verbose setting
-    opt_verbose = 0;
+    opt_verbose = false;
   }
 
   if (!argc) {

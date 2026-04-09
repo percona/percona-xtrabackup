@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -71,7 +71,7 @@
 #include "sql/sql_plugin_ref.h"
 #include "sql/sql_plugin_var.h"
 #include "sql/sql_select.h"        // free_underlaid_joins
-#include "sql/sql_show.h"          // append_identifier
+#include "sql/sql_show.h"          // append_identifier_*
 #include "sql/sys_vars_shared.h"   // PolyLock_mutex
 #include "sql/system_variables.h"  // system_variables
 #include "sql/table.h"             // table
@@ -1430,6 +1430,8 @@ int sql_set_variables(THD *thd, List<set_var_base> *var_list, bool opened) {
         thd->optimizer_switch_flag(OPTIMIZER_SWITCH_HYPERGRAPH_OPTIMIZER));
 
     const Prepared_stmt_arena_holder ps_arena_holder(thd);
+    const Prepare_error_tracker tracker(thd);
+
     while ((var = it++)) {
       if ((error = var->resolve(thd))) goto err;
     }
@@ -1748,6 +1750,19 @@ int set_var::check(THD *thd) {
   }
 
   auto f = [this, thd](const System_variable_tracker &, sys_var *var) -> int {
+    if (var->is_readonly()) {
+      if (type != OPT_PERSIST_ONLY) {
+        my_error(ER_INCORRECT_GLOBAL_LOCAL_VAR, MYF(0), var->name.str,
+                 "read only");
+        return -1;
+      }
+      if (type == OPT_PERSIST_ONLY && var->is_non_persistent() &&
+          !can_persist_non_persistent_var(thd, var, type)) {
+        my_error(ER_INCORRECT_GLOBAL_LOCAL_VAR, MYF(0), var->name.str,
+                 "non persistent read only");
+        return -1;
+      }
+    }
     if (var->check_update_type(value->result_type())) {
       my_error(ER_WRONG_TYPE_FOR_VAR, MYF(0), var->name.str);
       return -1;

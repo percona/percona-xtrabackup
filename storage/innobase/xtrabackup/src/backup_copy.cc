@@ -68,6 +68,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xb0xb.h"
 #include "xb_regex.h"
 
+extern ulong srv_undo_tablespaces;
+
 #include <cstdlib>
 #include "backup_copy.h"
 #include "backup_mysql.h"

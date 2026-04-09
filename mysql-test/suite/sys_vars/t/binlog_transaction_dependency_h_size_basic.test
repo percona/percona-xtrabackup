@@ -46,8 +46,8 @@ SET @@GLOBAL.binlog_transaction_dependency_history_size= 1;
 # Default value
 #
 SET @@GLOBAL.binlog_transaction_dependency_history_size= default;
---let $assert_text= 'Default value is 25000'
---let $assert_cond= "[SELECT @@GLOBAL.binlog_transaction_dependency_history_size]" = 25000
+--let $assert_text= 'Default value is 10000000'
+--let $assert_cond= "[SELECT @@GLOBAL.binlog_transaction_dependency_history_size]" = 10000000
 --source include/assert.inc
 
 #
@@ -72,7 +72,7 @@ SET @@GLOBAL.binlog_transaction_dependency_history_size= 1.0;
 SELECT @@GLOBAL.binlog_transaction_dependency_history_size;
 
 #
-# Minimum value: 1. Maximum value: 1000000
+# Minimum value: 1. Maximum value: 10000000
 #
 SET @@GLOBAL.binlog_transaction_dependency_history_size= 0;
 --let $assert_text= 'Check minimum value of binlog_transaction_dependency_history_size'
@@ -82,9 +82,9 @@ SET @@GLOBAL.binlog_transaction_dependency_history_size= -1;
 --let $assert_text= 'Check minimum value of binlog_transaction_dependency_history_size'
 --let $assert_cond= [SELECT @@GLOBAL.binlog_transaction_dependency_history_size] = 1
 
-SET @@GLOBAL.binlog_transaction_dependency_history_size= 2000000;
+SET @@GLOBAL.binlog_transaction_dependency_history_size= 200000000;
 --let $assert_text= 'Check maximum value of binlog_transaction_dependency_history_size'
---let $assert_cond= [SELECT @@GLOBAL.binlog_transaction_dependency_history_size] = 1000000
+--let $assert_cond= [SELECT @@GLOBAL.binlog_transaction_dependency_history_size] = 100000000
 
 #
 # Valid values
@@ -97,9 +97,9 @@ SET @@GLOBAL.binlog_transaction_dependency_history_size= 20000;
 --let $assert_text= 'binlog_transaction_dependency_history_size should be 20000'
 --let $assert_cond= [SELECT @@GLOBAL.binlog_transaction_dependency_history_size] = 20000
 
-SET @@GLOBAL.binlog_transaction_dependency_history_size= 1000000;
---let $assert_text= 'binlog_transaction_dependency_history_size should be 1000000'
---let $assert_cond= [SELECT @@GLOBAL.binlog_transaction_dependency_history_size] = 1000000
+SET @@GLOBAL.binlog_transaction_dependency_history_size= 10000000;
+--let $assert_text= 'binlog_transaction_dependency_history_size should be 10000000'
+--let $assert_cond= [SELECT @@GLOBAL.binlog_transaction_dependency_history_size] = 10000000
 
 # Cleanup
 eval SET @@GLOBAL.binlog_transaction_dependency_history_size= @save_binlog_transaction_dependency_history_size;

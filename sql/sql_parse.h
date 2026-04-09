@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,6 +57,7 @@ struct ORDER;
 struct Parse_context;
 class Table_ref;
 union COM_DATA;
+enum class enum_sp_type;
 
 extern "C" int test_if_data_home_dir(const char *dir);
 
@@ -105,6 +106,11 @@ void dispatch_sql_command(THD *thd, Parser_state *parser_state,
                           bool is_retry = false);
 void mysql_reset_thd_for_next_command(THD *thd);
 void create_table_set_open_action_and_adjust_tables(LEX *lex);
+void add_automatic_sp_privileges(THD *thd, enum_sp_type sp_type,
+                                 const char *db_name, const char *sp_name);
+bool remove_automatic_sp_privileges(THD *thd, enum_sp_type sp_type,
+                                    bool sp_did_not_exist, const char *db_name,
+                                    const char *sp_name);
 int mysql_execute_command(THD *thd, bool first_level = false);
 bool do_command(THD *thd);
 bool dispatch_command(THD *thd, const COM_DATA *com_data,

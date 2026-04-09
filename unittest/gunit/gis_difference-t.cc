@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -48,7 +48,7 @@ struct DifferenceTest : Gis_test<Types> {
                         gis::Geometry &expected_result) {
     std::unique_ptr<gis::Geometry> result;
     bool is_null = false;
-    bool error =
+    bool const error =
         gis::difference(this->m_srs.get(), &g1, &g2, "unittest", &result);
     EXPECT_FALSE(error);
     EXPECT_FALSE(is_null);
@@ -60,7 +60,7 @@ struct DifferenceTest : Gis_test<Types> {
 
     // Verify result is correct.
     bool is_equals = false;
-    bool equals_error =
+    bool const equals_error =
         gis::equals(this->m_srs.get(), &expected_result, result.get(),
                     "unittest", &is_equals, &is_null);
     EXPECT_FALSE(equals_error);
@@ -77,7 +77,7 @@ TYPED_TEST_SUITE(DifferenceTest, gis_typeset::Test_both);
 
 TYPED_TEST(DifferenceTest, PointPoint) {
   typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.1};
+  typename TypeParam::Point const pt2{0, 0.1};
   typename TypeParam::Geometrycollection empty_gc{};
 
   this->test_valid_input(pt1, pt1, empty_gc);
@@ -86,7 +86,7 @@ TYPED_TEST(DifferenceTest, PointPoint) {
 
 TYPED_TEST(DifferenceTest, PointMultipoint) {
   typename TypeParam::Point pt1{0, 0};
-  typename TypeParam::Point pt2{0, 0.1};
+  typename TypeParam::Point const pt2{0, 0.1};
   typename TypeParam::Multipoint mpt = simple_mpt<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
 
@@ -97,7 +97,7 @@ TYPED_TEST(DifferenceTest, PointMultipoint) {
 }
 
 TYPED_TEST(DifferenceTest, PointLinestring) {
-  typename TypeParam::Point pt1{0, 0};
+  typename TypeParam::Point const pt1{0, 0};
   typename TypeParam::Point pt2{0.1, 0.1};
   typename TypeParam::Linestring ls = simple_ls<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
@@ -108,7 +108,7 @@ TYPED_TEST(DifferenceTest, PointLinestring) {
 }
 
 TYPED_TEST(DifferenceTest, PointMultiLinestring) {
-  typename TypeParam::Point pt1{0, 0};
+  typename TypeParam::Point const pt1{0, 0};
   typename TypeParam::Point pt2{0.1, 0.1};
   typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
@@ -119,7 +119,7 @@ TYPED_TEST(DifferenceTest, PointMultiLinestring) {
 }
 
 TYPED_TEST(DifferenceTest, PointPolygon) {
-  typename TypeParam::Point pt1{0, 0};
+  typename TypeParam::Point const pt1{0, 0};
   typename TypeParam::Point pt2{0, 0.2};
   typename TypeParam::Polygon py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
@@ -130,7 +130,7 @@ TYPED_TEST(DifferenceTest, PointPolygon) {
 }
 
 TYPED_TEST(DifferenceTest, PointMultipolygon) {
-  typename TypeParam::Point pt1{0, 0};
+  typename TypeParam::Point const pt1{0, 0};
   typename TypeParam::Point pt2{0, 0.2};
   typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
@@ -214,8 +214,8 @@ TYPED_TEST(DifferenceTest, MultipointMultipolygon) {
 // difference(..., linestring, *, ...)
 
 TYPED_TEST(DifferenceTest, LinestringLinestring) {
-  typename TypeParam::Linestring ls1 = simple_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = offset_simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls1 = simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = offset_simple_ls<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
   typename TypeParam::Linestring expected_result{};
 
@@ -228,7 +228,7 @@ TYPED_TEST(DifferenceTest, LinestringLinestring) {
 
 TYPED_TEST(DifferenceTest, LinestringMultilinestring) {
   typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
-  typename TypeParam::Linestring ls2 = offset_simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = offset_simple_ls<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
   typename TypeParam::Linestring expected_result{};
 
@@ -240,8 +240,8 @@ TYPED_TEST(DifferenceTest, LinestringMultilinestring) {
 }
 
 TYPED_TEST(DifferenceTest, LinestringPolygon) {
-  typename TypeParam::Linestring ls1 = diagonal_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = ls_crossing_base_py<TypeParam>();
+  typename TypeParam::Linestring const ls1 = diagonal_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = ls_crossing_base_py<TypeParam>();
   typename TypeParam::Polygon py = base_py<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
   typename TypeParam::Multilinestring expected_result =
@@ -253,8 +253,8 @@ TYPED_TEST(DifferenceTest, LinestringPolygon) {
 }
 
 TYPED_TEST(DifferenceTest, LinestringMultiPolygon) {
-  typename TypeParam::Linestring ls1 = diagonal_ls<TypeParam>();
-  typename TypeParam::Linestring ls2 = ls_crossing_base_py<TypeParam>();
+  typename TypeParam::Linestring const ls1 = diagonal_ls<TypeParam>();
+  typename TypeParam::Linestring const ls2 = ls_crossing_base_py<TypeParam>();
   typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
   typename TypeParam::Multilinestring expected_result =
@@ -268,7 +268,7 @@ TYPED_TEST(DifferenceTest, LinestringMultiPolygon) {
 // difference(..., multilinestring, *, ...)
 
 TYPED_TEST(DifferenceTest, MultilinestringMultilinestring) {
-  typename TypeParam::Multilinestring mls1 = simple_mls<TypeParam>();
+  typename TypeParam::Multilinestring const mls1 = simple_mls<TypeParam>();
   typename TypeParam::Multilinestring mls2{};
   typename TypeParam::Geometrycollection empty_gc{};
   typename TypeParam::Linestring expected_result{};
@@ -315,7 +315,7 @@ TYPED_TEST(DifferenceTest, MultilinestringMultipolygon) {
 
 TYPED_TEST(DifferenceTest, PolygonPolygon) {
   typename TypeParam::Polygon py1 = base_py<TypeParam>();
-  typename TypeParam::Polygon py2 = overlapping_py<TypeParam>();
+  typename TypeParam::Polygon const py2 = overlapping_py<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
 
   this->test_valid_input(py1, py1, empty_gc);
@@ -324,7 +324,7 @@ TYPED_TEST(DifferenceTest, PolygonPolygon) {
 
 TYPED_TEST(DifferenceTest, PolygonMultipolygon) {
   typename TypeParam::Polygon py1 = base_py<TypeParam>();
-  typename TypeParam::Polygon py2 = overlapping_py<TypeParam>();
+  typename TypeParam::Polygon const py2 = overlapping_py<TypeParam>();
   typename TypeParam::Polygon py3 = disjoint_py<TypeParam>();
   typename TypeParam::Multipolygon mpy{};
   typename TypeParam::Geometrycollection empty_gc{};
@@ -341,9 +341,9 @@ TYPED_TEST(DifferenceTest, PolygonMultipolygon) {
 
 TYPED_TEST(DifferenceTest, MultipolygonMultipolygon) {
   typename TypeParam::Polygon py1 = base_py<TypeParam>();
-  typename TypeParam::Polygon py2 = overlapping_py<TypeParam>();
-  typename TypeParam::Polygon py3 = disjoint_py<TypeParam>();
-  typename TypeParam::Multipolygon mpy1 = simple_mpy<TypeParam>();
+  typename TypeParam::Polygon const py2 = overlapping_py<TypeParam>();
+  typename TypeParam::Polygon const py3 = disjoint_py<TypeParam>();
+  typename TypeParam::Multipolygon const mpy1 = simple_mpy<TypeParam>();
   typename TypeParam::Multipolygon mpy2{};
   typename TypeParam::Geometrycollection empty_gc{};
 
@@ -359,7 +359,7 @@ TYPED_TEST(DifferenceTest, MultipolygonMultipolygon) {
 TYPED_TEST(DifferenceTest, GeometrycollectionPoint) {
   typename TypeParam::Geometrycollection gc{};
   typename TypeParam::Geometrycollection empty_gc{};
-  typename TypeParam::Point pt1{0, 0};
+  typename TypeParam::Point const pt1{0, 0};
   typename TypeParam::Point pt2{0, 0.1};
 
   gc.push_back(pt1);
@@ -383,7 +383,7 @@ TYPED_TEST(DifferenceTest, GeometrycollectionMultipoint) {
 
 TYPED_TEST(DifferenceTest, GeometrycollectionLinestring) {
   typename TypeParam::Geometrycollection gc{};
-  typename TypeParam::Linestring ls1 = simple_ls<TypeParam>();
+  typename TypeParam::Linestring const ls1 = simple_ls<TypeParam>();
   typename TypeParam::Linestring ls2 = diagonal_ls<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
 
@@ -409,7 +409,7 @@ TYPED_TEST(DifferenceTest, GeometrycollectionMultilinestring) {
 
 TYPED_TEST(DifferenceTest, GeometrycollectionPolygon) {
   typename TypeParam::Geometrycollection gc{};
-  typename TypeParam::Polygon py1 = base_py<TypeParam>();
+  typename TypeParam::Polygon const py1 = base_py<TypeParam>();
   typename TypeParam::Polygon py2 = disjoint_py<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
 
@@ -422,7 +422,7 @@ TYPED_TEST(DifferenceTest, GeometrycollectionPolygon) {
 
 TYPED_TEST(DifferenceTest, GeometrycollectionMultipolygon) {
   typename TypeParam::Geometrycollection gc{};
-  typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
+  typename TypeParam::Multipolygon const mpy = simple_mpy<TypeParam>();
   typename TypeParam::Polygon py2 = disjoint_py<TypeParam>();
   typename TypeParam::Geometrycollection empty_gc{};
 
@@ -438,11 +438,11 @@ TYPED_TEST(DifferenceTest, GeometrycollectionGeometrycollection) {
   typename TypeParam::Geometrycollection gc2{};
   this->test_valid_input(gc1, gc1, gc1);
 
-  typename TypeParam::Point pt{0, 0};
-  typename TypeParam::Linestring ls = ls_overlapping_base_py<TypeParam>();
-  typename TypeParam::Polygon py = overlapping_py<TypeParam>();
-  typename TypeParam::Multipoint mpt = simple_mpt<TypeParam>();
-  typename TypeParam::Multilinestring mls = simple_mls<TypeParam>();
+  typename TypeParam::Point const pt{0, 0};
+  typename TypeParam::Linestring const ls = ls_overlapping_base_py<TypeParam>();
+  typename TypeParam::Polygon const py = overlapping_py<TypeParam>();
+  typename TypeParam::Multipoint const mpt = simple_mpt<TypeParam>();
+  typename TypeParam::Multilinestring const mls = simple_mls<TypeParam>();
   typename TypeParam::Multipolygon mpy = simple_mpy<TypeParam>();
   gc1.push_back(pt);
   gc1.push_back(ls);

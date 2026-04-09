@@ -1,6 +1,7 @@
 #
 # Start of 5.6 tests
 #
+include/rpl/set_gtid_mode_off.inc
 SET NAMES utf8mb3, collation_connection=utf16le_general_ci;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
@@ -1371,6 +1372,7 @@ ZYX
 ACB
 ABC
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc
 #
 # WL#3664 WEIGHT_STRING
 #

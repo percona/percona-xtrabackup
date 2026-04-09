@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -229,8 +229,7 @@ static SEL_TREE *get_func_mm_tree_from_in_predicate(
         We create the Item on thd->mem_root which points to
         per-statement mem_root.
       */
-      Item_basic_constant *value_item =
-          op->m_const_array->create_item(thd->mem_root);
+      Item *value_item = op->m_const_array->create_item(thd->mem_root);
       if (value_item == nullptr) return nullptr;
 
       /* Get a SEL_TREE for "(-inf|NULL) < X < c_0" interval.  */
@@ -249,7 +248,7 @@ static SEL_TREE *get_func_mm_tree_from_in_predicate(
         /* We get here in cases like "t.unsigned NOT IN (-1,-2,-3) */
         return nullptr;
       SEL_TREE *tree2 = nullptr;
-      Item_basic_constant *previous_range_value =
+      Item *previous_range_value =
           op->m_const_array->create_item(thd->mem_root);
       for (; i < op->m_const_array->m_used_size; i++) {
         // Check if the value stored in the field for the previous range

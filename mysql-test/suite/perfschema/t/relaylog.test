@@ -174,5 +174,6 @@ select
   and event_name not like "%MYSQL_RELAY_LOG::update_cond"
   order by event_name;
 
+# We have reset the gtids on replica so need to ignore the gtids from source on sync
+--let $ignore_gtids_on_sync = 1
 --source include/rpl/deinit.inc
-

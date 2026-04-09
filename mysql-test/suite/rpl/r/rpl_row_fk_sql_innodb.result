@@ -1,0 +1,74 @@
+#FR 11.3:Source(SQL FK) -> Replica(InnoDB FK)
+include/rpl/init_source_replica.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection master]
+# FR-11) When the source node uses binlog_format='row', the replica must
+# perform foreign key cascade actions based on the innodb_native_foreign_keys
+# setting on the source node, regardless of the replica's own
+# innodb_native_foreign_keys setting
+# rows_updated and rows_deleted are not updated in InnoDB FK handling
+# but it gets updated with SQL FK handling. This difference is used
+# to determine which FK handling is used at the replica node
+# Create table and insert data on source
+CREATE TABLE parent (id INT PRIMARY KEY) ENGINE=InnoDB;
+CREATE TABLE child (id INT, parent_id INT,
+FOREIGN KEY (parent_id) REFERENCES parent(id) ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB;
+# Source Node
+INSERT INTO parent VALUES (1), (2), (3);
+INSERT INTO child VALUES (1, 1), (2, 2), (3, 3);
+SHOW VARIABLES LIKE '%innodb_native_foreign_key%';
+Variable_name	Value
+innodb_native_foreign_keys	OFF
+include/rpl/sync_to_replica.inc
+# Replica Node
+SELECT * FROM parent;
+id
+1
+2
+3
+SELECT * FROM child;
+id	parent_id
+1	1
+2	2
+3	3
+SHOW VARIABLES LIKE '%innodb_native_foreign_key%';
+Variable_name	Value
+innodb_native_foreign_keys	ON
+# Source Node
+SHOW VARIABLES LIKE '%innodb_native_foreign_key%';
+Variable_name	Value
+innodb_native_foreign_keys	OFF
+UPDATE parent SET id = 100 WHERE id = 1;
+DELETE FROM parent where id = 3;
+SELECT * FROM parent;
+id
+2
+100
+SELECT * FROM child;
+id	parent_id
+1	100
+2	2
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+child	1	1
+parent	1	1
+include/rpl/sync_to_replica.inc
+# Replica Node
+SELECT * FROM parent;
+id
+2
+100
+SELECT * FROM child;
+id	parent_id
+1	100
+2	2
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+child	1	1
+parent	1	1
+DROP TABLE parent, child;
+include/rpl/deinit.inc

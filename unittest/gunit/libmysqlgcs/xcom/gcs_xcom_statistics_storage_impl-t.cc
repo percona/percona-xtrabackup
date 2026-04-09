@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -124,7 +124,7 @@ TEST_F(XcomStatisticsStorageImplTest, AddMessageTest) {
 }
 
 TEST_F(XcomStatisticsStorageImplTest, AddBytesReceivedTest) {
-  uint64_t received_bytes = 23456;
+  uint64_t const received_bytes = 23456;
 
   EXPECT_CALL(stats_mgr_mock,
               set_sum_var_value(kMessageBytesReceived, received_bytes))
@@ -134,7 +134,7 @@ TEST_F(XcomStatisticsStorageImplTest, AddBytesReceivedTest) {
 }
 
 TEST_F(XcomStatisticsStorageImplTest, SetLastProposalTimeTest) {
-  long long set_time = 22334455;
+  long long const set_time = 22334455;
 
   EXPECT_CALL(stats_mgr_mock,
               set_timestamp_var_value(kLastProposalRoundTime, set_time))

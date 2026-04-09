@@ -44,9 +44,13 @@ CREATE USER b20438524@'%' IDENTIFIED BY 'pwd';
 # set some valid addresses
 UPDATE mysql.user SET host='localhost1' WHERE user='b20438524';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # cleanup
 DELETE FROM mysql.user WHERE user='b20438524';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # must find the pattern
 Pattern "'user' entry 'b20438524@localhost1' ignored in --skip-name-resolve mode" found
 End of 5.7 tests
@@ -57,6 +61,8 @@ CREATE USER b20438524@'%' IDENTIFIED BY 'pwd';
 # set some valid addresses
 UPDATE mysql.user SET host='localhost' WHERE user='b20438524';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # must not find the pattern
 Pattern "'user' entry 'b20438524@localhost' ignored in --skip-name-resolve mode" not found
 DELETE FROM mysql.user WHERE user='b20438524';

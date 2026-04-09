@@ -1,6 +1,6 @@
 /***********************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 Copyright (c) 2009, Percona Inc.
 
 Portions of this file contain modifications contributed and copyrighted
@@ -231,6 +231,7 @@ static const ulint OS_BUFFERED_FILE = 103;
 static const ulint OS_CLONE_DATA_FILE = 104;
 static const ulint OS_CLONE_LOG_FILE = 105;
 static const ulint OS_DBLWR_FILE = 106;
+static const ulint OS_DATA_FILE_FOR_SPACE_ID_READ = 107;
 /** @} */
 
 /** Error codes from os_file_get_last_error @{ */
@@ -736,10 +737,12 @@ MY_COMPILER_DIAGNOSTIC_POP()
 @param[in]      fd              file descriptor to alter
 @param[in]      file_name       file name, used in the diagnostic message
 @param[in]      operation_name  "open" or "create"; used in the diagnostic
-                                message */
+                                message
+@param[in]      on_error_silent if true then don't print any message to the log
+*/
 void os_file_set_nocache(int fd, const char *file_name,
-                         const char *operation_name);
-
+                         const char *operation_name,
+                         bool on_error_silent = false);
 /** NOTE! Use the corresponding macro os_file_create(), not directly
 this function!
 Opens an existing file or creates a new.
@@ -1237,6 +1240,7 @@ static inline bool pfs_os_file_delete_if_exists_func(mysql_pfs_key_t key,
 
 /* If UNIV_PFS_IO is not defined, these I/O APIs point
 to original un-instrumented file I/O APIs */
+
 #define os_file_create(key, name, create, purpose, read_only, success) \
   os_file_create_func(name, create, purpose, read_only, success)
 

@@ -694,12 +694,12 @@ RUN drop table t1
 RUN use test
 
 0 rows affected
-RUN create table t1 as select 5.05 / 0.014
+RUN create table t1 as select 5.05000000000000000000000123456789 + 1
 
 1 rows affected
 Records: 1  Duplicates: 0  Warnings: 1
 Warnings generated:
-NOTE | 1265 | Data truncated for column '5.05 / 0.014' at row 1
+NOTE | 1265 | Data truncated for column '5.05000000000000000000000123456789 + 1' at row 1
 Got expected warning: 1265 
 RUN drop table t1
 

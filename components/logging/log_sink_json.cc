@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -392,7 +392,7 @@ fail:
 // See log_service_imp::get_log_name below for description
 static log_service_error get_json_log_name(void *instance, char *buf,
                                            size_t bufsize) {
-  my_state *mi = (my_state *)instance;
+  auto *mi = (my_state *)instance;
   int stream_id = 0;  // default stream-ID
   size_t len;
 

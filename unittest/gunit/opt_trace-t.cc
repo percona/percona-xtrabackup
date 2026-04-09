@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,10 +27,10 @@
 */
 
 #include <gtest/gtest.h>
-#include <limits.h>
-#include <string.h>
 #include <sys/types.h>
+#include <climits>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <regex>
 #include <string>
@@ -71,12 +71,12 @@ static void do_check_json_compliance(const char *str, size_t length) {
   // trace. Comments are not understood by our JSON parser, so eliminate them
   // before validating the trace.
   std::string json_document(str, length);
-  std::regex comment_re("/\\*[ A-Za-z_]* \\*/");
+  std::regex const comment_re("/\\*[ A-Za-z_]* \\*/");
   json_document = std::regex_replace(json_document, comment_re, "");
 
   const char *errmsg = nullptr;
-  size_t errpos = 0;
-  Json_dom_ptr dom = Json_dom::parse(
+  size_t const errpos = 0;
+  Json_dom_ptr const dom = Json_dom::parse(
       json_document.data(), json_document.size(), [](const char *, size_t) {},
       [] { ASSERT_TRUE(false); });
   ASSERT_NE(nullptr, dom) << "Parse error: " << errmsg
@@ -124,7 +124,7 @@ TEST_F(TraceContentTest, Empty) {
     Add at least an object to it. A really empty trace ("") is not
     JSON-compliant.
   */
-  { Opt_trace_object oto(&trace); }
+  { Opt_trace_object const oto(&trace); }
   /* End trace */
   trace.end();
   /* And verify trace's content */
@@ -217,9 +217,9 @@ TEST_F(TraceContentTest, BuggyObject) {
       ota.add(200.4);
       {
         Opt_trace_object oto1(&trace);
-        oto1.add_alnum("one value");    // no key, which is wrong
-        oto1.add(326);                  // same
-        Opt_trace_object oto2(&trace);  // same
+        oto1.add_alnum("one value");          // no key, which is wrong
+        oto1.add(326);                        // same
+        Opt_trace_object const oto2(&trace);  // same
       }
       ota.add_alnum("one string element");
       ota.add(true);
@@ -274,9 +274,9 @@ TEST_F(TraceContentTest, BuggyArray) {
     Opt_trace_object oto(&trace);
     {
       Opt_trace_array ota(&trace, "one array");
-      ota.add("superfluous key", 200.4);            // key, which is wrong
-      ota.add("not necessary", 326);                // same
-      Opt_trace_object oto2(&trace, "not needed");  // same
+      ota.add("superfluous key", 200.4);                  // key, which is wrong
+      ota.add("not necessary", 326);                      // same
+      Opt_trace_object const oto2(&trace, "not needed");  // same
     }
     oto.add("yet another key", -1000LL);
     {
@@ -327,23 +327,23 @@ TEST_F(TraceContentTest, DisableISWithObject) {
       {
         Opt_trace_object oto1(&trace);
         oto1.add_alnum("one key", "one value").add("another key", 100LL);
-        Opt_trace_disable_I_S otd(&trace, true);
+        Opt_trace_disable_I_S const otd(&trace, true);
         oto1.add("a third key", false);
         Opt_trace_object oto2(&trace, "a fourth key");
         oto2.add("key inside", 1LL);
         /* don't disable... but above layer is stronger */
-        Opt_trace_disable_I_S otd2(&trace, false);
+        Opt_trace_disable_I_S const otd2(&trace, false);
         oto2.add("another key inside", 5LL);
         // disabling should apply to substatements too:
         ASSERT_FALSE(trace.start(true, false, true, false, -1, 1, ULONG_MAX,
                                  all_features));
-        { Opt_trace_object oto3(&trace); }
+        { Opt_trace_object const oto3(&trace); }
         trace.end();
       }
       ota.add_alnum("one string element");
       ota.add(true);
     }
-    Opt_trace_disable_I_S otd2(&trace, false);  // don't disable
+    Opt_trace_disable_I_S const otd2(&trace, false);  // don't disable
     oto.add("yet another key", -1000LL);
     {
       Opt_trace_array ota(&trace, "another array");
@@ -404,15 +404,15 @@ TEST_F(TraceContentTest, DisableISWithCall) {
         // disabling should apply to substatements too:
         ASSERT_FALSE(trace.start(true, false, true, false, -1, 1, ULONG_MAX,
                                  all_features));
-        { Opt_trace_object oto3(&trace); }
+        { Opt_trace_object const oto3(&trace); }
         trace.end();
         /* don't disable... but above layer is stronger */
-        Opt_trace_disable_I_S otd2(&trace, false);
+        Opt_trace_disable_I_S const otd2(&trace, false);
         oto2.add("another key inside", 5LL);
         // disabling should apply to substatements too:
         ASSERT_FALSE(trace.start(true, false, true, false, -1, 1, ULONG_MAX,
                                  all_features));
-        { Opt_trace_object oto4(&trace); }
+        { Opt_trace_object const oto4(&trace); }
         trace.end();
       }
       ota.add_alnum("one string element");
@@ -426,7 +426,7 @@ TEST_F(TraceContentTest, DisableISWithCall) {
   }
   trace.end();
   trace.restore_I_S();
-  Opt_trace_iterator it(&trace);
+  Opt_trace_iterator const it(&trace);
   ASSERT_TRUE(it.at_end());
 }
 
@@ -535,7 +535,7 @@ TEST_F(TraceContentTest, MaxMemSize) {
                            1000 /* max_mem_size */, all_features));
   /* make a "long" trace */
   {
-    Opt_trace_object oto(&trace);
+    Opt_trace_object const oto(&trace);
     Opt_trace_array ota(&trace, "one array");
     for (int i = 0; i < 100; i++) {
       ota.add_alnum("make it long");
@@ -646,7 +646,7 @@ void open_object(uint count, Opt_trace_context *trace, bool simulate_oom) {
     */
     if (count == 10) DBUG_SET("-d,opt_trace_oom_in_open_struct");
   }
-  Opt_trace_object oto(trace, key);
+  Opt_trace_object const oto(trace, key);
   open_object(count, trace, simulate_oom);
 }
 
@@ -657,7 +657,7 @@ TEST_F(TraceContentTest, OOMinBuffer) {
   ASSERT_FALSE(
       trace.start(true, false, false, false, -1, 1, ULONG_MAX, all_features));
   {
-    Opt_trace_object oto(&trace);
+    Opt_trace_object const oto(&trace);
     {
       Opt_trace_array ota(&trace, "one array");
       DBUG_SET("+d,opt_trace_oom_in_buffers");
@@ -683,7 +683,7 @@ TEST_F(TraceContentTest, OOMinBookKeeping) {
   ASSERT_FALSE(
       trace.start(true, false, false, false, -1, 1, ULONG_MAX, all_features));
   {
-    Opt_trace_object oto(&trace);
+    Opt_trace_object const oto(&trace);
     open_object(100, &trace, true);
   }
   trace.end();
@@ -905,7 +905,7 @@ TEST_F(TraceContentTest, Indent) {
   ASSERT_FALSE(
       trace.start(true, false, false, false, -1, 1, ULONG_MAX, all_features));
   {
-    Opt_trace_object oto(&trace);
+    Opt_trace_object const oto(&trace);
     open_object(99, &trace, false);
   }
   trace.end();
@@ -967,7 +967,7 @@ TEST_F(TraceContentTest, MissingPrivilege) {
         ASSERT_FALSE(trace.start(true, false, true, false, 0, 100, ULONG_MAX,
                                  all_features));
         {
-          Opt_trace_object oto3(&trace);
+          Opt_trace_object const oto3(&trace);
           trace.missing_privilege();
           ASSERT_FALSE(trace.start(true, false, true, false, 0, 100, ULONG_MAX,
                                    all_features));
@@ -1086,7 +1086,7 @@ TEST_F(TraceContentTest, MissingPrivilege2) {
   }
   trace.end();
   trace.end();
-  Opt_trace_iterator it(&trace);
+  Opt_trace_iterator const it(&trace);
   ASSERT_TRUE(it.at_end());
 }
 

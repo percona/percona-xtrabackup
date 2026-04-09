@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -51,14 +51,14 @@ class LogSuppressor {
     /* incorrect JSON for instance_type from the last query */
     kInstanceType,
 
-    /* incorrect JSON or value for read_only_targets */
-    kReadOnlyTargets,
-
-    /* incorrect JSON or value for unreachable_quorum_allowed_traffic */
-    kUnreachableQuorumAllowedTraffic,
+    /* incorrect JSON or value for router option in the metadata */
+    kRouterOption,
 
     /* deprecated version of Cluster Metadata */
-    kDeprecatedMetadataVersion
+    kDeprecatedMetadataVersion,
+
+    /* incorrect JSON for instance tags in the metadata from the last query */
+    kServerTags,
   };
 
   static LogSuppressor &instance() {
@@ -66,7 +66,7 @@ class LogSuppressor {
     return instance_;
   }
 
-  void log_message(const MessageId id, const std::string &uuid,
+  void log_message(const MessageId id, const std::string &key,
                    const std::string &message, bool invalid_condition,
                    mysql_harness::logging::LogLevel invalid_condition_level =
                        mysql_harness::logging::LogLevel::kWarning,

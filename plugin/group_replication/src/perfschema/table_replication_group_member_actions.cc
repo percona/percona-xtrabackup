@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -190,20 +190,20 @@ PSI_table_handle *Pfs_table_replication_group_member_actions::open_table(
       struct Replication_group_member_actions row;
 
       table->field[0]->val_str(&string);
-      row.name.assign(string.c_ptr_safe(), string.length());
+      row.name.assign(to_string_view(string));
 
       table->field[1]->val_str(&string);
-      row.event.assign(string.c_ptr_safe(), string.length());
+      row.event.assign(to_string_view(string));
 
       row.enabled = table->field[2]->val_int();
 
       table->field[3]->val_str(&string);
-      row.type.assign(string.c_ptr_safe(), string.length());
+      row.type.assign(to_string_view(string));
 
       row.priority = table->field[4]->val_int();
 
       table->field[5]->val_str(&string);
-      row.error_handling.assign(string.c_ptr_safe(), string.length());
+      row.error_handling.assign(to_string_view(string));
 
       t->rows.push_back(row);
     } while (!key_access.next());

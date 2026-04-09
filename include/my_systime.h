@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,22 +30,28 @@
   Defines for getting and processing the current system type programmatically.
 */
 
-#include <time.h>   // time_t, struct timespec (C11/C++17)
 #include <cassert>  // assert
-#include <chrono>   // std::chrono::microseconds
 #include <cstdint>  // std::int64_t
+#include <ctime>    // time_t, struct timespec (C11/C++17)
 #include <limits>   // std::numeric_limits
-#include <thread>   // std::this_thread::wait_for
 #include "my_config.h"
 
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>  // clock_gettime()
 #endif                 /* HAVE_SYS_TIME_H */
+
 #ifdef _WIN32
 #include <winsock2.h>  // struct timeval
-#endif                 /* _WIN32 */
-#include "my_time_t.h"
+#endif                 // _WIN32
+
+#if !defined(HAVE_CLOCK_GETTIME) || !defined(HAVE_GETTIMEOFDAY)
+#include <chrono>
 using UTC_clock = std::chrono::system_clock;
+#endif
+
+#include "my_time_t.h"
+
+struct timeval;
 
 /* Bits for get_date timeflag */
 constexpr const int GETDATE_DATE_TIME = 1;
@@ -59,11 +65,9 @@ constexpr const int GETDATE_SHORT_DATE_FULL_YEAR = 64;
 /**
    Wait a given number of microseconds.
 
-   @param m_seconds number of microseconds to wait.
+   @param micro_seconds number of microseconds to wait.
 */
-inline void my_sleep(time_t m_seconds) {
-  std::this_thread::sleep_for(std::chrono::microseconds{m_seconds});
-}
+void my_sleep(int64_t micro_seconds);
 
 #ifdef _WIN32
 
@@ -88,14 +92,12 @@ inline struct tm *gmtime_r(const time_t *clock, struct tm *res) {
 
    @param seconds number of seconds to wait
 */
-inline void sleep(unsigned long seconds) {
-  std::this_thread::sleep_for(std::chrono::seconds{seconds});
-}
+void sleep(unsigned long seconds);
 
 #endif /* _WIN32 */
 
 /**
-  Get high-resolution time. Forwards to std::chrono.
+  Get high-resolution time. Forwards to std::chrono on Windows.
 
   @return current high-resolution time in multiples of 100 nanoseconds.
 */
@@ -130,7 +132,6 @@ constexpr const Timeout_type TIMEOUT_INF =
 
 void set_timespec_nsec(struct timespec *abstime, Timeout_type nsec);
 void set_timespec(struct timespec *abstime, Timeout_type sec);
-timespec timespec_now();
 
 /**
    Compare two timespec structs.
@@ -180,11 +181,7 @@ inline unsigned long long int diff_timespec(struct timespec *ts1,
   (UTC)
 */
 inline unsigned long long int my_micro_time() {
-#ifdef _WIN32
-  return std::chrono::duration_cast<std::chrono::microseconds>(
-             UTC_clock::now().time_since_epoch())
-      .count();
-#else
+#ifdef HAVE_GETTIMEOFDAY
   struct timeval t;
   /*
   The following loop is here because gettimeofday may fail on some systems
@@ -192,33 +189,11 @@ inline unsigned long long int my_micro_time() {
   while (gettimeofday(&t, nullptr) != 0) {
   }
   return (static_cast<unsigned long long int>(t.tv_sec) * 1000000 + t.tv_usec);
-#endif /* _WIN32 */
-}
-
-/**
-  Return time in milliseconds. Uses std::chrono::high_resolution_clock
-
-  @remark This function is to be used to measure time in
-          millisecond.
-
-  @retval Number of milliseconds since the Epoch, 1970-01-01 00:00:00 +0000
-  (UTC)
-*/
-inline unsigned long long int my_milli_time() {
-#ifdef _WIN32
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
+#else
+  return std::chrono::duration_cast<std::chrono::microseconds>(
              UTC_clock::now().time_since_epoch())
       .count();
-#else
-  struct timeval t;
-  /*
-  The following loop is here because gettimeofday may fail on some systems
-  */
-  while (gettimeofday(&t, nullptr) != 0) {
-  }
-  return (static_cast<unsigned long long int>(t.tv_sec) * 1000 +
-          (t.tv_usec / 1000));
-#endif /* _WIN32 */
+#endif  // HAVE_GETTIMEOFDAY
 }
 
 /**

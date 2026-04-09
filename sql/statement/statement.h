@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -138,6 +138,28 @@ class Statement_handle {
    * @return Warning*
    */
   Warning *get_warnings();
+
+  /**
+   * @brief Set the flag to indicate clear diagnostics area on successful
+   *        execution of a statement.
+   *
+   * @param clear_da  If false, the diagnostics area is not cleared on
+   *                  successful execution of a statement. Otherwise, the
+   *                  diagnostics area is cleared.
+   */
+  void set_clear_diagnostics_area_on_success(bool clear_da) {
+    m_clear_diagnostics_area_on_success = clear_da;
+  }
+
+  /**
+   * @brief Get value of a flag which indicates whether diagnostics area should
+   *        be cleared on successful execution of a statement or not.
+   *
+   * @returns Value of a flag.
+   */
+  bool clear_diagnostics_area_on_success() const {
+    return m_clear_diagnostics_area_on_success;
+  }
 
   /**
    * @brief Get the next result sets generated while executing the statement.
@@ -298,11 +320,17 @@ class Statement_handle {
   // The query being executed.
   std::string m_query;
 
-  // Details about error or warning occured.
+  // Details about error or warning occurred.
   MEM_ROOT m_warning_mem_root;
   Warning *m_warnings;
   ulonglong m_warnings_count = 0;
+
   Diagnostics_area *m_diagnostics_area;
+
+  /// Flag to indicate if diagnostics area should be cleared or retained on
+  /// successful execution of a statement.
+  /// If retained, then user of this class should manage diagnostics area.
+  bool m_clear_diagnostics_area_on_success{true};
 
   // The thread executing the statement.
   THD *m_thd;

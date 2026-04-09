@@ -75,7 +75,7 @@
                     "type": "object",
                     "properties": {
                         "protocol": { "enum": [ "classic" ] },
-                        "destinations": { "pattern": "metadata-cache://(mycluster)|(clusterset-name)/\\?role=SECONDARY" },
+                        "destinations": { "pattern": "metadata-cache://(my-cluster)|(clusterset-name)/\\?role=SECONDARY" },
                         "bind_port": { "enum": [ 6447 ] },
                         "bind_address": { "enum": [ "0.0.0.0" ] },
                         "socket": { "enum": [ "" ] },
@@ -118,7 +118,7 @@
                     "type": "object",
                     "properties": {
                         "protocol": { "enum": [ "classic" ] },
-                        "destinations": { "pattern": "metadata-cache://(mycluster)|(clusterset-name)/\\?role=PRIMARY" },
+                        "destinations": { "pattern": "metadata-cache://(my-cluster)|(clusterset-name)/\\?role=PRIMARY" },
                         "bind_port": { "enum": [ 6446 ] },
                         "bind_address": { "enum": [ "0.0.0.0" ] },
                         "socket": { "enum": [ "" ] },
@@ -161,7 +161,7 @@
                     "type": "object",
                     "properties": {
                         "protocol": { "enum": [ "classic" ] },
-                        "destinations": { "pattern": "metadata-cache://(mycluster)|(clusterset-name)/\\?role=PRIMARY_AND_SECONDARY" },
+                        "destinations": { "pattern": "metadata-cache://(my-cluster)|(clusterset-name)/\\?role=PRIMARY_AND_SECONDARY" },
                         "bind_port": { "enum": [ 6450 ] },
                         "bind_address": { "enum": [ "0.0.0.0" ] },
                         "socket": { "enum": [ "" ] },
@@ -205,7 +205,7 @@
                     "type": "object",
                     "properties": {
                         "protocol": { "enum": [ "x" ] },
-                        "destinations": { "pattern": "metadata-cache://(mycluster)|(clusterset-name)/\\?role=SECONDARY" },
+                        "destinations": { "pattern": "metadata-cache://(my-cluster)|(clusterset-name)/\\?role=SECONDARY" },
                         "bind_port": { "enum": [ 6449 ] },
                         "bind_address": { "enum": [ "0.0.0.0" ] },
                         "socket": { "enum": [ "" ] },
@@ -248,7 +248,7 @@
                     "type": "object",
                     "properties": {
                         "protocol": { "enum": [ "x" ] },
-                        "destinations": { "pattern": "metadata-cache://(mycluster)|(clusterset-name)/\\?role=PRIMARY" },
+                        "destinations": { "pattern": "metadata-cache://(my-cluster)|(clusterset-name)/\\?role=PRIMARY" },
                         "bind_port": { "enum": [ 6448 ] },
                         "bind_address": { "enum": [ "0.0.0.0" ] },
                         "socket": { "enum": [ "" ] },

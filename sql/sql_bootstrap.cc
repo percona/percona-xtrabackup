@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
 
 #include "sql/sql_bootstrap.h"
 
-#include <assert.h>
-#include <ctype.h>
-#include <string.h>
+#include <cassert>
+#include <cctype>
+#include <cstring>
 
 #include "map_helpers.h"
 
@@ -109,7 +109,7 @@ void bootstrap_parser_state::report_error_details(log_function_t log) {
 int read_bootstrap_query(char *query, size_t *query_length, MYSQL_FILE *input,
                          fgets_fn_t fgets_fn, bootstrap_parser_state *state) {
   /* Allow for up to 3 extra characters in lookup. */
-  unique_ptr_free<char> line_buffer(
+  unique_ptr_free<char> const line_buffer(
       static_cast<char *>(malloc(MAX_BOOTSTRAP_LINE_SIZE + 3)));
   char *line;
   size_t len;
@@ -129,6 +129,7 @@ int read_bootstrap_query(char *query, size_t *query_length, MYSQL_FILE *input,
       memcpy(line_buffer.get(), state->m_unget_buffer.get(),
              state->m_unget_buffer_length);
       line = line_buffer.get();
+      line[state->m_unget_buffer_length] = '\0';
       state->m_unget_buffer_length = 0;
     }
 

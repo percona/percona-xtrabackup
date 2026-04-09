@@ -1,3 +1,4 @@
+# Removing local keyring file for keyring component: 
 # ----------------------------------------------------------------------
 # Setup
 # Creating local configuration file for keyring component: component_keyring_file
@@ -6,9 +7,9 @@
 # ----------------------------------------------------------------------
 CREATE DATABASE WL_11543_PERF_SCHEMA_KEYRING;
 USE WL_11543_PERF_SCHEMA_KEYRING;
-SELECT count(*) FROM performance_schema.keyring_keys;
-count(*)
-0
+# Should be empty
+SELECT * FROM performance_schema.keyring_keys;
+KEY_ID	KEY_OWNER	BACKEND_KEY_ID
 CREATE TABLE t1(c1 INT, c2 char(20)) ENGINE = InnoDB ENCRYPTION="Y";
 SELECT count(*) FROM performance_schema.keyring_keys;
 count(*)

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,13 +34,13 @@
 
 void HttpAuthRealmComponent::add_realm(const std::string &name,
                                        std::shared_ptr<HttpAuthRealm> realm) {
-  std::lock_guard<std::mutex> lk(realms_m_);
+  std::lock_guard<std::mutex> const lk(realms_m_);
 
   auth_realms_[name] = std::move(realm);
 }
 
 void HttpAuthRealmComponent::remove_realm(const std::string &name) {
-  std::lock_guard<std::mutex> lk(realms_m_);
+  std::lock_guard<std::mutex> const lk(realms_m_);
 
   const auto it = auth_realms_.find(name);
   if (it != auth_realms_.end()) {
@@ -50,7 +50,7 @@ void HttpAuthRealmComponent::remove_realm(const std::string &name) {
 
 std::shared_ptr<HttpAuthRealm> HttpAuthRealmComponent::get(
     const std::string &inst) {
-  std::lock_guard<std::mutex> lk(realms_m_);
+  std::lock_guard<std::mutex> const lk(realms_m_);
 
   auto it = auth_realms_.find(inst);
   if (it == auth_realms_.end()) {
@@ -65,9 +65,8 @@ std::error_code HttpAuthRealmComponent::authenticate(
     const std::string &authdata) {
   if (auto realm = get(inst)) {
     return realm->authenticate(username, authdata);
-  } else {
-    return make_error_code(HttpAuthErrc::kRealmNotFound);
   }
+  return make_error_code(HttpAuthErrc::kRealmNotFound);
 }
 
 HttpAuthRealmComponent &HttpAuthRealmComponent::get_instance() {

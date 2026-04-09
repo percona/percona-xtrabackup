@@ -89,7 +89,8 @@ let query_row_locks= SELECT CONCAT(OBJECT_SCHEMA,'.',OBJECT_NAME)
   tab,INDEX_NAME,LOCK_MODE, 'Acquired row lock on u2/u2x' AS Has_lock
   FROM performance_schema.data_locks
   WHERE LOCK_TYPE='RECORD' AND
-  (LOCATE('u2',LOCK_DATA)>0 OR LOCATE('u2x',LOCK_DATA)>0);
+  (LOCATE('u2',LOCK_DATA)>0 OR LOCATE('u2x',LOCK_DATA)>0)
+  ORDER BY 1,2,3;
 
 # Variables to loop through isolation levels.
 let $c=1;

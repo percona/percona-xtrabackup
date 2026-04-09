@@ -311,8 +311,7 @@ deallocate prepare stmt;
 #create table bug20536 (id bigint not null auto_increment primary key, name
 #varchar(255) character set ucs2 not null);
 #insert into `bug20536` (`id`,`name`) values (1, _latin1 x'7465737431'), (2, "'test\\_2'");
-#select md5(name) from bug20536;
-#select sha1(name) from bug20536;
+#select sha2(name,256) from bug20536;
 #select make_set(3, name, upper(name)) from bug20536;
 #select export_set(5, name, upper(name)) from bug20536;
 #select export_set(5, name, upper(name), ",", 5) from bug20536;
@@ -773,7 +772,7 @@ RETURNS CHAR(50) DETERMINISTIC RETURN CONCAT('Hello, ',s,'!');
 --echo #               failed.
 
 --error ER_CANNOT_CONVERT_STRING
-DO REPLACE(CONVERT(1 USING utf32),BIT_XOR(1),SHA1(@d));
+DO REPLACE(CONVERT(1 USING utf32),BIT_XOR(1),SHA2(@d,256));
 
 --echo #
 --echo # Bug #33810558 Invalid Unicode characters can be inserted in

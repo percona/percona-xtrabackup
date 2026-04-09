@@ -1,3 +1,5 @@
+SET GLOBAL explain_json_format_version = 1;
+SET SESSION explain_json_format_version = 1;
 CREATE TABLE t1 (
 pk_col1 INT NOT NULL,
 a1 CHAR(64),
@@ -512,6 +514,8 @@ EXPLAIN
   }
 }
 DROP TABLE t1, t2;
+SET GLOBAL explain_json_format_version = DEFAULT;
+SET SESSION explain_json_format_version = DEFAULT;
 #
 # Bug #26627136: WL#6526: ASSERTION
 #               `!ALL_SELECTS_LIST->NEXT_SELECT_IN_LIST()' FAILED.

@@ -1,0 +1,61 @@
+################################################################################
+# Test boundary conditions for the parallel applier for the
+# group_replication_applier channel.
+#
+# Test:
+# 0. The test requires one server.
+#  - With member ONLINE. Check defaults.
+# 1. Stop applier thread. Test with REPLICA_PRESERVE_COMMIT_ORDER=OFF and
+#    REPLICA_PARALLEL_WORKERS > 0. Start applier thread should fail.
+# 2. Stop applier thread. Test with REPLICA_PRESERVE_COMMIT_ORDER=ON and
+#    REPLICA_PARALLEL_WORKERS > 0. Start applier thread should succeed.
+# 3. Clean up.
+################################################################################
+--source include/have_group_replication_plugin.inc
+--let $rpl_skip_group_replication_start = 1
+--source include/group_replication.inc
+
+# If these assert fails there is no point in continue the test.
+--let $assert_text= Default replica parallel workers must be 4
+--let $assert_cond= [SELECT @@GLOBAL.REPLICA_PARALLEL_WORKERS] = 4
+--source include/assert.inc
+
+--let $assert_text= Default replica preserve commit order 1
+--let $assert_cond= [SELECT @@GLOBAL.REPLICA_PRESERVE_COMMIT_ORDER] = 1
+--source include/assert.inc
+
+# Start and stop Group Replication to ensure that `group_replication_applier`
+# channel exists.
+--source include/start_and_bootstrap_group_replication.inc
+--source include/stop_group_replication.inc
+
+# Save defaults.
+SET @replica_parallel_workers_saved= @@GLOBAL.REPLICA_PARALLEL_WORKERS;
+SET @replica_preserve_commit_order_saved= @@GLOBAL.REPLICA_PRESERVE_COMMIT_ORDER;
+SET GLOBAL REPLICA_PRESERVE_COMMIT_ORDER= OFF;
+
+--echo ############################################################
+--echo # 1. Test with REPLICA_PRESERVE_COMMIT_ORDER=OFF and
+--echo #    parallel workers number set to 4.
+STOP REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+SET GLOBAL REPLICA_PARALLEL_WORKERS= 4;
+--error ER_REPLICA_CHANNEL_OPERATION_NOT_ALLOWED
+START REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+
+--echo
+--echo ############################################################
+--echo # 2. Test with REPLICA_PRESERVE_COMMIT_ORDER=ON and
+--echo #    parallel workers number set to 4.
+STOP REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+SET GLOBAL REPLICA_PARALLEL_WORKERS= 4;
+SET GLOBAL REPLICA_PRESERVE_COMMIT_ORDER= ON;
+START REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+
+--echo
+--echo ############################################################
+--echo # 3. Clean up.
+SET @@GLOBAL.REPLICA_PARALLEL_WORKERS= @replica_parallel_workers_saved;
+SET @@GLOBAL.REPLICA_PRESERVE_COMMIT_ORDER= @replica_preserve_commit_order_saved;
+
+--source include/gr_stop_applier_sql_thread.inc
+--source include/group_replication_end.inc

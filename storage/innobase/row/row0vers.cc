@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -649,9 +649,8 @@ static void row_vers_build_clust_v_col(dtuple_t *row, dict_index_t *clust_index,
 
       col = reinterpret_cast<const dict_v_col_t *>(ind_field->col);
 
-      innobase_get_computed_value(row, col, clust_index, &local_heap, heap,
-                                  nullptr, current_thd, nullptr, nullptr,
-                                  nullptr, nullptr);
+      innobase_get_computed_value(row, col, clust_index->table, &local_heap,
+                                  heap, current_thd, nullptr);
     }
   }
 

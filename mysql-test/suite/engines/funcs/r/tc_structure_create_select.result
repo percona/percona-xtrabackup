@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 DROP TABLE IF EXISTS src,dest;
 CREATE TABLE src (c1 INT NOT NULL AUTO_INCREMENT, c2 BIT NULL, PRIMARY KEY(c1));
 CREATE TABLE dst (c1 INT NOT NULL AUTO_INCREMENT,PRIMARY KEY(c1)) SELECT c1,c2 FROM src;
@@ -849,3 +850,4 @@ SHOW TABLES;
 Tables_in_test
 src
 DROP TABLE src;
+include/rpl/set_gtid_mode_on.inc

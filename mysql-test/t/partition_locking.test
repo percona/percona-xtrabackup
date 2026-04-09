@@ -2938,6 +2938,11 @@ DROP TABLE t1, t2;
 --echo #
 --echo # Test subqueries/stored functions with UPDATE/DELETE/SELECT
 --echo #
+# Bug#37560280:
+# The EXPLAIN plan for queries with the sf_a_from_t1b_d() function call
+# differs from the actual execution plan because constant folding
+# is performed in the actual plan but not in EXPLAIN.
+
 CREATE TABLE tq (id int PRIMARY KEY auto_increment, query varchar(255), not_select tinyint);
 CREATE TABLE tsq (id int PRIMARY KEY auto_increment, subquery varchar(255), can_be_locked tinyint);
 CREATE TABLE t1 (a int, b varchar(255), PRIMARY KEY (a), KEY (b))

@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,6 @@ struct row_setup_loggers {
 /** Table PERFORMANCE_SCHEMA.SETUP_LOGGERS. */
 class table_setup_loggers : public PFS_engine_table {
   typedef PFS_simple_index pos_t;
-  typedef Prealloced_array<row_setup_loggers, LOGGERS_PREALLOC> Loggers_array;
 
  public:
   /** Table share. */

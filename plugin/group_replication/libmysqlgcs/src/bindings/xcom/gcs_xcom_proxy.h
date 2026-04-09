@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1029,8 +1029,8 @@ class Gcs_xcom_proxy_impl : public Gcs_xcom_proxy_base {
    */
   enum_gcs_error xcom_wait_for_condition(
       My_xp_cond_impl &condition, My_xp_mutex_impl &condition_lock,
-      std::function<bool(void)> need_to_wait,
-      std::function<const std::string(int res)> condition_event);
+      const std::function<bool(void)> &need_to_wait,
+      const std::function<const std::string(int res)> &condition_event);
 
   /*
     Disabling the copy constructor and assignment operator.

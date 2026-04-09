@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,12 @@
 #include <stdio.h>
 #include <sys/types.h>
 
-enum olap_type { UNSPECIFIED_OLAP_TYPE, ROLLUP_TYPE, CUBE_TYPE };
+enum olap_type {
+  UNSPECIFIED_OLAP_TYPE,
+  ROLLUP_TYPE,
+  CUBE_TYPE,
+  GROUPING_SETS_TYPE
+};
 
 inline const char *GroupByModifierString(enum olap_type olap) {
   switch (olap) {
@@ -37,6 +42,9 @@ inline const char *GroupByModifierString(enum olap_type olap) {
     }
     case CUBE_TYPE: {
       return "CUBE";
+    }
+    case GROUPING_SETS_TYPE: {
+      return "GROUPING SETS";
     }
     default: {
       return "UNDEFINED";
@@ -52,6 +60,9 @@ inline int GetMaximumNumGrpByColsSupported(enum olap_type olap) {
     }
     case CUBE_TYPE: {
       return 7; /* (2^7) = 128*/
+    }
+    case GROUPING_SETS_TYPE: {
+      return 128;
     }
     default: {
       return 0;

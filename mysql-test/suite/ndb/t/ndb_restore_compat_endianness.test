@@ -151,6 +151,9 @@ SET GLOBAL ndb_metadata_check = false;
 call mtr.add_suppression("Table upgrade required");
 call mtr.add_suppression("Failed to create entry in DD for table");
 call mtr.add_suppression("Failed to install table");
+call mtr.add_suppression("Incorrect information in file: .*t_datetime.frm");
+call mtr.add_suppression("Error in reading file .*t_datetime.frm");
+call mtr.add_suppression("Error in creating TABLE_SHARE from t_datetime.frm file");
 --enable_query_log
 
 #

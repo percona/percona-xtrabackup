@@ -41,7 +41,7 @@ include/assert.inc [group_replication_ssl_mode must be set to VERIFY_CA]
 SET GLOBAL group_replication_ssl_mode= VERIFY_IDENTITY;
 include/assert.inc [group_replication_ssl_mode must be set to VERIFY_IDENTITY]
 SET GLOBAL group_replication_ssl_mode= DEFAULT;
-include/assert.inc [group_replication_ssl_mode must be set to DISABLED]
+include/assert.inc [group_replication_ssl_mode must be set to REQUIRED]
 
 ############################################################
 # 4. Clean up.

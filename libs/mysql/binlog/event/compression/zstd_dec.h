@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,6 @@
 
 #include "mysql/allocators/memory_resource.h"  // Memory_resource
 #include "mysql/binlog/event/compression/decompressor.h"
-#include "mysql/utils/nodiscard.h"
 
 namespace mysql::binlog::event::compression {
 
@@ -61,7 +60,7 @@ class Zstd_dec : public Decompressor {
   void do_feed(const Char_t *input_data, Size_t input_size) override;
 
   /// @copydoc Decompressor::do_decompress
-  [[NODISCARD]] std::pair<Decompress_status, Size_t> do_decompress(
+  [[nodiscard]] std::pair<Decompress_status, Size_t> do_decompress(
       Char_t *out, Size_t output_size) override;
 
   /// @copydoc Decompressor::do_get_grow_constraint_hint

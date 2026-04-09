@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ Clone Plugin: OS specific routines for IO and network
 #include <unistd.h>
 #endif
 
-#include <string.h>
+#include <cstring>
 
 #ifdef __linux__
 #include <sys/sendfile.h>
@@ -340,7 +340,7 @@ bool clone_os_test_load(std::string &path) {
   char dlpath[FN_REFLEN];
 
   unpack_filename(dlpath, path.c_str());
-  auto handle = dlopen(dlpath, RTLD_NOW);
+  auto *handle = dlopen(dlpath, RTLD_NOW);
 
   if (handle == nullptr) {
     return false;

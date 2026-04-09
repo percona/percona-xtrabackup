@@ -23,7 +23,6 @@
 --source include/have_debug_sync.inc
 # Sequential applier blocks on a different place due to the LOCK TABLE,
 # which will cause a different value on COUNT_TRANSACTIONS_REMOTE_IN_APPLIER_QUEUE.
---source include/have_replica_parallel_workers.inc
 --source include/have_group_replication_plugin.inc
 --let $rpl_skip_group_replication_start= 1
 --source include/group_replication.inc

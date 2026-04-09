@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "my_compiler.h"
 #include "mysql/strings/m_ctype.h"
 #include "strings/m_ctype_internals.h"
 #include "template_utils.h"
@@ -2171,8 +2170,8 @@ static int my_strnncoll_cp932_internal(const CHARSET_INFO *cs,
                        pointer_cast<const char *>(a_end)) &&
         ismbchar_cp932(cs, pointer_cast<const char *>(b),
                        pointer_cast<const char *>(b_end))) {
-      unsigned a_char = cp932code(*a, *(a + 1));
-      unsigned b_char = cp932code(*b, *(b + 1));
+      unsigned const a_char = cp932code(*a, *(a + 1));
+      unsigned const b_char = cp932code(*b, *(b + 1));
       if (a_char != b_char) return a_char - b_char;
       a += 2;
       b += 2;
@@ -2192,7 +2191,7 @@ extern "C" {
 static int my_strnncoll_cp932(const CHARSET_INFO *cs, const uint8_t *a,
                               size_t a_length, const uint8_t *b,
                               size_t b_length, bool b_is_prefix) {
-  int res = my_strnncoll_cp932_internal(cs, &a, a_length, &b, b_length);
+  int const res = my_strnncoll_cp932_internal(cs, &a, a_length, &b, b_length);
   if (b_is_prefix && a_length > b_length) a_length = b_length;
   return res ? res : (int)(a_length - b_length);
 }
@@ -18648,7 +18647,7 @@ static int my_mb_wc_cp932(const CHARSET_INFO *cs [[maybe_unused]], my_wc_t *pwc,
                           const uint8_t *s, const uint8_t *e) {
   if (s >= e) return MY_CS_TOOSMALL;
 
-  int hi = s[0];
+  int const hi = s[0];
   if (hi < 0x80) /* ASCII: [00-7F] -> [U+0000..U+007F] */
   {
     *pwc = hi;
@@ -18718,8 +18717,8 @@ static int my_wc_mb_cp932(const CHARSET_INFO *cs [[maybe_unused]], my_wc_t wc,
 static size_t my_numcells_cp932(const CHARSET_INFO *cs [[maybe_unused]],
                                 const char *str, const char *str_end) {
   size_t clen = 0;
-  const uint8_t *b = pointer_cast<const uint8_t *>(str);
-  const uint8_t *e = pointer_cast<const uint8_t *>(str_end);
+  const auto *b = pointer_cast<const uint8_t *>(str);
+  const auto *e = pointer_cast<const uint8_t *>(str_end);
 
   for (clen = 0; b < e;) {
     if (*b >= 0xA1 && *b <= 0xDF) {

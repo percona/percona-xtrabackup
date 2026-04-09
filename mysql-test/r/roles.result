@@ -180,7 +180,7 @@ CURRENT_ROLE()
 `engineering`@`%`,`role`@`%`,`role1`@`%`
 SHOW STATUS LIKE '%acl_cache%';
 Variable_name	Value
-Acl_cache_items_count	3
+Acl_cache_items_count	4
 # REVOKE a FROM b
 # WL988.I-5
 REVOKE 'role' FROM role1;
@@ -229,7 +229,7 @@ Note	3162	Authorization ID 'role'@'%' does not exist.
 Note	3162	Authorization ID 'role'@'host' does not exist.
 # ...unless this is what we want:
 DROP ROLE 'role';
-ERROR HY000: Operation DROP ROLE failed for 'role'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'role'@'%' (User account does not exist)
 # Dropping roles should update the in memory roles graph
 # WL988.R-1.10
 # only count nodes and edges as the sorting order is depending on platform
@@ -269,6 +269,8 @@ localhost	joe	%	wp_administrators
 ALTER USER CURRENT_USER() DEFAULT ROLE NONE;
 ++ Flushing and reloading privileges shouldn't break the server
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Restart the server and verify that the role graph and default roles
 # are properly imported.
 # restart
@@ -630,6 +632,8 @@ Acl_cache_items_count	6
 FLUSH PRIVILEGES;
 ERROR 42000: Access denied; you need (at least one of) the RELOAD or FLUSH_PRIVILEGES privilege(s) for this operation
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT * FROM mysql.role_edges;
 FROM_HOST	FROM_USER	TO_HOST	TO_USER	WITH_ADMIN_OPTION
 %	backup_admin	%	db_admin	N
@@ -791,6 +795,7 @@ BINLOG_ADMIN	Server Admin
 BINLOG_ENCRYPTION_ADMIN	Server Admin	
 CLONE_ADMIN	Server Admin	
 CONNECTION_ADMIN	Server Admin	
+CREATE_SPATIAL_REFERENCE_SYSTEM	Server Admin	
 Create	Databases,Tables,Indexes	To create new databases and tables
 Create role	Server Admin	To create new roles
 Create routine	Databases	To use CREATE FUNCTION/PROCEDURE
@@ -1110,7 +1115,7 @@ SHOW CREATE USER u1;
 CREATE USER for u1@%
 CREATE USER `u1`@`%` IDENTIFIED WITH 'caching_sha2_password' AS '<hash>' DEFAULT ROLE `a`@`%`,`a`@`a`,`a`@`localhost`,`aaa`@`%`,`b`@`%`,`b`@`local`,`c c`@`%` REQUIRE NONE PASSWORD EXPIRE DEFAULT ACCOUNT UNLOCK PASSWORD HISTORY DEFAULT PASSWORD REUSE INTERVAL DEFAULT PASSWORD REQUIRE CURRENT DEFAULT
 CREATE USER u1;
-ERROR HY000: Operation CREATE USER failed for 'u1'@'%'
+ERROR HY000: Operation CREATE USER failed for 'u1'@'%' (User account already exists)
 # Same as before and don't crash.
 SHOW CREATE USER u1;
 CREATE USER for u1@%

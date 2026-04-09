@@ -3,7 +3,7 @@
 SET default_storage_engine=InnoDB;
 
 --disable_query_log
-call mtr.add_suppression("Cannot add field .* in table .* because after adding it, the row size is");
+call mtr.add_suppression("Cannot alter the table .* because the record size will exceed the maximum allowed size for a record .*");
 --enable_query_log
 
 let $innodb_file_per_table_orig=`select @@innodb_file_per_table`;

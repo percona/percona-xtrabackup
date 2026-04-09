@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -592,7 +592,7 @@ int check_func_bool(THD *, SYS_VAR *, void *save, st_mysql_value *value) {
   if (value->value_type(value) == MYSQL_VALUE_TYPE_STRING) {
     length = sizeof(buff);
     if (!(str = value->val_str(value, buff, &length)) ||
-        (result = find_type(&bool_typelib, str, length, true) - 1) < 0)
+        (result = find_type(&bool_typelib, str, length, false) - 1) < 0)
       goto err;
   } else {
     if (value->val_int(value, &tmp) < 0) goto err;

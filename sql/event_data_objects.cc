@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,7 +50,7 @@
 #include "sql/derror.h"
 #include "sql/event_parse_data.h"
 #include "sql/events.h"
-// append_identifier
+// append_identifier_*
 #include "sql/log.h"
 #include "sql/psi_memory_key.h"
 #include "sql/sp_head.h"
@@ -1094,9 +1094,9 @@ bool Event_job_data::execute(THD *thd, bool drop) {
     If enabled, log the quoted form to performance_schema.error_log.
     We enclose it in faux guillemets to differentiate the enclosing
     quotation seen in the log from the SQL-level quotation from
-    construct_sp_sql()'s (which calls append_identifier() in sql_show,
-    and thus ultimately get_quote_char_for_identifier() which evaluates
-    thd->variables.sql_mode & MODE_ANSI_QUOTES).
+    construct_sp_sql()'s (which calls append_identifier() in
+    sql_show, and thus ultimately get_quote_char_for_identifier() which
+    evaluates thd->variables.sql_mode & MODE_ANSI_QUOTES).
 
     We're logging with a priority of SYSTEM_LEVEL so we won't have to
     worry abot log_error_verbosity. (ERROR_LEVEL would also achieve
@@ -1177,7 +1177,7 @@ end:
     if (construct_drop_event_sql(thd, &sp_sql, m_schema_name, m_event_name))
       ret = true;
     else {
-      ulong saved_master_access;
+      Access_bitmask saved_master_access;
 
       thd->set_query(sp_sql.c_ptr_safe(), sp_sql.length());
       /*

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,11 +55,18 @@ using std::min;
 Cached_item *new_Cached_item(THD *thd, Item *item) {
   switch (item->result_type()) {
     case STRING_RESULT:
-      if (item->is_temporal())
-        return new (thd->mem_root) Cached_item_temporal(item);
-      if (item->data_type() == MYSQL_TYPE_JSON)
-        return new (thd->mem_root) Cached_item_json(item);
-      return new (thd->mem_root) Cached_item_str(item);
+      switch (item->data_type()) {
+        case MYSQL_TYPE_TIME:
+          return new (thd->mem_root) Cached_item_time(item);
+        case MYSQL_TYPE_DATE:
+        case MYSQL_TYPE_DATETIME:
+        case MYSQL_TYPE_TIMESTAMP:
+          return new (thd->mem_root) Cached_item_temporal(item);
+        case MYSQL_TYPE_JSON:
+          return new (thd->mem_root) Cached_item_json(item);
+        default:
+          return new (thd->mem_root) Cached_item_str(item);
+      }
     case INT_RESULT:
       return new (thd->mem_root) Cached_item_int(item);
     case REAL_RESULT:
@@ -167,9 +174,37 @@ bool Cached_item_int::cmp() {
   return false;
 }
 
+bool Cached_item_time::cmp() {
+  DBUG_TRACE;
+  Time_val time;
+  if (item->val_time(&time)) return true;
+
+  if (item->null_value) {
+    if (null_value) return false;
+    null_value = true;
+    return true;
+  } else if (null_value || m_time.compare(time) != 0) {
+    null_value = false;
+    m_time = time;
+    return true;
+  }
+  return false;
+}
+
 bool Cached_item_temporal::cmp() {
   DBUG_TRACE;
-  const longlong nr = item->val_temporal_by_field_type();
+  assert(item->data_type() != MYSQL_TYPE_TIME);
+  longlong nr = 0;
+  switch (item->data_type()) {
+    case MYSQL_TYPE_DATE:
+    case MYSQL_TYPE_DATETIME:
+    case MYSQL_TYPE_TIMESTAMP:
+      nr = item->val_date_temporal();
+      break;
+    default:
+      assert(false);
+      break;
+  }
   DBUG_PRINT("info", ("old: %lld, new: %lld", value, nr));
   if (item->null_value) {
     if (null_value) return false;

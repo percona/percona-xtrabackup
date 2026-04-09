@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -25,15 +25,22 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
   @file mysys/my_aes_openssl.cc
 */
 
-#include <assert.h>
-#include <openssl/aes.h>
 #include <openssl/bio.h>
 #include <openssl/err.h>
-#include <openssl/evp.h>
+#include <openssl/evp.h>  // IWYU pragma: keep
+// IWYU pragma: no_include <openssl/types.h>
+#include <openssl/opensslv.h>
+#include <sys/types.h>
 
-#include "m_string.h"
+#include <cassert>
+#include <cstddef>
+#include <string>
+#include <vector>
+
 #include "my_aes.h"
 #include "my_aes_impl.h"
+#include "my_inttypes.h"
+#include "my_ssl_algo_cache.h"
 #include "mysys/my_kdf.h"
 
 /*
@@ -75,41 +82,41 @@ uint *my_aes_opmode_key_sizes = my_aes_opmode_key_sizes_impl;
 static const EVP_CIPHER *aes_evp_type(const my_aes_opmode mode) {
   switch (mode) {
     case my_aes_128_ecb:
-      return EVP_aes_128_ecb();
+      return my_EVP_aes_128_ecb();
     case my_aes_128_cbc:
-      return EVP_aes_128_cbc();
+      return my_EVP_aes_128_cbc();
     case my_aes_128_cfb1:
-      return EVP_aes_128_cfb1();
+      return my_EVP_aes_128_cfb1();
     case my_aes_128_cfb8:
-      return EVP_aes_128_cfb8();
+      return my_EVP_aes_128_cfb8();
     case my_aes_128_cfb128:
-      return EVP_aes_128_cfb128();
+      return my_EVP_aes_128_cfb128();
     case my_aes_128_ofb:
-      return EVP_aes_128_ofb();
+      return my_EVP_aes_128_ofb();
     case my_aes_192_ecb:
-      return EVP_aes_192_ecb();
+      return my_EVP_aes_192_ecb();
     case my_aes_192_cbc:
-      return EVP_aes_192_cbc();
+      return my_EVP_aes_192_cbc();
     case my_aes_192_cfb1:
-      return EVP_aes_192_cfb1();
+      return my_EVP_aes_192_cfb1();
     case my_aes_192_cfb8:
-      return EVP_aes_192_cfb8();
+      return my_EVP_aes_192_cfb8();
     case my_aes_192_cfb128:
-      return EVP_aes_192_cfb128();
+      return my_EVP_aes_192_cfb128();
     case my_aes_192_ofb:
-      return EVP_aes_192_ofb();
+      return my_EVP_aes_192_ofb();
     case my_aes_256_ecb:
-      return EVP_aes_256_ecb();
+      return my_EVP_aes_256_ecb();
     case my_aes_256_cbc:
-      return EVP_aes_256_cbc();
+      return my_EVP_aes_256_cbc();
     case my_aes_256_cfb1:
-      return EVP_aes_256_cfb1();
+      return my_EVP_aes_256_cfb1();
     case my_aes_256_cfb8:
-      return EVP_aes_256_cfb8();
+      return my_EVP_aes_256_cfb8();
     case my_aes_256_cfb128:
-      return EVP_aes_256_cfb128();
+      return my_EVP_aes_256_cfb128();
     case my_aes_256_ofb:
-      return EVP_aes_256_ofb();
+      return my_EVP_aes_256_ofb();
     default:
       return nullptr;
   }
@@ -133,7 +140,7 @@ int my_create_key(unsigned char *rkey, const unsigned char *key,
                   uint32 key_length, enum my_aes_opmode mode,
                   vector<string> *kdf_options) {
   if (kdf_options) {
-    if (kdf_options->size() < 1) {
+    if (kdf_options->empty()) {
       return 1;
     }
     const uint key_size = my_aes_opmode_key_sizes[mode] / 8;
@@ -155,6 +162,23 @@ int my_aes_encrypt(const unsigned char *source, uint32 source_length,
 #else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+  int const rc = my_aes_encrypt(ctx, source, source_length, dest, key,
+                                key_length, mode, iv, padding, kdf_options);
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  EVP_CIPHER_CTX_cleanup(ctx);
+#else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+  EVP_CIPHER_CTX_free(ctx);
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+
+  return rc;
+}
+
+int my_aes_encrypt(EVP_CIPHER_CTX *ctx, const unsigned char *source,
+                   uint32 source_length, unsigned char *dest,
+                   const unsigned char *key, uint32 key_length,
+                   enum my_aes_opmode mode, const unsigned char *iv,
+                   bool padding, vector<string> *kdf_options) {
   const EVP_CIPHER *cipher = aes_evp_type(mode);
   int u_len, f_len;
   /* The real key to be used for encryption */
@@ -163,31 +187,19 @@ int my_aes_encrypt(const unsigned char *source, uint32 source_length,
   if (my_create_key(rkey, key, key_length, mode, kdf_options)) {
     return MY_AES_BAD_DATA;
   }
-  if (!ctx || !cipher || (EVP_CIPHER_iv_length(cipher) > 0 && !iv))
+  if (!ctx || !cipher || (!iv && EVP_CIPHER_iv_length(cipher) > 0)) {
     return MY_AES_BAD_DATA;
+  }
 
-  if (!EVP_EncryptInit(ctx, cipher, rkey, iv)) goto aes_error;   /* Error */
-  if (!EVP_CIPHER_CTX_set_padding(ctx, padding)) goto aes_error; /* Error */
-  if (!EVP_EncryptUpdate(ctx, dest, &u_len, source, source_length))
-    goto aes_error; /* Error */
+  if (EVP_EncryptInit(ctx, cipher, rkey, iv) &&
+      EVP_CIPHER_CTX_set_padding(ctx, padding) &&
+      EVP_EncryptUpdate(ctx, dest, &u_len, source, source_length) &&
+      EVP_EncryptFinal(ctx, dest + u_len, &f_len)) {
+    return u_len + f_len;
+  }
 
-  if (!EVP_EncryptFinal(ctx, dest + u_len, &f_len)) goto aes_error; /* Error */
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  EVP_CIPHER_CTX_cleanup(ctx);
-#else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-  EVP_CIPHER_CTX_free(ctx);
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-  return u_len + f_len;
-
-aes_error:
   /* need to explicitly clean up the error if we want to ignore it */
   ERR_clear_error();
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  EVP_CIPHER_CTX_cleanup(ctx);
-#else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-  EVP_CIPHER_CTX_free(ctx);
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
   return MY_AES_BAD_DATA;
 }
 
@@ -202,6 +214,24 @@ int my_aes_decrypt(const unsigned char *source, uint32 source_length,
 #else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
   EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
 #endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+
+  int const rc = my_aes_decrypt(ctx, source, source_length, dest, key,
+                                key_length, mode, iv, padding, kdf_options);
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+  EVP_CIPHER_CTX_cleanup(ctx);
+#else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+  EVP_CIPHER_CTX_free(ctx);
+#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
+
+  return rc;
+}
+
+int my_aes_decrypt(EVP_CIPHER_CTX *ctx, const unsigned char *source,
+                   uint32 source_length, unsigned char *dest,
+                   const unsigned char *key, uint32 key_length,
+                   enum my_aes_opmode mode, const unsigned char *iv,
+                   bool padding, vector<string> *kdf_options) {
   const EVP_CIPHER *cipher = aes_evp_type(mode);
   int u_len, f_len;
 
@@ -212,33 +242,19 @@ int my_aes_decrypt(const unsigned char *source, uint32 source_length,
     return MY_AES_BAD_DATA;
   }
 
-  if (!ctx || !cipher || (EVP_CIPHER_iv_length(cipher) > 0 && !iv))
+  if (!ctx || !cipher || (!iv && EVP_CIPHER_iv_length(cipher) > 0)) {
     return MY_AES_BAD_DATA;
+  }
 
-  if (!EVP_DecryptInit(ctx, aes_evp_type(mode), rkey, iv))
-    goto aes_error;                                              /* Error */
-  if (!EVP_CIPHER_CTX_set_padding(ctx, padding)) goto aes_error; /* Error */
-  if (!EVP_DecryptUpdate(ctx, dest, &u_len, source, source_length))
-    goto aes_error; /* Error */
-  if (!EVP_DecryptFinal_ex(ctx, dest + u_len, &f_len))
-    goto aes_error; /* Error */
+  if (EVP_DecryptInit(ctx, aes_evp_type(mode), rkey, iv) &&
+      EVP_CIPHER_CTX_set_padding(ctx, padding) &&
+      EVP_DecryptUpdate(ctx, dest, &u_len, source, source_length) &&
+      EVP_DecryptFinal_ex(ctx, dest + u_len, &f_len)) {
+    return u_len + f_len;
+  }
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  EVP_CIPHER_CTX_cleanup(ctx);
-#else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-  EVP_CIPHER_CTX_free(ctx);
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-
-  return u_len + f_len;
-
-aes_error:
   /* need to explicitly clean up the error if we want to ignore it */
   ERR_clear_error();
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  EVP_CIPHER_CTX_cleanup(ctx);
-#else  /* OPENSSL_VERSION_NUMBER < 0x10100000L */
-  EVP_CIPHER_CTX_free(ctx);
-#endif /* OPENSSL_VERSION_NUMBER < 0x10100000L */
   return MY_AES_BAD_DATA;
 }
 
@@ -258,5 +274,5 @@ bool my_aes_needs_iv(my_aes_opmode opmode) {
   int iv_length;
   iv_length = EVP_CIPHER_iv_length(cipher);
   assert(iv_length == 0 || iv_length == MY_AES_IV_SIZE);
-  return iv_length != 0 ? true : false;
+  return iv_length != 0;
 }

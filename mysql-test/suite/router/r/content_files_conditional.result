@@ -1,0 +1,58 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Verify that request with If-None-Match containing ETag 
+##    equal to Content File ETag will result in Not Modified(304)
+#
+## II. Verify that request with If-None-Match containing ETag 
+##     different than Content File ETag will result in 200 OK
+#
+## III. Verify that request with If-None-Match containing empty
+##      value will result in 200 OK
+#
+## IV. Verify If-None-Match used together with If-Modified-Since
+##     when If-None-Match matches the Content File ETag
+#
+## V. Verify If-None-Match used together with If-Modified-Since
+##    when If-None-Match does not match the Content File ETag
+#
+
+# Registred SERVICE at path: /svc1
+# Registred CONTENT_SET at path: /svc1/set
+# Registred CONTENT_FILE at path: /svc1/set/first.html
+# Registred DB_SCHEMA at path: /svc1/basic_schema
+# Registred DB_OBJECT at path: /svc1/basic_schema/obj
+#
+# I
+GET /svc1/set/first.html
+
+OK
+#
+# II
+GET /svc1/set/first.html
+first file
+OK
+#
+# III
+GET /svc1/set/first.html
+first file
+OK
+#
+# IV
+GET /svc1/set/first.html
+
+OK
+#
+# V
+GET /svc1/set/first.html
+first file
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

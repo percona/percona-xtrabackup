@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-#include <stddef.h>
-#include <stdint.h>
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <list>
 #include <new>
 
@@ -43,7 +43,7 @@ Memory_block_pool::~Memory_block_pool() {
   MUTEX_LOCK(lock, m_mutex);
 
   while (m_page_cache) {
-    auto to_delete = reinterpret_cast<char *>(m_page_cache);
+    auto *to_delete = reinterpret_cast<char *>(m_page_cache);
     m_page_cache = m_page_cache->m_next;
 
     ngs::free_array<char>(to_delete);
@@ -55,7 +55,7 @@ char *Memory_block_pool::allocate() {
   char *object_data = get_page_from_cache();
 
   if (nullptr == object_data) {
-    size_t memory_to_allocate = m_config.m_page_size;
+    size_t const memory_to_allocate = m_config.m_page_size;
 
     ngs::allocate_array(object_data, memory_to_allocate,
                         KEY_memory_x_send_buffer);
@@ -92,7 +92,7 @@ char *Memory_block_pool::get_page_from_cache() {
 
     if (m_page_cache) {
       --m_number_of_cached_pages;
-      auto result = m_page_cache;
+      auto *result = m_page_cache;
 
       m_page_cache = m_page_cache->m_next;
       result->~Node_linked_list();

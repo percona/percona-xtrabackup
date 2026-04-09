@@ -134,9 +134,7 @@ if (!$mts_spco_skip_init_statement)
   CALL mtr.add_suppression("You need to use --log-bin to make --binlog-format work");
 
   SET @save_replica_parallel_workers= @@global.replica_parallel_workers;
-  SET @save_replica_parallel_type= @@global.replica_parallel_type;
   SET @save_replica_preserve_commit_order= @@global.replica_preserve_commit_order;
-  SET GLOBAL replica_parallel_type = 'LOGICAL_CLOCK';
   --eval SET GLOBAL replica_parallel_workers= $mts_replica_parallel_workers
   SET GLOBAL replica_preserve_commit_order= ON;
   --source include/rpl/start_replica.inc
@@ -384,7 +382,6 @@ if ($mts_spco_cleanup_statement)
 
   --source include/rpl/stop_replica.inc
 
-  SET GLOBAL replica_parallel_type=@save_replica_parallel_type;
   --disable_warnings
   SET GLOBAL replica_parallel_workers=@save_replica_parallel_workers;
   --enable_warnings

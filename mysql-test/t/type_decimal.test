@@ -615,3 +615,26 @@ SELECT CAST(9.9 AS SIGNED INTEGER) AS f;
 SELECT 1 < ALL(VALUES ROW(2),ROW(CAST(3 AS DECIMAL))) FROM DUAL;
 SELECT 1 < ALL(VALUES ROW(2),ROW(3.0)) FROM DUAL;
 
+--echo #
+--echo # Bug#34361287: Select with CAST and having differs between OO and HG
+--echo #
+
+# The first equality should be true, and the second equality should be
+# false, because INT/INT gives a DECIMAL with four digits after the
+# decimal point.
+SELECT 1/3, 1/3 = 0.3333, 1/3 = 0.333333333;
+SELECT 2/3, 2/3 = 0.6667, 2/3 = 0.666666666;
+
+# When the DECIMALs from a derived table were not passed through a
+# temporary table, they used to have higher precision than their
+# resolved type.
+--sorted_result
+WITH t AS (SELECT x, x/100000 AS y FROM (VALUES ROW(4), ROW(5), ROW(6)) AS v(x))
+SELECT /*+ MERGE(t) */ x, y, CAST(y AS DOUBLE), y = 0 FROM t;
+
+# When they were passed through a temporary table (thanks to
+# NO_MERGE), they had the expected precision. Verify that they still
+# have.
+--sorted_result
+WITH t AS (SELECT x, x/100000 AS y FROM (VALUES ROW(4), ROW(5), ROW(6)) AS v(x))
+SELECT /*+ NO_MERGE(t) */ x, y, CAST(y AS DOUBLE), y = 0 FROM t;

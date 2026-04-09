@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -67,7 +67,7 @@ std::string HttpAuthChallenge::str() const {
     is_first = false;
   }
 
-  for (auto &kv : params_) {
+  for (const auto &kv : params_) {
     if (!is_first) {
       out.append(",");
     } else {
@@ -123,7 +123,7 @@ HttpAuthCredentials HttpAuthCredentials::from_header(const std::string &hdr,
     return {{}, {}, {}};
   }
 
-  std::string scheme(begin_scheme, end_scheme);
+  std::string const scheme(begin_scheme, end_scheme);
   std::string token;
 
   if (end_scheme != hdr.end()) {
@@ -158,7 +158,7 @@ std::string HttpAuthCredentials::str() const {
     is_first = false;
   }
 
-  for (auto &kv : params_) {
+  for (const auto &kv : params_) {
     if (!is_first) {
       out.append(",");
     }
@@ -173,12 +173,12 @@ std::string HttpAuthCredentials::str() const {
 }
 
 bool HttpAuth::require_auth(http::base::Request &req,
-                            std::shared_ptr<HttpAuthRealm> realm) {
+                            const std::shared_ptr<HttpAuthRealm> &realm) {
   constexpr char kAuthorization[]{"Authorization"};
   constexpr char kWwwAuthenticate[]{"WWW-Authenticate"};
   constexpr char kMethodBasic[]{"Basic"};
   // enforce authentication
-  auto authorization = req.get_input_headers().find(kAuthorization);
+  const auto *authorization = req.get_input_headers().find(kAuthorization);
 
   auto &out_hdrs = req.get_output_headers();
 

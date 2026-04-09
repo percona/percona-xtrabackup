@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -99,7 +99,7 @@ static int use_processor_set(const Uint32 *cpu_ids, Uint32 num_cpu_ids,
     }
   }
 
-  while (1) {
+  while (true) {
     for (i = 0; i < num_processor_sets; i++) {
       handler = proc_set_array + i;
       if (handler->ref_count == 0) {
@@ -134,7 +134,7 @@ static int use_processor_set(const Uint32 *cpu_ids, Uint32 num_cpu_ids,
      * The current array of processor set handlers is too small, double its
      * size and try again.
      */
-    processor_set_handler *new_proc_set_array =
+    auto *new_proc_set_array =
         new (std::nothrow) processor_set_handler[2 * num_processor_sets];
 
     if (!new_proc_set_array) {

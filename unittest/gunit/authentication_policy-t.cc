@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2024, Oracle and/or its affiliates.
+   Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@
 #include <gtest/gtest.h>
 #include <sys/types.h>
 
-#include <assert.h>
+#include <cassert>
 #include <utility>
 
 #include "sql/auth/authentication_policy.h"
@@ -107,7 +107,7 @@ bool is_mandatory(const Factor &factor) {
 TEST(AuthPolicyParser, Correct1Factor) {
   const std::vector<std::string> policies{("*"), ("*:plugin"), ("plugin")};
   Factors factors;
-  for (auto &policy : policies) {
+  for (const auto &policy : policies) {
     ASSERT_FALSE(Policy_test::parse(policy, factors))
         << "Parsing " << policy << " failed.";
     EXPECT_EQ(factors.size(), 1)
@@ -134,7 +134,7 @@ TEST(AuthPolicyParser, Correct2Factors) {
       {("plugin,*:plugin"), is_mandatory, is_whichever_has_default},
       {("plugin,plugin"), is_mandatory, is_mandatory}};
   Factors factors;
-  for (auto &test : tests) {
+  for (const auto &test : tests) {
     ASSERT_FALSE(Policy_test::parse(std::get<0>(test), factors))
         << "Parsing " << std::get<0>(test) << " failed.";
     ASSERT_EQ(factors.size(), 2) << "Policy " << std::get<0>(test)
@@ -190,7 +190,7 @@ TEST(AuthPolicyParser, Correct3Factors) {
                                           ("plugin,plugin,plugin")};
   Factors factors;
 
-  for (auto &policy : policies) {
+  for (const auto &policy : policies) {
     EXPECT_FALSE(Policy_test::parse(policy, factors))
         << "Parsing " << policy << " failed.";
     EXPECT_EQ(factors.size(), 3)
@@ -215,7 +215,7 @@ TEST(AuthPolicyParser, Correct3FactorsWithSpaces) {
                                           (" plugin,plugin,plugin ")};
   Factors factors;
 
-  for (auto &policy : policies) {
+  for (const auto &policy : policies) {
     EXPECT_FALSE(Policy_test::parse(policy, factors))
         << "Parsing " << policy << " failed.";
     EXPECT_EQ(factors.size(), 3)
@@ -236,7 +236,7 @@ TEST(AuthPolicyParser, IncorrectNoOfFactors) {
       (""),         (",,,,"), ("*,*,,"), ("*,*,*,policy"), ("*,*,*,policy,"),
       ("*,*,*,*,*")};
   Factors factors;
-  for (auto &policy : policies)
+  for (const auto &policy : policies)
     EXPECT_TRUE(Policy_test::parse(policy, factors))
         << "Parsing " << policy << " was successful.";
 }
@@ -246,7 +246,7 @@ TEST(AuthPolicyParser, IncorrectNoOfFactors) {
 TEST(AuthPolicyParser, FirstCannotBeOptional) {
   const std::vector<std::string> policies{(","), (",,")};
   Factors factors;
-  for (auto &policy : policies)
+  for (const auto &policy : policies)
     EXPECT_TRUE(Policy_test::parse(policy, factors))
         << "Parsing " << policy << " was successful.";
 }
@@ -258,7 +258,7 @@ TEST(AuthPolicyParser, OptionalCannotFollowNonOptional) {
                                           (",policy"),    (",,*"),
                                           (",,*:policy"), (",,policy")};
   Factors factors;
-  for (auto &policy : policies)
+  for (const auto &policy : policies)
     EXPECT_TRUE(Policy_test::parse(policy, factors))
         << "Parsing " << policy << " was successful.";
 }
@@ -270,7 +270,7 @@ TEST(AuthPolicyParser, IncorrectSyntax) {
       ("*:p:"),  ("p:*,"),  (":,,"),    ("*x,,"),   ("*:*x,,"), ("*x,,"),
       ("x,*:,"), ("*:*,,"), ("*,*:p:"), ("p,p:*,"), ("*,:,,"),  ("*,*:*,,")};
   Factors factors;
-  for (auto &policy : policies)
+  for (const auto &policy : policies)
     EXPECT_TRUE(Policy_test::parse(policy, factors))
         << "Parsing " << policy << " was successful.";
 }
@@ -290,7 +290,7 @@ TEST(AuthPolicyParser, Incorrect3FactorsWithSpaces) {
                                           ("p lugin,plugi n,pl ugin")};
   Factors factors;
 
-  for (auto &policy : policies) {
+  for (const auto &policy : policies) {
     bool is_factor_with_space(false);
     EXPECT_FALSE(Policy_test::parse(policy, factors))
         << "Parsing " << policy << " failed.";

@@ -1753,7 +1753,8 @@ drop table t1;
 #
 # Bug#21461026: INCONSISTEND CASING ON STORAGE ENGINE VARIABLE VALUE
 #
-SHOW GLOBAL VARIABLES LIKE '%\_storage\_engine';
+SHOW GLOBAL VARIABLES WHERE Variable_name LIKE '%\_storage\_engine'
+AND Variable_name NOT LIKE 'external_table%';
 Variable_name	Value
 default_storage_engine	InnoDB
 default_tmp_storage_engine	InnoDB

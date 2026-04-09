@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,10 +24,10 @@
 
 /* Return error-text for system error messages and handler messages */
 
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
 
 #include "m_string.h"
 #include "my_getopt.h"
@@ -282,7 +282,7 @@ int main(int argc, char *argv[]) {
       if (msg &&
           my_strnncoll(&my_charset_latin1, (const uchar *)msg, 13,
                        (const uchar *)"Unknown Error", 13) &&
-          (!unknown_error || strcmp(msg, unknown_error))) {
+          (!unknown_error || strcmp(msg, unknown_error) != 0)) {
         found = 1;
         if (verbose)
           printf("OS error code %3d:  %s\n", code, msg);

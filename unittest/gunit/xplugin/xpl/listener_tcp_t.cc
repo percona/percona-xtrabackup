@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2016, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <stddef.h>
+#include <cstddef>
 #ifndef _WIN32
 #include <netdb.h>
 #endif
@@ -40,8 +40,7 @@
 #include "unittest/gunit/xplugin/xpl/mock/socket_events.h"
 #include "unittest/gunit/xplugin/xpl/mock/system.h"
 
-namespace xpl {
-namespace test {
+namespace xpl::test {
 
 using namespace ::testing;  // NOLINT(build/namespaces)
 
@@ -125,7 +124,7 @@ class Listener_tcp_testsuite : public Test {
 #endif
   }
 
-  void expect_listen_socket(std::shared_ptr<mock::Socket> mock_socket,
+  void expect_listen_socket(const std::shared_ptr<mock::Socket> &mock_socket,
                             addrinfo *ai,
                             const bool socket_events_listen = true) {
     EXPECT_CALL(*mock_socket, set_socket_thread_owner());
@@ -133,7 +132,7 @@ class Listener_tcp_testsuite : public Test {
                 bind(ai->ai_addr, static_cast<socklen_t>(ai->ai_addrlen)))
         .WillOnce(Return(POSIX_OK));
     EXPECT_CALL(*mock_socket, listen(BACKLOG)).WillOnce(Return(POSIX_OK));
-    std::shared_ptr<iface::Socket> socket_ptr = mock_socket;
+    std::shared_ptr<iface::Socket> const socket_ptr = mock_socket;
     EXPECT_CALL(m_mock_socket_events, listen(socket_ptr, _))
         .WillOnce(Return(socket_events_listen));
   }
@@ -269,7 +268,7 @@ TEST_P(Listener_tcp_retry_testsuite,
   EXPECT_CALL(*m_mock_system, get_socket_errno())
       .Times(n)
       .WillRepeatedly(Return(SOCKET_EADDRINUSE));
-  EXPECT_CALL(*m_mock_system, sleep(Gt(0u))).Times(n);
+  EXPECT_CALL(*m_mock_system, sleep(Gt(0U))).Times(n);
 
   EXPECT_CALL(*m_mock_system, freeaddrinfo(&ai));
 
@@ -454,7 +453,7 @@ TEST_F(Listener_tcp_testsuite,
 
   expect_create_socket(&ai4, ALL_INTERFACES_6, AF_INET, INVALID_SOCKET);
 
-  std::shared_ptr<mock::Socket> mock_socket_ipv6(
+  std::shared_ptr<mock::Socket> const mock_socket_ipv6(
       new StrictMock<mock::Socket>());
   EXPECT_CALL(*mock_socket_ipv6, get_socket_fd()).WillOnce(Return(SOCKET_OK));
   EXPECT_CALL(*m_mock_factory,
@@ -521,5 +520,4 @@ TEST_F(Listener_tcp_testsuite, loop_does_nothing_always) {
   sut->loop();
 }
 
-}  // namespace test
-}  // namespace xpl
+}  // namespace xpl::test

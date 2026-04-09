@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -169,13 +169,8 @@ int main() {
 
   {
     /* DATETIME scalar */
-    MYSQL_TIME dt;
-    std::memset(&dt, 0, sizeof dt);
-    dt.year = 1988;
-    dt.month = 12;
-    dt.day = 15;
-    dt.time_type = MYSQL_TIMESTAMP_DATE;
-    const Json_datetime jd(dt, MYSQL_TYPE_DATETIME);
+    Datetime_val dt{1988, 12, 15};
+    const Json_datetime jd{dt, MYSQL_TYPE_DATETIME};
 
     if (json_binary::serialize(&jd, CoutSerializationErrorHandler(), &buf))
       std::cout << "ERRROR!!" << std::endl;
@@ -275,20 +270,20 @@ int main() {
     {
       Json_wrapper jw = Json_wrapper(
           create_dom_ptr<Json_string>("2015-01-15 23:24:25.000000"));
-      MYSQL_TIME ltime;
-      bool res = jw.coerce_date(
+      Datetime_val dt;
+      bool res = jw.coerce_datetime(
           [](const char *, int) { std::cout << "9.1. ERROR \n"; },
-          [](MYSQL_TIME_STATUS &) { std::cout << "9.1. checking \n"; }, &ltime);
+          [](MYSQL_TIME_STATUS &) { std::cout << "9.1. checking \n"; }, &dt);
       std::cout << "9.1. 2015-01-15 23:24:25.000000 is" << (res ? " NOT " : " ")
                 << "a valid DATE \n";
     }
     {
       Json_wrapper jw = Json_wrapper(
           create_dom_ptr<Json_string>("2015-99-15 23:24:25.000000"));
-      MYSQL_TIME ltime;
-      bool res = jw.coerce_date(
+      Datetime_val dt;
+      bool res = jw.coerce_datetime(
           [](const char *, int) { std::cout << "9.2. ERROR \n"; },
-          [](MYSQL_TIME_STATUS &) { std::cout << "9.2. checking \n"; }, &ltime);
+          [](MYSQL_TIME_STATUS &) { std::cout << "9.2. checking \n"; }, &dt);
       std::cout << "9.2. 2015-99-15 23:24:25.000000 is" << (res ? " NOT " : " ")
                 << "a valid DATE \n";
     }
@@ -320,7 +315,7 @@ int main() {
     {
       Json_wrapper jw = Json_wrapper(
           create_dom_ptr<Json_string>("2015-01-15 23:24:25.000000"));
-      MYSQL_TIME ltime;
+      Time_val ltime;
       bool res = jw.coerce_time(
           [](const char *, int) { std::cout << "9.6. ERROR \n"; },
           [](MYSQL_TIME_STATUS &) { std::cout << "9.6. checking \n"; }, &ltime);

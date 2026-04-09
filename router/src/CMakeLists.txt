@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,6 +21,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
+ADD_SUBDIRECTORY(bootstrap)
 ADD_SUBDIRECTORY(connection_pool)
 ADD_SUBDIRECTORY(destination_status)
 ADD_SUBDIRECTORY(harness)
@@ -38,10 +39,17 @@ ADD_SUBDIRECTORY(protobuf)
 ADD_SUBDIRECTORY(rest_api)
 ADD_SUBDIRECTORY(rest_connection_pool)
 ADD_SUBDIRECTORY(rest_metadata_cache)
+IF(MRS_JIT_EXECUTOR_LIB)
+  ADD_SUBDIRECTORY(jit_executor)
+  ADD_DEFINITIONS(-DHAVE_JIT_EXECUTOR_PLUGIN)
+ENDIF()
+ADD_SUBDIRECTORY(mysql_rest_service)
 ADD_SUBDIRECTORY(rest_router)
 ADD_SUBDIRECTORY(rest_routing)
 ADD_SUBDIRECTORY(router)
 ADD_SUBDIRECTORY(routing)
+ADD_SUBDIRECTORY(routing_guidelines)
+
 
 # Directory layout after 'make install' is different.
 # Create symlinks to ssl libraries for both: build and install layouts

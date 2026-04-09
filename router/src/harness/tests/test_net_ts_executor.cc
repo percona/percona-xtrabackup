@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -87,7 +87,7 @@ TEST(TestExecutor, make_service_dup_throws) {
  * has_service returns false if a service doesn't exist
  */
 TEST(TestExecutor, has_service_not) {
-  net::execution_context ctx;
+  net::execution_context const ctx;
 
   EXPECT_FALSE(net::has_service<MockService>(ctx));
 }
@@ -146,7 +146,7 @@ TEST(TestSystemExecutor, defer_default_context) {
 }
 
 TEST(TestSystemExecutor, defer_system_executor) {
-  net::system_executor ex;
+  net::system_executor const ex;
 
   std::atomic<int> done{};
 
@@ -162,14 +162,14 @@ TEST(TestSystemExecutor, defer_system_executor) {
 }
 
 TEST(TestSystemExecutor, stopped_no_work) {
-  net::system_executor ex;
+  net::system_executor const ex;
 
   ASSERT_FALSE(ex.context().stopped());
 }
 
 TEST(TestSystemExecutor, stopped_with_work) {
   // there is only one system-context for _all_ tests.
-  net::system_executor ex;
+  net::system_executor const ex;
 
   ASSERT_FALSE(ex.context().stopped());
 
@@ -193,7 +193,7 @@ TEST(TestSystemExecutor, stopped_with_work) {
  */
 TEST(TestSystemExecutor, stop) {
   // there is only one system-context for _all_ tests.
-  net::system_executor ex;
+  net::system_executor const ex;
 
   ASSERT_FALSE(ex.context().stopped());
 
@@ -224,14 +224,14 @@ TEST(TestSystemExecutor, stop) {
 
 TEST(TestSystemExecutor, stopped_after_other_test_stopped) {
   // there is only one system-context for _all_ tests.
-  net::system_executor ex;
+  net::system_executor const ex;
 
   ASSERT_TRUE(ex.context().stopped());
 }
 
 TEST(TestSystemExecutor, compare) {
-  net::system_executor ex1;
-  net::system_executor ex2;
+  net::system_executor const ex1;
+  net::system_executor const ex2;
 
   // two system-executors are equal
   ASSERT_THAT(ex1, ::testing::Eq(ex2));

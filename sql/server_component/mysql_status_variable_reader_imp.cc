@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,7 @@ DEFINE_BOOL_METHOD(mysql_status_variable_reader_imp::get,
   if (server_shutting_down) return true;
 
   try {
-    char buf[SHOW_VAR_FUNC_BUFF_SIZE + 1];
+    alignas(double) char buf[SHOW_VAR_FUNC_BUFF_SIZE + 1];
     size_t length = sizeof(buf);
     const CHARSET_INFO *cs = nullptr;
     THD *thd;

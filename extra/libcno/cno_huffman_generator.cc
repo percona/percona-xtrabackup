@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>

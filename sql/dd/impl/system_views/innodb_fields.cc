@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,10 @@
 
 #include "sql/dd/impl/system_views/innodb_fields.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Innodb_fields &Innodb_fields::instance() {
-  static Innodb_fields *s_instance = new Innodb_fields();
+  static auto *s_instance = new Innodb_fields();
   return *s_instance;
 }
 
@@ -52,5 +51,4 @@ Innodb_fields::Innodb_fields() {
   m_target_def.add_where("AND tbl.engine='INNODB'");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

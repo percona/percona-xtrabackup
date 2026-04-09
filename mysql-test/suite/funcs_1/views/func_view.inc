@@ -1343,9 +1343,12 @@ while ($select_id)
        {
           --disable_result_log
        }
+       # Different warnings for hypergraph
+       --disable_warnings
        eval SELECT v1.* FROM v1
             WHERE v1.id IN (SELECT id FROM t1_values
                             WHERE select_id = $select_id OR select_id IS NULL) order by id;
+       --enable_warnings
        if ($run_no_result)
        {
           --enable_result_log

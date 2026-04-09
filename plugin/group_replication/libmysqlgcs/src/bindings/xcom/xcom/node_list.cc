@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,12 +21,12 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
+#include <cassert>
 #ifdef _MSC_VER
 #include <stdint.h>
 #endif
 #include <rpc/rpc.h>
-#include <stdlib.h>
+#include <cstdlib>
 
 #include "xcom/x_platform.h"
 
@@ -84,7 +84,8 @@ int match_node(node_address const *n1, node_address const *n2, u_int with_uid) {
   retval = (!error_ipandport1 && !error_ipandport2 && (n1_port == n2_port) &&
             strcmp(n1->address, n2->address) == 0);
 
-  if (with_uid) {
+  if (with_uid && (n1->uuid.data.data_val != nullptr) &&
+      (n2->uuid.data.data_val != nullptr)) {
     retval =
         retval && (n1->uuid.data.data_len == n2->uuid.data.data_len) &&
         (memcmp((void *)n1->uuid.data.data_val, (void *)n2->uuid.data.data_val,
@@ -178,7 +179,7 @@ void add_node_list(u_int n, node_address *names, node_list *nodes) {
           (added + nodes->node_list_len) * sizeof(node_address));
       np = &nodes->node_list_val[nodes->node_list_len];
       for (i = 0; i < n; i++) {
-        /* 			IFDBG(D_NONE, FN; STREXP(names[i])); */
+        /* 			XCOM_IFDBG(D_NONE, FN; STREXP(names[i])); */
         if (!exists(&names[i], nodes, FALSE)) {
           clone_node_address(np, &names[i]);
           np++;

@@ -1,0 +1,39 @@
+include/group_replication.inc
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection server1]
+include/assert.inc [Default replica parallel workers must be 4]
+include/assert.inc [Default replica preserve commit order 1]
+include/start_and_bootstrap_group_replication.inc
+include/stop_group_replication.inc
+SET @replica_parallel_workers_saved= @@GLOBAL.REPLICA_PARALLEL_WORKERS;
+SET @replica_preserve_commit_order_saved= @@GLOBAL.REPLICA_PRESERVE_COMMIT_ORDER;
+SET GLOBAL REPLICA_PRESERVE_COMMIT_ORDER= OFF;
+############################################################
+# 1. Test with REPLICA_PRESERVE_COMMIT_ORDER=OFF and
+#    parallel workers number set to 4.
+STOP REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+Warnings:
+Note	3084	Replication thread(s) for channel 'group_replication_applier' are already stopped.
+SET GLOBAL REPLICA_PARALLEL_WORKERS= 4;
+START REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+ERROR HY000: START REPLICA SQL_THREAD when REPLICA_PARALLEL_WORKERS > 0 and REPLICA_PRESERVE_COMMIT_ORDER != ON cannot be performed on channel 'group_replication_applier'.
+
+############################################################
+# 2. Test with REPLICA_PRESERVE_COMMIT_ORDER=ON and
+#    parallel workers number set to 4.
+STOP REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+Warnings:
+Note	3084	Replication thread(s) for channel 'group_replication_applier' are already stopped.
+SET GLOBAL REPLICA_PARALLEL_WORKERS= 4;
+SET GLOBAL REPLICA_PRESERVE_COMMIT_ORDER= ON;
+START REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+
+############################################################
+# 3. Clean up.
+SET @@GLOBAL.REPLICA_PARALLEL_WORKERS= @replica_parallel_workers_saved;
+SET @@GLOBAL.REPLICA_PRESERVE_COMMIT_ORDER= @replica_preserve_commit_order_saved;
+include/gr_stop_applier_sql_thread.inc
+STOP REPLICA SQL_THREAD FOR CHANNEL "group_replication_applier";
+include/group_replication_end.inc

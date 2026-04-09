@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1336,7 +1336,7 @@ class Dblqh : public SimulatedBlock {
      */
     Uint64 m_redo_written_bytes;
 
-    int tick(Uint32 now, Uint32 maxlag, Uint32 maxlag_cnt);
+    int tick(Uint32 instance, Uint32 now, Uint32 maxlag, Uint32 maxlag_cnt);
     void send_io(Uint32 bytes);
     void complete_io(Uint32 bytes);
     Uint32 get_lag_cnt() { return m_lag_cnt; }
@@ -1700,6 +1700,11 @@ class Dblqh : public SimulatedBlock {
       P_FILE_CHANGE_PROBLEM = 0x4  // 1220
     };
     Uint32 m_log_problems;
+
+    /**
+     * Log part has logged about buffer full
+     */
+    Uint32 m_logged_buffer_full;
 
     /**
      *       A timer that is set every time a log page is sent to disk.
@@ -3233,7 +3238,7 @@ class Dblqh : public SimulatedBlock {
                        LogFileRecordPtr &logFilePtr,
                        LogPartRecordPtr &logPartPtr);
   void initReqinfoExecSr(Signal *signal, TcConnectionrecPtr);
-  bool insertFragrec(Signal *signal, Uint32 fragId);
+  Uint32 insertFragrec(Signal *signal, Uint32 fragId);
   void linkWaitLog(Signal *, LogPartRecord *logPartPtrP,
                    LogPartRecord::OperationQueue &, TcConnectionrec *);
   void logNextStart(Signal *signal, LogPartRecord *logPartPtrP);
@@ -3364,11 +3369,11 @@ class Dblqh : public SimulatedBlock {
   void abortContinueAfterBlockedLab(Signal *signal, TcConnectionrecPtr);
   void abortCommonLab(Signal *signal, TcConnectionrecPtr);
   void localCommitLab(Signal *signal, TcConnectionrecPtr);
-  void abortErrorLab(Signal *signal, TcConnectionrecPtr);
+  void abortErrorLab(Signal *signal, TcConnectionrecPtr, Uint32 errorCode);
   void continueAfterReceivingAllAiLab(Signal *signal, TcConnectionrecPtr);
   void continueACCKEYCONF(Signal *signal, Uint32 localKey1, Uint32 localKey2,
                           TcConnectionrecPtr);
-  void continueACCKEYREF(Signal *signal, TcConnectionrecPtr);
+  void continueACCKEYREF(Signal *signal, TcConnectionrecPtr, Uint32 errorCode);
   void abortStateHandlerLab(Signal *signal, TcConnectionrecPtr);
   void writeAttrinfoLab(Signal *signal, const TcConnectionrec *,
                         LogPageRecordPtr &logPagePtr,
@@ -3378,10 +3383,10 @@ class Dblqh : public SimulatedBlock {
                        TcConnectionrecPtr);
   void abort_scan(Signal *signal, Uint32 scan_ptr_i, Uint32 errcode,
                   TcConnectionrecPtr);
-  void localAbortStateHandlerLab(Signal *signal, TcConnectionrecPtr);
   void writePrepareLog(Signal *signal, TcConnectionrecPtr);
   void writePrepareLog_problems(Signal *signal, const TcConnectionrecPtr,
-                                LogPartRecord *logPartPtrP);
+                                LogPartRecord *logPartPtrP,
+                                bool out_of_log_buffer);
   void doWritePrepareLog(Signal *signal, TcConnectionrecPtr);
   void update_log_problem(Signal *, LogPartRecord *, Uint32 problem, bool);
   void takeOverErrorLab(Signal *signal, TcConnectionrecPtr);
@@ -3389,7 +3394,7 @@ class Dblqh : public SimulatedBlock {
                                   const class LqhKeyReq *req);
   void earlyKeyReqAbort(Signal *signal, const class LqhKeyReq *lqhKeyReq,
                         Uint32 errorCode, TcConnectionrecPtr);
-  void logLqhkeyrefLab(Signal *signal, TcConnectionrecPtr);
+  void logLqhkeyrefLab(Signal *signal, TcConnectionrecPtr, Uint32 errorCode);
   void closeCopyLab(Signal *signal, TcConnectionrec *);
   void commitReplyLab(Signal *signal, TcConnectionrec *);
   void completeUnusualLab(Signal *signal, TcConnectionrecPtr);
@@ -3409,7 +3414,6 @@ class Dblqh : public SimulatedBlock {
   void initGcpRecLab(Signal *signal);
   void prepareContinueAfterBlockedLab(Signal *signal, TcConnectionrecPtr);
   void commitContinueAfterBlockedLab(Signal *signal, TcConnectionrecPtr);
-  void sendExecFragRefLab(Signal *signal);
   void fragrefLab(Signal *signal, Uint32 errorCode, const LqhFragReq *req);
   void abortAddFragOps(Signal *signal);
   void rwConcludedLab(Signal *signal, TcConnectionrecPtr);
@@ -3450,7 +3454,7 @@ class Dblqh : public SimulatedBlock {
   void perform_fragment_checkpoint(Signal *signal);
   void handleFirstFragment(Signal *signal);
   void startLcpRoundLab(Signal *signal);
-  void startFragRefLab(Signal *signal);
+  void startFragRefLab(Signal *signal, Uint32 errorCode);
   void move_start_gci_forward(Signal *, Uint32);
   void srCompletedLab(Signal *signal);
   void openFileInitLab(Signal *signal, LogFileRecordPtr logFilePtr,
@@ -3523,16 +3527,16 @@ class Dblqh : public SimulatedBlock {
   void readSrFourthZeroLab(Signal *signal, LogPageRecordPtr logPagePtr,
                            LogFileRecordPtr logFilePtr,
                            LogPartRecord *logPartPtrP);
-  void copyLqhKeyRefLab(Signal *signal, TcConnectionrecPtr);
+  void copyLqhKeyRefLab(Signal *signal, TcConnectionrecPtr, Uint32 errorCode);
   void restartOperationsLab(Signal *signal);
   void lqhTransNextLab(Signal *signal, TcNodeFailRecordPtr tcNodeFailPtr);
   void restartOperationsAfterStopLab(Signal *signal);
   void startphase1Lab(Signal *signal, Uint32 config, Uint32 nodeId);
   void tupkeyConfLab(Signal *signal, TcConnectionrecPtr);
-  void copyTupkeyRefLab(Signal *signal, TcConnectionrecPtr);
+  void copyTupkeyRefLab(Signal *signal, TcConnectionrecPtr, Uint32 errorCode);
   void copyTupkeyConfLab(Signal *signal, TcConnectionrecPtr);
   void scanTupkeyConfLab(Signal *signal, TcConnectionrec *);
-  void scanTupkeyRefLab(Signal *signal, TcConnectionrecPtr);
+  void scanTupkeyRefLab(Signal *signal, TcConnectionrecPtr, Uint32 errorCode);
   void accScanConfScanLab(Signal *signal, TcConnectionrecPtr);
   void accScanConfCopyLab(Signal *signal);
   void scanLockReleasedLab(Signal *signal, TcConnectionrec *);
@@ -3823,8 +3827,6 @@ class Dblqh : public SimulatedBlock {
   // MAX_NDB_NODES is the size of this array
   TcNodeFailRecord *tcNodeFailRecord;
   UintR ctcNodeFailrecFileSize;
-
-  Uint16 terrorCode;
 
   Uint32 c_firstInNodeGroup;
 
@@ -4618,6 +4620,14 @@ class Dblqh : public SimulatedBlock {
   void init_frags_to_execute_sr();
   Uint32 get_frags_to_execute_sr();
 
+  /* Frag lock checks */
+  bool have_frag_scan_access() const;
+  /*
+    bool have_frag_read_key_access() const;
+    bool have_frag_write_key_access() const;
+    bool have_frag_exclusve_access() const;
+  */
+
  public:
   void increment_usage_count_for_table(Uint32 tableId);
   void decrement_usage_count_for_table(Uint32 tableId);
@@ -4654,6 +4664,9 @@ class Dblqh : public SimulatedBlock {
   static Uint64 getTransactionMemoryNeed(
       const Uint32 ldm_instance_count,
       const ndb_mgm_configuration_iterator *mgm_cfg, const bool use_reserved);
+#if defined(USE_INIT_GLOBAL_VARIABLES)
+  void checkInitGlobalVariables() override;
+#endif
 };
 
 inline bool Dblqh::check_expand_shrink_ongoing(Uint32 tableId, Uint32 fragId) {
@@ -5100,6 +5113,13 @@ inline void Dblqh::unlock_log_part(LogPartRecord *logPartPtrP) {
     jamDebug();
     NdbMutex_Unlock(&logPartPtrP->m_log_part_mutex);
   }
+}
+
+inline bool Dblqh::have_frag_scan_access() const {
+  if (qt_likely(globalData.ndbMtQueryThreads > 0))
+    return (m_fragment_lock_status == FRAGMENT_LOCKED_IN_SCAN_MODE);
+
+  return true;
 }
 
 #undef JAM_FILE_ID

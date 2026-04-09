@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,7 +55,7 @@ struct ArenaHead {
     m_block_size = 0;
     m_first_block = RNIL;
     m_current_block = RNIL;
-    m_current_block_ptr = 0;
+    m_current_block_ptr = nullptr;
   }
 
   ArenaBlock *m_current_block_ptr;
@@ -130,7 +130,7 @@ inline T *ArenaPool<T>::getPtr(Uint32 i) const {
 template <typename T>
 inline void ArenaPool<T>::release(Ptr<T> ptr) {
   // TODO add trait extracting magic for type T
-  Uint32 *record_ptr = reinterpret_cast<Uint32 *>(ptr.p);
+  auto *record_ptr = reinterpret_cast<Uint32 *>(ptr.p);
   Uint32 off = m_record_info.m_offset_magic;
   Uint32 type_id = m_record_info.m_type_id;
   Uint32 magic_val = *(record_ptr + off);
@@ -170,7 +170,7 @@ bool ArenaPool<T>::seize(ArenaHead &ah, Ptr<T> &ptr) {
   require(sizeof(T) <= sz * sizeof(Uint32));
   Uint32 off = m_record_info.m_offset_magic;
 
-  if (0)
+  if (false)
     g_eventLogger->info("pos: %u sz: %u (sum: %u) bs: %u", pos, sz, (pos + sz),
                         bs);
 
@@ -218,7 +218,7 @@ void ArenaPool<T>::handle_invalid_release(Ptr<T> ptr) {
 
   // Uint32 pos = ptr.i & POOL_RECORD_MASK;
   // Uint32 pageI = ptr.i >> POOL_RECORD_BITS;
-  Uint32 *record_ptr_p = (Uint32 *)ptr.p;
+  auto *record_ptr_p = (Uint32 *)ptr.p;
 
   Uint32 magic = *(record_ptr_p + m_record_info.m_offset_magic);
   BaseString::snprintf(buf, sizeof(buf),

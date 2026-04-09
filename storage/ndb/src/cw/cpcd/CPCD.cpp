@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,15 +41,15 @@ extern const ParserRow<CPCDAPISession> commands[];
 CPCD::CPCD() {
   loadingProcessList = false;
   m_processes.clear();
-  m_monitor = NULL;
+  m_monitor = nullptr;
   m_monitor = new Monitor(this);
   m_procfile = "ndb_cpcd.db";
 }
 
 CPCD::~CPCD() {
-  if (m_monitor != NULL) {
+  if (m_monitor != nullptr) {
     delete m_monitor;
-    m_monitor = NULL;
+    m_monitor = nullptr;
   }
 }
 
@@ -81,7 +81,7 @@ int CPCD::findUniqueId() {
 bool CPCD::defineProcess(const class Properties &args,
                          const uintptr_t sessionid, RequestStatus *rs,
                          int *id) {
-  CPCD::Process *proc = new CPCD::Process(args, this, sessionid);
+  auto *proc = new CPCD::Process(args, this, sessionid);
 
   if (proc->m_id == -1) proc->m_id = findUniqueId();
 
@@ -122,7 +122,7 @@ bool CPCD::undefineProcess(const int id, const uintptr_t sessionid,
                            CPCD::RequestStatus *rs) {
   Guard tmp(m_processes);
 
-  Process *proc = 0;
+  Process *proc = nullptr;
   unsigned i;
   for (i = 0; i < m_processes.size(); i++) {
     if (m_processes[i]->m_id == id) {
@@ -131,7 +131,7 @@ bool CPCD::undefineProcess(const int id, const uintptr_t sessionid,
     }
   }
 
-  if (proc == 0) {
+  if (proc == nullptr) {
     rs->err(NotExists, "No such process");
     return false;
   }
@@ -170,7 +170,7 @@ bool CPCD::undefineProcess(const int id, const uintptr_t sessionid,
 
 bool CPCD::startProcess(const int id, const uintptr_t sessionid,
                         CPCD::RequestStatus *rs) {
-  Process *proc = 0;
+  Process *proc = nullptr;
   {
     Guard tmp(m_processes);
 
@@ -181,7 +181,7 @@ bool CPCD::startProcess(const int id, const uintptr_t sessionid,
       }
     }
 
-    if (proc == 0) {
+    if (proc == nullptr) {
       rs->err(NotExists, "No such process");
       return false;
     }
@@ -230,7 +230,7 @@ bool CPCD::stopProcess(const int id, uintptr_t sessionid,
                        CPCD::RequestStatus *rs) {
   Guard tmp(m_processes);
 
-  Process *proc = 0;
+  Process *proc = nullptr;
   for (unsigned i = 0; i < m_processes.size(); i++) {
     if (m_processes[i]->m_id == id) {
       proc = m_processes[i];
@@ -238,7 +238,7 @@ bool CPCD::stopProcess(const int id, uintptr_t sessionid,
     }
   }
 
-  if (proc == 0) {
+  if (proc == nullptr) {
     rs->err(NotExists, "No such process");
     return false;
   }
@@ -307,7 +307,7 @@ bool CPCD::saveProcessList() {
 
   f = fopen(newfile, "w");
 
-  if (f == NULL) {
+  if (f == nullptr) {
     /* XXX What should be done here? */
     logger.critical("Cannot open `%s': %s\n", newfile, strerror(errno));
     return false;
@@ -331,7 +331,7 @@ bool CPCD::saveProcessList() {
   }
 
   fclose(f);
-  f = NULL;
+  f = nullptr;
 
   /* This will probably only work on reasonably Unix-like systems. You have
    * been warned...
@@ -389,22 +389,21 @@ bool CPCD::loadProcessList() {
   /* If it did not exist, try to open the backup. See the saveProcessList()
    * method for an explanation why it is done this way.
    */
-  if (f == NULL) {
+  if (f == nullptr) {
     f = fopen(secondfile.c_str(), "r");
 
-    if (f == NULL) {
+    if (f == nullptr) {
       /* XXX What to do here? */
       logger.info("Configuration file `%s' not found", m_procfile.c_str());
       logger.info("Starting with empty configuration");
       loadingProcessList = false;
       return false;
-    } else {
-      logger.info("Configuration file `%s' missing", m_procfile.c_str());
-      logger.info("Backup configuration file `%s' is used", secondfile.c_str());
-      /* XXX Maybe we should just rename the backup file to the official
-       * name, and be done with it?
-       */
     }
+    logger.info("Configuration file `%s' missing", m_procfile.c_str());
+    logger.info("Backup configuration file `%s' is used", secondfile.c_str());
+    /* XXX Maybe we should just rename the backup file to the official
+     * name, and be done with it?
+     */
   }
 
   /*

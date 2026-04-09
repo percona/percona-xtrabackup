@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set @orig_sql_mode= @@sql_mode;
 #
 # Bug#19307777 ASSERTION `QEP_TAB->CONDITION() == QEP_TAB->CONDITION_OPTIM()' FAILED
@@ -24,3 +25,4 @@ page_size	compress_ops	compress_ops_ok	compress_time	uncompress_ops	uncompress_t
 Warnings:
 Warning	1292	Truncated incorrect DOUBLE value: '2006-09-03 10:11:37.046313'
 DROP TABLE mysql.procs_priv_copy;
+include/rpl/set_gtid_mode_on.inc

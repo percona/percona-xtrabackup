@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@ struct Executor {
   template <class Func>
   void run(Func f) {
     // add run() to the callstack of this thread
-    Callstack<Executor>::Context callstack(this);
+    Callstack<Executor>::Context const callstack(this);
     f();
   }
 };
@@ -66,7 +66,7 @@ TEST(NetTS_impl_callstack, debug_info) {
   SCOPED_TRACE("// create an first stackframe");
   DebugInfo dbg_info(__LINE__, __func__);
   // add debuginfo to the callstack
-  Callstack<DebugInfo>::Context dbg_ctx(&dbg_info);
+  Callstack<DebugInfo>::Context const dbg_ctx(&dbg_info);
 
   // check debuginfo is on the callstack
   ASSERT_THAT(
@@ -76,8 +76,8 @@ TEST(NetTS_impl_callstack, debug_info) {
 
   SCOPED_TRACE("// create another stackframe");
   [&outer_dbg_info = dbg_info] {
-    DebugInfo inner_dbg_info(__LINE__, __func__);
-    Callstack<DebugInfo>::Context dbg_ctx(&inner_dbg_info);
+    DebugInfo const inner_dbg_info(__LINE__, __func__);
+    Callstack<DebugInfo>::Context const dbg_ctx(&inner_dbg_info);
 
     SCOPED_TRACE("// check debuginfo is on the callstack");
     // [0] { 78, operator() }

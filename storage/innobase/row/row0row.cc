@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -245,6 +245,12 @@ dtuple_t *row_build_index_entry_low(const dtuple_t *row, const row_ext_t *ext,
 
     dfield_copy(dfield, dfield2);
 
+    if (!index->is_clustered()) {
+      /* Fields based on virtual columns in secondary indexes are
+      not themselves virtual */
+      dfield->type.prtype &= ~DATA_VIRTUAL;
+    }
+
     if (dfield_is_null(dfield)) {
       continue;
     }
@@ -396,6 +402,7 @@ static inline dtuple_t *row_build_low(ulint type, const dict_index_t *index,
   if (n_ext_cols) {
     ext_cols = static_cast<ulint *>(
         mem_heap_alloc(heap, n_ext_cols * sizeof *ext_cols));
+    ut_ad(ext_cols != nullptr);
   }
 
   /* Avoid a debug assertion in rec_offs_validate(). */
@@ -478,6 +485,7 @@ static inline dtuple_t *row_build_low(ulint type, const dict_index_t *index,
 
       col = col_table->get_col(col_no);
 
+      ut_ad(n_ext_cols > 0);
       if (col->ord_part) {
         /* We will have to fetch prefixes of
         externally stored columns that are
@@ -590,11 +598,7 @@ dtuple_t *row_rec_to_index_entry_low(
 
   ut_ad(rec_len == dict_index_get_n_fields(index) ||
         /* non-leaf record which has keys and child page no as record data */
-        rec_len == dict_index_get_n_unique(index) + 1
-        /* a record for older SYS_INDEXES table
-        (missing merge_threshold column) is acceptable. */
-        || (index->table->id == DICT_INDEXES_ID &&
-            rec_len == dict_index_get_n_fields(index) - 1));
+        rec_len == dict_index_get_n_unique(index) + 1U);
 
   dict_index_copy_types(entry, index, rec_len);
 
@@ -611,6 +615,7 @@ dtuple_t *row_rec_to_index_entry_low(
   }
 
   ut_ad(dtuple_check_typed(entry));
+  ut_d(entry->validate_for_index(index));
 
   return (entry);
 }

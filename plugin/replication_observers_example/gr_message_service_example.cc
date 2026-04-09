@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -135,7 +135,7 @@ char *GR_message_service_send_example::udf(UDF_INIT *, UDF_ARGS *args,
       "mysql_runtime_error", plugin_registry);
 
   if (svc.is_valid()) {
-    const size_t payload_length = static_cast<size_t>(args->lengths[1]);
+    const auto payload_length = static_cast<size_t>(args->lengths[1]);
     const bool error = svc->send(
         reinterpret_cast<const char *>(args->args[0]),
         reinterpret_cast<const unsigned char *>(args->args[1]), payload_length);

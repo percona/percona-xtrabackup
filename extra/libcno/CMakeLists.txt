@@ -16,6 +16,10 @@ SET(LIBCNO_GENERATE_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 
 DISABLE_MISSING_PROFILE_WARNING()
 
+IF(APPLE_XCODE)
+  STRING_APPEND(CMAKE_C_FLAGS " -Wno-shorten-64-to-32")
+ENDIF()
+
 # Following targets were created to mimic behavior of following
 # files supplied by libcno:
 #

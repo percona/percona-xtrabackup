@@ -1,0 +1,144 @@
+#########
+# SETUP #
+#########
+call mtr.add_suppression("Test message #33");
+UPDATE performance_schema.setup_loggers SET level='none';
+INSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
+INSTALL COMPONENT 'file://component_test_server_telemetry_logs_client';
+SET @old_general_log_state = @@global.general_log;
+SET @old_log_output=       @@global.log_output;
+SET @old_long_query_time=  @@session.long_query_time;
+SET GLOBAL log_output="TABLE";
+SET @@global.general_log = ON;
+SET @@session.sql_log_off = OFF;
+##############
+# Operations #
+##############
+# List available loggers
+SELECT * FROM performance_schema.setup_loggers;
+NAME	LEVEL	DESCRIPTION
+logger/sql/error_log	none	MySQL error logger
+logger/sql/slow_log	none	MySQL slow query logger
+logger/sql/general_log	none	MySQL general logger
+logger/test_logs_componentA/test1	info	Test logger #1
+logger/test_logs_componentA/test2	info	Test logger #2
+# No message should not be logged by OTEL logger when level = none
+UPDATE performance_schema.setup_loggers SET level='none';
+SELECT * FROM performance_schema.setup_loggers;
+NAME	LEVEL	DESCRIPTION
+logger/sql/error_log	none	MySQL error logger
+logger/sql/slow_log	none	MySQL slow query logger
+logger/sql/general_log	none	MySQL general logger
+logger/test_logs_componentA/test1	none	Test logger #1
+logger/test_logs_componentA/test2	none	Test logger #2
+TRUNCATE TABLE mysql.general_log;
+select 1;
+select * from mysql.general_log;
+event_time	user_host	thread_id	server_id	command_type	argument
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 1
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+# General log gets logged by OTEL logger when level = info
+UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log';
+select 2;
+UPDATE performance_schema.setup_loggers SET level='none';
+select * from mysql.general_log;
+event_time	user_host	thread_id	server_id	command_type	argument
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 1
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 2
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='none'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+# General log gets logged by OTEL logger regardless of legacy log_output setting
+SET GLOBAL log_output="NONE";
+UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log';
+select 3;
+UPDATE performance_schema.setup_loggers SET level='none';
+select * from mysql.general_log;
+event_time	user_host	thread_id	server_id	command_type	argument
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 1
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 2
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='none'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET GLOBAL log_output="NONE"
+# General log does not expose secrets within the OTEL logger
+SET GLOBAL log_output="TABLE";
+UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log';
+CREATE USER u1@localhost IDENTIFIED BY 'abcd';
+UPDATE performance_schema.setup_loggers SET level='none';
+select * from mysql.general_log;
+event_time	user_host	thread_id	server_id	command_type	argument
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 1
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 2
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='none'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET GLOBAL log_output="NONE"
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='none'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+# General log gets logged by OTEL logger even if general log disabled
+SET @@global.general_log = OFF;
+UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log';
+select 4;
+UPDATE performance_schema.setup_loggers SET level='none';
+select * from mysql.general_log;
+event_time	user_host	thread_id	server_id	command_type	argument
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 1
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select 2
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='none'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET GLOBAL log_output="NONE"
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='info' WHERE name='logger/sql/general_log'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	UPDATE performance_schema.setup_loggers SET level='none'
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	select * from mysql.general_log
+TIMESTAMP	USER_HOST	THREAD_ID	SERVER_ID	Query	SET @@global.general_log = OFF
+###########
+# CLEANUP #
+###########
+DROP USER u1@localhost;
+SET @@global.general_log = @old_general_log_state;
+SET @@global.log_output = @old_log_output;
+set @@session.long_query_time = @old_long_query_time;
+TRUNCATE TABLE mysql.general_log;
+TRUNCATE TABLE mysql.slow_log;
+UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_client';
+UNINSTALL COMPONENT 'file://component_test_server_telemetry_logs_export';
+Component logs (OTEL logger) should log only one entry:
+test_server_telemetry_logs_export_component_init init:
+ - Initialized log service.
+ - System variables registered.
+ - Telemetry logs callback registered.
+ - Telemetry logs UDFs registered.
+End of init
+test_server_telemetry_logs_client_component_init init:
+ - Initialized log service.
+ - Telemetry logs loggers registered.
+ - Telemetry logs UDFs registered.
+End of init
+telemetry_log_cb(logger/sql/general_log): Log message 'select 2' (level=3/info, attributes: 'command_type'='Query'; 'sql_text'='select 2'; 'user'='root'; 'priv_user'='root'; 'host'='localhost'; 'ip'='')
+telemetry_log_cb(logger/sql/general_log): Log message 'UPDATE performance_schema.setup_loggers SET level='none'' (level=3/info, attributes: 'command_type'='Query'; 'sql_text'='UPDATE performance_schema.setup_loggers SET level='none''; 'user'='root'; 'priv_user'='root'; 'host'='localhost'; 'ip'='')
+telemetry_log_cb(logger/sql/general_log): Log message 'select 3' (level=3/info, attributes: 'command_type'='Query'; 'sql_text'='select 3'; 'user'='root'; 'priv_user'='root'; 'host'='localhost'; 'ip'='')
+telemetry_log_cb(logger/sql/general_log): Log message 'UPDATE performance_schema.setup_loggers SET level='none'' (level=3/info, attributes: 'command_type'='Query'; 'sql_text'='UPDATE performance_schema.setup_loggers SET level='none''; 'user'='root'; 'priv_user'='root'; 'host'='localhost'; 'ip'='')
+telemetry_log_cb(logger/sql/general_log): Log message 'CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>' (level=3/info, attributes: 'command_type'='Query'; 'sql_text'='CREATE USER 'u1'@'localhost' IDENTIFIED BY <secret>'; 'user'='root'; 'priv_user'='root'; 'host'='localhost'; 'ip'='')
+telemetry_log_cb(logger/sql/general_log): Log message 'UPDATE performance_schema.setup_loggers SET level='none'' (level=3/info, attributes: 'command_type'='Query'; 'sql_text'='UPDATE performance_schema.setup_loggers SET level='none''; 'user'='root'; 'priv_user'='root'; 'host'='localhost'; 'ip'='')
+telemetry_log_cb(logger/sql/general_log): Log message 'select 4' (level=3/info, attributes: 'command_type'='Query'; 'sql_text'='select 4'; 'user'='root'; 'priv_user'='root'; 'host'='localhost'; 'ip'='')
+telemetry_log_cb(logger/sql/general_log): Log message 'UPDATE performance_schema.setup_loggers SET level='none'' (level=3/info, attributes: 'command_type'='Query'; 'sql_text'='UPDATE performance_schema.setup_loggers SET level='none''; 'user'='root'; 'priv_user'='root'; 'host'='localhost'; 'ip'='')
+test_server_telemetry_logs_client_component_deinit:
+ - Telemetry logs loggers unregistered.
+ - UDFs unregistered.
+ - Deinitialized log service.
+End of deinit
+test_server_telemetry_logs_export_component_deinit:
+ - Telemetry logs callbacks unregistered.
+ - System variables unregistered.
+ - UDFs unregistered.
+ - Deinitialized log service.
+End of deinit

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -104,13 +104,7 @@ struct MemoryMonitor {
      * Allocator.
      *
      * @return MMAP-memory threshold. */
-    static size_t threshold() {
-      if (temptable_use_mmap) {
-        return temptable_max_mmap;
-      } else {
-        return 0;
-      }
-    }
+    static size_t threshold() { return temptable_max_mmap; }
     /** Get current level of MMAP-backed memory consumption.
      *
      * @return Current level of MMAP-backed memory consumption (in bytes). */

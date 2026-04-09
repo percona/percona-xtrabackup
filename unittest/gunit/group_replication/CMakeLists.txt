@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -41,9 +41,7 @@ SET(TESTS
   )
 
 FOREACH(test ${TESTS})
-  SET(SRC_FILES ${test}-t.cc)
-
-  MYSQL_ADD_EXECUTABLE(${test}-t ${SRC_FILES}
+  MYSQL_ADD_EXECUTABLE(${test}-t ${test}-t.cc
     ADD_TEST ${test}
     ENABLE_EXPORTS
     LINK_LIBRARIES

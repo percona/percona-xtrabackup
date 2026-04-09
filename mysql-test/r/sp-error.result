@@ -2865,8 +2865,8 @@ ERROR HY000: Comment for routine 'nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
 # Case 6: Test case to validate comment string.
 ERROR HY000: Comment for stored routine 'test.p2' contains an invalid utf8mb3 character string: '\xF0\x9D\x8C'.
 ERROR HY000: Comment for stored routine 'test.f2' contains an invalid utf8mb3 character string: '\xF0\x9D\x8C'.
-ERROR HY000: Comment for stored routine 'test.p2' contains an invalid utf8mb3 character string: '\xF0\x9D\x8C'.
-ERROR HY000: Comment for stored routine 'test.f2' contains an invalid utf8mb3 character string: '\xF0\x9D\x8C'.
+ERROR HY000: Comment for PROCEDURE 'test.p2' contains an invalid utf8mb3 character string: '\xF0\x9D\x8C'.
+ERROR HY000: Comment for FUNCTION 'test.f2' contains an invalid utf8mb3 character string: '\xF0\x9D\x8C'.
 # Cleanup
 #
 # Bug #24357244: CANNOT CREATE A STORED FUNCTION IF A DATABASE IS NOT

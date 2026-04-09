@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,11 +31,10 @@
 
 struct CHARSET_INFO;
 
-namespace dd {
-namespace tables {
+namespace dd::tables {
 
 const Columns &Columns::instance() {
-  static Columns *s_instance = new Columns();
+  static auto *s_instance = new Columns();
   return *s_instance;
 }
 
@@ -168,5 +167,4 @@ Object_key *Columns::create_key_by_table_id(Object_id table_id) {
 
 ///////////////////////////////////////////////////////////////////////////
 
-}  // namespace tables
-}  // namespace dd
+}  // namespace dd::tables

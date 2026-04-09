@@ -15,6 +15,8 @@ SELECT CURRENT_USER();
 CURRENT_USER()
 unlocked_user@localhost
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # existing connections continue as before even after flush
 # must not throw an error
 SELECT CURRENT_USER();
@@ -24,6 +26,8 @@ unlocked_user@localhost
 UPDATE mysql.user SET account_locked='y'
   WHERE user='unlocked_user' and host = 'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 connect(localhost,unlocked_user,pas,test,SOURCE_PORT,SOURCE_SOCKET);
 ERROR HY000: Access denied for user 'unlocked_user'@'localhost'. Account is locked.
 # new connections are blocked
@@ -302,6 +306,8 @@ ERROR HY000: Column count of mysql.user is wrong. Expected 51, found 48. The tab
 DROP TABLE mysql.user;
 ALTER TABLE mysql.temp_user RENAME mysql.user;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Check whether 'account' can be used as the identifier.
 CREATE DATABASE account;
 CREATE TABLE account.`account` (account text(20));

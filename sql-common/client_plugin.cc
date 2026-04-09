@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -43,9 +43,9 @@
 #include "my_config.h"
 
 #include <mysql/client_plugin.h>
-#include <stdarg.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cstdarg>
+#include <cstdlib>
 
 #include "errmsg.h"
 #include "my_alloc.h"
@@ -590,7 +590,7 @@ have_plugin:
     goto err;
   }
 
-  if (strcmp(name, plugin->name)) {
+  if (strcmp(name, plugin->name) != 0) {
     errmsg = "name mismatch";
     goto err;
   }

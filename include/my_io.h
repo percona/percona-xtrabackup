@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,6 +31,10 @@
 */
 
 #include <mysql/components/services/bits/my_io_bits.h>
+
+#ifdef MYSQL_COMPONENT
+#error This header shall not be included in components
+#endif
 
 #ifdef _WIN32
 

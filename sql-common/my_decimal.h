@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -46,6 +46,7 @@
 
 #include "my_inttypes.h"
 #include "my_macros.h"
+#include "my_temporal.h"
 #include "my_time_t.h"
 #include "mysql/strings/dtoa.h"
 #include "mysql/strings/m_ctype.h"
@@ -106,9 +107,12 @@ class my_decimal : public decimal_t {
     sanity_check();
     rhs.sanity_check();
     if (this == &rhs) return *this;
-    decimal_t::operator=(rhs);
+    decimal_t::intg = rhs.intg;
+    decimal_t::frac = rhs.frac;
+    decimal_t::len = rhs.len;
+    decimal_t::sign = rhs.sign();
     buffer = rhs.buffer;
-    buf = buffer.data();
+    decimal_t::buf = buffer.data();
     return *this;
   }
 
@@ -316,7 +320,7 @@ int str2my_decimal(uint mask, const char *from, size_t length,
                    const CHARSET_INFO *charset, my_decimal *decimal_value);
 
 my_decimal *date2my_decimal(const MYSQL_TIME *ltime, my_decimal *dec);
-my_decimal *time2my_decimal(const MYSQL_TIME *ltime, my_decimal *dec);
+my_decimal *time2my_decimal(const Time_val *ltime, my_decimal *dec);
 my_decimal *timeval2my_decimal(const my_timeval *tm, my_decimal *dec);
 
 inline int double2my_decimal(uint mask, double val, my_decimal *d) {

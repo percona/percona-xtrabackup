@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,6 @@
 #include "mysql/binlog/event/control_events.h"  // Transaction_payload_event
 #include "mysql/binlog/event/event_reader.h"    // Event_reader
 #include "mysql/containers/buffers/managed_buffer.h"  // mysql::containers::buffers::Managed_buffer
-#include "mysql/utils/nodiscard.h"  // NODISCARD
 
 /// @addtogroup GroupLibsMysqlBinlogEvent
 /// @{

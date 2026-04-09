@@ -1,6 +1,7 @@
 #
 # WL#14303: More granular privilege control of the FLUSH operations
 #
+include/rpl/set_gtid_mode_off.inc
 # Check who has the FLUSH_xx privileges.
 # Success criteria: Should be root and 4 rows
 SELECT GRANTEE, PRIVILEGE_TYPE, IS_GRANTABLE FROM INFORMATION_SCHEMA.USER_PRIVILEGES
@@ -116,3 +117,4 @@ command_type	Query
 argument	SET global log_output=@saved_log_output
 TRUNCATE TABLE mysql.general_log;
 # End of 8.0 tests
+include/rpl/set_gtid_mode_on.inc

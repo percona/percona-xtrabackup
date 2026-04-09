@@ -669,7 +669,7 @@ SELECT @@global.max_allowed_packet;
 SET @buf_sz_utf16 = @@global.max_allowed_packet / length( _utf16'x' );
 SELECT @buf_sz_utf16;
 @buf_sz_utf16
-512.000000000
+512.0000
 SELECT length(regexp_replace( repeat('a', @buf_sz_utf16), 'a', 'b' ));
 length(regexp_replace( repeat('a', @buf_sz_utf16), 'a', 'b' ))
 512

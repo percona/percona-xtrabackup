@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -158,7 +158,7 @@ class CorrelationData {
 
   Uint32 getRootReceiverId() const { return m_corrPart[2]; }
 
-  const TupleCorrelation getTupleCorrelation() const {
+  TupleCorrelation getTupleCorrelation() const {
     return TupleCorrelation(m_corrPart[1]);
   }
 
@@ -320,8 +320,8 @@ class NdbWorker {
 
  private:
   /** No copying.*/
-  NdbWorker(const NdbWorker &);
-  NdbWorker &operator=(const NdbWorker &);
+  NdbWorker(const NdbWorker &) = delete;
+  NdbWorker &operator=(const NdbWorker &) = delete;
 
   static constexpr Uint32 voidWorkerNo = 0xffffffff;
 
@@ -434,8 +434,8 @@ class NdbResultSet {
 
  private:
   /** No copying.*/
-  NdbResultSet(const NdbResultSet &);
-  NdbResultSet &operator=(const NdbResultSet &);
+  NdbResultSet(const NdbResultSet &) = delete;
+  NdbResultSet &operator=(const NdbResultSet &) = delete;
 
   /** The buffers which we receive the results into */
   NdbReceiverBuffer *m_buffer;
@@ -626,8 +626,8 @@ class NdbResultStream {
 
    private:
     /** No copying.*/
-    TupleSet(const TupleSet &);
-    TupleSet &operator=(const TupleSet &);
+    TupleSet(const TupleSet &) = delete;
+    TupleSet &operator=(const TupleSet &) = delete;
   };
 
  private:
@@ -791,8 +791,8 @@ class NdbResultStream {
   }
 
   /** No copying.*/
-  NdbResultStream(const NdbResultStream &);
-  NdbResultStream &operator=(const NdbResultStream &);
+  NdbResultStream(const NdbResultStream &) = delete;
+  NdbResultStream &operator=(const NdbResultStream &) = delete;
 };  // class NdbResultStream
 
 //////////////////////////////////////////////
@@ -840,7 +840,7 @@ void NdbResultSet::init(NdbQueryImpl &query, Uint32 maxRows,
                         Uint32 bufferSize) {
   {
     NdbBulkAllocator &bufferAlloc = query.getRowBufferAlloc();
-    Uint32 *buffer =
+    auto *buffer =
         reinterpret_cast<Uint32 *>(bufferAlloc.allocObjMem(bufferSize));
     m_buffer = NdbReceiver::initReceiveBuffer(buffer, bufferSize, maxRows);
 
@@ -982,8 +982,16 @@ void NdbResultStream::prepare() {
       reinterpret_cast<char *>(query.getRowBufferAlloc().allocObjMem(rowSize));
   assert(rowBuffer != nullptr);
 
+  const auto *rec = m_operation.getNdbRecord();
+  char *rowSideBuffer = rowBuffer;
+  Uint32 rowSideBufferSize = 0;
+  if (rec) {
+    rowSideBuffer = rowBuffer + rec->m_row_size;
+    rowSideBufferSize = rec->m_row_side_buffer_size;
+  }
   m_receiver.init(NdbReceiver::NDB_QUERY_OPERATION, &m_operation);
   m_receiver.do_setup_ndbrecord(m_operation.getNdbRecord(), rowBuffer,
+                                rowSideBuffer, rowSideBufferSize,
                                 m_operation.needRangeNo(),
                                 /*read_key_info=*/false);
 }  // NdbResultStream::prepare
@@ -1201,7 +1209,8 @@ void NdbResultStream::prepareResultSet(const SpjTreeNodeMask expectingResults,
           // Done with this tupleNo
           setSkippedFirstMatch(tupleNo);
           continue;  // Skip further processing of this row
-        } else if (!m_firstMatchedNodes.overlaps(expectingResults)) {
+        }
+        if (!m_firstMatchedNodes.overlaps(expectingResults)) {
           // No semi joined tables affected by the 'expecting'.
           // Do nothing, except keeping 'isSkipped' if already set.
           if (unlikely(traceSignals)) {
@@ -1265,7 +1274,7 @@ void NdbResultStream::prepareResultSet(const SpjTreeNodeMask expectingResults,
                  << ", row: " << tupleNo << ", child: " << childId << endl;
         }
 
-        if (childMatched == false)  // Didn't match
+        if (!childMatched)  // Didn't match
         {
           hasMatchingChild.clear(childId);
           if (childStream.isInnerJoin()) {
@@ -1294,7 +1303,7 @@ void NdbResultStream::prepareResultSet(const SpjTreeNodeMask expectingResults,
               !stillActive.overlaps(childStream.m_dependants) ||  // 1)
               (isSortedResult() && tupleNo < rowCount - 1);       // 2)
 
-          if (childMatched == true) {
+          if (childMatched) {
             /**
              * Found a match for this outer joined child.
              * If child is the firstInner in this outer-joined_nest, the entire
@@ -1368,7 +1377,8 @@ void NdbResultStream::prepareResultSet(const SpjTreeNodeMask expectingResults,
                     << "  -> Skip it" << endl;
               }
               break;  // Skip further child matching against this tupleNo
-            } else if (unlikely(traceSignals)) {
+            }
+            if (unlikely(traceSignals)) {
               /**
                * Join-nests has a first-inner being a sibling of (same parent
                * as) this childStream. Can not skip yet, but was un-matched
@@ -1515,9 +1525,8 @@ NdbWorker *NdbWorker::receiverIdLookup(NdbWorker *workers, Uint32 noOfWorkers,
   }
   if (unlikely(current < 0)) {
     return nullptr;
-  } else {
-    return &workers[current];
   }
+  return &workers[current];
 }
 
 NdbWorker::NdbWorker()
@@ -1735,9 +1744,8 @@ int NdbQuery::setBound(const NdbRecord *keyRecord,
   if (unlikely(error)) {
     m_impl.setErrorCode(error);
     return -1;
-  } else {
-    return 0;
   }
+  return 0;
 }
 
 int NdbQuery::getRangeNo() const { return m_impl.getRangeNo(); }
@@ -2022,7 +2030,7 @@ int NdbQueryParamValue::serializeValue(const class NdbColumnImpl &column,
         if (unlikely(len > 1 + static_cast<Uint32>(column.getLength())))
           return QRY_CHAR_PARAMETER_TRUNCATED;
 
-        const Uint8 shortLen = static_cast<Uint8>(len - 1);
+        const auto shortLen = static_cast<Uint8>(len - 1);
         dst.appendBytes(&shortLen, 1);
         dst.appendBytes(((const Uint8 *)m_value.raw) + 2, shortLen);
       }
@@ -2148,7 +2156,7 @@ void NdbQueryImpl::postFetchRelease() {
 NdbQueryImpl *NdbQueryImpl::buildQuery(NdbTransaction &trans,
                                        const NdbQueryDefImpl &queryDef) {
   assert(queryDef.getNoOfOperations() > 0);
-  NdbQueryImpl *const query = new NdbQueryImpl(trans, queryDef);
+  auto *const query = new NdbQueryImpl(trans, queryDef);
   if (unlikely(query == nullptr)) {
     trans.setOperationErrorCodeAbort(Err_MemoryAlloc);
     return nullptr;
@@ -2337,9 +2345,11 @@ int NdbQueryImpl::setBound(const NdbRecord *key_record,
   Uint32 length = m_keyInfo.getSize() - startPos;
   if (unlikely(m_keyInfo.isMemoryExhausted())) {
     return Err_MemoryAlloc;
-  } else if (unlikely(length > 0xFFFF)) {
+  }
+  if (unlikely(length > 0xFFFF)) {
     return QRY_DEFINITION_TOO_LARGE;  // Query definition too large.
-  } else if (likely(length > 0)) {
+  }
+  if (likely(length > 0)) {
     m_keyInfo.put(startPos, m_keyInfo.get(startPos) | (length << 16) |
                                 (bound->range_no << 4));
   }
@@ -2417,10 +2427,9 @@ NdbQuery::NextResultOutcome NdbQueryImpl::nextResult(bool fetchAllowed,
     NdbQuery::NextResultOutcome res =
         getQueryOperation(m_globalCursor).nextResult(fetchAllowed, forceSend);
 
-    if (unlikely(res == NdbQuery::NextResult_error))
-      return res;
+    if (unlikely(res == NdbQuery::NextResult_error)) return res;
 
-    else if (res == NdbQuery::NextResult_scanComplete) {
+    if (res == NdbQuery::NextResult_scanComplete) {
       if (m_globalCursor == 0)  // Completed reading all results from root
         break;
       m_globalCursor--;  // Get 'next' from  ancestor
@@ -2434,10 +2443,8 @@ NdbQuery::NextResultOutcome NdbQueryImpl::nextResult(bool fetchAllowed,
       for (uint child = m_globalCursor + 1; child < getNoOfOperations();
            child++) {
         res = getQueryOperation(child).firstResult();
-        if (unlikely(res == NdbQuery::NextResult_error))
-          return res;
-        else if (res == NdbQuery::NextResult_gotRow)
-          m_globalCursor = child;
+        if (unlikely(res == NdbQuery::NextResult_error)) return res;
+        if (res == NdbQuery::NextResult_gotRow) m_globalCursor = child;
       }
       return NdbQuery::NextResult_gotRow;
     } else {
@@ -2586,7 +2593,7 @@ NdbQueryImpl::FetchResult NdbQueryImpl::awaitMoreResults(bool forceSend) {
         const Uint32 seq = m_transaction.theNodeSequence;
 
         /* More results are on the way, so we wait for them.*/
-        const FetchResult waitResult = static_cast<FetchResult>(
+        const auto waitResult = static_cast<FetchResult>(
             poll_guard.wait_scan(3 * timeout, nodeId, forceSend));
 
         if (ndb->getNodeSequence(nodeId) != seq)
@@ -2594,7 +2601,7 @@ NdbQueryImpl::FetchResult NdbQueryImpl::awaitMoreResults(bool forceSend) {
         else if (likely(waitResult == FetchResult_ok))
           continue;
         else if (waitResult == FetchResult_timeOut)
-          setFetchTerminated(Err_ReceiveTimedOut, false);
+          setFetchTerminated(Err_ReceiveTimedOut, true);
         else
           setFetchTerminated(Err_NodeFailCausedAbort, false);
 
@@ -2605,27 +2612,26 @@ NdbQueryImpl::FetchResult NdbQueryImpl::awaitMoreResults(bool forceSend) {
     // Fall through only if ::hasReceivedError()
     assert(m_error.code);
     return FetchResult_gotError;
-  } else  // is a Lookup query
-  {
-    /* The root operation is a lookup. Lookups are guaranteed to be complete
-     * before NdbTransaction::execute() returns. Therefore we do not set
-     * the lock, because we know that the signal receiver thread will not
-     * be accessing m_workers at this time.
-     */
-    m_applFrags.prepareMoreResults(m_workers, m_workerCount);
-    if (m_applFrags.getCurrent() != nullptr) {
-      return FetchResult_ok;
-    }
+  }
+  // is a Lookup query
+  /* The root operation is a lookup. Lookups are guaranteed to be complete
+   * before NdbTransaction::execute() returns. Therefore we do not set
+   * the lock, because we know that the signal receiver thread will not
+   * be accessing m_workers at this time.
+   */
+  m_applFrags.prepareMoreResults(m_workers, m_workerCount);
+  if (m_applFrags.getCurrent() != nullptr) {
+    return FetchResult_ok;
+  }
 
-    /* Getting here means that either:
-     *  - No results was returned (TCKEYREF)
-     *  - There was no matching row for an inner join.
-     *  - or, the application called nextResult() twice for a lookup query.
-     */
-    assert(m_pendingWorkers == 0);
-    assert(m_finalWorkers == getWorkerCount());
-    return FetchResult_noMoreData;
-  }  // if(getQueryDef().isScanQuery())
+  /* Getting here means that either:
+   *  - No results was returned (TCKEYREF)
+   *  - There was no matching row for an inner join.
+   *  - or, the application called nextResult() twice for a lookup query.
+   */
+  assert(m_pendingWorkers == 0);
+  assert(m_finalWorkers == getWorkerCount());
+  return FetchResult_noMoreData;
 
 }  // NdbQueryImpl::awaitMoreResults
 
@@ -2664,7 +2670,8 @@ bool NdbQueryImpl::handleBatchComplete(NdbWorker &worker) {
      */
     worker.setReceivedMore();
     return true;
-  } else if (!getQueryDef().isScanQuery())  // A failed lookup query
+  }
+  if (!getQueryDef().isScanQuery())  // A failed lookup query
   {
     /**
      * A lookup query will retrieve the rows as part of ::execute().
@@ -2980,7 +2987,7 @@ int NdbQueryImpl::prepareSend() {
   }
 
   const Uint32Buffer &queryTree = getQueryDef().getSerialized();
-  const QueryNode *queryNode = (const QueryNode *)queryTree.addr(1);
+  const auto *queryNode = (const QueryNode *)queryTree.addr(1);
 
   // Fill in parameters (into ATTRINFO) for QueryTree.
   for (Uint32 i = 0; i < m_countOperations; i++) {
@@ -3079,16 +3086,15 @@ const Uint32 *InitialReceiverIdIterator::getNextWords(Uint32 &sz) {
   if (m_workerNo >= m_workerCount) {
     sz = 0;
     return nullptr;
-  } else {
-    Uint32 cnt = 0;
-    while (cnt < bufSize && m_workerNo < m_workerCount) {
-      m_receiverIds[cnt] = m_workers[m_workerNo].getReceiverId();
-      cnt++;
-      m_workerNo++;
-    }
-    sz = cnt;
-    return m_receiverIds;
   }
+  Uint32 cnt = 0;
+  while (cnt < bufSize && m_workerNo < m_workerCount) {
+    m_receiverIds[cnt] = m_workers[m_workerNo].getReceiverId();
+    cnt++;
+    m_workerNo++;
+  }
+  sz = cnt;
+  return m_receiverIds;
 }
 
 /** This iterator is used for inserting a sequence of 'TcPtrI'
@@ -3137,16 +3143,15 @@ const Uint32 *FetchMoreTcIdIterator::getNextWords(Uint32 &sz) {
   if (m_currWorkerNo >= m_workerCount) {
     sz = 0;
     return nullptr;
-  } else {
-    Uint32 cnt = 0;
-    while (cnt < bufSize && m_currWorkerNo < m_workerCount) {
-      m_receiverIds[cnt] = m_workers[m_currWorkerNo]->getReceiverTcPtrI();
-      cnt++;
-      m_currWorkerNo++;
-    }
-    sz = cnt;
-    return m_receiverIds;
   }
+  Uint32 cnt = 0;
+  while (cnt < bufSize && m_currWorkerNo < m_workerCount) {
+    m_receiverIds[cnt] = m_workers[m_currWorkerNo]->getReceiverTcPtrI();
+    cnt++;
+    m_currWorkerNo++;
+  }
+  sz = cnt;
+  return m_receiverIds;
 }
 
 /******************************************************************************
@@ -3190,10 +3195,10 @@ int NdbQueryImpl::doSend(int nodeId, bool lastFlag) {
   }
 
   if (rootDef.isScanOperation()) {
-    Uint32 scan_flags = 0;  // TODO: Specify with ScanOptions::SO_SCANFLAGS
+    // Uint32 scan_flags = 0;  // TODO: Specify with ScanOptions::SO_SCANFLAGS
 
     // The number of acc-scans are limited therefore use tup-scans instead.
-    bool tupScan = (scan_flags & NdbScanOperation::SF_TupScan) || true;
+    bool tupScan = true;  // (scan_flags & NdbScanOperation::SF_TupScan)
 #if defined(VM_TRACE)
     if (ndb.theImpl->forceAccTableScans) {
       tupScan = false;
@@ -3218,8 +3223,7 @@ int NdbQueryImpl::doSend(int nodeId, bool lastFlag) {
     NdbApiSignal tSignal(&ndb);
     tSignal.setSignal(GSN_SCAN_TABREQ, refToBlock(m_scanTransaction->m_tcRef));
 
-    ScanTabReq *const scanTabReq =
-        CAST_PTR(ScanTabReq, tSignal.getDataPtrSend());
+    auto *const scanTabReq = CAST_PTR(ScanTabReq, tSignal.getDataPtrSend());
     Uint32 reqInfo = 0;
 
     const Uint64 transId = m_scanTransaction->getTransactionId();
@@ -3333,7 +3337,7 @@ int NdbQueryImpl::doSend(int nodeId, bool lastFlag) {
     NdbApiSignal tSignal(&ndb);
     tSignal.setSignal(GSN_TCKEYREQ, refToBlock(m_transaction.m_tcRef));
 
-    TcKeyReq *const tcKeyReq = CAST_PTR(TcKeyReq, tSignal.getDataPtrSend());
+    auto *const tcKeyReq = CAST_PTR(TcKeyReq, tSignal.getDataPtrSend());
 
     const Uint64 transId = m_transaction.getTransactionId();
     tcKeyReq->apiConnectPtr = m_transaction.theTCConPtr;
@@ -3465,8 +3469,7 @@ int NdbQueryImpl::sendFetchMore(NdbWorker *workers[], Uint32 cnt,
   Ndb &ndb = *getNdbTransaction().getNdb();
   NdbApiSignal tSignal(&ndb);
   tSignal.setSignal(GSN_SCAN_NEXTREQ, refToBlock(m_scanTransaction->m_tcRef));
-  ScanNextReq *const scanNextReq =
-      CAST_PTR(ScanNextReq, tSignal.getDataPtrSend());
+  auto *const scanNextReq = CAST_PTR(ScanNextReq, tSignal.getDataPtrSend());
 
   assert(m_scanTransaction);
   const Uint64 transId = m_scanTransaction->getTransactionId();
@@ -3517,6 +3520,7 @@ int NdbQueryImpl::closeTcCursor(bool forceSend) {
   const Uint32 timeout = ndb->get_waitfor_timeout();
   const Uint32 nodeId = m_transaction.getConnectedNodeId();
   const Uint32 seq = m_transaction.theNodeSequence;
+  bool timeoutCase = (m_error.code == Err_ReceiveTimedOut);
 
   /* This part needs to be done under mutex due to synchronization with
    * receiver thread.
@@ -3530,15 +3534,16 @@ int NdbQueryImpl::closeTcCursor(bool forceSend) {
 
   /* Wait for outstanding scan results from current batch fetch */
   while (m_pendingWorkers > 0) {
-    const FetchResult result = static_cast<FetchResult>(
+    const auto result = static_cast<FetchResult>(
         poll_guard.wait_scan(3 * timeout, nodeId, forceSend));
 
     if (unlikely(ndb->getNodeSequence(nodeId) != seq))
       setFetchTerminated(Err_NodeFailCausedAbort, false);
     else if (unlikely(result != FetchResult_ok)) {
-      if (result == FetchResult_timeOut)
-        setFetchTerminated(Err_ReceiveTimedOut, false);
-      else
+      if (result == FetchResult_timeOut) {
+        setFetchTerminated(Err_ReceiveTimedOut, true);
+        timeoutCase = true;
+      } else
         setFetchTerminated(Err_NodeFailCausedAbort, false);
     }
     if (hasReceivedError()) {
@@ -3561,15 +3566,20 @@ int NdbQueryImpl::closeTcCursor(bool forceSend) {
 
     /* Wait for close to be confirmed: */
     while (m_pendingWorkers > 0) {
-      const FetchResult result = static_cast<FetchResult>(
+      const auto result = static_cast<FetchResult>(
           poll_guard.wait_scan(3 * timeout, nodeId, forceSend));
 
       if (unlikely(ndb->getNodeSequence(nodeId) != seq))
         setFetchTerminated(Err_NodeFailCausedAbort, false);
       else if (unlikely(result != FetchResult_ok)) {
-        if (result == FetchResult_timeOut)
-          setFetchTerminated(Err_ReceiveTimedOut, false);
-        else
+        if (result == FetchResult_timeOut) {
+          setFetchTerminated(Err_ReceiveTimedOut, true);
+          g_eventLogger->info(
+              "NdbQueryOperation :: closeTcCursor() 4008 scan close failed");
+          /* Kernel ApiConnectRecord in unknown state, cannot use it */
+          /* Still connected, so request TC to release */
+          m_scanTransaction->theForceReleaseOnClose = true;
+        } else
           setFetchTerminated(Err_NodeFailCausedAbort, false);
       }
       if (hasReceivedError()) {
@@ -3577,6 +3587,12 @@ int NdbQueryImpl::closeTcCursor(bool forceSend) {
       }
     }  // while
   }    // if
+
+  if (unlikely(timeoutCase && (m_error.code == 0))) {
+    g_eventLogger->info(
+        "NdbQueryOperation :: closeTcCursor() Successfully closed scan after "
+        "timeout");
+  }
 
   return 0;
 }  // NdbQueryImpl::closeTcCursor
@@ -3591,8 +3607,7 @@ int NdbQueryImpl::sendClose(int nodeId) {
   Ndb &ndb = *m_transaction.getNdb();
   NdbApiSignal tSignal(&ndb);
   tSignal.setSignal(GSN_SCAN_NEXTREQ, refToBlock(m_scanTransaction->m_tcRef));
-  ScanNextReq *const scanNextReq =
-      CAST_PTR(ScanNextReq, tSignal.getDataPtrSend());
+  auto *const scanNextReq = CAST_PTR(ScanNextReq, tSignal.getDataPtrSend());
 
   assert(m_scanTransaction);
   const Uint64 transId = m_scanTransaction->getTransactionId();
@@ -3695,10 +3710,10 @@ NdbWorker *NdbQueryImpl::OrderedFragSet::getCurrent() const {
 
   if (unlikely(m_activeWorkerCount == 0)) {
     return nullptr;
-  } else {
-    assert(!m_activeWorkers[m_activeWorkerCount - 1]->isEmpty());
-    return m_activeWorkers[m_activeWorkerCount - 1];
   }
+  assert(!m_activeWorkers[m_activeWorkerCount - 1]->isEmpty());
+  return m_activeWorkers[m_activeWorkerCount - 1];
+
 }  // OrderedFragSet::getCurrent()
 
 /**
@@ -3871,9 +3886,8 @@ int NdbQueryImpl::OrderedFragSet::compare(const NdbWorker &worker1,
   if (worker1.isEmpty()) {
     if (!worker2.isEmpty()) {
       return -1;
-    } else {
-      return 0;
     }
+    return 0;
   }
 
   /* Neither stream is empty so we must compare records.*/
@@ -4047,13 +4061,12 @@ SpjTreeNodeMask NdbQueryOperationImpl::getDependants() const {
 Uint32 NdbQueryOperationImpl::getNoOfLeafOperations() const {
   if (getNoOfChildOperations() == 0) {
     return 1;
-  } else {
-    Uint32 sum = 0;
-    for (unsigned i = 0; i < getNoOfChildOperations(); i++)
-      sum += getChildOperation(i).getNoOfLeafOperations();
-
-    return sum;
   }
+  Uint32 sum = 0;
+  for (unsigned i = 0; i < getNoOfChildOperations(); i++)
+    sum += getChildOperation(i).getNoOfLeafOperations();
+
+  return sum;
 }
 
 NdbRecAttr *NdbQueryOperationImpl::getValue(const char *anAttrName,
@@ -4067,9 +4080,8 @@ NdbRecAttr *NdbQueryOperationImpl::getValue(const char *anAttrName,
   if (unlikely(column == nullptr)) {
     getQuery().setErrorCode(Err_UnknownColumn);
     return nullptr;
-  } else {
-    return getValue(*column, resultBuffer);
   }
+  return getValue(*column, resultBuffer);
 }
 
 NdbRecAttr *NdbQueryOperationImpl::getValue(Uint32 anAttrId,
@@ -4079,9 +4091,8 @@ NdbRecAttr *NdbQueryOperationImpl::getValue(Uint32 anAttrId,
   if (unlikely(column == nullptr)) {
     getQuery().setErrorCode(Err_UnknownColumn);
     return nullptr;
-  } else {
-    return getValue(*column, resultBuffer);
   }
+  return getValue(*column, resultBuffer);
 }
 
 NdbRecAttr *NdbQueryOperationImpl::getValue(const NdbColumnImpl &column,
@@ -4230,7 +4241,7 @@ NdbQuery::NextResultOutcome NdbQueryOperationImpl::nextResult(bool fetchAllowed,
    * 'next' will never be able to return anything for a lookup operation.
    *  NOTE: This is a pure optimization shortcut!
    */
-  else if (m_operationDef.isScanOperation()) {
+  if (m_operationDef.isScanOperation()) {
     const NdbWorker *worker = m_queryImpl.m_applFrags.getCurrent();
     if (worker != nullptr) {
       NdbResultStream &resultStream = worker->getResultStream(*this);
@@ -4266,7 +4277,8 @@ int NdbQueryOperationImpl::fetchRow(NdbResultStream &resultStream) {
       assert(m_resultBuffer != nullptr);
       if (unlikely(m_resultBuffer == nullptr)) return -1;
       // Copy result to buffer supplied by application.
-      memcpy(m_resultBuffer, buff, m_ndbRecord->m_row_size);
+      memcpy(m_resultBuffer, buff,
+             m_ndbRecord->m_row_size + m_ndbRecord->m_row_side_buffer_size);
     }
   }
   return 0;
@@ -4487,9 +4499,9 @@ Uint32 NdbQueryOperationImpl ::calculateBatchedRows(
     // Return max(Unit32) to avoid interfering with batch size calculation
     // for parent.
     return 0xffffffff;
-  } else {
-    return maxBatchRows;
   }
+  return maxBatchRows;
+
 }  // NdbQueryOperationImpl::calculateBatchedRows
 
 void NdbQueryOperationImpl::setBatchedRows(Uint32 batchedRows) {
@@ -4530,7 +4542,7 @@ int NdbQueryOperationImpl::prepareAttrInfo(Uint32Buffer &attrInfo,
       attrInfo.append(m_params);
     }
 
-    QN_LookupParameters *param =
+    auto *param =
         reinterpret_cast<QN_LookupParameters *>(attrInfo.addr(startPos));
     if (unlikely(param == nullptr)) return Err_MemoryAlloc;
 
@@ -4565,8 +4577,7 @@ int NdbQueryOperationImpl::prepareAttrInfo(Uint32Buffer &attrInfo,
    * Create QueryNodeParameters type matching each QueryNode.
    */
   const Uint32 type = QueryNode::getOpType(queryNode->len);
-  const QueryNodeParameters::OpType paramType =
-      (QueryNodeParameters::OpType)type;
+  const auto paramType = (QueryNodeParameters::OpType)type;
   switch (paramType) {
     case QueryNodeParameters::QN_LOOKUP:
       assert(!def.isScanOperation());
@@ -4630,7 +4641,7 @@ int NdbQueryOperationImpl::prepareAttrInfo(Uint32Buffer &attrInfo,
 
   switch (paramType) {
     case QueryNodeParameters::QN_LOOKUP: {
-      QN_LookupParameters *param =
+      auto *param =
           reinterpret_cast<QN_LookupParameters *>(attrInfo.addr(startPos));
       if (unlikely(param == nullptr)) return Err_MemoryAlloc;
 
@@ -4640,7 +4651,7 @@ int NdbQueryOperationImpl::prepareAttrInfo(Uint32Buffer &attrInfo,
       break;
     }
     case QueryNodeParameters::QN_SCAN_FRAG: {
-      QN_ScanFragParameters *param =
+      auto *param =
           reinterpret_cast<QN_ScanFragParameters *>(attrInfo.addr(startPos));
       if (unlikely(param == nullptr)) return Err_MemoryAlloc;
 
@@ -4675,9 +4686,8 @@ int NdbQueryOperationImpl::prepareAttrInfo(Uint32Buffer &attrInfo,
     // Check deprecated QueryNode types last:
     case QueryNodeParameters::QN_SCAN_INDEX_v1:  // Deprecated
     {
-      QN_ScanIndexParameters_v1 *param =
-          reinterpret_cast<QN_ScanIndexParameters_v1 *>(
-              attrInfo.addr(startPos));
+      auto *param = reinterpret_cast<QN_ScanIndexParameters_v1 *>(
+          attrInfo.addr(startPos));
       if (unlikely(param == nullptr)) return Err_MemoryAlloc;
 
       assert(m_parallelism == Parallelism_max ||
@@ -4707,7 +4717,7 @@ int NdbQueryOperationImpl::prepareAttrInfo(Uint32Buffer &attrInfo,
     case QueryNodeParameters::QN_SCAN_FRAG_v1:  // Deprecated
     {
       assert(paramType == QueryNodeParameters::QN_SCAN_FRAG_v1);
-      QN_ScanFragParameters_v1 *param =
+      auto *param =
           reinterpret_cast<QN_ScanFragParameters_v1 *>(attrInfo.addr(startPos));
       if (unlikely(param == nullptr)) return Err_MemoryAlloc;
 
@@ -4835,8 +4845,7 @@ static int appendBound(Uint32Buffer &keyInfo,
 
   switch (bound->getKind()) {
     case NdbQueryOperandImpl::Const: {
-      const NdbConstOperandImpl &constOp =
-          static_cast<const NdbConstOperandImpl &>(*bound);
+      const auto &constOp = static_cast<const NdbConstOperandImpl &>(*bound);
 
       const int error = serializeConstOp(constOp, keyInfo, len);
       if (unlikely(error)) return error;
@@ -4844,7 +4853,7 @@ static int appendBound(Uint32Buffer &keyInfo,
       break;
     }
     case NdbQueryOperandImpl::Param: {
-      const NdbParamOperandImpl *const paramOp =
+      const auto *const paramOp =
           static_cast<const NdbParamOperandImpl *>(bound);
       const int paramNo = paramOp->getParamIx();
       assert(actualParam != nullptr);
@@ -4922,9 +4931,11 @@ int NdbQueryOperationImpl::prepareIndexKeyInfo(
   Uint32 length = keyInfo.getSize() - startPos;
   if (unlikely(keyInfo.isMemoryExhausted())) {
     return Err_MemoryAlloc;
-  } else if (unlikely(length > 0xFFFF)) {
+  }
+  if (unlikely(length > 0xFFFF)) {
     return QRY_DEFINITION_TOO_LARGE;  // Query definition too large.
-  } else if (likely(length > 0)) {
+  }
+  if (likely(length > 0)) {
     keyInfo.put(startPos, keyInfo.get(startPos) | (length << 16));
   }
 
@@ -4947,7 +4958,7 @@ int NdbQueryOperationImpl::prepareLookupKeyInfo(
 
     switch (keys[keyNo]->getKind()) {
       case NdbQueryOperandImpl::Const: {
-        const NdbConstOperandImpl *const constOp =
+        const auto *const constOp =
             static_cast<const NdbConstOperandImpl *>(keys[keyNo]);
         const int error = serializeConstOp(*constOp, keyInfo, dummy);
         if (unlikely(error)) return error;
@@ -4955,7 +4966,7 @@ int NdbQueryOperationImpl::prepareLookupKeyInfo(
         break;
       }
       case NdbQueryOperandImpl::Param: {
-        const NdbParamOperandImpl *const paramOp =
+        const auto *const paramOp =
             static_cast<const NdbParamOperandImpl *>(keys[keyNo]);
         int paramNo = paramOp->getParamIx();
         assert(actualParam != nullptr);
@@ -5022,7 +5033,7 @@ bool NdbQueryOperationImpl::execTRANSID_AI(const Uint32 *ptr, Uint32 len) {
     ret = m_queryImpl.handleBatchComplete(*worker);
   }
 
-  if (false && traceSignals) {
+  if (false) {  // if (traceSignals) {
     ndbout << "NdbQueryOperationImpl::execTRANSID_AI(): returns:" << ret
            << ", *this=" << *this << endl;
   }
@@ -5037,7 +5048,7 @@ bool NdbQueryOperationImpl::execTCKEYREF(const NdbApiSignal *aSignal) {
   /* The SPJ block does not forward TCKEYREFs for trees with scan roots.*/
   assert(!getQueryDef().isScanQuery());
 
-  const TcKeyRef *ref = CAST_CONSTPTR(TcKeyRef, aSignal->getDataPtr());
+  const auto *ref = CAST_CONSTPTR(TcKeyRef, aSignal->getDataPtr());
   if (!getQuery().m_transaction.checkState_TransId(ref->transId)) {
 #ifdef NDB_NO_DROPPED_SIGNAL
     abort();
@@ -5132,7 +5143,7 @@ bool NdbQueryOperationImpl::execSCAN_TABCONF(Uint32 tcPtrI, Uint32 rowCount,
     /* This fragment is now complete */
     ret = m_queryImpl.handleBatchComplete(*worker);
   }
-  if (false && traceSignals) {
+  if (false) {  // if (traceSignals) {
     ndbout << "NdbQueryOperationImpl::execSCAN_TABCONF():, returns:" << ret
            << ", tcPtrI=" << tcPtrI << " rowCount=" << rowCount
            << " *this=" << *this << endl;
@@ -5209,14 +5220,17 @@ int NdbQueryOperationImpl::setParallelism(Uint32 parallelism) {
   if (!getQueryOperationDef().isScanOperation()) {
     getQuery().setErrorCode(QRY_WRONG_OPERATION_TYPE);
     return -1;
-  } else if (getOrdering() == NdbQueryOptions::ScanOrdering_ascending ||
-             getOrdering() == NdbQueryOptions::ScanOrdering_descending) {
+  }
+  if (getOrdering() == NdbQueryOptions::ScanOrdering_ascending ||
+      getOrdering() == NdbQueryOptions::ScanOrdering_descending) {
     getQuery().setErrorCode(QRY_SEQUENTIAL_SCAN_SORTED);
     return -1;
-  } else if (getQueryOperationDef().getOpNo() > 0) {
+  }
+  if (getQueryOperationDef().getOpNo() > 0) {
     getQuery().setErrorCode(Err_FunctionNotImplemented);
     return -1;
-  } else if (parallelism < 1 || parallelism > NDB_PARTITION_MASK) {
+  }
+  if (parallelism < 1 || parallelism > NDB_PARTITION_MASK) {
     getQuery().setErrorCode(Err_ParameterError);
     return -1;
   }
@@ -5237,7 +5251,8 @@ int NdbQueryOperationImpl::setAdaptiveParallelism() {
   if (!getQueryOperationDef().isScanOperation()) {
     getQuery().setErrorCode(QRY_WRONG_OPERATION_TYPE);
     return -1;
-  } else if (getQueryOperationDef().getOpNo() == 0) {
+  }
+  if (getQueryOperationDef().getOpNo() == 0) {
     getQuery().setErrorCode(Err_FunctionNotImplemented);
     return -1;
   }

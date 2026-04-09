@@ -1,0 +1,16 @@
+TRUNCATE TABLE performance_schema.events_statements_history_long;
+# Execute prepared statements from mysql_client_test.
+# Verify that prepared statements in the binary protocol have a message text and digest
+SELECT
+EVENT_NAME, SQL_TEXT, DIGEST, DIGEST_TEXT,
+CURRENT_SCHEMA, RETURNED_SQLSTATE, MESSAGE_TEXT, ERRORS, WARNINGS
+FROM performance_schema.events_statements_history_long
+WHERE EVENT_NAME LIKE 'statement/com/%'
+  ORDER BY THREAD_ID, EVENT_ID;
+EVENT_NAME	SQL_TEXT	DIGEST	DIGEST_TEXT	CURRENT_SCHEMA	RETURNED_SQLSTATE	MESSAGE_TEXT	ERRORS	WARNINGS
+statement/com/Prepare	NULL	NULL	NULL	client_test_db	42000	You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use	1	0
+statement/com/Prepare	SHOW WARNINGS	25f160ddb97dcafc736f82fca4584c3b7815ed523a603f3118768367d0a1b76a	PREPARE SHOW WARNINGS	client_test_db	HY000	This command is not supported in the prepared statement protocol yet	1	0
+statement/com/Prepare	SELECT 'I am prepared' as marker	5188d8b31e0444b773425416c2bf9318790fa8f952df8c20761ddfd74908f00c	PREPARE SELECT ? AS `marker`	client_test_db	NULL	NULL	0	0
+statement/com/Execute	SELECT 'I am prepared' as marker	5b54d8635c38459d9eba4087a8ce56b910c3ab390266b9df0fe5467c44348000	EXECUTE SELECT ? AS `marker`	client_test_db	NULL	NULL	0	0
+statement/com/Close stmt	SELECT 'I am prepared' as marker	d560d567071709a65bf14b8866ef3fa6d63dc178d93f7791865ae9688ca53a7a	DEALLOCATE SELECT ? AS `marker`	client_test_db	NULL	NULL	0	0
+statement/com/Quit	NULL	NULL	NULL	NULL	NULL	NULL	0	0

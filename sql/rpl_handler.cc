@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1377,6 +1377,7 @@ static bool is_show_status(enum_sql_command sql_command) {
     case SQLCOM_SHOW_PRIVILEGES:
     case SQLCOM_SHOW_STATUS_PROC:
     case SQLCOM_SHOW_STATUS_FUNC:
+    case SQLCOM_SHOW_STATUS_LIBRARY:
     case SQLCOM_SHOW_PLUGINS:
     case SQLCOM_SHOW_EVENTS:
     case SQLCOM_SHOW_PROFILE:

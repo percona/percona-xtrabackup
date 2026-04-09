@@ -1,0 +1,618 @@
+create schema db1;
+create table db1.tbl (a int primary key auto_increment, user varchar(100) default (current_user()));
+create table db1.tbl2 (a int primary key auto_increment, user varchar(100) default (current_user()));
+create function db1.f() returns char(100) return current_user();
+create function db1.f2() returns char(100) return current_user();
+create procedure db1.p() sql security invoker begin select current_user(); end$$
+create procedure db1.p2() sql security invoker begin select current_user(); end$$
+create role user1role;
+grant all on db1.* to user1role;
+create user user1@'%' identified by 'secretpass1';
+grant user1role to user1@'%';
+create user user3@'%' identified by 'secretpass3';
+grant user1role to user3@'%';
+create user user2@'%' identified by 'secretpass2';
+grant select, insert, update, delete on db1.tbl2 to user2@'%';
+grant execute on procedure db1.p2 to user2@'%';
+grant execute on function db1.f2 to user2@'%';
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"passthroughDbUser": {"poolSize": 4, "maxSessionsPerUser":7}}');
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/db
+# Registred DB_OBJECT at path: /svc/db/p
+# Registred DB_OBJECT at path: /svc/db/p2
+# Registred DB_OBJECT at path: /svc/db/f
+# Registred DB_OBJECT at path: /svc/db/f2
+# Registred DB_OBJECT at path: /svc/db/tbl
+# Registred DB_OBJECT at path: /svc/db/tbl2
+# Registred DB_SCHEMA at path: /svc/db_no_auth
+# Registred DB_OBJECT at path: /svc/db_no_auth/tbl2
+# Registred AUTH APP at path: /svc
+# Registred MRS USER: 'user1'
+# Registred MRS USER: 'user2'
+
+
+## I. Verify that authentication for registered and uregistered users when passthroughDbUser is activated.
+#
+# 1. Registred users authentication is succesfful.
+# 2. Unregistered users authentication fails.
+# 3. Verify that MRS allocates few MySQL sessions for each session.
+#
+## II. Verify that access to db-objects is derived from MySQL account.
+#
+# 1. Verify user with full access.
+# 2. Verify user which has limited access.
+#
+## III. Configuration changes in DB and MRS metadata
+#
+# 1. Change user1 password, and check if new password is used.
+# 2. Allow unregistered users and verfiy 'user3' (previously failing)
+#    can login.
+#
+## IV. Verify passthrough cache limits
+#
+# 1. Verify that user session can't allocate more MySQL sessions than configured (7).
+# 2. Verify that logout removes all allocated MySQL sessions
+# 3. Verify that session create for the same user share the same MySQL Session pool
+#    (allocating more session than configured limit causes authentication failure).
+# 4. Logout one session for user1, causes that new authentication for this user
+#    is successful (went down below limit)
+# 5. Logout of all sessions for user1, causes that all MySQL Sessions are deallocated.
+#
+## V. Other tests.
+#
+# 1. Verify that we can use JWT token/session with passthrough.
+# 2. Verify that after changing passthrough parameters, MRS applies those.
+#
+#
+# I.1
+# authenticate user1 and user2
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+#
+# I.2
+# should fail because not registered
+GET /svc/authentication/login
+
+OK
+#
+# I.4
+# there should be 4 connections for each user corresponding to the pool
+#
+# II.1
+# user1 has access to everything
+GET /svc/db/tbl
+{
+    "items": [],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:2)
+{
+    "a": 1,
+    "user": "user1@%",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "25591F89F39622F6E0BD50A86D2DA7CE261538EEB40E258422A8D53C8A484743"
+    }
+}
+OK
+POST /svc/db/tbl2 (payload-size:2)
+{
+    "a": 1,
+    "user": "user1@%",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl2/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "25591F89F39622F6E0BD50A86D2DA7CE261538EEB40E258422A8D53C8A484743"
+    }
+}
+OK
+GET /svc/db/tbl2
+{
+    "items": [
+        {
+            "a": 1,
+            "user": "user1@%",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl2/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "25591F89F39622F6E0BD50A86D2DA7CE261538EEB40E258422A8D53C8A484743"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl2/"
+        }
+    ]
+}
+OK
+PUT /svc/db/p (payload-size:2)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "current_user()": "user1@%"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "current_user()",
+                        "type": "VARCHAR(288)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+PUT /svc/db/p2 (payload-size:2)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "current_user()": "user1@%"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "current_user()",
+                        "type": "VARCHAR(288)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+PUT /svc/db/f (payload-size:2)
+{
+    "result": "root@localhost"
+}
+OK
+PUT /svc/db/f2 (payload-size:2)
+{
+    "result": "root@localhost"
+}
+OK
+#
+# II.2
+# user2 only has access to *2 objects
+POST /svc/db/tbl (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+GET /svc/db/tbl
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/db/tbl2 (payload-size:2)
+{
+    "a": 2,
+    "user": "user2@%",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl2/2"
+        }
+    ],
+    "_metadata": {
+        "etag": "9A296F40B34C84B4A0AC31662D4058E324ABAC0CFF18120DB315AAF97AFBAAB8"
+    }
+}
+OK
+GET /svc/db/tbl2
+{
+    "items": [
+        {
+            "a": 1,
+            "user": "user1@%",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl2/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "25591F89F39622F6E0BD50A86D2DA7CE261538EEB40E258422A8D53C8A484743"
+            }
+        },
+        {
+            "a": 2,
+            "user": "user2@%",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl2/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "9A296F40B34C84B4A0AC31662D4058E324ABAC0CFF18120DB315AAF97AFBAAB8"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl2/"
+        }
+    ]
+}
+OK
+PUT /svc/db/p (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+PUT /svc/db/p2 (payload-size:2)
+{
+    "resultSets": [
+        {
+            "type": "items0",
+            "items": [
+                {
+                    "current_user()": "user2@%"
+                }
+            ],
+            "_metadata": {
+                "columns": [
+                    {
+                        "name": "current_user()",
+                        "type": "VARCHAR(288)"
+                    }
+                ]
+            }
+        }
+    ]
+}
+OK
+PUT /svc/db/f (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+PUT /svc/db/f2 (payload-size:2)
+{
+    "result": "root@localhost"
+}
+OK
+# user3 should be rejected
+GET /svc/db/tbl
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+#
+# III.1
+# change password and try again
+SET PASSWORD FOR user1@'%'='newpass';
+GET /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "a": 1,
+            "user": "user1@%",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "25591F89F39622F6E0BD50A86D2DA7CE261538EEB40E258422A8D53C8A484743"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+Timeout in wait_condition.inc for SELECT count(*)=0 FROM performance_schema.processlist where USER = 'user1'
+#
+# III.2
+# switch off restriction to registered users and try again with user3
+update mysql_rest_service_metadata.auth_app set limit_to_registered_users=0;
+GET /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "a": 1,
+            "user": "user1@%",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "25591F89F39622F6E0BD50A86D2DA7CE261538EEB40E258422A8D53C8A484743"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+# overload user1
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+#
+# IV.1
+GET /svc/authentication/login
+
+OK
+LOCK TABLE db1.tbl WRITE;
+# 8th attempt, out of sessions
+GET /svc/db/tbl?1
+{
+    "message": "Too Many Requests",
+    "status": 429
+}
+OK
+UNLOCK TABLES;
+#
+# IV.2
+# after log out, there should be no more pooled sessions
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+#
+# IV.3
+# check limit of passthrough sessions for the same user
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+
+OK
+GET /svc/authentication/login
+{"message":"Account exceeded the concurrent session limit for the service","status":429}
+OK
+#
+# IV.4
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+GET /svc/authentication/login
+
+OK
+#
+# IV.5
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+#
+# V.1
+# try with jwt session
+GET /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "a": 1,
+            "user": "user1@%",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "25591F89F39622F6E0BD50A86D2DA7CE261538EEB40E258422A8D53C8A484743"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+#
+# V.2
+# shrink limits and see if it refreshes
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"passthroughDbUser": {"poolSize": 2, "maxSessionsPerUser": 1}}');
+GET /svc/authentication/login
+
+OK
+# Access db-object that doesn't require authentication, still service requires it.
+GET /svc/authentication/login
+{"message":"Account exceeded the concurrent session limit for the service","status":429}
+OK
+GET /svc/db_no_auth/tbl2
+{
+    "message": "Service requires authentication with MySQL Internal, but user is authenticated with other authApp (or authentication was not configured)",
+    "status": 400
+}
+OK
+GET /svc/db_no_auth/tbl2
+{
+    "message": "Service requires authentication with MySQL Internal, but user is authenticated with other authApp (or authentication was not configured)",
+    "status": 400
+}
+OK
+POST /svc/authentication/logout
+{
+    "message": "Logged out successfully",
+    "status": 200
+}
+OK
+drop user user1@'%';
+drop user user2@'%';
+drop user user3@'%';
+drop user user1role;
+drop schema db1;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

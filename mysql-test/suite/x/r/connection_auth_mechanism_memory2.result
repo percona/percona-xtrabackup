@@ -98,6 +98,8 @@ ok
 #######################################################################
 # Cache is cleared by FLUSH SQL, thus auth-mech sha256_memory must fail
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 -- Expecting failure with parameters: DISABLED	memory	xuser_cache2	cache2
 --
 connecting...

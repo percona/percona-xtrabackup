@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 #
 # Part of test coverage for WL#9826 "Allow RENAME TABLES under
 # LOCK TABLES" which needs debug build and debug_sync facility.
@@ -109,3 +110,5 @@ connection default;
 UNLOCK TABLES;
 DROP TABLES t01;
 DROP DATABASE mysqltest;
+include/rpl/set_gtid_mode_on.inc
+connection default;

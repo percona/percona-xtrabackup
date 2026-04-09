@@ -4,6 +4,8 @@ create database d1;
 create user 'sample'@'localhost' identified by 'password';
 grant all on d1.* to 'sample'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 select database();
 database()
 d1

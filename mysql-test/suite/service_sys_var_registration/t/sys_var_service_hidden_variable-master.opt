@@ -1,0 +1,2 @@
+$SYS_VAR_SERVICE_OPT
+--loose-test_component.hidden_int_sys_var=42

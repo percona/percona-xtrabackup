@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,12 +29,13 @@
 
 #include "my_config.h"
 
-#include <errno.h>
 #include <fcntl.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cerrno>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <forward_list>
 #include <string>
 #include <unordered_map>
 
@@ -179,6 +180,8 @@ static uint my_end_arg;
 static char *opt_mysql_unix_port = nullptr;
 static char *opt_bind_addr = nullptr;
 static int first_error = 0;
+static bool opt_dump_users = false;
+static bool opt_add_drop_user = false;
 #include "client/include/authentication_kerberos_clientopt-vars.h"
 #include "client/include/caching_sha2_passwordopt-vars.h"
 #include "client/include/multi_factor_passwordopt-vars.h"
@@ -192,12 +195,14 @@ const char *set_gtid_purged_mode_names[] = {"OFF", "AUTO", "ON", "COMMENTED",
 static TYPELIB set_gtid_purged_mode_typelib = {
     array_elements(set_gtid_purged_mode_names) - 1, "",
     set_gtid_purged_mode_names, nullptr};
-static enum enum_set_gtid_purged_mode {
+enum enum_set_gtid_purged_mode {
   SET_GTID_PURGED_OFF = 0,
   SET_GTID_PURGED_AUTO = 1,
   SET_GTID_PURGED_ON = 2,
   SET_GTID_PURGED_COMMENTED = 3
-} opt_set_gtid_purged_mode = SET_GTID_PURGED_AUTO;
+};
+static enum enum_set_gtid_purged_mode opt_set_gtid_purged_mode =
+    SET_GTID_PURGED_AUTO;
 
 #if defined(_WIN32)
 static char *shared_memory_base_name = nullptr;
@@ -218,7 +223,10 @@ enum class Output_as_version_mode {
   SERVER = 0,         /// Output command terminology matching the dumped server
   BEFORE_8_0_23 = 1,  /// Output command terminology for servers below 8.0.23
   BEFORE_8_2_0 = 2    /// Output command terminology for servers below 8.2.0
-} opt_output_as_version_mode = Output_as_version_mode::SERVER;
+};
+
+enum Output_as_version_mode opt_output_as_version_mode =
+    Output_as_version_mode::SERVER;
 
 Prealloced_array<uint, 12> ignore_error(PSI_NOT_INSTRUMENTED);
 static int parse_ignore_error();
@@ -249,7 +257,8 @@ const char *default_dbug_option = "d:t:o,/tmp/mysqldump.trace";
 /* have we seen any VIEWs during table scanning? */
 bool seen_views = false;
 
-collation_unordered_set<string> *ignore_table;
+collation_unordered_set<string> *ignore_table, *include_user;
+std::forward_list<string> *exclude_user;
 
 static struct my_option my_long_options[] = {
     {"all-databases", 'A',
@@ -272,6 +281,9 @@ static struct my_option my_long_options[] = {
     {"add-drop-trigger", 0, "Add a DROP TRIGGER before each create.",
      &opt_drop_trigger, &opt_drop_trigger, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
+    {"add-drop-user", 0, "Add DROP USER when dumping the user definitions",
+     &opt_add_drop_user, &opt_add_drop_user, nullptr, GET_BOOL, OPT_ARG, 0, 0,
+     0, nullptr, 0, nullptr},
     {"add-locks", OPT_LOCKS, "Add locks around INSERT statements.", &opt_lock,
      &opt_lock, nullptr, GET_BOOL, NO_ARG, 1, 0, 0, nullptr, 0, nullptr},
     {"allow-keywords", OPT_KEYWORDS,
@@ -297,7 +309,7 @@ static struct my_option my_long_options[] = {
     {"column-statistics", 0,
      "Add an ANALYZE TABLE statement to regenerate any existing column "
      "statistics.",
-     &column_statistics, &column_statistics, nullptr, GET_BOOL, NO_ARG, 1, 0, 0,
+     &column_statistics, &column_statistics, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
      nullptr, 0, nullptr},
     {"comments", 'i', "Write additional information.", &opt_comments,
      &opt_comments, nullptr, GET_BOOL, NO_ARG, 1, 0, 0, nullptr, 0, nullptr},
@@ -451,6 +463,21 @@ static struct my_option my_long_options[] = {
      "use the directive multiple times, once for each table.  Each table must "
      "be specified with both database and table names, e.g., "
      "--ignore-table=database.table.",
+     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+     nullptr},
+    {"exclude-user", OPT_MYSQLDUMP_EXCLUDE_USER,
+     "Do not dump the specified user account. To specify more than one user "
+     "account to exclude, use the directive multiple times, once for each user "
+     "account.  Each user account must be specified with both user and host "
+     "part, e.g., --exclude-user=foo@localhost.",
+     nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
+     nullptr},
+    {"include-user", OPT_MYSQLDUMP_INCLUDE_USER,
+     "Dump the specified user account. If no --include-user is specified, dump "
+     "all user accounts by default. To specify more than one user account to "
+     "dump, use the directive multiple times, once for each user account.  "
+     "Each user account must be specified with both user and host part, e.g., "
+     "--exclude-users=foo@localhost.",
      nullptr, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
      nullptr},
     {"include-source-host-port", OPT_MYSQLDUMP_INCLUDE_SOURCE_HOST_PORT,
@@ -666,6 +693,11 @@ static struct my_option my_long_options[] = {
     {"user", 'u', "User for login if not current user.", &current_user,
      &current_user, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr, 0,
      nullptr},
+    {"users", 0,
+     "Dump user accounts as logical definitions in the form of CREATE USER and "
+     "GRANT statements. Not compatible with --flush-privileges!",
+     &opt_dump_users, &opt_dump_users, nullptr, GET_BOOL, OPT_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
     {"verbose", 'v', "Print info about the various stages.", &verbose, &verbose,
      nullptr, GET_BOOL, NO_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"version", 'V', "Output version information and exit.", nullptr, nullptr,
@@ -767,6 +799,9 @@ static void verbose_msg(const char *fmt, ...)
     MY_ATTRIBUTE((format(printf, 1, 2)));
 static char const *fix_identifier_with_newline(char const *object_name,
                                                bool *freemem);
+static bool dump_users(FILE *sql_file);
+static bool dump_grants(FILE *sql_file);
+static bool fetch_users_list_if_include_is_empty();
 
 static std::unordered_map<string, string> compatibility_rpl_replica_commands = {
     {"SHOW REPLICA STATUS", "SHOW SLAVE STATUS"},
@@ -782,19 +817,19 @@ static std::unordered_map<string, string> compatibility_rpl_replica_commands = {
 static std::unordered_map<string, string> compatibility_rpl_source_commands = {
     {"SHOW BINARY LOG STATUS", "SHOW MASTER STATUS"}};
 
-static string get_compatible_rpl_source_query(string command) {
+static string get_compatible_rpl_source_query(const string &command) {
   return ((opt_server_version < FIRST_REPLICA_COMMAND_VERSION)
               ? compatibility_rpl_source_commands.at(command)
               : command);
 }
 
-static string get_compatible_rpl_replica_query(string command) {
+static string get_compatible_rpl_replica_query(const string &command) {
   return ((opt_server_version < FIRST_REPLICA_COMMAND_VERSION)
               ? compatibility_rpl_replica_commands.at(command)
               : command);
 }
 
-static string get_compatible_rpl_replica_command(string command) {
+static string get_compatible_rpl_replica_command(const string &command) {
   return ((opt_output_as_version_mode == Output_as_version_mode::BEFORE_8_0_23)
               ? compatibility_rpl_replica_commands.at(command)
               : command);
@@ -834,14 +869,14 @@ static void check_io(FILE *file) {
   if (ferror(file) || errno == 5) die(EX_EOF, "Got errno %d on write", errno);
 }
 
-static void short_usage_sub(void) {
+static void short_usage_sub() {
   printf("Usage: %s [OPTIONS] database [tables]\n", my_progname);
   printf("OR     %s [OPTIONS] --databases [OPTIONS] DB1 [DB2 DB3...]\n",
          my_progname);
   printf("OR     %s [OPTIONS] --all-databases [OPTIONS]\n", my_progname);
 }
 
-static void usage(void) {
+static void usage() {
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
   puts("Dumping structure and contents of MySQL databases and tables.");
@@ -851,7 +886,7 @@ static void usage(void) {
   my_print_variables(my_long_options);
 } /* usage */
 
-static void short_usage(void) {
+static void short_usage() {
   short_usage_sub();
   printf("For more options, use %s --help\n", my_progname);
 }
@@ -1082,8 +1117,8 @@ static bool get_one_option(int optid, const struct my_option *opt,
       break;
     case (int)OPT_COMPACT:
       if (opt_compact) {
-        opt_comments = opt_drop = opt_disable_keys = opt_lock = false;
-        opt_set_charset = false;
+        opt_comments = opt_drop = opt_disable_keys = opt_lock = opt_tz_utc =
+            opt_set_charset = false;
       }
       break;
     case (int)OPT_TABLES:
@@ -1095,7 +1130,23 @@ static bool get_one_option(int optid, const struct my_option *opt,
                 "Illegal use of option --ignore-table=<database>.<table>\n");
         exit(1);
       }
-      ignore_table->insert(argument);
+      ignore_table->emplace(argument);
+      break;
+    }
+    case (int)OPT_MYSQLDUMP_EXCLUDE_USER: {
+      if (!strchr(argument, '@')) {
+        fprintf(stderr, "Illegal use of option --exclude-user=<user>@<host>\n");
+        exit(1);
+      }
+      exclude_user->emplace_front(argument);
+      break;
+    }
+    case (int)OPT_MYSQLDUMP_INCLUDE_USER: {
+      if (!strchr(argument, '@')) {
+        fprintf(stderr, "Illegal use of option --include-user=<user>@<host>\n");
+        exit(1);
+      }
+      include_user->emplace(argument);
       break;
     }
     case (int)OPT_COMPATIBLE: {
@@ -1177,6 +1228,9 @@ static int get_options(int *argc, char ***argv) {
 
   ignore_table =
       new collation_unordered_set<string>(charset_info, PSI_NOT_INSTRUMENTED);
+  exclude_user = new std::forward_list<string>();
+  include_user =
+      new collation_unordered_set<string>(charset_info, PSI_NOT_INSTRUMENTED);
   /* Don't copy internal log tables */
   ignore_table->insert("mysql.apply_status");
   ignore_table->insert("mysql.schema");
@@ -1191,6 +1245,47 @@ static int get_options(int *argc, char ***argv) {
       mysql_options(nullptr, MYSQL_OPT_NET_BUFFER_LENGTH,
                     &opt_net_buffer_length)) {
     exit(1);
+  }
+  if (opt_dump_users) {
+    if (flush_privileges) {
+      fprintf(
+          stderr,
+          "%s: The --users option is incompatible with --flush-privileges\n",
+          my_progname);
+      return (EX_USAGE);
+    }
+    if (opt_xml) {
+      fprintf(stderr, "%s: The --users option is incompatible with --xml\n",
+              my_progname);
+      return (EX_USAGE);
+    }
+    /* ignore the ACL tables if we are dumping logical ACL */
+    ignore_table->insert("mysql.user");
+    ignore_table->insert("mysql.global_grants");
+    ignore_table->insert("mysql.db");
+    ignore_table->insert("mysql.tables_priv");
+    ignore_table->insert("mysql.columns_priv");
+    ignore_table->insert("mysql.procs_priv");
+    ignore_table->insert("mysql.proxies_priv");
+    ignore_table->insert("mysql.default_roles");
+    ignore_table->insert("mysql.role_edges");
+    ignore_table->insert("mysql.password_history");
+  } else {
+    if (include_user->size() > 0) {
+      fprintf(stderr,
+              "%s: The --include-user option is a no-op without --users\n",
+              my_progname);
+    }
+    if (!exclude_user->empty()) {
+      fprintf(stderr,
+              "%s: The --exclude-user option is a no-op without --users\n",
+              my_progname);
+    }
+    if (opt_add_drop_user) {
+      fprintf(stderr,
+              "%s: The --add-drop-user option is a no-op without --users\n",
+              my_progname);
+    }
   }
 
   if (debug_info_flag) my_end_arg = MY_CHECK_ERROR | MY_GIVE_INFO;
@@ -1242,7 +1337,8 @@ static int get_options(int *argc, char ***argv) {
       !(charset_info =
             get_charset_by_csname(default_charset, MY_CS_PRIMARY, MYF(MY_WME))))
     exit(1);
-  if ((*argc < 1 && !opt_alldbs) || (*argc > 0 && opt_alldbs)) {
+  if ((*argc < 1 && !opt_alldbs && !opt_dump_users) ||
+      (*argc > 0 && opt_alldbs)) {
     short_usage();
     return EX_USAGE;
   }
@@ -1625,10 +1721,12 @@ static void free_resources() {
   if (md_result_file && md_result_file != stdout)
     my_fclose(md_result_file, MYF(0));
   free_passwords();
-  if (ignore_table != nullptr) {
-    delete ignore_table;
-    ignore_table = nullptr;
-  }
+  delete ignore_table;
+  ignore_table = nullptr;
+  delete include_user;
+  include_user = nullptr;
+  delete exclude_user;
+  exclude_user = nullptr;
   if (insert_pat_inited) dynstr_free(&insert_pat);
   if (opt_ignore_error) my_free(opt_ignore_error);
   opt_init_commands.free();
@@ -1681,8 +1779,8 @@ static bool do_ignore_error() {
 
   if (last_errno == 0) goto done;
 
-  for (uint *it = ignore_error.begin(); it != ignore_error.end(); ++it) {
-    if (last_errno == *it) {
+  for (unsigned int &it : ignore_error) {
+    if (last_errno == it) {
       found = true;
       break;
     }
@@ -2399,14 +2497,14 @@ static void fprintf_string(char *row, ulong row_len, char quote,
   char *pbuffer;
   pbuffer = &buffer[0];
 
-  uint64_t curr_row_size = (static_cast<uint64_t>(row_len) * 2) + 1;
+  uint64_t const curr_row_size = (static_cast<uint64_t>(row_len) * 2) + 1;
 
   // We'll allocate dynamic memory only for huge rows
   if (curr_row_size > sizeof(buffer))
     pbuffer = (char *)my_malloc(PSI_NOT_INSTRUMENTED, curr_row_size, MYF(0));
 
   // Put the sanitized row in the buffer.
-  mysql_real_escape_string_quote(mysql, pbuffer, row, row_len, '\'');
+  mysql_real_escape_string_quote(mysql, pbuffer, row, row_len, quote);
 
   // Opening quote
   fputc(quote, md_result_file);
@@ -2463,7 +2561,7 @@ static bool is_string_integer(const char *str, ulong str_len) {
 */
 static uint dump_events_for_db(char *db) {
   char query_buff[QUERY_LENGTH];
-  char db_name_buff[NAME_LEN * 2 + 3], name_buff[NAME_LEN * 2 + 3];
+  char name_buff[NAME_LEN * 2 + 3];
   char *event_name;
   char delimiter[QUERY_LENGTH];
   FILE *sql_file = md_result_file;
@@ -2475,9 +2573,6 @@ static uint dump_events_for_db(char *db) {
 
   DBUG_TRACE;
   DBUG_PRINT("enter", ("db: '%s'", db));
-
-  mysql_real_escape_string_quote(mysql, db_name_buff, db, (ulong)strlen(db),
-                                 '\'');
 
   /* nice comments */
   bool freemem = false;
@@ -2498,8 +2593,7 @@ static uint dump_events_for_db(char *db) {
 
       /* Get database collation. */
 
-      if (fetch_db_collation(db_name_buff, db_cl_name, sizeof(db_cl_name)))
-        return 1;
+      if (fetch_db_collation(db, db_cl_name, sizeof(db_cl_name))) return 1;
     }
 
     if (switch_character_set_results(mysql, "binary")) return 1;
@@ -2541,8 +2635,8 @@ static uint dump_events_for_db(char *db) {
           fprintf(sql_file, "DELIMITER %s\n", delimiter);
 
           if (mysql_num_fields(event_res) >= 7) {
-            if (switch_db_collation(sql_file, db_name_buff, delimiter,
-                                    db_cl_name, row[6], &db_cl_altered)) {
+            if (switch_db_collation(sql_file, db, delimiter, db_cl_name, row[6],
+                                    &db_cl_altered)) {
               return 1;
             }
 
@@ -2587,8 +2681,7 @@ static uint dump_events_for_db(char *db) {
             restore_cs_variables(sql_file, delimiter);
 
             if (db_cl_altered) {
-              if (restore_db_collation(sql_file, db_name_buff, delimiter,
-                                       db_cl_name))
+              if (restore_db_collation(sql_file, db, delimiter, db_cl_name))
                 return 1;
             }
           }
@@ -2634,6 +2727,162 @@ static void print_blob_as_hex(FILE *output_file, const char *str, ulong len) {
 }
 
 /*
+  has_missing_import
+  -- Checks if all the libraries imported by a routine are present.
+
+  A function/procedure that has one or more of the libraries it imports,
+  deleted, it cannot be re-created.
+  Having such routines in the dump makes it invalid.
+
+  RETURN
+    false All the libraries imported by the routine exists.
+    true  The routine has missing imports.
+*/
+static bool has_missing_import(const char *schema, const char *name,
+                               FILE *sql_file) {
+  MYSQL_RES *routine_list_res;
+  std::string query{
+      std::string{
+          "SELECT rl.LIBRARY_SCHEMA, rl.LIBRARY_NAME, rl.ROUTINE_SCHEMA, "
+          "rl.ROUTINE_NAME, rl.ROUTINE_TYPE "
+          "FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES rl "
+          "LEFT JOIN INFORMATION_SCHEMA.LIBRARIES lib ON "
+          "rl.LIBRARY_CATALOG  = lib.LIBRARY_CATALOG AND "
+          "rl.LIBRARY_SCHEMA = lib.LIBRARY_SCHEMA AND "
+          "rl.LIBRARY_NAME = lib.LIBRARY_NAME "
+          "WHERE lib.LIBRARY_NAME IS NULL AND rl.ROUTINE_SCHEMA = '"} +
+      schema + "' AND rl.ROUTINE_NAME = '" + name + '\''};
+
+  if (mysql_query(mysql, query.c_str())) {
+    // Unable to query the INFORMATION_SCHEMA.ROUTINE_LIBRARIES view, it is
+    // probably missing in old servers.
+    fprintf(sql_file,
+            "--\n"
+            "-- WARNING: can't read the INFORMATION_SCHEMA.libraries table. "
+            "It's most probably an old server %s.\n"
+            "--\n",
+            mysql_get_server_info(mysql));
+    return false;  // No missing libraries found.
+  }
+  routine_list_res = mysql_store_result(mysql);
+  if (!routine_list_res) {
+    maybe_die(EX_MYSQLERR,
+              "Can't read the INFORMATION_SCHEMA.libraries table. "
+              "It's most probably an old server.");
+    return true;  // Error executing the query.
+  }
+
+  bool result = false;
+  if (mysql_num_rows(routine_list_res))
+    result = true;  // There are imported libraries that do NOT exist.
+  mysql_free_result(routine_list_res);
+  return result;  // All the libraries that this routine imports, are present.
+}
+
+/*
+  dump_libraries_for_db
+  -- retrieves list of libraries for a given db, and prints out
+  the CREATE LIBRARY definition into the output (the dump).
+
+  RETURN
+    0  Success
+    1  Error
+*/
+
+static uint dump_libraries_for_db(char *db_name_buff) {
+  MYSQL_RES *library_res, *libraries_list_res;
+  MYSQL_ROW row, libraries_list_row;
+  char *routine_name;
+  char name_buff[NAME_LEN * 2 + 3];
+  char query_buff[QUERY_LENGTH];
+  FILE *sql_file = md_result_file;
+
+  /* First dump the libraries. They may be used by the routines. */
+  std::string const query{
+      std::string{"SELECT LIBRARY_NAME FROM INFORMATION_SCHEMA.LIBRARIES WHERE "
+                  "LIBRARY_SCHEMA = '"} +
+      db_name_buff + "' ORDER BY LIBRARY_NAME"};
+
+  if (mysql_query(mysql, query.c_str())) {
+    // Unable to query the table, it is probably missing in old servers.
+    fprintf(sql_file,
+            "--\n"
+            "-- WARNING: can't read the INFORMATION_SCHEMA.libraries table. "
+            "It's most probably an old server %s.\n"
+            "--\n",
+            mysql_get_server_info(mysql));
+    return 0;
+  }
+  libraries_list_res = mysql_store_result(mysql);
+  if (!libraries_list_res) {
+    maybe_die(EX_MYSQLERR, "Couldn't execute '%s': %s (%d)", query.c_str(),
+              mysql_error(mysql), mysql_errno(mysql));
+    return 1;
+  }
+
+  if (mysql_num_rows(libraries_list_res)) {
+    while ((libraries_list_row = mysql_fetch_row(libraries_list_res))) {
+      routine_name = quote_name(libraries_list_row[0], name_buff, false);
+      DBUG_PRINT("info", ("retrieving CREATE LIBRARY for %s", name_buff));
+      std::string const show_create_query{std::string{"SHOW CREATE LIBRARY "} +
+                                          routine_name};
+      if (mysql_query_with_error_report(mysql, &library_res,
+                                        show_create_query.c_str()))
+        return 1;
+
+      while ((row = mysql_fetch_row(library_res))) {
+        /*
+          if the user has EXECUTE privilege he see library names, but NOT the
+          library body of other routines that are not the creator of!
+        */
+        DBUG_PRINT("info",
+                   ("length of body for %s row[2] '%s' is %zu", routine_name,
+                    row[2] ? row[2] : "(null)", row[2] ? strlen(row[2]) : 0));
+        if (row[2] == nullptr) {
+          print_comment(sql_file, true, "\n-- insufficient privileges to %s\n",
+                        query_buff);
+
+          bool freemem = false;
+          char const *text =
+              fix_identifier_with_newline(current_user, &freemem);
+          print_comment(sql_file, true,
+                        "-- does %s have permissions on "
+                        "INFORMATION_SCHEMA.LIBRARIES?\n\n",
+                        text);
+          if (freemem) my_free(const_cast<char *>(text));
+
+          maybe_die(EX_MYSQLERR, "%s has insufficient privileges to %s!",
+                    current_user, query_buff);
+        } else if (strlen(row[2])) {
+          if (opt_xml) {
+            print_xml_row(sql_file, "library", library_res, &row,
+                          "Create Library");
+            continue;
+          }
+          if (opt_drop)
+            fprintf(sql_file, "DROP LIBRARY IF EXISTS %s;\n", routine_name);
+
+          switch_sql_mode(sql_file, ";", row[1]);
+
+          fprintf(sql_file,
+                  "DELIMITER ;;\n"
+                  "%s ;;\n"
+                  "DELIMITER ;\n",
+                  (const char *)row[2]);
+
+          restore_sql_mode(sql_file, ";");
+        }
+      } /* end of library printing */
+      mysql_free_result(library_res);
+
+    } /* end of list of libraries */
+  }
+  mysql_free_result(libraries_list_res);
+
+  return 0;  // success.
+}
+
+/*
   dump_routines_for_db
   -- retrieves list of routines for a given db, and prints out
   the CREATE PROCEDURE definition into the output (the dump).
@@ -2649,7 +2898,8 @@ static void print_blob_as_hex(FILE *output_file, const char *str, ulong len) {
 static uint dump_routines_for_db(char *db) {
   char query_buff[QUERY_LENGTH];
   const char *routine_type[] = {"FUNCTION", "PROCEDURE"};
-  char db_name_buff[NAME_LEN * 2 + 3], name_buff[NAME_LEN * 2 + 3];
+  // The DB name to put in a quoted string
+  char db_name_string[NAME_LEN * 2 + 3], name_buff[NAME_LEN * 2 + 3];
   char *routine_name;
   int i;
   FILE *sql_file = md_result_file;
@@ -2662,7 +2912,7 @@ static uint dump_routines_for_db(char *db) {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("db: '%s'", db));
 
-  mysql_real_escape_string_quote(mysql, db_name_buff, db, (ulong)strlen(db),
+  mysql_real_escape_string_quote(mysql, db_name_string, db, (ulong)strlen(db),
                                  '\'');
 
   /* nice comments */
@@ -2682,23 +2932,42 @@ static uint dump_routines_for_db(char *db) {
 
   /* Get database collation. */
 
-  if (fetch_db_collation(db_name_buff, db_cl_name, sizeof(db_cl_name)))
-    return 1;
+  if (fetch_db_collation(db, db_cl_name, sizeof(db_cl_name))) return 1;
 
   if (switch_character_set_results(mysql, "binary")) return 1;
 
   if (opt_xml) fputs("\t<routines>\n", sql_file);
 
+  if (dump_libraries_for_db(db_name_string)) return 1;
+
   /* 0, retrieve and dump functions, 1, procedures */
   for (i = 0; i <= 1; i++) {
     snprintf(query_buff, sizeof(query_buff), "SHOW %s STATUS WHERE Db = '%s'",
-             routine_type[i], db_name_buff);
+             routine_type[i], db_name_string);
 
     if (mysql_query_with_error_report(mysql, &routine_list_res, query_buff))
       return 1;
 
     if (mysql_num_rows(routine_list_res)) {
       while ((routine_list_row = mysql_fetch_row(routine_list_res))) {
+        mysql_real_escape_string_quote(
+            mysql, name_buff, routine_list_row[1],
+            static_cast<ulong>(strlen(routine_list_row[1])), '\'');
+
+        if (has_missing_import(db_name_string, name_buff, sql_file)) {
+          // Any of the imported libraries does NOT exist.
+          print_comment(
+              sql_file, true,
+              "\n-- One or more of the libraries used by %s.%s routine, do "
+              "not exist. \n",
+              db_name_string, name_buff);
+          maybe_die(
+              EX_MYSQLERR,
+              "Routine %s.%s is missing one or more of its imported libraries.",
+              db_name_string, name_buff);
+          return 1;
+        }
+
         routine_name = quote_name(routine_list_row[1], name_buff, false);
         DBUG_PRINT("info",
                    ("retrieving CREATE %s for %s", routine_type[i], name_buff));
@@ -2745,8 +3014,8 @@ static uint dump_routines_for_db(char *db) {
                       routine_type[i], routine_name);
 
             if (mysql_num_fields(routine_res) >= 6) {
-              if (switch_db_collation(sql_file, db_name_buff, ";", db_cl_name,
-                                      row[5], &db_cl_altered)) {
+              if (switch_db_collation(sql_file, db, ";", db_cl_name, row[5],
+                                      &db_cl_altered)) {
                 return 1;
               }
 
@@ -2786,8 +3055,7 @@ static uint dump_routines_for_db(char *db) {
               restore_cs_variables(sql_file, ";");
 
               if (db_cl_altered) {
-                if (restore_db_collation(sql_file, db_name_buff, ";",
-                                         db_cl_name))
+                if (restore_db_collation(sql_file, db, ";", db_cl_name))
                   return 1;
               }
             }
@@ -2950,7 +3218,7 @@ static uint get_table_structure(const char *table, char *db, char *table_type,
       dynstr_set_checked(&insert_pat, "");
   }
 
-  insert_option = ((opt_ignore || skip_ddl) ? " IGNORE " : "");
+  insert_option = ((opt_ignore || skip_ddl) ? "IGNORE " : "");
 
   verbose_msg("-- Retrieving table structure for table %s...\n", table);
 
@@ -3047,8 +3315,8 @@ static uint get_table_structure(const char *table, char *db, char *table_type,
           my_free(scv_buff);
 
           return 0;
-        } else
-          my_free(scv_buff);
+        }
+        my_free(scv_buff);
 
         n_cols = mysql_num_rows(result);
         if (0 != n_cols) {
@@ -4089,6 +4357,7 @@ static void dump_table(char *table, char *db) {
       DB_error(mysql, "when retrieving data from server");
       goto err;
     }
+    auto res_guard = create_scope_guard([&] { mysql_free_result(res); });
 
     verbose_msg("-- Retrieving rows...\n");
     if (mysql_num_fields(res) != num_fields) {
@@ -4351,7 +4620,7 @@ static void dump_table(char *table, char *db) {
       fprintf(md_result_file, "commit;\n");
       check_io(md_result_file);
     }
-    mysql_free_result(res);
+    res_guard.reset();
   }
   dynstr_free(&query_string);
   if (extended_insert) dynstr_free(&extended_row);
@@ -4431,6 +4700,8 @@ static int dump_tablespaces_for_databases(char **databases) {
   DYNAMIC_STRING where;
   int r;
   int i;
+
+  if (databases[0] == nullptr) return 0;
 
   init_dynamic_string_checked(&where,
                               " AND TABLESPACE_NAME IN ("
@@ -4589,7 +4860,7 @@ static int dump_tablespaces(char *ts_where) {
     mysql_free_result(tableres);
     mysql_query_with_error_report(
         mysql, &tableres,
-        "SELECT 'TN; /*' AS TABLESPACE_NAME, 'FN' AS FILE_NAME, 'LGN' AS "
+        "SELECT 'T`N; /*' AS TABLESPACE_NAME, 'FN' AS FILE_NAME, 'LGN' AS "
         "LOGFILE_GROUP_NAME, 77 AS EXTENT_SIZE, 88 AS INITIAL_SIZE, "
         "'*/\nsystem touch foo;\n' AS ENGINE");
   });
@@ -5019,10 +5290,10 @@ static int dump_all_tables_in_db(char *database) {
             "-- Warning: get_table_structure() failed with some internal "
             "error for 'slow_log' table\n");
     }
-  }
-  if (flush_privileges && using_mysql_db) {
-    fprintf(md_result_file, "\n--\n-- Flush Grant Tables \n--\n");
-    fprintf(md_result_file, "\n/*! FLUSH PRIVILEGES */;\n");
+    if (flush_privileges) {
+      fprintf(md_result_file, "\n--\n-- Flush Grant Tables \n--\n");
+      fprintf(md_result_file, "\n/*! FLUSH PRIVILEGES */;\n");
+    }
   }
   return 0;
 } /* dump_all_tables_in_db */
@@ -5046,7 +5317,7 @@ static bool dump_all_views_in_db(char *database) {
   char hash_key[2 * NAME_LEN + 2]; /* "db.tablename" */
   char *afterdot;
 
-  if (opt_ignore_views) return 0;
+  if (opt_ignore_views) return false;
 
   afterdot = my_stpcpy(hash_key, database);
   *afterdot++ = '.';
@@ -5176,10 +5447,10 @@ static int dump_selected_tables(char *db, char **table_names, int tables) {
 
   /* Can't LOCK TABLES in I_S / P_S, so don't try. */
   if (lock_tables &&
-      !(mysql_get_server_version(mysql) >= FIRST_INFORMATION_SCHEMA_VERSION &&
-        !my_strcasecmp(&my_charset_latin1, db, INFORMATION_SCHEMA_DB_NAME)) &&
-      !(mysql_get_server_version(mysql) >= FIRST_PERFORMANCE_SCHEMA_VERSION &&
-        !my_strcasecmp(&my_charset_latin1, db, PERFORMANCE_SCHEMA_DB_NAME))) {
+      (mysql_get_server_version(mysql) < FIRST_INFORMATION_SCHEMA_VERSION ||
+       my_strcasecmp(&my_charset_latin1, db, INFORMATION_SCHEMA_DB_NAME)) &&
+      (mysql_get_server_version(mysql) < FIRST_PERFORMANCE_SCHEMA_VERSION ||
+       my_strcasecmp(&my_charset_latin1, db, PERFORMANCE_SCHEMA_DB_NAME))) {
     if (mysql_real_query(mysql, lock_tables_query.str,
                          (ulong)(lock_tables_query.length - 1))) {
       if (!opt_force) {
@@ -5282,29 +5553,29 @@ static int do_show_binary_log_status(MYSQL *mysql_con) {
           mysql_con, &source,
           get_compatible_rpl_source_query("SHOW BINARY LOG STATUS").c_str())) {
     return 1;
-  } else {
-    row = mysql_fetch_row(source);
-    if (row && row[0] && row[1]) {
-      /* SHOW BINARY LOG STATUS reports file and position */
-      print_comment(md_result_file, false,
-                    "\n--\n-- Position to start replication or point-in-time "
-                    "recovery from\n--\n\n");
-      fprintf(
-          md_result_file, "%s%s %s='%s', %s=%s;\n", comment_prefix,
-          get_compatible_rpl_replica_command("CHANGE REPLICATION SOURCE TO")
-              .c_str(),
-          get_compatible_rpl_replica_command("SOURCE_LOG_FILE").c_str(), row[0],
-          get_compatible_rpl_replica_command("SOURCE_LOG_POS").c_str(), row[1]);
-      check_io(md_result_file);
-    } else if (!opt_force) {
-      /* SHOW BINARY LOG STATUS reports nothing and --force is not enabled */
-      my_printf_error(0, "Error: Binlogging on server not active", MYF(0));
-      mysql_free_result(source);
-      maybe_exit(EX_MYSQLERR);
-      return 1;
-    }
-    mysql_free_result(source);
   }
+  row = mysql_fetch_row(source);
+  if (row && row[0] && row[1]) {
+    /* SHOW BINARY LOG STATUS reports file and position */
+    print_comment(md_result_file, false,
+                  "\n--\n-- Position to start replication or point-in-time "
+                  "recovery from\n--\n\n");
+    fprintf(
+        md_result_file, "%s%s %s='%s', %s=%s;\n", comment_prefix,
+        get_compatible_rpl_replica_command("CHANGE REPLICATION SOURCE TO")
+            .c_str(),
+        get_compatible_rpl_replica_command("SOURCE_LOG_FILE").c_str(), row[0],
+        get_compatible_rpl_replica_command("SOURCE_LOG_POS").c_str(), row[1]);
+    check_io(md_result_file);
+  } else if (!opt_force) {
+    /* SHOW BINARY LOG STATUS reports nothing and --force is not enabled */
+    my_printf_error(0, "Error: Binlogging on server not active", MYF(0));
+    mysql_free_result(source);
+    maybe_exit(EX_MYSQLERR);
+    return 1;
+  }
+  mysql_free_result(source);
+
   return 0;
 }
 
@@ -5337,7 +5608,7 @@ static int do_stop_replica_sql(MYSQL *mysql_con) {
   return (0);
 }
 
-static int add_stop_replica(void) {
+static int add_stop_replica() {
   if (opt_comments)
     fprintf(md_result_file,
             "\n--\n-- stop replica statement to make a recovery dump\n--\n\n");
@@ -5346,7 +5617,7 @@ static int add_stop_replica(void) {
   return (0);
 }
 
-static int add_replica_statements(void) {
+static int add_replica_statements() {
   if (opt_comments)
     fprintf(md_result_file,
             "\n--\n-- start replica statement to make a recovery dump\n--\n\n");
@@ -5547,7 +5818,7 @@ static void print_value(FILE *file, MYSQL_RES *result, MYSQL_ROW row,
 
   for (; (field = mysql_fetch_field(result)); row++) {
     if (!strcmp(field->name, name)) {
-      if (row[0] && row[0][0] && strcmp(row[0], "0")) /* Skip default */
+      if (row[0] && row[0][0] && strcmp(row[0], "0") != 0) /* Skip default */
       {
         fputc(' ', file);
         fputs(prefix, file);
@@ -5560,7 +5831,7 @@ static void print_value(FILE *file, MYSQL_RES *result, MYSQL_ROW row,
       }
     }
   }
-  return; /* This shouldn't happen */
+  /* This shouldn't happen */
 } /* print_value */
 
 /*
@@ -5704,7 +5975,7 @@ static char *primary_key_fields(const char *table_name) {
    * the first key, not all keys.
    */
   while (nullptr != (row = mysql_fetch_row(res))) {
-    unsigned braces_length = 0;
+    unsigned const braces_length = 0;
     if (!row[3] || !*row[3]) {
       fprintf(stderr,
               "Warning: Couldn't read key column index from table %s. "
@@ -5713,7 +5984,8 @@ static char *primary_key_fields(const char *table_name) {
               table_name, table_name);
       continue;
     }
-    if (atoi(row[3]) < 1) break;
+    /* break if the index is not unique */
+    if (row[1] && *row[1] && atoi(row[1]) > 0) break;
     if (row[4] && *row[4]) order_by_part = quote_name(row[4], buff, false);
 #ifdef USABLE_EXPR_IN_SHOW_INDEX_BUG35273994
     else if (mysql_num_fields(res) > 14 && row[14] &&
@@ -5747,9 +6019,10 @@ static char *primary_key_fields(const char *table_name) {
     }
     mysql_data_seek(res, 0);
     while (nullptr != (row = mysql_fetch_row(res))) {
-      unsigned braces_length = 0;
+      unsigned const braces_length = 0;
       if (!row[3] || !*row[3]) continue;
-      if (atoi(row[3]) < 1) break;
+      /* break if the index is not unique */
+      if (row[1] && *row[1] && atoi(row[1]) > 0) break;
       if (row[4] && *row[4]) order_by_part = quote_name(row[4], buff, false);
 #ifdef USABLE_EXPR_IN_SHOW_INDEX_BUG35273994
       else if (mysql_num_fields(res) > 14 && row[14] && *row[14]) {
@@ -5830,7 +6103,7 @@ static bool get_gtid_mode(MYSQL *mysql_con) {
      get the gtid_mode value from the second column.
   */
   gtid_mode_val = gtid_mode_row ? (char *)gtid_mode_row[1] : nullptr;
-  gtid_mode = (gtid_mode_val && strcmp(gtid_mode_val, "OFF")) ? true : false;
+  gtid_mode = gtid_mode_val && strcmp(gtid_mode_val, "OFF") != 0;
   mysql_free_result(gtid_mode_res);
 
   return gtid_mode;
@@ -6065,6 +6338,8 @@ static bool get_view_structure(char *table, char *db) {
   char *result_table, *opt_quoted_table;
   char table_buff[NAME_LEN * 2 + 3];
   char table_buff2[NAME_LEN * 2 + 3];
+  char table_string_buff[NAME_LEN * 2 + 3];
+  char db_string_buff[NAME_LEN * 2 + 3];
   char query[QUERY_LENGTH];
   FILE *sql_file = md_result_file;
   DBUG_TRACE;
@@ -6076,6 +6351,15 @@ static bool get_view_structure(char *table, char *db) {
 
   result_table = quote_name(table, table_buff, true);
   opt_quoted_table = quote_name(table, table_buff2, false);
+  if (((ulong)-1 == mysql_real_escape_string_quote(mysql, table_string_buff,
+                                                   table, strlen(table),
+                                                   '\'')) ||
+      ((ulong)-1 == mysql_real_escape_string_quote(mysql, db_string_buff, db,
+                                                   strlen(db), '\''))) {
+    DB_error(mysql,
+             "when trying to quote table and db names when dumping views.");
+    return true;
+  }
 
   if (switch_character_set_results(mysql, "binary")) return true;
 
@@ -6118,8 +6402,8 @@ static bool get_view_structure(char *table, char *db) {
            "SELECT CHECK_OPTION, DEFINER, SECURITY_TYPE, "
            "       CHARACTER_SET_CLIENT, COLLATION_CONNECTION "
            "FROM information_schema.views "
-           "WHERE table_name=\"%s\" AND table_schema=\"%s\"",
-           table, db);
+           "WHERE table_name='%s' AND table_schema='%s'",
+           table_string_buff, db_string_buff);
 
   if (mysql_query(mysql, query)) {
     /*
@@ -6160,7 +6444,7 @@ static bool get_view_structure(char *table, char *db) {
       "WITH %s CHECK OPTION" is available from 5.0.2
       Surround it with !50002 comments
     */
-    if (strcmp(row[0], "NONE")) {
+    if (strcmp(row[0], "NONE") != 0) {
       ptr = search_buf;
       search_len =
           (ulong)(strxmov(ptr, "WITH ", row[0], " CHECK OPTION", NullS) - ptr);
@@ -6236,6 +6520,90 @@ static bool get_view_structure(char *table, char *db) {
     fputs("\n", sql_file);
     write_footer(sql_file);
     my_fclose(sql_file, MYF(MY_WME));
+  }
+  return false;
+}
+
+static bool fetch_users_list_if_include_is_empty() {
+  if (include_user->size() != 0) return false;
+
+  const char *enum_users_query =
+      "SELECT CONCAT('\\'',user,'\\'@\\'',host,'\\''),"
+      " CONCAT(QUOTE(user),'@',QUOTE(host)), CONCAT(user,'@',host)"
+      "FROM mysql.user";
+  MYSQL_RES *enum_users_res;
+  MYSQL_ROW enum_users_row;
+  if (mysql_query_with_error_report(mysql, &enum_users_res, enum_users_query))
+    return true;
+  if (!enum_users_res) return true;
+  auto enum_users_res_guard =
+      create_scope_guard([&] { mysql_free_result(enum_users_res); });
+
+  while ((enum_users_row = mysql_fetch_row(enum_users_res)) != nullptr) {
+    const char *user_name;
+    if (strcmp(enum_users_row[0], enum_users_row[1]) ||
+        strpbrk(enum_users_row[0], ".%- "))
+      user_name = enum_users_row[1];
+    else
+      user_name = enum_users_row[2];
+    include_user->emplace(user_name);
+  }
+  return false;
+}
+
+static void retract_excluded_users() {
+  for (; !exclude_user->empty(); exclude_user->pop_front()) {
+    if (0 == include_user->erase(exclude_user->front())) {
+      fprintf(stderr,
+              "Warning: --exclude-user=%s didn't match any included account\n",
+              exclude_user->front().c_str());
+    }
+  }
+}
+
+/**
+  @brief Do a logical dump of all ACL data: users, roles, grants
+
+  @param sql_file The output SQL file to write to
+  @retval false success
+  @retval true failure
+*/
+static bool dump_users(FILE *sql_file) {
+  for (auto user : *include_user) {
+    if (opt_add_drop_user) fprintf(sql_file, "DROP USER %s;\n", user.c_str());
+
+    /* execute and dump SHOW CREATE USER */
+    MYSQL_RES *res;
+    MYSQL_ROW row;
+    std::string query = "SHOW CREATE USER " + user;
+    if (mysql_query_with_error_report(mysql, &res, query.c_str())) return true;
+    if (!res) return true;
+    auto res_guard = create_scope_guard([&] { mysql_free_result(res); });
+    if (nullptr == (row = mysql_fetch_row(res))) {
+      DB_error(mysql, "retrieving SHOW CREATE USER result");
+      return true;
+    }
+    fprintf(sql_file, "%s;\n", row[0]);
+  }
+  return false;
+}
+
+static bool dump_grants(FILE *sql_file) {
+  for (auto user : *include_user) {
+    /* execute and dump SHOW GRANTS */
+    MYSQL_RES *res;
+    MYSQL_ROW row;
+    std::string query = "SHOW GRANTS FOR " + user;
+    if (mysql_query_with_error_report(mysql, &res, query.c_str())) return true;
+    if (!res) return true;
+    auto res_guard = create_scope_guard([&] { mysql_free_result(res); });
+    while (nullptr != (row = mysql_fetch_row(res))) {
+      fprintf(sql_file, "%s;\n", row[0]);
+    }
+    if (mysql_errno(mysql) != 0) {
+      DB_error(mysql, "retrieving SHOW CREATE USER result");
+      return true;
+    }
   }
   return false;
 }
@@ -6371,6 +6739,12 @@ int main(int argc, char **argv) {
    */
   if (process_set_gtid_purged(mysql, server_has_gtid_enabled)) goto err;
 
+  if (opt_dump_users) {
+    fetch_users_list_if_include_is_empty();
+    retract_excluded_users();
+    dump_users(md_result_file);
+  }
+
   if (opt_source_data && do_show_binary_log_status(mysql)) goto err;
   if (opt_replica_data && do_show_replica_status(mysql)) goto err;
   if (opt_single_transaction &&
@@ -6415,6 +6789,8 @@ int main(int argc, char **argv) {
       dump_databases(argv);
     }
   }
+
+  if (opt_dump_users) dump_grants(md_result_file);
 
   /* if --dump-replica , start the replica sql thread */
   if (opt_replica_data && do_start_replica_sql(mysql)) goto err;

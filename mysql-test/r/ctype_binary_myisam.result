@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set names binary;
 #
 # Start of 5.5 tests
@@ -155,3 +156,4 @@ DROP TABLE t1;
 #
 # End of 5.5 tests
 #
+include/rpl/set_gtid_mode_on.inc

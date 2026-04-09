@@ -75,6 +75,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sql_locale.h>
 #include <srv0srv.h>
 #include <srv0start.h>
+#include <trx0roll.h>
 #include "sql/xa/transaction_cache.h"
 
 #include <clone0api.h>
@@ -91,6 +92,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <api0api.h>
 #include <api0misc.h>
 
+#include "mysql/components/library_mysys/my_system.h"
 #include "sql_thd_internal_api.h"
 
 #define G_PTR uchar *
@@ -311,7 +313,6 @@ long innobase_read_io_threads = 4;
 long innobase_write_io_threads = 4;
 long innobase_force_recovery = 0;
 long innobase_log_buffer_size = 16 * 1024 * 1024L;
-long innobase_log_files_in_group = 2;
 long innobase_open_files = 300L;
 
 longlong innobase_page_size = (1LL << 14); /* 16KB */
@@ -319,7 +320,7 @@ static ulong innobase_log_block_size = 512;
 char *innobase_buffer_pool_filename = NULL;
 
 longlong innobase_buffer_pool_size = 8 * 1024 * 1024L;
-longlong innobase_log_file_size = 48 * 1024 * 1024L;
+longlong innobase_redo_log_capacity = 48 * 1024 * 1024L;
 
 static ulong innodb_flush_method;
 
@@ -394,11 +395,14 @@ ds_ctxt_t *ds_meta = nullptr;
 ds_ctxt_t *ds_redo = nullptr;
 ds_ctxt_t *ds_uncompressed_data = nullptr;
 
-static long innobase_log_files_in_group_save;
 static char *srv_log_group_home_dir_save;
-static longlong innobase_log_file_size_save;
+static longlong innobase_redo_log_capacity_save;
 
 static char *srv_temp_dir = nullptr;
+
+/* innodb_undo_tablespaces was removed in MySQL 9.6. We still need it in
+xtrabackup for --copy-back. */
+ulong srv_undo_tablespaces = FSP_IMPLICIT_UNDO_TABLESPACES;
 
 /* set true if corresponding variable set as option config file or
 command argument */
@@ -681,8 +685,7 @@ enum options_xtrabackup {
   OPT_INNODB_FORCE_RECOVERY,
   OPT_INNODB_LOCK_WAIT_TIMEOUT,
   OPT_INNODB_LOG_BUFFER_SIZE,
-  OPT_INNODB_LOG_FILE_SIZE,
-  OPT_INNODB_LOG_FILES_IN_GROUP,
+  OPT_INNODB_REDO_LOG_CAPACITY,
   OPT_INNODB_MIRRORED_LOG_GROUPS,
   OPT_INNODB_OPEN_FILES,
   OPT_INNODB_SYNC_SPIN_LOOPS,
@@ -1529,15 +1532,12 @@ Disable with --skip-innodb-checksums.",
      (G_PTR *)&innobase_log_buffer_size, (G_PTR *)&innobase_log_buffer_size, 0,
      GET_LONG, REQUIRED_ARG, 16 * 1024 * 1024L, 256 * 1024L, LONG_MAX, 0, 1024,
      0},
-    {"innodb_log_file_size", OPT_INNODB_LOG_FILE_SIZE,
-     "Size of each log file in a log group.", (G_PTR *)&innobase_log_file_size,
-     (G_PTR *)&innobase_log_file_size, 0, GET_LL, REQUIRED_ARG,
-     48 * 1024 * 1024L, 1 * 1024 * 1024L, LLONG_MAX, 0, 1024 * 1024L, 0},
-    {"innodb_log_files_in_group", OPT_INNODB_LOG_FILES_IN_GROUP,
-     "Number of log files in the log group. InnoDB writes to the files in a "
-     "circular fashion. Value 3 is recommended here.",
-     &innobase_log_files_in_group, &innobase_log_files_in_group, 0, GET_LONG,
-     REQUIRED_ARG, 2, 2, 100, 0, 1, 0},
+    {"innodb_redo_log_capacity", OPT_INNODB_REDO_LOG_CAPACITY,
+     "The amount of redo log capacity in bytes. This supersedes "
+     "innodb_log_file_size and innodb_log_files_in_group.",
+     (G_PTR *)&innobase_redo_log_capacity, (G_PTR *)&innobase_redo_log_capacity,
+     0, GET_LL, REQUIRED_ARG, 100 * 1024 * 1024L, 8 * 1024 * 1024L, LLONG_MAX,
+     0, 1, 0},
     {"innodb_log_group_home_dir", OPT_INNODB_LOG_GROUP_HOME_DIR,
      "Path to InnoDB log files.", &srv_log_group_home_dir,
      &srv_log_group_home_dir, 0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -1629,7 +1629,7 @@ Disable with --skip-innodb-checksums.",
     {"innodb_undo_tablespaces", OPT_INNODB_UNDO_TABLESPACES,
      "Number of undo tablespaces to use.", (G_PTR *)&srv_undo_tablespaces,
      (G_PTR *)&srv_undo_tablespaces, 0, GET_ULONG, REQUIRED_ARG,
-     FSP_IMPLICIT_UNDO_TABLESPACES, FSP_MIN_UNDO_TABLESPACES,
+     FSP_IMPLICIT_UNDO_TABLESPACES, FSP_IMPLICIT_UNDO_TABLESPACES,
      FSP_MAX_UNDO_TABLESPACES, 0, 1, 0},
 
     {"innodb_redo_log_encrypt", OPT_INNODB_REDO_LOG_ENCRYPT,
@@ -1919,14 +1919,9 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
       ADD_PRINT_PARAM_OPT(srv_log_group_home_dir);
       break;
 
-    case OPT_INNODB_LOG_FILES_IN_GROUP:
+    case OPT_INNODB_REDO_LOG_CAPACITY:
 
-      ADD_PRINT_PARAM_OPT(innobase_log_files_in_group);
-      break;
-
-    case OPT_INNODB_LOG_FILE_SIZE:
-
-      ADD_PRINT_PARAM_OPT(innobase_log_file_size);
+      ADD_PRINT_PARAM_OPT(innobase_redo_log_capacity);
       break;
 
     case OPT_INNODB_FLUSH_METHOD:
@@ -2150,18 +2145,6 @@ static bool innodb_init_param(void) {
                      " on 32-bit systems";
       goto error;
     }
-
-    if (innobase_buffer_pool_size > UINT_MAX32) {
-      xb::error() << "innobase_buffer_pool_size can't be"
-                     " over 4GB on 32-bit systems";
-      goto error;
-    }
-
-    if (innobase_log_file_size > UINT_MAX32) {
-      xb::error() << "innobase_log_file_size can't be "
-                     "over 4GB on 32-bit systems";
-      goto error;
-    }
   }
 
   os_file_reset_umask();
@@ -2292,10 +2275,8 @@ static bool innodb_init_param(void) {
   srv_adaptive_flushing = false;
   /* --------------------------------------------------*/
 
-  srv_log_n_files = (ulint)innobase_log_files_in_group;
-  srv_log_file_size = (ulint)innobase_log_file_size;
-  xb::info() << "innodb_log_files_in_group = " << srv_log_n_files;
-  xb::info() << "innodb_log_file_size = " << srv_log_file_size;
+  srv_redo_log_capacity = (ulint)innobase_redo_log_capacity;
+  xb::info() << "innodb_redo_log_capacity = " << srv_redo_log_capacity;
 
   srv_log_buffer_size = (ulint)innobase_log_buffer_size;
   srv_log_write_ahead_size = INNODB_LOG_WRITE_AHEAD_SIZE_DEFAULT;
@@ -2554,6 +2535,10 @@ static bool innodb_init(bool init_dd, bool for_apply_log) {
 
   if (srv_thread_is_active(srv_threads.m_trx_recovery_rollback)) {
     srv_threads.m_trx_recovery_rollback.wait();
+  }
+
+  if (srv_rollback_prepared_trx) {
+    trx_rollback_recovered_prepared();
   }
 
   innodb_inited = 1;
@@ -4351,9 +4336,6 @@ void xtrabackup_backup_func(void) {
 
   dict_persist_init();
 
-  srv_log_n_files = (ulint)innobase_log_files_in_group;
-  srv_log_file_size = (ulint)innobase_log_file_size;
-
   clone_init();
 
   lock_sys_create(srv_lock_table_size);
@@ -4898,12 +4880,10 @@ static bool xtrabackup_init_temp_log(void) {
   src_file = XB_FILE_UNDEFINED;
 
   /* fake InnoDB */
-  innobase_log_files_in_group_save = innobase_log_files_in_group;
+  innobase_redo_log_capacity_save = innobase_redo_log_capacity;
   srv_log_group_home_dir_save = srv_log_group_home_dir;
-  innobase_log_file_size_save = innobase_log_file_size;
   srv_log_group_home_dir = NULL;
-  innobase_log_file_size = file_size;
-  innobase_log_files_in_group = 1;
+  innobase_redo_log_capacity = file_size;
 
   srv_thread_concurrency = 0;
 
@@ -5882,9 +5862,8 @@ static bool xtrabackup_close_temp_log(bool clear_flag) {
       xb::error() << "failed to replace redo log file to " << XB_LOG_FILENAME;
       return (true);
     }
-    innobase_log_files_in_group = innobase_log_files_in_group_save;
     srv_log_group_home_dir = srv_log_group_home_dir_save;
-    innobase_log_file_size = innobase_log_file_size_save;
+    innobase_redo_log_capacity = innobase_redo_log_capacity_save;
   }
 
   /* remove #innodb_redo dir if exist */
@@ -6779,6 +6758,8 @@ skip_check:
 
   if (xtrabackup_init_temp_log()) goto error_cleanup;
 
+  init_container_aware(false);
+
   if (innodb_init_param()) {
     goto error_cleanup;
   }
@@ -7142,6 +7123,8 @@ skip_check:
   my_thread_end();
   Tablespace_map::instance().serialize();
 
+  deinit_container_aware();
+
   cleanup_mysql_environment();
 
   xb_filters_free();
@@ -7155,6 +7138,8 @@ error_cleanup:
   my_thread_end();
 
   xtrabackup_close_temp_log(false);
+
+  deinit_container_aware();
 
   cleanup_mysql_environment();
 

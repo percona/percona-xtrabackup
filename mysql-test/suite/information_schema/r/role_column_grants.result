@@ -1,3 +1,5 @@
+SET @save_activate_mandatory_roles = @@global.activate_mandatory_roles;
+SET GLOBAL activate_mandatory_roles = 0;
 # SETUP SCHEMA
 #
 # SETUP SCHEMA
@@ -345,6 +347,8 @@ Disconnect project_lead_user
 INSERT INTO mysql.role_edges (FROM_USER,FROM_HOST,TO_USER,TO_HOST)
 VALUES('project_lead','%','updater','%');
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Connect as project_lead_user
 # With the roles activated during connection.
 SELECT * FROM INFORMATION_SCHEMA.ROLE_COLUMN_GRANTS ORDER BY GRANTEE, TABLE_NAME, COLUMN_NAME, PRIVILEGE_TYPE;
@@ -401,3 +405,4 @@ DROP ROLE project_lead;
 DROP ROLE product_lead;
 DROP ROLE hr_access;
 DROP ROLE hr_rules;
+SET global activate_mandatory_roles = @save_activate_mandatory_roles;

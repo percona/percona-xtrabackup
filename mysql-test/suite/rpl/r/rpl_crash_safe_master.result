@@ -56,11 +56,11 @@ include/rpl/deprecated/show_binlog_events.inc
 Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 master-bin.000002	#	Query	#	#	BEGIN
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Table_map	#	#	table_id: # (test.t1)
-master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+master-bin.000002	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 master-bin.000002	#	Xid	#	#	COMMIT /* XID */
 include/assert.inc [On master, test the data will be recovered after the master restart.]
 # lets restart the slave io thread and check that

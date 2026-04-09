@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,10 +28,10 @@
 **			    into a table(s).
 */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
-#include <time.h>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
 
 #include "client/include/client_priv.h"
 #include "compression.h"
@@ -246,7 +246,7 @@ static struct my_option my_long_options[] = {
 
 static const char *load_default_groups[] = {"mysqlimport", "client", nullptr};
 
-static void usage(void) {
+static void usage() {
   print_version();
   puts(ORACLE_WELCOME_COPYRIGHT_NOTICE("2000"));
   printf(

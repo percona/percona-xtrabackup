@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -145,7 +145,7 @@ void _mi_print_key(FILE *stream, HA_KEYSEG *keyseg, const uchar *key,
       case HA_KEYTYPE_VARBINARY1: /* VARBINARY and BLOB */
       case HA_KEYTYPE_VARBINARY2: /* VARBINARY and BLOB */
       {
-        uint tmp_length = get_key_length(&key);
+        uint const tmp_length = get_key_length(&key);
         /*
           The following command sometimes gives a warning from valgrind.
           Not yet sure if the bug is in valgrind, glibc or mysqld
@@ -159,7 +159,6 @@ void _mi_print_key(FILE *stream, HA_KEYSEG *keyseg, const uchar *key,
     }
   }
   (void)fputs("\"\n", stream);
-  return;
 } /* print_key */
 
 #ifdef EXTRA_DEBUG

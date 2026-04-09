@@ -1,5 +1,5 @@
 /****************************************************************************
- Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify it under
  the terms of the GNU General Public License, version 2.0, as published by the
@@ -102,9 +102,9 @@ static ulint rbt_count_black_nodes(
   ulint result;
 
   if (node != tree->nil) {
-    ulint left_height = rbt_count_black_nodes(tree, node->left);
+    ulint const left_height = rbt_count_black_nodes(tree, node->left);
 
-    ulint right_height = rbt_count_black_nodes(tree, node->right);
+    ulint const right_height = rbt_count_black_nodes(tree, node->right);
 
     if (left_height == 0 || right_height == 0 || left_height != right_height) {
       result = 0;
@@ -199,7 +199,7 @@ static ib_rbt_node_t *rbt_tree_add_child(const ib_rbt_t *tree,
                                          ib_rbt_bound_t *parent,
                                          ib_rbt_node_t *node) {
   /* Cast away the const. */
-  ib_rbt_node_t *last = (ib_rbt_node_t *)parent->last;
+  auto *last = (ib_rbt_node_t *)parent->last;
 
   if (last == tree->root || parent->result < 0) {
     last->left = node;
@@ -425,7 +425,7 @@ static void rbt_replace_node(
     ib_rbt_node_t *replace, /*!< in: node to replace */
     ib_rbt_node_t *node)    /*!< in: node to replace with */
 {
-  ib_rbt_color_t color = node->color;
+  ib_rbt_color_t const color = node->color;
 
   /* Update the node pointers. */
   node->left = replace->left;
@@ -800,7 +800,7 @@ bool rbt_delete(ib_rbt_t *tree,  /*!< in: rb tree */
                 const void *key) /*!< in: key to delete */
 {
   bool deleted = false;
-  ib_rbt_node_t *node = (ib_rbt_node_t *)rbt_lookup(tree, key);
+  auto *node = (ib_rbt_node_t *)rbt_lookup(tree, key);
 
   if (node) {
     rbt_remove_node_and_rebalance(tree, node);

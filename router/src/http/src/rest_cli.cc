@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -93,7 +93,7 @@ class RestClientFrontend {
    * @returns exit-code
    * @retval EXIT_SUCESS success
    * @retval EXIT_FAILURE on error
-   * @throws FrontendError
+   * @throws FrontendError If the frontend reports an error.
    */
   int run();
 

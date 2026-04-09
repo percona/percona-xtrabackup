@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,10 +54,10 @@ TEST_F(XcomStatisticsManagerTest, SumVarValuesSetAndGetTest) {
 }
 
 TEST_F(XcomStatisticsManagerTest, CountVarValuesSetAndGetTest) {
-  uint cyclekSucessfulProposalRounds = 4;
-  uint cyclekEmptyProposalRounds = 10;
-  uint cyclekFullProposalCount = 17;
-  uint cyclekMessagesSent = 1;
+  uint const cyclekSucessfulProposalRounds = 4;
+  uint const cyclekEmptyProposalRounds = 10;
+  uint const cyclekFullProposalCount = 17;
+  uint const cyclekMessagesSent = 1;
 
   for (uint i = 0; i < cyclekSucessfulProposalRounds; i++)
     xcom_stats_manager_if->set_count_var_value(kSucessfulProposalRounds);
@@ -127,7 +127,7 @@ TEST_F(XcomStatisticsManagerTest, AddAndGetMultipleSuspiciousTest) {
   std::string node_to_find{"node1"};
 
   auto find_node = [&](Gcs_node_suspicious &elem) {
-    return elem.m_node_address.compare(node_to_find) == 0;
+    return elem.m_node_address == node_to_find;
   };
 
   auto result1 =

@@ -1,4 +1,5 @@
 # Test uses lower_case_table_names=2. So test needs case sensitive file system
+include/rpl/set_gtid_mode_off.inc
 #
 # Bug#30248138 - adding a function once mysql.func is converted to myisam
 #                leads to crash
@@ -315,3 +316,4 @@ Warning	1726	Storage engine 'MyISAM' does not support system tables. [mysql.user
 DROP PROCEDURE test_create_system_table;
 DROP PROCEDURE execute_stmt;
 DROP TABLE system_tables;
+include/rpl/set_gtid_mode_on.inc

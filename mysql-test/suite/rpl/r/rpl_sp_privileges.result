@@ -13,6 +13,8 @@ CREATE USER 'testuser'@'localhost';
 GRANT CREATE ROUTINE ON test.* TO 'testuser'@'localhost';
 GRANT REPLICATION CLIENT ON *.* TO 'testuser'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE DEFINER='testuser'@'localhost' PROCEDURE row_cnt()
 BEGIN
 SELECT COUNT(*) as total_rows FROM test.t1;

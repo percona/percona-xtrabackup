@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -2203,10 +2203,14 @@ class allocator : public Allocator_base {
                 "ut::allocator does not support over-aligned types. Use "
                 "ut::aligned_* API to handle such types.");
 
-  /** Default constructor.
+  /** Default constructor, use mem_key_std.
+   */
+  allocator() : Allocator_base(mem_key_std) {}
+
+  /** Explicit constructor.
       @param[in] key  performance schema key.
     */
-  explicit allocator(PSI_memory_key key = mem_key_std) : Allocator_base(key) {}
+  explicit allocator(PSI_memory_key key) : Allocator_base(key) {}
 
   /* Rule-of-five */
   allocator(const allocator<T, Allocator_base> &) = default;

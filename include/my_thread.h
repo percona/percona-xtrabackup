@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include <mysql/components/services/bits/my_thread_bits.h>
+#include <mysql/components/services/bits/my_thread_bits.h>  // IWYU pragma: export
 
 #include "my_compiler.h"
 #include "my_config.h"
@@ -161,6 +161,7 @@ inline bool operator!=(const my_thread_handle &a, const my_thread_handle &b) {
 
 int my_thread_create(my_thread_handle *thread, const my_thread_attr_t *attr,
                      my_start_routine func, void *arg);
+void my_thread_handle_self(my_thread_handle *thread);
 int my_thread_join(my_thread_handle *thread, void **value_ptr);
 int my_thread_cancel(my_thread_handle *thread);
 

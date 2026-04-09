@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,6 +61,28 @@
   } while (0)
 #endif
 
+namespace {
+/**
+ * @brief Return human-readable transporter type name.
+ *
+ * Maps TransporterType enum to a short string used in logs and diagnostics.
+ *
+ * @param t transporter type.
+ * @return transporter type name.
+ */
+static inline const char *transporter_type_name(TransporterType t) {
+  const int v = static_cast<int>(t);
+  switch (v) {
+    case tt_TCP_TRANSPORTER:
+      return "TCP";
+    case tt_SHM_TRANSPORTER:
+      return "SHM";
+    default:
+      return "UNKNOWN";
+  }
+}
+}  // namespace
+
 Transporter::Transporter(TransporterRegistry &t_reg, TrpId transporter_index,
                          TransporterType _type, const char *lHostName,
                          const char *rHostName, int s_port,
@@ -116,9 +138,9 @@ Transporter::Transporter(TransporterRegistry &t_reg, TrpId transporter_index,
   } else {
     if (!isServer) {
       g_eventLogger->info(
-          "Unable to setup transporter. Node %u must have hostname."
-          " Update configuration.",
-          rNodeId);
+          "Node %u transporter to node %u: missing hostname. "
+          "Update configuration.",
+          localNodeId, rNodeId);
       exit(-1);
     }
     remoteHostName[0] = 0;
@@ -162,7 +184,7 @@ Transporter::Transporter(TransporterRegistry &t_reg, TrpId transporter_index,
 
 void Transporter::use_tls_client_auth() {
   delete m_socket_client;
-  SocketAuthTls *authTls =
+  auto *authTls =
       new SocketAuthTls(&m_transporter_registry.m_tls_keys, m_require_tls);
   m_socket_client = new SocketClient(authTls);
   m_socket_client->set_connect_timeout(m_timeOutMillis);
@@ -401,8 +423,9 @@ bool Transporter::connect_client(NdbSocket &&socket) {
   const int OldMaxHandshakeBytesLimit = 23; /* 24 - 1 for \n */
   if (unlikely(helloLen > OldMaxHandshakeBytesLimit)) {
     /* Cannot send this many bytes to older versions */
-    g_eventLogger->info("Failed handshake string length %u : \"%s\"", helloLen,
-                        helloBuf);
+    g_eventLogger->info(
+        "Node %u transporter to node %u: failed handshake length %u: \"%s\"",
+        localNodeId, remoteNodeId, helloLen, helloBuf);
     abort();
   }
 
@@ -443,8 +466,8 @@ bool Transporter::connect_client(NdbSocket &&socket) {
 
   // Check nodeid
   if (nodeId != remoteNodeId) {
-    g_eventLogger->error("Connected to wrong nodeid: %d, expected: %d", nodeId,
-                         remoteNodeId);
+    g_eventLogger->error("Node %u connected to wrong nodeid: %d, expected: %d",
+                         localNodeId, nodeId, remoteNodeId);
     socket.close();
     DBUG_RETURN(false);
   }
@@ -452,9 +475,13 @@ bool Transporter::connect_client(NdbSocket &&socket) {
   // Check transporter type
   if (remote_transporter_type != -1 && remote_transporter_type != m_type) {
     g_eventLogger->error(
-        "Connection to node: %d uses different transporter "
-        "type: %d, expected type: %d",
-        nodeId, remote_transporter_type, m_type);
+        "Node %u connection to node %d uses different transporter "
+        "type: %s (%d), expected type: %s (%d)",
+        localNodeId, nodeId,
+        transporter_type_name(
+            static_cast<TransporterType>(remote_transporter_type)),
+        remote_transporter_type, transporter_type_name(m_type),
+        static_cast<int>(m_type));
     socket.close();
     DBUG_RETURN(false);
   }
@@ -491,11 +518,7 @@ void Transporter::disconnectImpl() {
   assert(theSocket.is_valid());
   if (theSocket.is_valid()) {
     DEB_MULTI_TRP(("Shutdown socket for trp %u", getTransporterIndex()));
-    if (theSocket.shutdown() < 0) {
-      // Do we care about shutdown failures? It might fail due to e.g.
-      // connection already terminated by other peer.
-      report_error(TE_ERROR_CLOSING_SOCKET);
-    }
+    theSocket.shutdown();
   }
 }
 
@@ -536,9 +559,9 @@ void Transporter::checksum_state::dumpBadChecksumInfo(
    */
   {
     Uint32 pos = 0;
-    Uint32 buf_remain = Uint32(len);
+    auto buf_remain = Uint32(len);
     const char *data = (const char *)buf;
-    const Uint32 firstWordBytes = Uint32((offset + sig_remaining) & 3);
+    const auto firstWordBytes = Uint32((offset + sig_remaining) & 3);
     if (firstWordBytes && (buf_remain >= firstWordBytes)) {
       /* Partial first word */
       Uint32 word = 0;

@@ -1,0 +1,91 @@
+RESET BINARY LOGS AND GTIDS;
+
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+CREATE TABLE test.vec(
+  id INTEGER AUTO_INCREMENT PRIMARY KEY,
+  v VECTOR);
+
+INSERT INTO test.vec(v)
+   VALUES(STRING_TO_VECTOR('[0]')),
+         (STRING_TO_VECTOR('[1,2]')),
+         (STRING_TO_VECTOR('[0,2]')),
+         (NULL);
+
+--echo
+--echo
+--echo ## I. Verify JSON encoding of VECTOR, returned in FEED response
+--echo #
+--echo # 1. Verify JSON response containing array of numbers generated from type VECTOR
+--echo #    returning single object.
+--echo # 2. Verify JSON response containing array of numbers generated from types VECTOR
+--echo #    returning multiple objects.
+--echo # 3. Verify that object can be updated with different array of numbers and response
+--echo #    contains same data.
+--echo # 4. Verify that objects can be filtered using VECTOR column using array of numbers.
+--echo #
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=test
+--let $mrs_add_schema_path=/test
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=vec
+--let $mrs_add_db_object_path=/vec
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--exec $MRS_CLIENT_ARGS --path /svc/test/vec/1 --wait-until-status 60 --display none
+
+--let $MRS_CLIENT_ARGS_LIST=$MRS_CLIENT_ARGS --json-pointer /items/*/v
+--let $MRS_CLIENT_ARGS_OBJ=$MRS_CLIENT_ARGS --json-pointer /v
+
+--echo
+--echo #
+--echo # I.1
+--exec $MRS_CLIENT_ARGS_OBJ --path /svc/test/vec/2
+
+--echo
+--echo #
+--echo # I.2
+--exec $MRS_CLIENT_ARGS_LIST --path /svc/test/vec
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_path='/svc/test/vec/2'
+--let $mrs_client_arg_payload='{"id":2,"v":[2,2.3]}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_path='/svc/test/vec/2'
+--let $mrs_client_arg_payload='{"id":2,"v":[0,3]}'
+--let $mrs_client_arg_request_type='PUT'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.4
+--let $mrs_client_arg_path='/svc/test/vec/?q={"v":[0]}'
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_path='/svc/test/vec/?q={"v":[0,3]}'
+--source ../include/mrs/mrs_client.inc
+
+
+# Cleanup
+DROP TABLE test.vec;
+--source ../include/mrs/cleanup.inc

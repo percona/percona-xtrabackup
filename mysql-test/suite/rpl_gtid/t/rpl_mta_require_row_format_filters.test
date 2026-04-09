@@ -71,7 +71,6 @@
 # workers PFS table. The single threaded applier in the reports in the
 # coordinator PFS table. We cover the most common case which is the
 # MTA (and is the default configuration).
---source include/have_replica_parallel_workers.inc
 
 --source include/rpl/init_source_replica.inc
 

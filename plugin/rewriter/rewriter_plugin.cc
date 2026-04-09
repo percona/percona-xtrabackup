@@ -1,4 +1,4 @@
-/*  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -25,12 +25,12 @@
 
 #include "my_config.h"
 
-#include <assert.h>
 #include <mysql/plugin_audit.h>
 #include <mysql/psi/mysql_thread.h>
-#include <stddef.h>
 #include <algorithm>
 #include <atomic>
+#include <cassert>
+#include <cstddef>
 #include <new>
 
 #include <mysql/components/my_service.h>
@@ -372,10 +372,10 @@ static string shorten_query(MYSQL_LEX_STRING query) {
   rewritten. (Only if verbose level is high enough.)
 */
 static void log_nonrewritten_query(MYSQL_THD thd, const uchar *digest_buf,
-                                   Rewrite_result result) {
+                                   const Rewrite_result &result) {
   if (sys_var_verbose >= 2) {
-    string query = shorten_query(mysql_parser_get_query(thd));
-    string digest = services::print_digest(digest_buf);
+    string const query = shorten_query(mysql_parser_get_query(thd));
+    string const digest = services::print_digest(digest_buf);
     string message;
     message.append("Statement \"");
     message.append(query);
@@ -445,12 +445,12 @@ static bool allow_rewrite() {
     // for other skip-grant threads, check config variable
     // rewriter_enabled_for_threads_without_privilege_checks
     return sys_var_enabled_for_threads_without_privilege_checks;
-  } else {
-    if (global_grants_check->has_global_grant(
-            reinterpret_cast<Security_context_handle>(sec_ctx),
-            STRING_WITH_LEN("SKIP_QUERY_REWRITE")))
-      return false;
   }
+  if (global_grants_check->has_global_grant(
+          reinterpret_cast<Security_context_handle>(sec_ctx),
+          STRING_WITH_LEN("SKIP_QUERY_REWRITE")))
+    return false;
+
   return true;
 }
 
@@ -465,7 +465,7 @@ static int rewrite_query_notify(MYSQL_THD thd,
                                 const void *event) {
   assert(event_class == MYSQL_AUDIT_PARSE_CLASS);
 
-  const struct mysql_event_parse *event_parse =
+  const auto *event_parse =
       static_cast<const struct mysql_event_parse *>(event);
 
   if (event_parse->event_subclass != MYSQL_AUDIT_PARSE_POSTPARSE ||
@@ -497,7 +497,7 @@ static int rewrite_query_notify(MYSQL_THD thd,
   else {
     *((int *)event_parse->flags) |=
         (int)MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_QUERY_REWRITTEN;
-    bool is_prepared =
+    bool const is_prepared =
         (*(event_parse->flags) &
          MYSQL_AUDIT_PARSE_REWRITE_PLUGIN_IS_PREPARED_STATEMENT) != 0;
 

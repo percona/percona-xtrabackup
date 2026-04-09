@@ -1,0 +1,68 @@
+# Validate authentication application with SSL
+#
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Verify that internal authentication fails to authenticate when disabled (WL#16694 - TSFR_2_2)
+--echo #
+--echo # 1. authApp endpoint returns other intances not internal-auth.
+--echo # 2. using valid account, fails with an error.
+--echo #
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/t1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_auth_app=mysql
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--let $mrs_add_auth_enabled='0'
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_auth_app=mrs
+--let $mrs_add_auth_vendor=MRS
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/authentication/authApps'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--replace_regex /^Date.*/Date -> %DATE%/
+--let $mrs_client_arg_path='/svc/authentication/login?authApp=mysql'
+--let $mrs_client_arg_expected_status=TemporaryRedirect
+--let $mrs_client_arg_response_type=raw
+--let $mrs_client_arg_display=header
+--source ../include/mrs/mrs_client.inc
+
+
+--echo
+--echo # Cleanup
+
+--source ../include/mrs/cleanup.inc

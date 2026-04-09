@@ -1,0 +1,379 @@
+SET SESSION innodb_lock_wait_timeout = 1;
+CREATE TABLE parent(f1 INT PRIMARY KEY, f2 INT);
+CREATE TABLE child(f2 INT PRIMARY KEY, f1 INT,
+FOREIGN KEY(f1) REFERENCES parent(f1));
+INSERT INTO parent VALUES(10, 10);
+INSERT INTO child VALUES(10, 10);
+SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+START TRANSACTION;
+INSERT INTO child VALUES(20, 20);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_WRITE	TRANSACTION	GRANTED
+test	parent	SHARED_READ	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	parent	NULL	TABLE	IS	GRANTED	NULL
+COMMIT;
+START TRANSACTION;
+UPDATE child SET f1 = 11 WHERE f1 = 10;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+SET innodb_lock_wait_timeout = 2;
+START TRANSACTION;
+SELECT f1 FROM child WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_WRITE	TRANSACTION	GRANTED
+test	parent	SHARED_READ	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IX	GRANTED	NULL
+test	child	f1	RECORD	X,REC_NOT_GAP	GRANTED	10, 10
+test	child	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+test	parent	NULL	TABLE	IS	GRANTED	NULL
+COMMIT;
+START TRANSACTION;
+UPDATE parent SET f1 = 11 WHERE f1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+START TRANSACTION;
+SELECT f1 FROM parent WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_READ	TRANSACTION	GRANTED
+test	parent	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IS	GRANTED	NULL
+test	child	f1	RECORD	S,REC_NOT_GAP	GRANTED	10, 10
+test	parent	NULL	TABLE	IX	GRANTED	NULL
+test	parent	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+START TRANSACTION;
+DELETE FROM parent WHERE f1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+START TRANSACTION;
+SELECT f1 FROM parent WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_READ	TRANSACTION	GRANTED
+test	parent	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IS	GRANTED	NULL
+test	child	f1	RECORD	S,REC_NOT_GAP	GRANTED	10, 10
+test	parent	NULL	TABLE	IX	GRANTED	NULL
+test	parent	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+DROP TABLE child, parent;
+CREATE TABLE parent(f1 INT PRIMARY KEY, f2 INT);
+CREATE TABLE child(f2 INT PRIMARY KEY, f1 INT,
+FOREIGN KEY(f1) REFERENCES parent(f1));
+INSERT INTO parent VALUES(10, 10);
+INSERT INTO child VALUES(10, 10);
+SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;
+START TRANSACTION;
+INSERT INTO child VALUES(20, 20);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_WRITE	TRANSACTION	GRANTED
+test	parent	SHARED_READ	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	parent	NULL	TABLE	IS	GRANTED	NULL
+COMMIT;
+START TRANSACTION;
+UPDATE child SET f1 = 11 WHERE f1 = 10;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+SET innodb_lock_wait_timeout = 2;
+START TRANSACTION;
+SELECT f1 FROM child WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_WRITE	TRANSACTION	GRANTED
+test	parent	SHARED_READ	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IX	GRANTED	NULL
+test	child	f1	RECORD	X,REC_NOT_GAP	GRANTED	10, 10
+test	child	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+test	parent	NULL	TABLE	IS	GRANTED	NULL
+COMMIT;
+START TRANSACTION;
+UPDATE parent SET f1 = 11 WHERE f1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+START TRANSACTION;
+SELECT f1 FROM parent WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_READ	TRANSACTION	GRANTED
+test	parent	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IS	GRANTED	NULL
+test	child	f1	RECORD	S,REC_NOT_GAP	GRANTED	10, 10
+test	parent	NULL	TABLE	IX	GRANTED	NULL
+test	parent	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+START TRANSACTION;
+DELETE FROM parent WHERE f1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+START TRANSACTION;
+SELECT f1 FROM parent WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_READ	TRANSACTION	GRANTED
+test	parent	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IS	GRANTED	NULL
+test	child	f1	RECORD	S,REC_NOT_GAP	GRANTED	10, 10
+test	parent	NULL	TABLE	IX	GRANTED	NULL
+test	parent	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+DROP TABLE child, parent;
+CREATE TABLE parent(f1 INT PRIMARY KEY, f2 INT);
+CREATE TABLE child(f2 INT PRIMARY KEY, f1 INT,
+FOREIGN KEY(f1) REFERENCES parent(f1));
+INSERT INTO parent VALUES(10, 10);
+INSERT INTO child VALUES(10, 10);
+SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ;
+START TRANSACTION;
+INSERT INTO child VALUES(20, 20);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_WRITE	TRANSACTION	GRANTED
+test	parent	SHARED_READ	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	parent	NULL	TABLE	IS	GRANTED	NULL
+test	parent	PRIMARY	RECORD	S	GRANTED	supremum pseudo-record
+COMMIT;
+START TRANSACTION;
+UPDATE child SET f1 = 11 WHERE f1 = 10;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+SET innodb_lock_wait_timeout = 2;
+START TRANSACTION;
+SELECT f1 FROM child WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_WRITE	TRANSACTION	GRANTED
+test	parent	SHARED_READ	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IX	GRANTED	NULL
+test	child	f1	RECORD	X	GRANTED	10, 10
+test	child	f1	RECORD	X	GRANTED	supremum pseudo-record
+test	child	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+test	parent	NULL	TABLE	IS	GRANTED	NULL
+test	parent	PRIMARY	RECORD	S	GRANTED	supremum pseudo-record
+COMMIT;
+START TRANSACTION;
+UPDATE parent SET f1 = 11 WHERE f1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+START TRANSACTION;
+SELECT f1 FROM parent WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_READ	TRANSACTION	GRANTED
+test	parent	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IS	GRANTED	NULL
+test	child	f1	RECORD	S	GRANTED	10, 10
+test	parent	NULL	TABLE	IX	GRANTED	NULL
+test	parent	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+START TRANSACTION;
+DELETE FROM parent WHERE f1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+START TRANSACTION;
+SELECT f1 FROM parent WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_READ	TRANSACTION	GRANTED
+test	parent	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IS	GRANTED	NULL
+test	child	f1	RECORD	S	GRANTED	10, 10
+test	parent	NULL	TABLE	IX	GRANTED	NULL
+test	parent	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+DROP TABLE child, parent;
+CREATE TABLE parent(f1 INT PRIMARY KEY, f2 INT);
+CREATE TABLE child(f2 INT PRIMARY KEY, f1 INT,
+FOREIGN KEY(f1) REFERENCES parent(f1));
+INSERT INTO parent VALUES(10, 10);
+INSERT INTO child VALUES(10, 10);
+SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+START TRANSACTION;
+INSERT INTO child VALUES(20, 20);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_WRITE	TRANSACTION	GRANTED
+test	parent	SHARED_READ	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	parent	NULL	TABLE	IS	GRANTED	NULL
+test	parent	PRIMARY	RECORD	S	GRANTED	supremum pseudo-record
+COMMIT;
+START TRANSACTION;
+UPDATE child SET f1 = 11 WHERE f1 = 10;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+SET innodb_lock_wait_timeout = 2;
+START TRANSACTION;
+SELECT f1 FROM child WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_WRITE	TRANSACTION	GRANTED
+test	parent	SHARED_READ	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IX	GRANTED	NULL
+test	child	f1	RECORD	X	GRANTED	10, 10
+test	child	f1	RECORD	X	GRANTED	supremum pseudo-record
+test	child	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+test	parent	NULL	TABLE	IS	GRANTED	NULL
+test	parent	PRIMARY	RECORD	S	GRANTED	supremum pseudo-record
+COMMIT;
+START TRANSACTION;
+UPDATE parent SET f1 = 11 WHERE f1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+START TRANSACTION;
+SELECT f1 FROM parent WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_READ	TRANSACTION	GRANTED
+test	parent	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IS	GRANTED	NULL
+test	child	f1	RECORD	S	GRANTED	10, 10
+test	parent	NULL	TABLE	IX	GRANTED	NULL
+test	parent	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+START TRANSACTION;
+DELETE FROM parent WHERE f1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `parent` (`f1`))
+START TRANSACTION;
+SELECT f1 FROM parent WHERE f1 = 10 FOR UPDATE;
+ERROR HY000: Lock wait timeout exceeded; try restarting transaction
+rollback;
+SELECT object_schema, object_name, lock_type, lock_duration,
+lock_status FROM performance_schema.metadata_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5;
+object_schema	object_name	lock_type	lock_duration	lock_status
+test	child	SHARED_READ	TRANSACTION	GRANTED
+test	parent	SHARED_WRITE	TRANSACTION	GRANTED
+SELECT object_schema, object_name, index_name, lock_type, lock_mode,
+lock_status,
+lock_data FROM performance_schema.data_locks WHERE object_schema =
+'test' order by 1, 2, 3, 4, 5, 6, 7;
+object_schema	object_name	index_name	lock_type	lock_mode	lock_status	lock_data
+test	child	NULL	TABLE	IS	GRANTED	NULL
+test	child	f1	RECORD	S	GRANTED	10, 10
+test	parent	NULL	TABLE	IX	GRANTED	NULL
+test	parent	PRIMARY	RECORD	X,REC_NOT_GAP	GRANTED	10
+COMMIT;
+DROP TABLE child, parent;

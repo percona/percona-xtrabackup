@@ -27,8 +27,6 @@ WHERE VARIABLE_NAME LIKE '%group_replication%'
 # Expect ER_SPECIFIC_ACCESS_DENIED_ERROR for global variables.
 SET GLOBAL group_replication_advertise_recovery_endpoints = @@GLOBAL.group_replication_advertise_recovery_endpoints;
 ERROR 42000: Access denied; you need (at least one of) the SUPER or SYSTEM_VARIABLES_ADMIN privilege(s) for this operation
-SET GLOBAL group_replication_allow_local_lower_version_join = @@GLOBAL.group_replication_allow_local_lower_version_join;
-ERROR 42000: Access denied; you need (at least one of) the SUPER or SYSTEM_VARIABLES_ADMIN privilege(s) for this operation
 SET GLOBAL group_replication_auto_increment_increment = @@GLOBAL.group_replication_auto_increment_increment;
 ERROR 42000: Access denied; you need (at least one of) the SUPER or SYSTEM_VARIABLES_ADMIN privilege(s) for this operation
 SET GLOBAL group_replication_autorejoin_tries = @@GLOBAL.group_replication_autorejoin_tries;
@@ -162,9 +160,6 @@ GRANT SYSTEM_VARIABLES_ADMIN, SESSION_VARIABLES_ADMIN ON *.* TO 'no_priv_user'@l
 [connection no_priv_user_con]
 
 SET GLOBAL group_replication_advertise_recovery_endpoints = @@GLOBAL.group_replication_advertise_recovery_endpoints;
-SET GLOBAL group_replication_allow_local_lower_version_join = @@GLOBAL.group_replication_allow_local_lower_version_join;
-Warnings:
-Warning	1681	'group_replication_allow_local_lower_version_join' is deprecated and will be removed in a future release.
 SET GLOBAL group_replication_auto_increment_increment = @@GLOBAL.group_replication_auto_increment_increment;
 SET GLOBAL group_replication_autorejoin_tries = @@GLOBAL.group_replication_autorejoin_tries;
 SET GLOBAL group_replication_bootstrap_group = @@GLOBAL.group_replication_bootstrap_group;
@@ -243,4 +238,6 @@ DROP TABLE gr_vars;
 REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'no_priv_user'@localhost;
 DROP USER 'no_priv_user'@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/group_replication_end.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -22,8 +22,8 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "util/ndbxfrm_file.h"
-#include <math.h>
 #include <algorithm>
+#include <cmath>
 #include "portlib/ndb_file.h"
 #include "util/ndb_az31.h"
 #include "util/ndb_math.h"
@@ -320,7 +320,10 @@ int ndbxfrm_file::create(
     ndbxfrm_input_iterator in = m_file_buffer.get_input_iterator();
     require((ndb_off_t)in.size() == m_payload_start);
     int n = m_file->write_pos(in.cbegin(), in.size(), 0);
-    if (n != (ndb_off_t)in.size()) return -1;
+    if (n != (ndb_off_t)in.size()) {
+      if (n != -1) clear_last_os_error();
+      return -1;
+    }
     in.advance(n);
     m_file_buffer.update_read(in);
     m_file_size = m_payload_start + data_size + data_page_size;
@@ -390,6 +393,7 @@ int ndbxfrm_file::close(bool abort) {
    */
 
   if (!is_open()) {
+    clear_last_os_error();
     RETURN(-1);
   }
   if (m_file_op == OP_WRITE_FORW)
@@ -448,12 +452,13 @@ int ndbxfrm_file::close(bool abort) {
 
     if (!abort) {
       ndbxfrm_input_iterator in = m_file_buffer.get_input_iterator();
-      while (in.size() > 0) {
+      while (!in.empty()) {
         int n = m_file->append(in.cbegin(), in.size());
         if (n == -1) {
           RETURN(-1);
         }
         if (n == 0) {
+          clear_last_os_error();
           RETURN(-1);
         }
         in.advance(n);
@@ -469,6 +474,7 @@ int ndbxfrm_file::close(bool abort) {
           RETURN(-1);
         }
         if (n < 0 || size_t(n) != len) {
+          clear_last_os_error();
           RETURN(-1);
         }
       }
@@ -476,9 +482,11 @@ int ndbxfrm_file::close(bool abort) {
   } else if (!abort && m_file_op == OP_READ_FORW) {
     if (m_data_pos != m_data_size) {
       // Whole file was not consumed
+      clear_last_os_error();
       return -1;
     }
     if (m_have_data_crc32 && m_data_crc32 != m_crc32) {
+      clear_last_os_error();
       return -1;
     }
   }
@@ -494,7 +502,9 @@ int ndbxfrm_file::transform_pages(ndb_openssl_evp::operation *op,
                                   ndbxfrm_output_iterator *out,
                                   ndbxfrm_input_iterator *in) {
   if (!m_encrypted && !m_compressed) {
-    return out->copy_from(in);
+    int r = out->copy_from(in);
+    if (r == -1) clear_last_os_error();
+    return r;
   }
 
   require(m_encrypted);
@@ -503,16 +513,20 @@ int ndbxfrm_file::transform_pages(ndb_openssl_evp::operation *op,
   if (op == nullptr)
     op = &openssl_evp_op;
   else if (op->set_context(&openssl_evp) == -1) {
+    clear_last_os_error();
     return -1;
   }
 
   if (op->encrypt_init(data_pos, data_pos) == -1) {
+    clear_last_os_error();
     return -1;
   }
   if (op->encrypt(out, in) == -1) {
+    clear_last_os_error();
     return -1;
   }
   if (op->encrypt_end() == -1) {
+    clear_last_os_error();
     return -1;
   }
   if (!in->empty()) {
@@ -527,7 +541,9 @@ int ndbxfrm_file::untransform_pages(ndb_openssl_evp::operation *op,
                                     ndbxfrm_output_iterator *out,
                                     ndbxfrm_input_iterator *in) {
   if (!m_encrypted && !m_compressed) {
-    return out->copy_from(in);
+    int r = out->copy_from(in);
+    if (r == -1) clear_last_os_error();
+    return r;
   }
 
   require(m_encrypted);
@@ -536,16 +552,20 @@ int ndbxfrm_file::untransform_pages(ndb_openssl_evp::operation *op,
   if (op == nullptr)
     op = &openssl_evp_op;
   else if (op->set_context(&openssl_evp) == -1) {
+    clear_last_os_error();
     return -1;
   }
 
   if (op->decrypt_init(data_pos, data_pos) == -1) {
+    clear_last_os_error();
     return -1;
   }
   if (op->decrypt(out, in) == -1) {
+    clear_last_os_error();
     return -1;
   }
   if (op->decrypt_end() == -1) {
+    clear_last_os_error();
     return -1;
   }
   if (!in->empty()) {
@@ -563,9 +583,11 @@ int ndbxfrm_file::read_header(ndbxfrm_input_iterator *in, const byte *pwd_key,
   if (ndb_az31::detect_header(in) == 0) {
     int rv = ndb_az31::read_header(in);
     if (rv == -1) {
+      clear_last_os_error();
       RETURN(-1);
     }
     if (rv == 1) {
+      clear_last_os_error();
       RETURN(-1);
     }
     header_size = 512;
@@ -589,16 +611,20 @@ int ndbxfrm_file::read_header(ndbxfrm_input_iterator *in, const byte *pwd_key,
     m_file_format = FF_NDBXFRM1;
     if (ret == -1) {
       // File magic was found, but other parts of header was bad.
+      clear_last_os_error();
       RETURN(-1);
     }
     if (header_size > in->size()) {
+      clear_last_os_error();
       RETURN(-1);
     }
     int rv = ndbxfrm_header.read_header(in);
     if (rv == -1) {
+      clear_last_os_error();
       RETURN(-1);
     }
     if (rv == 1) {
+      clear_last_os_error();
       RETURN(-1);
     }
     ndbxfrm_header.get_file_block_size(&m_file_block_size);
@@ -614,6 +640,7 @@ int ndbxfrm_file::read_header(ndbxfrm_input_iterator *in, const byte *pwd_key,
           require(zlib.set_pkcs_padding() == 0);
           break;
         default:
+          clear_last_os_error();
           RETURN(-1);
       }
     }
@@ -642,27 +669,45 @@ int ndbxfrm_file::read_header(ndbxfrm_input_iterator *in, const byte *pwd_key,
                   keying_material, sizeof(keying_material),
                   &keying_material_size, &keying_material_count) == 0);
       if (cipher != ndb_ndbxfrm1::cipher_cbc &&
-          cipher != ndb_ndbxfrm1::cipher_xts)
+          cipher != ndb_ndbxfrm1::cipher_xts) {
+        clear_last_os_error();
         RETURN(-1);
-      if (!(padding == 0 || padding == ndb_ndbxfrm1::padding_pkcs)) RETURN(-1);
+      }
+      if (padding != 0 && padding != ndb_ndbxfrm1::padding_pkcs) {
+        clear_last_os_error();
+        RETURN(-1);
+      }
       if (krm != ndb_ndbxfrm1::krm_pbkdf2_sha256 &&
-          krm != ndb_ndbxfrm1::krm_aeskw_256)
+          krm != ndb_ndbxfrm1::krm_aeskw_256) {
+        clear_last_os_error();
         RETURN(-1);
-      if (key_selection_mode > 2) RETURN(-1);
+      }
+      if (key_selection_mode > 2) {
+        clear_last_os_error();
+        RETURN(-1);
+      }
       if (krm == ndb_ndbxfrm1::krm_pbkdf2_sha256) {
         if (keying_material_size != ndb_openssl_evp::SALT_LEN ||
             keying_material_count == 0) {
+          clear_last_os_error();
           RETURN(-1);
         }
       } else if (krm == ndb_ndbxfrm1::krm_aeskw_256) {
         if (keying_material_count != 1) {
+          clear_last_os_error();
           RETURN(-1);
         }
       }
       if (krm == ndb_ndbxfrm1::krm_pbkdf2_sha256) {
-        if (kdf_iter_count == 0) RETURN(-1);
+        if (kdf_iter_count == 0) {
+          clear_last_os_error();
+          RETURN(-1);
+        }
       } else if (krm == ndb_ndbxfrm1::krm_aeskw_256) {
-        if (kdf_iter_count != 0) RETURN(-1);
+        if (kdf_iter_count != 0) {
+          clear_last_os_error();
+          RETURN(-1);
+        }
       }
 
       openssl_evp.reset();
@@ -685,6 +730,7 @@ int ndbxfrm_file::read_header(ndbxfrm_input_iterator *in, const byte *pwd_key,
           }
           break;
         default:
+          clear_last_os_error();
           RETURN(-1);
       }
       if (pwd_key != nullptr) {
@@ -730,9 +776,14 @@ int ndbxfrm_file::read_header(ndbxfrm_input_iterator *in, const byte *pwd_key,
   m_payload_start = in->cbegin() - in_begin;
   if (m_encrypted && pwd_key == nullptr) {
     // Encrypted file but no password or key given
+    clear_last_os_error();
     return -2;
   }
-  return (unwrap_keys_failed ? -2 : 0);
+  if (unwrap_keys_failed) {
+    clear_last_os_error();
+    return -2;
+  }
+  return 0;
 }
 
 int ndbxfrm_file::read_trailer(ndbxfrm_input_reverse_iterator *rin,
@@ -743,13 +794,21 @@ int ndbxfrm_file::read_trailer(ndbxfrm_input_reverse_iterator *rin,
     ndb_az31 az31;
     int r = az31.read_trailer(rin);
     if (r == -1) {
+      clear_last_os_error();
       RETURN(-1);
     }
     if (r == 1) {
+      clear_last_os_error();
       RETURN(-1);
     }
-    if (az31.get_data_size(&m_data_size) != 0) RETURN(-1);
-    if (az31.get_data_crc32(&m_data_crc32) != 0) RETURN(-1);
+    if (az31.get_data_size(&m_data_size) != 0) {
+      clear_last_os_error();
+      RETURN(-1);
+    }
+    if (az31.get_data_crc32(&m_data_crc32) != 0) {
+      clear_last_os_error();
+      RETURN(-1);
+    }
     m_have_data_crc32 = true;
     {
       size_t trailer_size = in_begin - rin->cbegin();
@@ -771,9 +830,11 @@ int ndbxfrm_file::read_trailer(ndbxfrm_input_reverse_iterator *rin,
       m_payload_end = file_size - tsz;
     }
     if (rv == -1) {
+      clear_last_os_error();
       RETURN(-1);
     }
     if (rv == 1) {
+      clear_last_os_error();
       RETURN(-1);
     }
 
@@ -782,11 +843,7 @@ int ndbxfrm_file::read_trailer(ndbxfrm_input_reverse_iterator *rin,
     m_data_size = data_size;
 
     Uint32 data_crc32 = 0;
-    if (ndbxfrm_trailer.get_data_crc32(&data_crc32) == 0) {
-      m_have_data_crc32 = true;
-    } else {
-      m_have_data_crc32 = false;
-    }
+    m_have_data_crc32 = (ndbxfrm_trailer.get_data_crc32(&data_crc32) == 0);
     m_data_crc32 = data_crc32;
   } else {
     require(m_file_format == FF_RAW);
@@ -852,6 +909,7 @@ int ndbxfrm_file::write_transformed_pages(ndb_off_t data_pos,
   }
   in->advance(nb);
   if (!in->empty()) {
+    clear_last_os_error();
     return -1;
   }
   return 0;
@@ -901,6 +959,7 @@ int ndbxfrm_file::generate_keying_material(ndb_ndbxfrm1::header *ndbxfrm1,
   }
   if (key_count >= 0 && size_t(key_count) > max_key_iv_pair_count) {
     // Too many keys requested
+    clear_last_os_error();
     RETURN(-1);
   }
   if (key_count == -1) {
@@ -911,11 +970,15 @@ int ndbxfrm_file::generate_keying_material(ndb_ndbxfrm1::header *ndbxfrm1,
   if (krm == ndb_ndbxfrm1::krm_pbkdf2_sha256) {
     if (key_count <= 0) RETURN(-1);
     if (size_t(key_count) * ndb_openssl_evp::SALT_LEN >
-        ndb_ndbxfrm1::header::get_max_keying_material_size())
+        ndb_ndbxfrm1::header::get_max_keying_material_size()) {
+      clear_last_os_error();
       RETURN(-1);
+    }
     Uint32 kdf_iter_count;
-    if (ndbxfrm1->get_encryption_krm_kdf_iter_count(&kdf_iter_count) != 0)
+    if (ndbxfrm1->get_encryption_krm_kdf_iter_count(&kdf_iter_count) != 0) {
+      clear_last_os_error();
       RETURN(-1);
+    }
     for (int i = 0; i < key_count; i++) {
       byte *salt = &keying_material[i * ndb_openssl_evp::SALT_LEN];
       openssl_evp.generate_salt256(salt);
@@ -925,13 +988,18 @@ int ndbxfrm_file::generate_keying_material(ndb_ndbxfrm1::header *ndbxfrm1,
     ndbxfrm1->set_encryption_keying_material(
         keying_material, ndb_openssl_evp::SALT_LEN, key_count);
   } else if (krm == ndb_ndbxfrm1::krm_aeskw_256) {
-    if (key_count <= 0) RETURN(-1);
+    if (key_count <= 0) {
+      clear_last_os_error();
+      RETURN(-1);
+    }
     // generate and encrypt keys !!
     if (size_t(key_count) *
                 (ndb_openssl_evp::KEY_LEN + ndb_openssl_evp::IV_LEN) +
             ndb_openssl_evp::AESKW_EXTRA >
-        ndb_ndbxfrm1::header::get_max_keying_material_size())
+        ndb_ndbxfrm1::header::get_max_keying_material_size()) {
+      clear_last_os_error();
       RETURN(-1);
+    }
     byte keys[ndb_ndbxfrm1::header::get_max_keying_material_size() -
               ndb_openssl_evp::AESKW_EXTRA];
     for (int i = 0; i < 2 * key_count; i++) {
@@ -947,8 +1015,10 @@ int ndbxfrm_file::generate_keying_material(ndb_ndbxfrm1::header *ndbxfrm1,
         keys, key_count, ndb_openssl_evp::KEY_LEN + ndb_openssl_evp::IV_LEN);
     if (openssl_evp.wrap_keys_aeskw256(keying_material, &keying_material_size,
                                        keys, keys_size, pwd_key,
-                                       pwd_key_len) == -1)
+                                       pwd_key_len) == -1) {
+      clear_last_os_error();
       RETURN(-1);
+    }
     ndbxfrm1->set_encryption_keying_material(keying_material,
                                              keying_material_size, 1);
   } else
@@ -978,6 +1048,7 @@ int ndbxfrm_file::write_header(ndbxfrm_output_iterator *out,
     require(!m_encrypted);
     require(m_compressed);
     if (m_file_block_size != 512) {
+      clear_last_os_error();
       RETURN(-1);
     }
     m_file_block_size = 512;  // Backward compatibility requires 512 bytes.
@@ -1002,14 +1073,18 @@ int ndbxfrm_file::write_header(ndbxfrm_output_iterator *out,
     if (m_encrypted) {
       if (data_page_size != 0 && key_data_unit_size != 0) {
         if (data_page_size % key_data_unit_size != 0) {
+          clear_last_os_error();
           RETURN(-1);
         }
         m_data_block_size = key_data_unit_size;
       } else if (data_page_size != 0 || key_data_unit_size != 0) {
-        if (data_page_size != 0)
+        if (data_page_size != 0) {
+          clear_last_os_error();
           RETURN(-1);  // both or none should be zero TEST ndb.backup_passwords
+        }
       }
       if (key_data_unit_size != 0 && padding) {
+        clear_last_os_error();
         RETURN(-1);  // padding not supported (yet)
       }
       switch (key_cipher) {
@@ -1024,6 +1099,7 @@ int ndbxfrm_file::write_header(ndbxfrm_output_iterator *out,
           ndbxfrm1.set_encryption_cipher(key_cipher);
           break;
         default:
+          clear_last_os_error();
           RETURN(-1);  // unsupported cipher
       }
       ndbxfrm1.set_encryption_padding(padding ? ndb_ndbxfrm1::padding_pkcs : 0);
@@ -1033,8 +1109,10 @@ int ndbxfrm_file::write_header(ndbxfrm_output_iterator *out,
       if (kdf_iter_count != 0)
         ndbxfrm1.set_encryption_krm_kdf_iter_count(kdf_iter_count);
       if (generate_keying_material(&ndbxfrm1, pwd_key, pwd_key_len, key_cipher,
-                                   key_count) == -1)
+                                   key_count) == -1) {
+        clear_last_os_error();
         RETURN(-1);
+      }
     }
     require(ndbxfrm1.prepare_for_write(m_file_block_size) == 0);
     require(ndbxfrm1.get_size() <= out->size());
@@ -1077,6 +1155,7 @@ int ndbxfrm_file::write_trailer(ndbxfrm_output_iterator *out,
   } else if (m_file_format == FF_RAW)
     return 0;
   if (r == -1) {
+    clear_last_os_error();
     return -1;
   }
   out->set_last();
@@ -1121,6 +1200,7 @@ int ndbxfrm_file::write_forward(ndbxfrm_input_iterator *in) {
         }
         int rv = zlib.deflate(&out, in);
         if (rv == -1) {
+          clear_last_os_error();
           RETURN(-1);
         }
         if (!in->last()) require(!out.last());
@@ -1164,6 +1244,7 @@ int ndbxfrm_file::write_forward(ndbxfrm_input_iterator *in) {
             (c_in.size() >= m_data_block_size || c_in.last())) {
           int rv = openssl_evp_op.encrypt(&out, &c_in);
           if (rv == -1) {
+            clear_last_os_error();
             RETURN(-1);
           }
         }
@@ -1195,6 +1276,7 @@ int ndbxfrm_file::write_forward(ndbxfrm_input_iterator *in) {
     if (n > 0) file_in.advance(n);
     // Fail if not all written and no buffer is used.
     if (n == -1 || (file_bufp == nullptr && !file_in.empty())) {
+      if (n != -1) clear_last_os_error();
       RETURN(-1);
     }
     if (file_bufp != nullptr) {
@@ -1222,25 +1304,78 @@ int ndbxfrm_file::write_forward(ndbxfrm_input_iterator *in) {
   return 0;
 }
 
+/**
+ * Loopcount limit
+ *
+ * Read path variants
+ *  Raw:
+ *    File -> (Read) -> Consumer buffer
+ *
+ *  Compressed :
+ *    File    -> (Read)       -> Buffer1
+ *    Buffer1 -> (Decompress) -> Consumer buffer
+ *
+ *  Encrypted :
+ *    File    -> (Read)       -> Buffer1
+ *    Buffer1 -> (Decrypt)    -> Buffer2
+ *    Buffer2 -> (Copy)       -> Consumer buffer
+ *
+ *  Encrypted + Compressed
+ *    File    -> (Read)       -> Buffer1
+ *    Buffer1 -> (Decrypt)    -> Buffer2
+ *    Buffer2 -> (Decompress) -> Consumer buffer
+ *
+ * Worst case compression ratio c = 1/2, one unit of raw data compressed
+ * into two units / two units of compressed data decompresses into 1 unit
+ * of decompressed data
+ * (overpessimistic, RFC1951 indicates worst case 5 bytes extra per 32KiB).
+ * Both buffers have size B.
+ *
+ * When reading each iteration can produce up to Bc bytes, so the max
+ * number of iterations is :
+ *
+ *   ceil(Consumer buffer size / Bc)
+ */
+static constexpr size_t WORST_COMPRESSION_FACTOR =
+    2; /* Compression of uncompressible data expands by 2x */
+static constexpr size_t UNIT_BYTES =
+    ndbxfrm_buffer::size() / WORST_COMPRESSION_FACTOR;
+
+static size_t calcReadLoopcountLimit(size_t requestBytes) {
+  /* Add offset of 2 for zero byte read case */
+  return 2 + ((requestBytes + UNIT_BYTES - 1) / UNIT_BYTES);
+}
+
 int ndbxfrm_file::read_forward(ndbxfrm_output_iterator *out) {
   if (m_file_op == OP_WRITE_FORW) {
+    clear_last_os_error();
     return -1;
   }
   if (m_data_pos == 0) {
     if (m_encrypted) {
       // Init forward read operation
-      if (openssl_evp_op.decrypt_init(0, m_payload_start) == -1) RETURN(-1);
+      if (openssl_evp_op.decrypt_init(0, m_payload_start) == -1) {
+        clear_last_os_error();
+        RETURN(-1);
+      }
     }
     if (m_compressed) {
       if (zlib.inflate_init() == -1) {
+        clear_last_os_error();
         RETURN(-1);
       }
     }
     m_file_op = OP_READ_FORW;
   }
-  if (m_file_op != OP_READ_FORW) RETURN(-1);
+  if (m_file_op != OP_READ_FORW) {
+    clear_last_os_error();
+    RETURN(-1);
+  }
   require(in_file_mode());
-  if (out->last()) RETURN(-1);
+  if (out->last()) {
+    clear_last_os_error();
+    RETURN(-1);
+  }
   byte *out_begin = out->begin();
   // copy from buffer
   if (!m_encrypted && !m_compressed &&
@@ -1266,7 +1401,7 @@ int ndbxfrm_file::read_forward(ndbxfrm_output_iterator *out) {
     }
   }
   bool progress;
-  int G = 20;  // loop guard
+  int G = calcReadLoopcountLimit(out->size());
   do {
     require(--G);
     progress = false;
@@ -1324,6 +1459,7 @@ int ndbxfrm_file::read_forward(ndbxfrm_output_iterator *out) {
       if (!d_out.last()) {
         int r = openssl_evp_op.decrypt(&d_out, &f_in);
         if (r == -1) {
+          clear_last_os_error();
           return -1;
         }
         progress |= (d_out.begin() != d_out_begin) || d_out.last();
@@ -1351,6 +1487,7 @@ int ndbxfrm_file::read_forward(ndbxfrm_output_iterator *out) {
       byte *o_b = out->begin();
       int r = zlib.inflate(out, &c_in);
       if (r == -1) {
+        clear_last_os_error();
         return -1;
       }
       progress |= (o_b != out->begin()) || out->last();
@@ -1386,7 +1523,10 @@ int ndbxfrm_file::read_forward(ndbxfrm_output_iterator *out) {
 int ndbxfrm_file::read_backward(ndbxfrm_output_reverse_iterator *out) {
   m_file_op = OP_READ_BACKW;
   require(!m_compressed);
-  if (out->last()) RETURN(-1);
+  if (out->last()) {
+    clear_last_os_error();
+    RETURN(-1);
+  }
   byte *out_begin = out->begin();
   // copy from buffer
   if (!m_encrypted &&
@@ -1409,7 +1549,7 @@ int ndbxfrm_file::read_backward(ndbxfrm_output_reverse_iterator *out) {
     }
   }
   bool progress;
-  int G = 20;  // loop guard
+  int G = calcReadLoopcountLimit(out->size());
   do {
     progress = false;
     require(--G);
@@ -1470,6 +1610,7 @@ int ndbxfrm_file::read_backward(ndbxfrm_output_reverse_iterator *out) {
       if (!d_out.last()) {
         int r = openssl_evp_op.decrypt_reverse(&d_out, &f_in);
         if (r == -1) {
+          clear_last_os_error();
           return -1;
         }
         progress |= (d_out.begin() != d_out_begin) || d_out.last();
@@ -1533,6 +1674,7 @@ ndb_off_t ndbxfrm_file::move_to_end() {
   }
   m_file_pos -= r;
   if (size_t(r) != count) {
+    clear_last_os_error();
     RETURN(-1);
   }
 
@@ -1553,8 +1695,10 @@ ndb_off_t ndbxfrm_file::move_to_end() {
 
   if (m_encrypted) {
     // Init reverse read operation
-    if (openssl_evp_op.decrypt_init_reverse(m_data_size, m_payload_end) == -1)
+    if (openssl_evp_op.decrypt_init_reverse(m_data_size, m_payload_end) == -1) {
+      clear_last_os_error();
       return -1;
+    }
     m_file_op = OP_READ_BACKW;
   }
   m_data_pos = m_data_size;

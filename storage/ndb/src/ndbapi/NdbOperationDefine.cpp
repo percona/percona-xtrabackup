@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,15 +41,14 @@ int NdbOperation::insertTuple() {
   if (theStatus == Init) {
     theStatus = OperationDefined;
     theOperationType = InsertRequest;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theErrorLine = tErrorLine++;
     theLockMode = LM_Exclusive;
     m_abortOption = AbortOnError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::insertTuple()
 /******************************************************************************
  * int updateTuple();
@@ -59,16 +58,15 @@ int NdbOperation::updateTuple() {
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theOperationType = UpdateRequest;
     theErrorLine = tErrorLine++;
     theLockMode = LM_Exclusive;
     m_abortOption = AbortOnError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::updateTuple()
 /*****************************************************************************
  * int writeTuple();
@@ -78,16 +76,15 @@ int NdbOperation::writeTuple() {
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theOperationType = WriteRequest;
     theErrorLine = tErrorLine++;
     theLockMode = LM_Exclusive;
     m_abortOption = AbortOnError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::writeTuple()
 /*****************************************************************************
  * int deleteTuple();
@@ -97,16 +94,15 @@ int NdbOperation::deleteTuple() {
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theOperationType = DeleteRequest;
     theErrorLine = tErrorLine++;
     theLockMode = LM_Exclusive;
     m_abortOption = AbortOnError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::deleteTuple()
 
 /******************************************************************************
@@ -137,16 +133,15 @@ int NdbOperation::readTuple() {
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theOperationType = ReadRequest;
     theErrorLine = tErrorLine++;
     theLockMode = LM_Read;
     m_abortOption = AO_IgnoreError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::readTuple()
 
 /******************************************************************************
@@ -157,16 +152,15 @@ int NdbOperation::readTupleExclusive() {
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theOperationType = ReadExclusive;
     theErrorLine = tErrorLine++;
     theLockMode = LM_Exclusive;
     m_abortOption = AO_IgnoreError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::readTupleExclusive()
 
 /*****************************************************************************
@@ -183,12 +177,11 @@ int NdbOperation::simpleRead() {
     theErrorLine = tErrorLine++;
     theLockMode = LM_SimpleRead;
     m_abortOption = AO_IgnoreError;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::simpleRead()
 
 /*****************************************************************************
@@ -212,10 +205,9 @@ int NdbOperation::committedRead() {
     theLockMode = LM_CommittedRead;
     m_abortOption = AO_IgnoreError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::committedRead()
 
 /*****************************************************************************
@@ -227,17 +219,16 @@ int NdbOperation::dirtyUpdate() {
   if (theStatus == Init) {
     theStatus = OperationDefined;
     theOperationType = UpdateRequest;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theSimpleIndicator = 1;
     theDirtyIndicator = 1;
     theErrorLine = tErrorLine++;
     theLockMode = LM_CommittedRead;
     m_abortOption = AbortOnError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::dirtyUpdate()
 
 /******************************************************************************
@@ -249,17 +240,16 @@ int NdbOperation::dirtyWrite() {
   if (theStatus == Init) {
     theStatus = OperationDefined;
     theOperationType = WriteRequest;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theSimpleIndicator = 1;
     theDirtyIndicator = 1;
     theErrorLine = tErrorLine++;
     theLockMode = LM_CommittedRead;
     m_abortOption = AbortOnError;
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::dirtyWrite()
 
 /******************************************************************************
@@ -270,7 +260,7 @@ int NdbOperation::interpretedUpdateTuple() {
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theOperationType = UpdateRequest;
     theAI_LenInCurrAI = 25;
     theLockMode = LM_Exclusive;
@@ -278,10 +268,9 @@ int NdbOperation::interpretedUpdateTuple() {
     m_abortOption = AbortOnError;
     initInterpreter();
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::interpretedUpdateTuple()
 
 /******************************************************************************
@@ -298,7 +287,7 @@ int NdbOperation::interpretedWriteTuple() {
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theOperationType = WriteRequest;
     theAI_LenInCurrAI = 25;
     theLockMode = LM_Exclusive;
@@ -306,10 +295,9 @@ int NdbOperation::interpretedWriteTuple() {
     m_abortOption = AbortOnError;
     initInterpreter();
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::interpretedWriteTuple()
 
 /*****************************************************************************
@@ -320,7 +308,7 @@ int NdbOperation::interpretedDeleteTuple() {
   int tErrorLine = theErrorLine;
   if (theStatus == Init) {
     theStatus = OperationDefined;
-    tNdbCon->theSimpleState = 0;
+    tNdbCon->theSimpleState = false;
     theOperationType = DeleteRequest;
 
     theErrorLine = tErrorLine++;
@@ -329,10 +317,9 @@ int NdbOperation::interpretedDeleteTuple() {
     m_abortOption = AbortOnError;
     initInterpreter();
     return 0;
-  } else {
-    setErrorCode(4200);
-    return -1;
-  }  // if
+  }
+  setErrorCode(4200);
+  return -1;
 }  // NdbOperation::interpretedDeleteTuple()
 
 void NdbOperation::setReadLockMode(LockMode lockMode) {
@@ -350,13 +337,13 @@ void NdbOperation::setReadLockMode(LockMode lockMode) {
       theDirtyIndicator = 0;
       break;
     case LM_Read:
-      theNdbCon->theSimpleState = 0;
+      theNdbCon->theSimpleState = false;
       theOperationType = ReadRequest;
       theSimpleIndicator = 0;
       theDirtyIndicator = 0;
       break;
     case LM_Exclusive:
-      theNdbCon->theSimpleState = 0;
+      theNdbCon->theSimpleState = false;
       theOperationType = ReadExclusive;
       theSimpleIndicator = 0;
       theDirtyIndicator = 0;
@@ -418,19 +405,16 @@ NdbRecAttr *NdbOperation::getValue_impl(const NdbColumnImpl *tAttrInfo,
       if ((tRecAttr = theReceiver.getValue(tAttrInfo, aValue)) != nullptr) {
         theErrorLine++;
         return tRecAttr;
-      } else {
-        setErrorCodeAbort(4000);
-        return nullptr;
       }
-    } else {
+      setErrorCodeAbort(4000);
       return nullptr;
-    }  // if insertATTRINFO failure
-  } else {
-    if (tAttrInfo == nullptr) {
-      setErrorCodeAbort(4004);
-      return nullptr;
-    }  // if
-  }    // if
+    }
+    return nullptr;
+  }
+  if (tAttrInfo == nullptr) {
+    setErrorCodeAbort(4004);
+    return nullptr;
+  }  // if
   setErrorCodeAbort(4200);
   return nullptr;
 }
@@ -450,10 +434,9 @@ NdbRecAttr *NdbOperation::getValue_NdbRecord(const NdbColumnImpl *tAttrInfo,
   if ((tRecAttr = theReceiver.getValue(tAttrInfo, aValue)) != nullptr) {
     theErrorLine++;
     return tRecAttr;
-  } else {
-    setErrorCodeAbort(4000);
-    return nullptr;
   }
+  setErrorCodeAbort(4000);
+  return nullptr;
 }
 
 /*****************************************************************************
@@ -651,6 +634,9 @@ int NdbOperation::setAnyValue(Uint32 any_value) {
     return -1;
   }
 
+  /* Save the value to use for subsequent operations derived from this one */
+  m_any_value = any_value;
+
   const NdbColumnImpl *impl =
       &NdbColumnImpl::getImpl(*NdbDictionary::Column::ANY_VALUE);
 
@@ -818,7 +804,7 @@ int NdbOperation::getBlobHandlesNdbRecord(NdbTransaction *aCon,
 
   for (Uint32 i = 0; i < m_attribute_record->noOfColumns; i++) {
     const NdbRecord::Attr *col = &m_attribute_record->columns[i];
-    if (!(col->flags & NdbRecord::IsBlob)) continue;
+    if (!(col->flags & NdbRecord::UsesBlobHandle)) continue;
 
     Uint32 attrId = col->attrId;
     if (!BitmaskImpl::get((NDB_MAX_ATTRIBUTES_IN_TABLE + 31) >> 5, m_read_mask,
@@ -896,7 +882,7 @@ int NdbOperation::setVarValue(const NdbColumnImpl *tAttrInfo,
   const Uint32 MaxTupleSizeInLongWords = (NDB_MAX_TUPLE_SIZE + 7) / 8;
   Uint64 buf[MaxTupleSizeInLongWords];
   assert(aLen < (NDB_MAX_TUPLE_SIZE - 2));
-  unsigned char *p = (unsigned char *)buf;
+  auto *p = (unsigned char *)buf;
   p[0] = (aLen & 0xff);
   p[1] = (aLen >> 8);
   memcpy(&p[2], aBareValue, aLen);
@@ -1080,8 +1066,8 @@ int NdbOperation::setNoWait() {
     return -1;
   }
 
-  if ((!((theOperationType == ReadRequest) ||
-         (theOperationType == ReadExclusive))) ||
+  if (((theOperationType != ReadRequest) &&
+       (theOperationType != ReadExclusive)) ||
       theDirtyIndicator) {
     /* Only allowed for locking reads */
     setErrorCodeAbort(4108); /* Faulty operation type */
@@ -1243,10 +1229,10 @@ int NdbOperation::handleOperationOptions(const OperationType type,
     /* Only allowed for pk ops on user defined partitioned tables
      * or when defining an unlock operation
      */
-    if (unlikely(!(((op->m_attribute_record->flags &
-                     NdbRecord::RecHasUserDefinedPartitioning) &&
-                    (op->m_key_record->table->m_index == nullptr)) ||
-                   (type == UnlockRequest)))) {
+    if (unlikely((!(op->m_attribute_record->flags &
+                    NdbRecord::RecHasUserDefinedPartitioning) ||
+                  (op->m_key_record->table->m_index != nullptr)) &&
+                 (type != UnlockRequest))) {
       /* Explicit partitioning info not allowed for table and operation*/
       return 4546;
     }
@@ -1256,9 +1242,9 @@ int NdbOperation::handleOperationOptions(const OperationType type,
 
   if (opts->optionsPresent & OperationOptions::OO_INTERPRETED) {
     /* Check the operation type is valid */
-    if (!((type == ReadRequest) || (type == ReadExclusive) ||
-          (type == UpdateRequest) || (type == DeleteRequest) ||
-          (type == WriteRequest)))
+    if ((type != ReadRequest) && (type != ReadExclusive) &&
+        (type != UpdateRequest) && (type != DeleteRequest) &&
+        (type != WriteRequest))
       /* NdbInterpretedCode not supported for operation type */
       return 4539;
 
@@ -1337,13 +1323,18 @@ int NdbOperation::handleOperationOptions(const OperationType type,
   }
 
   if (opts->optionsPresent & OperationOptions::OO_NOWAIT) {
-    if ((!((type == ReadRequest) || (type == ReadExclusive))) ||
+    if (((type != ReadRequest) && (type != ReadExclusive)) ||
         (op->theLockMode == LM_CommittedRead)) {
       /* Only allowed for locking reads */
       return 4108; /* Faulty operation type */
     }
 
     op->m_flags |= OF_NOWAIT;
+  }
+
+  if (opts->optionsPresent & OperationOptions::OO_ROW_SIDE_BUFFER) {
+    op->m_row_side_buffer = static_cast<char *>(opts->rowSideBuffer);
+    op->m_row_side_buffer_size = opts->rowSideBufferSize;
   }
 
   return 0;

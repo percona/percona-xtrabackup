@@ -40,6 +40,7 @@ INSERT INTO t1 values (12);
 SET GLOBAL DEBUG="-d,stop_applier_channel_after_reading_write_rows_log_event";
 include/stop_group_replication.inc
 include/start_group_replication.inc
+include/assert.inc [Certifier broadcast thread must be running]
 ########################################################################
 # 5. On M1: Insert another tuple and do a diff tables with other nodes.
 #           (just to check that everything is working fine).

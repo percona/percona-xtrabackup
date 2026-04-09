@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -507,6 +507,15 @@ const char *ndb_mgm_get_name(const NdbMgmHandle handle);
  * function after 'ndb_mgm_create_handle' and before
  * 'ndb_mgm_connect'(where the signal handler is installed)
  *
+ * This function is deprecated as of MySQL 8.4.5.
+ *
+ * As of MySQL 8.4.5, ndb\_mgm\_connect() will automatically detect whether
+ * a non-default signal handler has been installed. It will only set the
+ * signal to be ignored if no handler has been installed, and only on
+ * Linux platforms. Non-Linux platforms use other mechanisms to prevent
+ * delivery of SIGPIPE.
+ *
+ * @deprecated
  * @param   handle        Management handle
  * @param   val           Value
  *                        0 - Don't ignore SIGPIPE

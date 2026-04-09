@@ -35,6 +35,8 @@ SET PERSIST_ONLY skip_replica_start = 1;
 ERROR 42000: Access denied; you need SYSTEM_VARIABLES_ADMIN and PERSIST_RO_VARIABLES_ADMIN privileges for this operation
 GRANT SYSTEM_VARIABLES_ADMIN, PERSIST_RO_VARIABLES_ADMIN ON *.* TO user1@'%';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET PERSIST_ONLY skip_replica_start = 1;
 DROP USER user1;
 RESET PERSIST skip_replica_start;

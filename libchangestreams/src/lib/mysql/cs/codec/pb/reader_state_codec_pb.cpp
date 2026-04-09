@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,12 +23,15 @@
 
 #include "libchangestreams/src/lib/mysql/cs/codec/pb/reader_state_codec_pb.h"
 #include "libchangestreams/include/mysql/cs/reader/state.h"
+#include "mysql/gtids/gtids.h"  // Gtid_set
 #include "reader_state.pb.h"
+#include "scope_guard.h"  // Scope_guard
 
 namespace cs::reader::codec::pb::example {
 
+// Warning: this is not for production use
 void read_from_stream(std::istream &stream, cs::reader::State &out) {
-  mysql::gtid::Gtid_set gtid_set;
+  static constexpr auto return_ok = mysql::utils::Return_status::ok;
   cs::reader::codec::pb::example::State state_codec;
   std::string sibuf;
 
@@ -41,12 +44,12 @@ void read_from_stream(std::istream &stream, cs::reader::State &out) {
   // real failure
   if (stream.fail() && !stream.eof()) return;
 
-  if (!state_codec.ParseFromString(sibuf)) {
-    /* purecov: begin inspected */
-    stream.setstate(std::ios_base::failbit);
-    return;
-    /* purecov: end */
-  }
+  bool success = false;
+  Scope_guard guard([&success, &stream] {
+    if (!success) stream.setstate(std::ios_base::failbit);
+  });
+
+  if (!state_codec.ParseFromString(sibuf)) return;
 
   // NOTE: does not build with LITE_RUNTIME in some platforms
   // if (!state_codec.ParseFromIstream(&stream)) {
@@ -54,55 +57,45 @@ void read_from_stream(std::istream &stream, cs::reader::State &out) {
   //   return;
   // }
 
-  for (const auto &gtids : state_codec.gtids()) {
-    std::string suuid = gtids.uuid();
-    mysql::gtid::Tag tag(gtids.tag());
-    for (const auto &range : gtids.range()) {
-      mysql::gtid::Gno_interval interval{range.start(), range.end()};
-      mysql::gtid::Uuid uuid;
-      if (uuid.parse(suuid.c_str(), suuid.length())) {
-        /* purecov: begin inspected */
-        stream.setstate(std::ios_base::failbit);
+  mysql::gtids::Gtid_set gtid_set;
+  for (const auto &pb_tsid_and_intervals : state_codec.gtids()) {
+    std::string pb_uuid = pb_tsid_and_intervals.uuid();
+    mysql::gtids::Tsid tsid;
+    if (!mysql::strconv::decode_text(pb_uuid, tsid.uuid()).is_ok()) return;
+    if (tsid.tag().assign(pb_tsid_and_intervals.tag()) != return_ok) return;
+    for (const auto &pb_interval : pb_tsid_and_intervals.range()) {
+      mysql::gtids::Gtid_interval interval;
+      if (interval.assign(pb_interval.start(), pb_interval.end() + 1) !=
+          return_ok)
         return;
-        /* purecov: end */
-      }
-      if (gtid_set.add(mysql::gtid::Tsid(uuid, tag), interval)) {
-        /* purecov: begin inspected */
-        stream.setstate(std::ios_base::failbit);
-        return;
-        /* purecov: end */
-      }
+      if (gtid_set.inplace_union(tsid, interval) != return_ok) return;
     }
   }
-  out.set_gtids(gtid_set);
+  out.add_gtid_set(gtid_set);
+  success = true;
 }
 
 void write_to_stream(std::ostream &stream, cs::reader::State &in) {
   auto &gtid_set = in.get_gtids();
-  const auto &contents = gtid_set.get_gtid_set();
   cs::reader::codec::pb::example::State state_codec;
 
-  for (auto const &[uuid, tag_map] : contents) {
-    for (auto const &[tag, intervals] : tag_map) {
-      auto *ranges = state_codec.add_gtids();
-      ranges->set_uuid(uuid.to_string());
-      if (tag.is_defined()) {
-        ranges->set_tag(tag.to_string());
-      }
-      for (auto &interval : intervals) {
-        auto range = ranges->add_range();
-        range->set_end(interval.get_end());
-        range->set_start(interval.get_start());
-      }
+  for (const auto &[tsid, interval_set] : gtid_set) {
+    auto *ranges = state_codec.add_gtids();
+    ranges->set_uuid(mysql::strconv::throwing::encode_text(tsid.uuid()));
+    if (!tsid.tag().empty()) {
+      ranges->set_tag(mysql::strconv::throwing::encode_text(tsid.tag()));
+    }
+    for (const auto &interval : interval_set) {
+      auto range = ranges->add_range();
+      range->set_start(interval.start());
+      range->set_end(interval.exclusive_end() - 1);
     }
   }
 
   std::string obuffer;
   if (!state_codec.SerializeToString(&obuffer)) {
-    /* purecov: begin inspected */
     stream.setstate(std::ios_base::failbit);
     return;
-    /* purecov: end */
   }
   stream << obuffer;
 
@@ -111,6 +104,10 @@ void write_to_stream(std::ostream &stream, cs::reader::State &in) {
   //   stream.setstate(std::ios_base::failbit);
   // }
 }
+
+MY_COMPILER_DIAGNOSTIC_PUSH()
+// This tests a deprecated feature, so the deprecation warning is expected.
+MY_COMPILER_GCC_DIAGNOSTIC_IGNORE("-Wdeprecated-declarations")
 
 stringstream &stringstream::operator>>(cs::reader::State &to_decode_into) {
   cs::reader::codec::pb::example::read_from_stream(*this, to_decode_into);
@@ -121,5 +118,7 @@ stringstream &stringstream::operator<<(cs::reader::State &to_encode_from) {
   cs::reader::codec::pb::example::write_to_stream(*this, to_encode_from);
   return (*this);
 }
+
+MY_COMPILER_DIAGNOSTIC_POP()
 
 }  // namespace cs::reader::codec::pb::example

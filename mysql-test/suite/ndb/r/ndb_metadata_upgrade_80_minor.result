@@ -72,6 +72,29 @@ t5	CREATE TABLE `t5` (
 SELECT * FROM t5;
 a	b
 1	Lipstick on a pig
+SELECT
+RPAD(CONCAT(database_name, '.', table_name),30,' ') 'table',
+extra_metadata_version,
+LENGTH(extra_metadata) len,
+IF(extra_metadata_version = 'SDI', JSON_EXTRACT(CONVERT(extra_metadata USING utf8mb4), '$.mysqld_version_id'), NULL) mysqld_version_id,
+IF(extra_metadata_version = 'SDI', JSON_EXTRACT(CONVERT(extra_metadata USING utf8mb4), '$.dd_version'), NULL) dd_version,
+IF(extra_metadata_version = 'SDI', JSON_EXTRACT(CONVERT(extra_metadata USING utf8mb4), '$.sdi_version'), NULL) sdi_version
+FROM ndbinfo.dictionary_tables
+ORDER BY 1,2;
+table	extra_metadata_version	len	mysqld_version_id	dd_version	sdi_version
+mysql.NDB$BLOB_#_#            	NULL	NULL	NULL	NULL	NULL
+mysql.ndb_apply_status        	FRM	8716	NULL	NULL	NULL
+mysql.ndb_index_stat_head     	NULL	NULL	NULL	NULL	NULL
+mysql.ndb_index_stat_sample   	NULL	NULL	NULL	NULL	NULL
+mysql.ndb_schema              	FRM	8810	NULL	NULL	NULL
+mysql.ndb_schema_result       	NULL	NULL	NULL	NULL	NULL
+mysql.ndb_sql_metadata        	NULL	NULL	NULL	NULL	NULL
+test.NDB$BLOB_#_#            	NULL	NULL	NULL	NULL	NULL
+test.t1                       	SDI	4726	80018	80017	80016
+test.t2                       	SDI	11176	80018	80017	80016
+test.t3                       	SDI	4747	80018	80017	80016
+test.t4                       	SDI	5505	80018	80017	80016
+test.t5                       	SDI	4781	80018	80017	80016
 DROP TABLE t1, t2, t3, t4, t5;
 ALTER TABLESPACE ts1
 DROP DATAFILE 'ts1_datafile.dat';

@@ -43,16 +43,25 @@ LOAD DATA LOCAL INFILE 'suite/jp/std_data/jisx0208_utf8.dat' INTO TABLE `Ｔ８`
 LOAD DATA LOCAL INFILE 'suite/jp/std_data/jisx0212_utf8.dat' INTO TABLE `Ｔ９`;
 
 #InnoDB
+--sorted_result
 SELECT * FROM `Ｔ１`;
+--sorted_result
 SELECT * FROM `Ｔ２`;
+--sorted_result
 SELECT * FROM `Ｔ３`;
 #MyISAM
+--sorted_result
 SELECT * FROM `Ｔ４`;
+--sorted_result
 SELECT * FROM `Ｔ５`;
+--sorted_result
 SELECT * FROM `Ｔ６`;
 #MEMORY
+--sorted_result
 SELECT * FROM `Ｔ７`;
+--sorted_result
 SELECT * FROM `Ｔ８`;
+--sorted_result
 SELECT * FROM `Ｔ９`;
 
 drop table `Ｔ１`;

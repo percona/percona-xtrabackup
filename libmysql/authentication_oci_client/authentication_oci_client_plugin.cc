@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,14 +34,15 @@
 #include <my_sys.h>
 #include <mysql.h>
 #include <mysql/client_plugin.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <ostream>
 
 #include "include/base64_encode.h"
+#include "my_dbug.h"
 #include "sql-common/oci/signing_key.h"
 #include "sql-common/oci/utilities.h"
 
@@ -75,6 +76,7 @@ inline void free_plugin_option(char *&option) {
  * Extract the key_file= value from the ~/.oci/config file.
  */
 oci::OCI_config_file parse_oci_config_file(std::string &err_msg) {
+  DBUG_TRACE;
   return oci::parse_oci_config_file(
       oci::get_oci_config_file_location(s_oci_config_location),
       s_authentication_oci_client_config_profile, s_expanded_path, err_msg);
@@ -88,6 +90,7 @@ oci::OCI_config_file parse_oci_config_file(std::string &err_msg) {
 
 */
 static int try_parse_and_set_config_file(std::string &err_msg) {
+  DBUG_TRACE;
   auto config = parse_oci_config_file(err_msg);
   if (err_msg.empty()) {
     s_oci_config_file->key_file.assign(config.key_file);
@@ -107,18 +110,22 @@ static int try_parse_and_set_config_file(std::string &err_msg) {
 */
 static int oci_authenticate_client_plugin(MYSQL_PLUGIN_VIO *vio,
                                           MYSQL * /*mysql*/) {
+  DBUG_TRACE;
   std::string err_msg;
   if (try_parse_and_set_config_file(err_msg)) {
     log_error(err_msg);
     return CR_AUTH_USER_CREDENTIALS;
   }
-  /**
-   * Step 1: Receive the nonce from the server.
-   */
+  /*
+    Step 1: Receive the nonce from the server.
+    It can be empty for non-matching server/client
+    default authentication methods
+  */
   unsigned char *server_nonce = nullptr;
-  int server_nonce_length = vio->read_packet(vio, &server_nonce);
+  int const server_nonce_length = vio->read_packet(vio, &server_nonce);
   if (server_nonce_length <= 0) {
-    log_error("An error occurred during the client server handshake.");
+    DBUG_PRINT("info", ("No nonce received or error. server_nonce_length=%d",
+                        server_nonce_length));
     return CR_AUTH_HANDSHAKE;
   }
   /**
@@ -129,7 +136,7 @@ static int oci_authenticate_client_plugin(MYSQL_PLUGIN_VIO *vio,
     return CR_AUTH_PLUGIN_ERROR;
   }
   auto encoded = signer.sign(server_nonce, server_nonce_length);
-  if (encoded.size() == 0) {
+  if (encoded.empty()) {
     log_error("Authentication failed, plugin internal error.");
     return CR_AUTH_PLUGIN_ERROR;
   }
@@ -180,6 +187,7 @@ static int oci_authenticate_client_plugin(MYSQL_PLUGIN_VIO *vio,
 }
 
 static int initialize_plugin(char *, size_t, int, va_list) {
+  DBUG_TRACE;
   s_oci_config_file = new (std::nothrow) oci::OCI_config_file{};
   if (s_oci_config_file == nullptr) return 1;
     /*
@@ -202,7 +210,8 @@ static int initialize_plugin(char *, size_t, int, va_list) {
 }
 
 static int deinitialize_plugin() {
-  if (s_oci_config_file != nullptr) delete s_oci_config_file;
+  DBUG_TRACE;
+  delete s_oci_config_file;
   free_plugin_option(s_oci_config_location);
   free_plugin_option(s_authentication_oci_client_config_profile);
   return 0;
@@ -213,11 +222,14 @@ static int deinitialize_plugin() {
   data for plugin to process
 */
 static int oci_authenticate_client_option(const char *option, const void *val) {
+  DBUG_TRACE;
+  DBUG_PRINT("info", ("option=[%s], value=[%s]", option ? option : "empty",
+                      val ? reinterpret_cast<const char *>(val) : "empty"));
   const char *value = static_cast<const char *>(val);
   if (strcmp(option, "oci-config-file") == 0) {
     free_plugin_option(s_oci_config_location);
     if (value == nullptr) return 0;
-    std::ifstream file(value);
+    std::ifstream const file(value);
     if (file.good()) {
       s_oci_config_location =
           my_strdup(PSI_NOT_INSTRUMENTED, value, MYF(MY_WME));

@@ -1,0 +1,732 @@
+RESET BINARY LOGS AND GTIDS;
+
+--source include/have_router.inc
+--source ../include/mrs/is_mrs_schema_v3_or_v4.inc
+
+# This test stores etags in the result file. The result etag is different on
+# Solaris so we disable it until this is further investigated.
+--source include/not_solaris.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/sakila-schema.sql
+--source ../include/schema/sakila-data.sql
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=sakila
+--let $mrs_add_schema_path=/sakila
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/city
+--let $mrs_add_db_object_auth=1
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=country
+--let $mrs_add_db_object_join_subobj=country
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--let $mrs_add_db_object_join_columns=country
+--source ../include/mrs/db_object/add_join_subobj.inc
+
+#
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/city_C
+--let $mrs_add_db_object_auth=1
+--let $mrs_add_db_object_op=CREATE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=country
+--let $mrs_add_db_object_join_subobj=country
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--let $mrs_add_db_object_join_columns=country
+--source ../include/mrs/db_object/add_join_subobj.inc
+#
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/city_R
+--let $mrs_add_db_object_auth=1
+--let $mrs_add_db_object_op=READ
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=country
+--let $mrs_add_db_object_join_subobj=country
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--let $mrs_add_db_object_join_columns=country
+--source ../include/mrs/db_object/add_join_subobj.inc
+#
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/city_U
+--let $mrs_add_db_object_auth=1
+--let $mrs_add_db_object_op=UPDATE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=country
+--let $mrs_add_db_object_join_subobj=country
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--let $mrs_add_db_object_join_columns=country
+--source ../include/mrs/db_object/add_join_subobj.inc
+#
+--let $mrs_add_db_object=city
+--let $mrs_add_db_object_path=/city_D
+--let $mrs_add_db_object_auth=1
+--let $mrs_add_db_object_op=DELETE
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_join_schema=sakila
+--let $mrs_add_db_object_join_table=country
+--let $mrs_add_db_object_join_subobj=country
+--let $mrs_add_db_object_join_on_base=country_id
+--let $mrs_add_db_object_join_on_other=country_id
+--let $mrs_add_db_object_join_columns=country
+--source ../include/mrs/db_object/add_join_subobj.inc
+#
+# create roles
+--let $mrs_add_role_caption=AllRead
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=AllUpdate
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=UPDATE
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=AllCreate
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=CREATE
+--source ../include/mrs/role/grant_privilege.inc
+
+--let $mrs_add_role_caption=AllDelete
+--source ../include/mrs/role/add.inc
+
+--let $mrs_grant_privilege_service_path=*
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+# create users
+--let $k_password_pwd='JEEkMDA1JGI2amJJam9BZmdNS1kwWlFJVUVRZmg1d2UxVT0kVHVkYUQvandPNHB4QSttSVZQT2Q2\nQTlna1g2OUEyMVVpWEl4ajdrcG1Taz0='
+
+--let $mrs_add_auth_app=mrsauth
+--let $mrs_add_auth_registered_users_only=1
+--let $mrs_add_auth_vendor=MRS
+--let $mrs_add_auth_services=('/svc')
+--source ../include/mrs/auth_app/add.inc
+
+--let $mrs_add_user_ext_uid="admin"
+--let $mrs_add_user_name='admin'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="updater"
+--let $mrs_add_user_name='updater'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=AllUpdate
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="creater"
+--let $mrs_add_user_name='creater'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=AllCreate
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="reader"
+--let $mrs_add_user_name='reader'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=AllRead
+--source ../include/mrs/user/add.inc
+
+--let $mrs_add_user_ext_uid="deleter"
+--let $mrs_add_user_name='deleter'
+--let $mrs_add_user_auth_string=$k_password_pwd
+--let $mrs_add_user_role=AllDelete
+--source ../include/mrs/user/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'mrsauth' --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u admin
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/admin_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'mrsauth' --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u updater
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/updater_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'mrsauth' --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u creater
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/creater_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'mrsauth' --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u reader
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/reader_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a scram_post --auth-app 'mrsauth' --session-type jwt
+  -t PUT
+  --path /svc/authentication/login
+  -u deleter
+  -p pwd
+  --session-file $MYSQL_TMP_DIR/deleter_session.dat;
+
+--echo GET
+
+## GET without auth (deny)
+--let $mrs_client_arg_path='/svc/sakila/city/55'
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+## GET with auth (ok)
+--let $mrs_client_arg_path='/svc/sakila/city/55'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--replace_regex /"etag": .*/"etag": ETAG/
+--source ../include/mrs/mrs_client.inc
+
+## GET with wrong auth (deny)
+--let $mrs_client_arg_path='/svc/sakila/city/55'
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--let $mrs_client_arg_expected_status=403
+--source ../include/mrs/mrs_client.inc
+
+--echo # PUT that results in an UPDATE
+
+--let $payload1='{"city_id":55, "city": "Barcelona1", "country_id": 104, "country": {"country": "Venezuela","country_id": 104,"last_update": "2006-02-15 04:44:00.000000"}, "last_update": "2006-02-15 04:45:25.000000"}'
+--let $payload2='{"city_id":55, "city": "Barcelona2", "country_id": 104, "country": {"country": "Venezuela","country_id": 104,"last_update": "2006-02-15 04:44:00.000000"}, "last_update": "2006-02-15 04:45:25.000000"}'
+--let $payload3='{"city_id":55, "city": "Barcelona3", "country_id": 104, "country": {"country": "Venezuela","country_id": 104,"last_update": "2006-02-15 04:44:00.000000"}, "last_update": "2006-02-15 04:45:25.000000"}'
+
+--let $new_payload1='{"city_id":1000, "city": "New City 1", "country_id": 104, "country": {"country": "Venezuela","country_id": 104,"last_update": "2006-02-15 04:44:00.000000"}, "last_update": "2025-02-25 04:45:25.000000"}'
+--let $new_payload2='{"city_id":1001, "city": "New City 2", "country_id": 104, "country": {"country": "Venezuela","country_id": 104,"last_update": "2006-02-15 04:44:00.000000"}, "last_update": "2025-02-25 04:45:25.000000"}'
+
+## PUT without auth (deny)
+--let $mrs_client_arg_path='/svc/sakila/city/55'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=401
+--source ../include/mrs/mrs_client.inc
+
+## PUT with auth (ok)
+--replace_regex /"etag": .*/"etag": ETAG/  /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city/55'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+## PUT with wrong auth (deny)
+--let $mrs_client_arg_path='/svc/sakila/city/55'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload=$payload2
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--let $mrs_client_arg_expected_status=403
+--source ../include/mrs/mrs_client.inc
+
+--echo # PUT that results in an INSERT
+
+## PUT with wrong auth (deny)
+--let $mrs_client_arg_path='/svc/sakila/city/1000'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload=$new_payload1
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--let $mrs_client_arg_expected_status=403
+--source ../include/mrs/mrs_client.inc
+
+## PUT with auth (ok)
+--replace_regex /"etag": .*/"etag": ETAG/  /"gtid":.*/"gtid":GTID/
+--let $mrs_client_arg_path='/svc/sakila/city/1000'
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_payload=$new_payload1
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+####
+
+--echo Check crud_operations column vs user privilege vs REST method
+# only create allowed by object
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_C'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_C?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_C'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_C/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_C'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_C?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_replace_regexp=/(.*)"gtid": ".*"/\1"gtid": "GTID"/
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_C'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+# OK
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_C/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_C?limit=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_C?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_C'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_C/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_C'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_C?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_C'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_C/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# only read allowed by object
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_R'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_R?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_R'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_R/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_R'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_R?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_R'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_R/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_R?limit=1'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+# OK
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_R?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_R'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_R/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_R'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_R?id=999'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_R'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_R/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# only update allowed by object
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_U'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_U?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_U'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_U/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+# OK
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_U'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_U?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_U'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_U/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_U?limit=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_U?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_U'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_U/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_U'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_U?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_U'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_U/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+# only delete allowed by object
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_D'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_D?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_D'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_D/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/updater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_D'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_D?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_D'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_D/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/creater_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_D?limit=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_D?id=1'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_D'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_D/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/reader_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+--let $mrs_client_arg_request_type=GET
+--let $mrs_client_arg_path='/svc/sakila/city_D'
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=DELETE
+--let $mrs_client_arg_path='/svc/sakila/city_D?q={"city_id":999}'
+--let $mrs_client_arg_expected_status=200
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+# OK
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=POST
+--let $mrs_client_arg_path='/svc/sakila/city_D'
+--let $mrs_client_arg_payload=$new_payload2
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+--let $mrs_client_arg_request_type=PUT
+--let $mrs_client_arg_path='/svc/sakila/city_D/55'
+--let $mrs_client_arg_payload=$payload1
+--let $mrs_client_arg_expected_status=403
+--let $mrs_client_arg_session_file=$MYSQL_TMP_DIR/deleter_session.dat
+--source ../include/mrs/mrs_client.inc
+
+
+
+# Cleanup
+--remove_file $MYSQL_TMP_DIR/admin_session.dat
+--remove_file $MYSQL_TMP_DIR/updater_session.dat
+--remove_file $MYSQL_TMP_DIR/creater_session.dat
+--remove_file $MYSQL_TMP_DIR/reader_session.dat
+--remove_file $MYSQL_TMP_DIR/deleter_session.dat
+DROP SCHEMA sakila;
+--source ../include/mrs/cleanup.inc

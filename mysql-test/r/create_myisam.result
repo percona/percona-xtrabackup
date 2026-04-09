@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 create table t1 (i int) engine=myisam max_rows=100000000000;
 Warnings:
@@ -38,3 +39,4 @@ ERROR 22007: Incorrect datetime value: '0000-00-00 00:00:00' for column 'c1' at 
 # -- Cleanup.
 SET sql_mode = '';
 DROP TABLE t3;
+include/rpl/set_gtid_mode_on.inc

@@ -1,0 +1,81 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+# Set timeout to 1s
+update mysql_rest_service_metadata.config set data = json_merge_patch(data, '{"sqlQuery":{"timeout":1000}}');
+
+create table basic_schema.sig (a int, b int);
+insert into basic_schema.sig values (1,0), (2,0);
+
+delimiter $$;
+
+create procedure basic_schema.freeze() sql security invoker
+begin
+    set @stop1 = 0;
+    while @stop1 = 0 do
+        select b into @stop1 from basic_schema.sig where a=1;
+    end while;
+end$$
+
+create function basic_schema.freezef() returns int sql security invoker READS SQL DATA
+begin
+    set @stop2 = 0;
+    while @stop2 = 0 do
+        select b into @stop2 from basic_schema.sig where a=2;
+    end while;
+    return 0;
+end$$
+
+delimiter ;$$
+
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/t1
+--let $mrs_add_db_object_options='{"sqlQuery": {"timeout": 500}, "logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=PROCEDURE
+--let $mrs_add_db_object=freeze
+--let $mrs_add_db_object_path=/freeze
+--source ../include/mrs/db_object/add.inc
+
+--let $mrs_add_db_object_type=FUNCTION
+--let $mrs_add_db_object_format=ITEM
+--let $mrs_add_db_object=freezef
+--let $mrs_add_db_object_path=/freezef
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/freeze  --response-type RAW --expected-status 504
+
+update basic_schema.sig set b=1 where a=1;
+
+--exec $MRS_CLIENT_ARGS --path /svc/basic/freezef  --response-type RAW --expected-status 504
+update basic_schema.sig set b=1 where a=2;
+
+# GET /res
+LOCK TABLE basic_schema.table1 WRITE;
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t1  --response-type RAW --expected-status 504
+UNLOCK TABLES;
+
+# GET /res/id
+LOCK TABLE basic_schema.table1 WRITE;
+--exec $MRS_CLIENT_ARGS --path /svc/basic/t1/1  --response-type RAW --expected-status 504
+UNLOCK TABLES;
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

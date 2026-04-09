@@ -1,3 +1,4 @@
+SET GLOBAL explain_json_format_version = 1;
 #
 # Bug#20443863 USE OF WORST_SEEKS IN FIND_BEST_REF() CAN LEAD TO
 #              WRONG QUERY PLAN
@@ -449,3 +450,4 @@ UPDATE mysql.engine_cost
 SET cost_value=DEFAULT;
 FLUSH OPTIMIZER_COSTS;
 DROP TABLE t1, t2;
+SET GLOBAL explain_json_format_version = DEFAULT;

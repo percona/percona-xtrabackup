@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -360,6 +360,68 @@ int find_ref_key(KEY *key, uint key_count, uchar *record, Field *field,
                  uint *key_length, uint *keypart);
 void key_copy(uchar *to_key, const uchar *from_record, const KEY *key_info,
               uint key_length);
+
+enum class copy_status { ok = 0, validation_error = -1, charset_mismatch = -2 };
+
+/**
+  Build a search-key image for foreign-key checks.
+
+  This function materializes the FK key image for a source table record
+  (from_record) using the FK index description from key_info_f and the target
+  table’s FK index description from key_info_t. It enforces FK semantics for
+  trimming, padding, and charset differences, and returns a status describing
+  whether the image is safe and valid to use.
+
+  Details
+  - The produced key image (to_key) follows the key layout expected by
+    handlers:
+      * Optional 1-byte NULL marker (when target key part is nullable)
+      * For variable-length parts: 2-byte length prefix
+      * Payload bytes (either fixed size for fixed parts or computed length)
+  - Text trimming and padding:
+      * Child side (is_child = true): NO_PAD text parts are matched without
+        trailing spaces (InnoDB-compatible behavior).
+      * Parent side (is_child = false): enforce character-boundary logic; do
+        not break multibyte characters when computing lengths.
+  - Charset handling:
+      * If from/to charsets differ on the parent side, return
+        copy_status::charset_mismatch to prevent unsafe cascades.
+      * If they differ on the child side, use the source field’s key image
+        (InnoDB-compatible).
+
+  Parameters
+  @param[out] to_key       Destination buffer where the key image is written.
+  @param[in]  to_key_len   Capacity of the destination buffer in bytes.
+  @param[in]  from_record  Record buffer providing source values.
+  @param[in]  key_info_f   Source table FK index description.
+  @param[in]  key_info_t   Target table FK index description (drives layout).
+  @param[in]  is_child     True when building image for child-side checks
+                           (INSERT/UPDATE on child). False when building image
+                           for parent-side cascade legality checks.
+  @param[out] out_key_len  If non-null, receives the number of bytes written
+                           to to_key on success.
+
+  Return
+  @return copy_status::ok                 Success; out_key_len set to bytes
+  written
+  @return copy_status::validation_error   Incompatible value
+  (length/charset/validation)
+  @return copy_status::charset_mismatch   Parent-side differing charsets;
+  cascade blocked
+
+  Notes
+  - For fixed-to-fixed conversions across charsets, only as many codepoints as
+    fit in the target are converted; remaining space is padded by the target
+    charset’s pad character.
+  - For fixed-to-var and var-to-fixed, text-specific trimming/padding rules are
+    applied to match FK semantics and InnoDB behavior as noted above.
+*/
+copy_status key_copy_fk(uchar *to_key, size_t to_key_len,
+                        const uchar *from_record, const KEY *key_info_f,
+                        const KEY *key_info_t, bool is_child = false,
+                        int *out_key_len = nullptr);
+bool is_any_key_fld_value_null(const uchar *from_record, const KEY *key_info_f);
+
 void key_restore(uchar *to_record, const uchar *from_key, const KEY *key_info,
                  uint key_length);
 bool key_cmp_if_same(const TABLE *table, const uchar *key, uint index,
@@ -367,7 +429,8 @@ bool key_cmp_if_same(const TABLE *table, const uchar *key, uint index,
 void key_unpack(String *to, TABLE *table, KEY *key);
 void field_unpack(String *to, Field *field, uint max_length, bool prefix_key);
 bool is_key_used(TABLE *table, uint idx, const MY_BITMAP *fields);
-int key_cmp(KEY_PART_INFO *key_part, const uchar *key, uint key_length);
+int key_cmp(KEY_PART_INFO *key_part, const uchar *key, uint key_length,
+            bool is_reverse_multi_valued_index_scan);
 int key_cmp2(KEY_PART_INFO *key_part, const uchar *key1, uint key1_length,
              const uchar *key2, uint key2_length);
 int key_rec_cmp(KEY **key_info, uchar *a, uchar *b);

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -43,5 +43,20 @@ class Ndb_internal {
   static void setForceShortRequests(Ndb *, bool val);
   static void set_TC_COMMIT_ACK_immediate(Ndb *, bool flag);
   static int send_dump_state_all(Ndb *, Uint32 *dumpStateCodeArray, Uint32 len);
+
+  enum class log_timestamp_format {
+    default_format,      // may change by NDBAPI version
+    legacy_format,       // 2025-05-15 11:49:29" in system time zone
+    iso8601_utc,         // 2025-05-15T09:49:29.236832Z
+    iso8601_system_time  // 2025-05-15T11:49:29.236832+02:00
+  };
+  /**
+   * set_log_timestamp_format
+   *
+   * Sets the timestamp format that NDBAPI uses for logs and printouts.
+   *
+   * @param format Set timestamp format to use.
+   */
+  static int set_log_timestamp_format(log_timestamp_format format);
 };
 #endif

@@ -91,8 +91,6 @@ SET PERSIST_ONLY innodb_temp_tablespaces_dir = DEFAULT;
 ERROR HY000: Variable 'innodb_temp_tablespaces_dir' is a non persistent read only variable
 SET PERSIST_ONLY innodb_undo_directory = DEFAULT;
 ERROR HY000: Variable 'innodb_undo_directory' is a non persistent read only variable
-SET PERSIST_ONLY innodb_undo_tablespaces = DEFAULT;
-ERROR HY000: Variable 'innodb_undo_tablespaces' is a non persistent variable
 SET PERSIST_ONLY sha256_password_auto_generate_rsa_keys = DEFAULT;
 ERROR HY000: Variable 'sha256_password_auto_generate_rsa_keys' is a non persistent read only variable
 SET PERSIST_ONLY sha256_password_private_key_path = DEFAULT;

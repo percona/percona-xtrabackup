@@ -52,6 +52,9 @@ SELECT digest_text, IF( @the_digest = $compare_digests_pfs_column, 'YES', 'NO' )
 AS digest_is_correct
 FROM performance_schema.events_statements_history
 WHERE sql_text = convert( "$compare_digests_pfs_query" USING utf8mb3 )
+AND NOT (digest_text LIKE "PREPARE %")
+AND NOT (digest_text LIKE "EXECUTE %")
+AND NOT (digest_text LIKE "DEALLOCATE %")
 UNION
 SELECT statement_digest_text( "$compare_digests_pfs_query" ), 'YES'
 FROM (SELECT 1) a1 JOIN (SELECT @ps_protocol) a2;

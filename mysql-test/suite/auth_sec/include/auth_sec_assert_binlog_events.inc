@@ -5,6 +5,7 @@
 # This file always sets $dont_print_pattern to 1
 
 --let $gtid_event= Gtid
+--let $gtid_mode_on = `SELECT @@global.gtid_mode = "ON"`
 if (!$gtid_mode_on)
 {
   --let $gtid_event= Anonymous_Gtid

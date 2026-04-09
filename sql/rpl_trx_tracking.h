@@ -1,5 +1,5 @@
 #ifndef RPL_TRX_TRACKING_INCLUDED
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -185,7 +185,7 @@ class Writeset_trx_dependency_tracker {
 */
 class Transaction_dependency_tracker {
  public:
-  Transaction_dependency_tracker() : m_writeset(25000) {}
+  Transaction_dependency_tracker() : m_writeset(10000000) {}
 
   void get_dependency(THD *thd, bool parallelization_barrier,
                       int64 &sequence_number, int64 &commit_parent);

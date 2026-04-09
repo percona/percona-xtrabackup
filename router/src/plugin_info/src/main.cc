@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -44,7 +44,7 @@
  * @param errmsg error message to display
  * @param with_help true, if "hint for help" shall be displayed
  */
-static void display_error(std::ostream &cerr, const std::string program_name,
+static void display_error(std::ostream &cerr, const std::string &program_name,
                           const std::string &errmsg, bool with_help) {
   cerr << Vt100::foreground(Vt100::Color::Red) << "[ERROR] "
        << Vt100::render(Vt100::Render::ForegroundDefault) << errmsg << "\n";

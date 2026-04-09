@@ -1,4 +1,4 @@
-// Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -786,13 +786,13 @@ struct print {
 
 template <>
 struct print<gis::Cartesian_point> {
-  static void apply(gis::Cartesian_point p) {
+  static void apply(const gis::Cartesian_point &p) {
     std::cout << std::setprecision(20) << p.x() << " , " << p.y() << std::endl;
   }
 };
 template <>
 struct print<gis::Geographic_point> {
-  static void apply(gis::Geographic_point p) {
+  static void apply(const gis::Geographic_point &p) {
     const double to_rad = boost::geometry::math::pi<double>() / 180.0;
     std::cout << std::setprecision(20) << p.x() / to_rad << " , "
               << p.y() / to_rad << std::endl;
@@ -802,9 +802,8 @@ struct print<gis::Geographic_point> {
 template <>
 struct print<gis::Cartesian_linestring> {
   static void apply(gis::Cartesian_linestring g2) {
-    for (std::size_t p = 0; p < g2.size(); p++) {
-      std::cout << std::setprecision(20) << g2[p].x() << "," << g2[p].y()
-                << " ";
+    for (auto &p : g2) {
+      std::cout << std::setprecision(20) << p.x() << "," << p.y() << " ";
     }
     std::cout << std::endl;
   }
@@ -813,9 +812,8 @@ struct print<gis::Cartesian_linestring> {
 template <>
 struct print<gis::Geographic_linestring> {
   static void apply(gis::Geographic_linestring g2) {
-    for (std::size_t p = 0; p < g2.size(); p++) {
-      std::cout << std::setprecision(20) << g2[p].x() << "," << g2[p].y()
-                << " ";
+    for (auto &p : g2) {
+      std::cout << std::setprecision(20) << p.x() << "," << p.y() << " ";
     }
     std::cout << std::endl;
   }
@@ -881,8 +879,8 @@ void check_transform(const dd::Spatial_reference_system_impl &srs1,
   auto g = dynamic_cast<Geometry2 *>(result_g.get());
 
   // Verify result is correct.
-  EXPECT_NEAR(g->x(), g2.x(), 0.000001f);
-  EXPECT_NEAR(g->y(), g2.y(), 0.000001f);
+  EXPECT_NEAR(g->x(), g2.x(), 0.000001F);
+  EXPECT_NEAR(g->y(), g2.y(), 0.000001F);
 
   // for debugging
   // print<Geometry2>::apply(*g);
@@ -896,8 +894,8 @@ void check_transform(const dd::Spatial_reference_system_impl &srs1,
     auto g_inv = dynamic_cast<Geometry1 *>(result_g_inv.get());
 
     // Verify result is correct.
-    EXPECT_NEAR(g_inv->x(), g1.x(), 0.1f);
-    EXPECT_NEAR(g_inv->y(), g1.y(), 0.1f);
+    EXPECT_NEAR(g_inv->x(), g1.x(), 0.1F);
+    EXPECT_NEAR(g_inv->y(), g1.y(), 0.1F);
   }
 }
 
@@ -929,7 +927,7 @@ void check_transform(const dd::String_type &srs1_str,
 }
 
 TEST(TransformTest, GeogcsProjcsCombinations) {
-  gis::Geographic_point gp{0.001, 0.0002};
+  gis::Geographic_point const gp{0.001, 0.0002};
 
   // Point to Point transformations
   // geogcs - geogcs

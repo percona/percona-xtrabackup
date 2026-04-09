@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@
 #include <cassert>
 #include <cerrno>
 #include <climits>
-#include <cstdarg>
+#include <cstdarg>  // IWYU pragma: keep
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -50,7 +50,8 @@ MY_COMPILER_DIAGNOSTIC_PUSH()
 // Suppress warning C4146 unary minus operator applied to unsigned type,
 // result still unsigned
 MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(4146)
-static inline longlong ulonglong_with_sign(bool negative, ulonglong ll) {
+static inline long long ulonglong_with_sign(bool negative,
+                                            unsigned long long ll) {
   return negative ? -ll : ll;
 }
 MY_COMPILER_DIAGNOSTIC_POP()
@@ -653,7 +654,7 @@ size_t my_long10_to_str_8bit(const CHARSET_INFO *cs [[maybe_unused]], char *dst,
   char *p, *e;
   long int new_val;
   unsigned sign = 0;
-  unsigned long int uval = (unsigned long int)val;
+  auto uval = (unsigned long int)val;
 
   e = p = &buffer[sizeof(buffer) - 1];
   *p = 0;
@@ -690,7 +691,7 @@ size_t my_longlong10_to_str_8bit(const CHARSET_INFO *cs [[maybe_unused]],
   char *p, *e;
   long long_val;
   unsigned sign = 0;
-  unsigned long long uval = (unsigned long long)val;
+  auto uval = (unsigned long long)val;
 
   if (radix < 0) {
     if (val < 0) {
@@ -712,15 +713,15 @@ size_t my_longlong10_to_str_8bit(const CHARSET_INFO *cs [[maybe_unused]],
   }
 
   while (uval > (unsigned long long)LONG_MAX) {
-    unsigned long long quo = uval / (unsigned)10;
-    unsigned rem = (unsigned)(uval - quo * (unsigned)10);
+    unsigned long long const quo = uval / (unsigned)10;
+    auto rem = (unsigned)(uval - quo * (unsigned)10);
     *--p = '0' + rem;
     uval = quo;
   }
 
   long_val = (long)uval;
   while (long_val != 0) {
-    long quo = long_val / 10;
+    long const quo = long_val / 10;
     *--p = (char)('0' + (long_val - quo * 10));
     long_val = quo;
   }
@@ -746,8 +747,8 @@ static int my_wildcmp_8bit_impl(const CHARSET_INFO *cs, const char *str,
                                 const char *wildend_arg, int escape, int w_one,
                                 int w_many, int recurse_level) {
   int result = -1; /* Not found, using wildcards */
-  const uint8_t *wildstr = pointer_cast<const uint8_t *>(wildstr_arg);
-  const uint8_t *wildend = pointer_cast<const uint8_t *>(wildend_arg);
+  const auto *wildstr = pointer_cast<const uint8_t *>(wildstr_arg);
+  const auto *wildend = pointer_cast<const uint8_t *>(wildend_arg);
 
   if (my_string_stack_guard && my_string_stack_guard(recurse_level)) return -1;
   while (wildstr != wildend) {
@@ -794,7 +795,7 @@ static int my_wildcmp_8bit_impl(const CHARSET_INFO *cs, const char *str,
         while (str != str_end && (uint8_t)likeconv(cs, *str) != cmp) str++;
         if (str++ == str_end) return (-1);
         {
-          int tmp = my_wildcmp_8bit_impl(
+          int const tmp = my_wildcmp_8bit_impl(
               cs, str, str_end, pointer_cast<const char *>(wildstr),
               wildend_arg, escape, w_one, w_many, recurse_level + 1);
           if (tmp <= 0) return (tmp);
@@ -919,7 +920,7 @@ size_t my_charpos_8bit(const CHARSET_INFO *cs [[maybe_unused]],
 size_t my_well_formed_len_8bit(const CHARSET_INFO *cs [[maybe_unused]],
                                const char *start, const char *end,
                                size_t nchars, int *error) {
-  size_t nbytes = (size_t)(end - start);
+  auto nbytes = (size_t)(end - start);
   *error = 0;
   return std::min(nbytes, nchars);
 }
@@ -942,8 +943,8 @@ bool my_instr_simple(const CHARSET_INFO *cs, const char *b, size_t b_length,
       return true; /* Empty string is always found */
     }
 
-    const uint8_t *str = pointer_cast<const uint8_t *>(b);
-    const uint8_t *search = pointer_cast<const uint8_t *>(s);
+    const auto *str = pointer_cast<const uint8_t *>(b);
+    const auto *search = pointer_cast<const uint8_t *>(s);
     const uint8_t *end =
         pointer_cast<const uint8_t *>(b) + b_length - s_length + 1;
     const uint8_t *search_end = pointer_cast<const uint8_t *>(s) + s_length;
@@ -996,8 +997,8 @@ typedef struct {
 #define PLANE_NUMBER(x) (((x) >> 8) % PLANE_NUM)
 
 static int pcmp(const void *f, const void *s) {
-  const uni_idx *F = (const uni_idx *)f;
-  const uni_idx *S = (const uni_idx *)s;
+  const auto *F = (const uni_idx *)f;
+  const auto *S = (const uni_idx *)s;
   int res;
 
   if (!(res = ((S->nchars) - (F->nchars))))
@@ -1023,8 +1024,8 @@ static bool create_fromuni(CHARSET_INFO *cs, MY_CHARSET_LOADER *loader) {
 
   /* Count number of characters in each plane */
   for (i = 0; i < 0x100; i++) {
-    uint16_t wc = cs->tab_to_uni[i];
-    int pl = PLANE_NUMBER(wc);
+    uint16_t const wc = cs->tab_to_uni[i];
+    int const pl = PLANE_NUMBER(wc);
 
     if (wc || !i) {
       if (!idx[pl].nchars) {
@@ -1056,9 +1057,9 @@ static bool create_fromuni(CHARSET_INFO *cs, MY_CHARSET_LOADER *loader) {
     memset(tab, 0, numchars * sizeof(*idx[i].uidx.tab));
 
     for (ch = 1; ch < PLANE_SIZE; ch++) {
-      uint16_t wc = cs->tab_to_uni[ch];
+      uint16_t const wc = cs->tab_to_uni[ch];
       if (wc >= idx[i].uidx.from && wc <= idx[i].uidx.to && wc) {
-        int ofs = wc - idx[i].uidx.from;
+        int const ofs = wc - idx[i].uidx.from;
         /*
           Character sets like armscii8 may have two code points for
           one character. When converting from UNICODE back to
@@ -1248,14 +1249,12 @@ unsigned long long my_strntoull10rnd_8bit(const CHARSET_INFO *cs
       if (unsigned_flag) {
         *error = ul ? MY_ERRNO_ERANGE : 0;
         return 0;
-      } else {
-        *error = 0;
-        return (unsigned long long)(long long)-(long)ul;
       }
-    } else {
       *error = 0;
-      return (unsigned long long)ul;
+      return (unsigned long long)(long long)-(long)ul;
     }
+    *error = 0;
+    return (unsigned long long)ul;
   }
 
   digits = (int)(str - beg);
@@ -1354,8 +1353,8 @@ exp: /* [ E [ <sign> ] <unsigned integer> ] */
         -shift >= DIGITS_IN_ULONGLONG)
       goto ret_zero; /* Exponent is a big negative number, return 0 */
 
-    uint64_t d = d10[-shift];
-    uint64_t r = ull % d;
+    uint64_t const d = d10[-shift];
+    uint64_t const r = ull % d;
     ull /= d;
     if (r >= d / 2) ull++;
     goto ret_sign;
@@ -1386,14 +1385,13 @@ ret_sign:
       if (ull == static_cast<unsigned long long>(LLONG_MIN))
         return static_cast<unsigned long long>(LLONG_MIN);
       return (unsigned long long)-(long long)ull;
-    } else {
-      if (ull > (unsigned long long)LLONG_MAX) {
-        *error = MY_ERRNO_ERANGE;
-        return (unsigned long long)LLONG_MAX;
-      }
-      *error = 0;
-      return ull;
     }
+    if (ull > (unsigned long long)LLONG_MAX) {
+      *error = MY_ERRNO_ERANGE;
+      return (unsigned long long)LLONG_MAX;
+    }
+    *error = 0;
+    return ull;
   }
 
   /* Unsigned number */
@@ -1420,10 +1418,9 @@ ret_too_big:
   if (unsigned_flag) {
     if (negative) return 0;
     return ULLONG_MAX;
-  } else {
-    if (negative) return LLONG_MIN;
-    return LLONG_MAX;
   }
+  if (negative) return LLONG_MIN;
+  return LLONG_MAX;
 }
 
 /*
@@ -1494,13 +1491,13 @@ size_t my_strxfrm_pad(const CHARSET_INFO *cs, uint8_t *str, uint8_t *frmend,
                       uint8_t *strend, unsigned nweights, unsigned flags) {
   if (nweights && frmend < strend) {
     // PAD SPACE behavior.
-    unsigned fill_length =
+    unsigned const fill_length =
         std::min<unsigned>(strend - frmend, nweights * cs->mbminlen);
     cs->cset->fill(cs, (char *)frmend, fill_length, cs->pad_char);
     frmend += fill_length;
   }
   if ((flags & MY_STRXFRM_PAD_TO_MAXLEN) && frmend < strend) {
-    size_t fill_length = strend - frmend;
+    size_t const fill_length = strend - frmend;
     cs->cset->fill(cs, (char *)frmend, fill_length, cs->pad_char);
     frmend = strend;
   }

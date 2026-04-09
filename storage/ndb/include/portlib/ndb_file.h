@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +42,15 @@
 #else
 #include "Windows.h"
 #endif
+
+#ifndef _WIN32
+static inline int get_last_os_error() { return errno; }
+static inline void set_last_os_error(int err) { errno = err; }
+#else
+static inline int get_last_os_error() { return GetLastError(); }
+static inline void set_last_os_error(int err) { SetLastError(err); }
+#endif
+static inline void clear_last_os_error() { set_last_os_error(0); }
 
 /**
  * ndb_file - portable file abstraction for use in NDBFS and NDB BACKUP
@@ -268,6 +277,7 @@ inline ndb_file::size_t ndb_file::get_direct_io_block_size() const {
 inline int ndb_file::set_block_size_and_alignment(size_t size, size_t align) {
   if (align == 0 || size == 0 || size % align != 0) {
     // size must be a multiple of alignment.
+    clear_last_os_error();
     return -1;
   }
 

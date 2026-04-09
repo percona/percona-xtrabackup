@@ -1,4 +1,4 @@
-// Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -43,8 +43,8 @@ bool symdifference(const dd::Spatial_reference_system *srs, const Geometry *g1,
            (srs && srs->is_geographic() &&
             g1->coordinate_system() == Coordinate_system::kGeographic));
 
-    SymDifference symdifference_func(srs ? srs->semi_major_axis() : 0.0,
-                                     srs ? srs->semi_minor_axis() : 0.0);
+    SymDifference const symdifference_func(srs ? srs->semi_major_axis() : 0.0,
+                                           srs ? srs->semi_minor_axis() : 0.0);
     *result = symdifference_func(g1, g2);
 
     if (result->get()->type() != Geometry_type::kGeometrycollection &&

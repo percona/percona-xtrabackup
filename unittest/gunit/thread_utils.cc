@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,9 @@
 
 #include "unittest/gunit/thread_utils.h"
 
-#include <errno.h>
 #include <gtest/gtest.h>
-#include <stddef.h>
+#include <cerrno>
+#include <cstddef>
 #include <ostream>
 
 #include "gtest/gtest-message.h"
@@ -38,7 +38,7 @@ namespace thread {
 
 namespace {
 extern "C" void *thread_start_routine(void *arg) {
-  Thread *start_arg = (Thread *)arg;
+  auto *start_arg = (Thread *)arg;
   Thread::run_wrapper(start_arg);
   return nullptr;
 }

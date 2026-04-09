@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -39,10 +39,10 @@
 #include <algorithm>
 #include <memory>
 
-#include <errno.h>
 #include <fcntl.h>
 #include <sys/types.h>
-#include <time.h>
+#include <cerrno>
+#include <ctime>
 
 #include "m_string.h"
 #include "my_byteorder.h"
@@ -83,7 +83,7 @@ MI_INFO *test_if_reopen(char *filename) {
   LIST *pos;
 
   for (pos = myisam_open_list; pos; pos = pos->next) {
-    MI_INFO *info = (MI_INFO *)pos->data;
+    auto *info = (MI_INFO *)pos->data;
     MYISAM_SHARE *share = info->s;
     if (!strcmp(share->unique_file_name, filename) && share->last_version)
       return info;
@@ -104,7 +104,7 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
   int lock_error, kfile, open_mode, save_errno, realpath_err;
   uint i, j, len, errpos, head_length, base_pos, offset, info_length, keys,
       key_parts, unique_key_parts, fulltext_keys, uniques;
-  uint internal_table = open_flags & HA_OPEN_INTERNAL_TABLE;
+  uint const internal_table = open_flags & HA_OPEN_INTERNAL_TABLE;
   char name_buff[FN_REFLEN], org_name[FN_REFLEN], index_name[FN_REFLEN],
       data_name[FN_REFLEN];
   uchar *disk_cache, *disk_pos, *end_pos;
@@ -121,7 +121,7 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
   lock_error = 1;
   errpos = 0;
   head_length = sizeof(share_buff.state.header);
-  memset(&info, 0, sizeof(info));
+  memset((void *)&info, 0, sizeof(info));
 
   realpath_err = my_realpath(
       name_buff, fn_format(org_name, name, "", MI_NAME_IEXT, 4), MYF(0));
@@ -180,7 +180,7 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
       goto err;
     }
     if (memcmp((uchar *)share->state.header.file_version,
-               (uchar *)myisam_file_magic, 4)) {
+               (uchar *)myisam_file_magic, 4) != 0) {
       DBUG_PRINT("error", ("Wrong header in %s", name_buff));
       DBUG_DUMP("error_dump", share->state.header.file_version, head_length);
       set_my_errno(HA_ERR_NOT_A_TABLE);
@@ -377,7 +377,7 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
           }
         }
         if (share->keyinfo[i].flag & HA_SPATIAL) {
-          uint sp_segs = SPDIMS * 2;
+          uint const sp_segs = SPDIMS * 2;
           share->keyinfo[i].seg = pos - sp_segs;
           share->keyinfo[i].keysegs--;
         } else if (share->keyinfo[i].flag & HA_FULLTEXT) {
@@ -512,12 +512,10 @@ MI_INFO *mi_open_share(const char *name, MYISAM_SHARE *old_share, int mode,
     mysql_rwlock_init(mi_key_rwlock_MYISAM_SHARE_mmap_lock, &share->mmap_lock);
     if (myisam_concurrent_insert) {
       share->concurrent_insert =
-          ((share->options &
-            (HA_OPTION_READ_ONLY_DATA | HA_OPTION_TMP_TABLE |
-             HA_OPTION_COMPRESS_RECORD | HA_OPTION_TEMP_COMPRESS_RECORD)) ||
-           (open_flags & HA_OPEN_TMP_TABLE) || share->have_rtree)
-              ? false
-              : true;
+          !((share->options &
+             (HA_OPTION_READ_ONLY_DATA | HA_OPTION_TMP_TABLE |
+              HA_OPTION_COMPRESS_RECORD | HA_OPTION_TEMP_COMPRESS_RECORD)) ||
+            (open_flags & HA_OPEN_TMP_TABLE) || share->have_rtree);
       if (share->concurrent_insert) {
         share->lock.get_status = mi_get_status;
         share->lock.copy_status = mi_copy_status;
@@ -693,7 +691,7 @@ uchar *mi_alloc_rec_buff(MI_INFO *info, ulong length, uchar **buf) {
 }
 
 ulonglong mi_safe_mul(ulonglong a, ulonglong b) {
-  ulonglong max_val = ~(ulonglong)0; /* my_off_t is unsigned */
+  ulonglong const max_val = ~(ulonglong)0; /* my_off_t is unsigned */
 
   if (!a || max_val / a < b) return max_val;
   return a * b;
@@ -741,7 +739,6 @@ void mi_setup_functions(MYISAM_SHARE *share) {
   share->file_read = mi_nommap_pread;
   share->file_write = mi_nommap_pwrite;
   if (!(share->options & HA_OPTION_CHECKSUM)) share->calc_checksum = nullptr;
-  return;
 }
 
 static void setup_key_functions(MI_KEYDEF *keyinfo) {
@@ -787,7 +784,6 @@ static void setup_key_functions(MI_KEYDEF *keyinfo) {
     keyinfo->pack_key = _mi_calc_static_key_length;
     keyinfo->store_key = _mi_store_static_key;
   }
-  return;
 }
 
 /*
@@ -850,7 +846,7 @@ uint mi_state_info_write(File file, MI_STATE_INFO *state, uint pWrite) {
   }
   if (pWrite & 2) /* From isamchk */
   {
-    uint key_parts = mi_uint2korr(state->header.key_parts);
+    uint const key_parts = mi_uint2korr(state->header.key_parts);
     mi_int4store(ptr, state->sec_index_changed);
     ptr += 4;
     mi_int4store(ptr, state->sec_index_used);

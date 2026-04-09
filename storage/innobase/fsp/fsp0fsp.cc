@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -69,7 +69,6 @@ double fseg_reserve_pct = FSEG_RESERVE_PCT_DFLT;
 #ifndef UNIV_HOTBACKUP
 
 #include "dd/types/tablespace.h"
-#include "dict0dd.h"
 #include "mysqld.h"
 #include "sql/dd/dictionary.h"
 #include "sql_backup_lock.h"
@@ -273,12 +272,6 @@ bool fsp_is_undo_tablespace(space_id_t space_id) {
   if (space_id >= dict_sys_t::s_min_undo_space_id &&
       space_id <= dict_sys_t::s_max_undo_space_id) {
     return (true);
-  }
-
-  /* If upgrading from 5.7, there may be a list of old-style
-  undo tablespaces.  Search them. */
-  if (trx_sys_undo_spaces != nullptr) {
-    return (trx_sys_undo_spaces->contains(space_id));
   }
 
   return (false);

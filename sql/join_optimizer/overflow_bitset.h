@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,15 +60,18 @@
   set (the default constructor makes them inline and all-zero).
  */
 
-#include <assert.h>
-#include <limits.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
-
 #include <array>
 #include <bit>
+#include <cassert>
+#include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <iterator>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include "my_alloc.h"
 #include "sql/join_optimizer/bit_utils.h"
@@ -101,7 +104,6 @@ class OverflowBitset {
   inline OverflowBitset &operator=(MutableOverflowBitset &&);
 
   bool is_inline() const { return m_bits & 1; }
-  bool empty() { return m_bits == 1; }
 
   size_t capacity() const {
     if (is_inline()) {
@@ -125,6 +127,9 @@ class OverflowBitset {
                                           OverflowBitset b);
   static inline MutableOverflowBitset Xor(MEM_ROOT *mem_root, OverflowBitset a,
                                           OverflowBitset b);
+
+  /// Make a bitset that has no bits set, with the given capacity.
+  static inline OverflowBitset EmptySet(MEM_ROOT *mem_root, size_t capacity);
 
  protected:
   struct Ext {
@@ -160,9 +165,14 @@ class OverflowBitset {
   friend class OverflowBitsetBitsIn;
   friend class MutableOverflowBitset;
 };
+
+// Because OverflowBitset is designed for value semantics, it should be cheap to
+// pass by value, so we want it to be small and trivially copyable.
 static_assert(
     sizeof(OverflowBitset) <= sizeof(uint64_t),
     "OverflowBitset is intended to be as compact as a regular 64-bit set.");
+static_assert(std::is_trivially_copyable_v<OverflowBitset>,
+              "OverflowBitset is intended to be trivally copyable.");
 
 // Private inheritance, so that the only way of converting to OverflowBitset
 // for external callers is by a move-convert.
@@ -310,6 +320,11 @@ inline MutableOverflowBitset OverflowBitset::Xor(MEM_ROOT *mem_root,
   }
 }
 
+inline OverflowBitset OverflowBitset::EmptySet(MEM_ROOT *mem_root,
+                                               size_t capacity) {
+  return MutableOverflowBitset{mem_root, capacity};
+}
+
 // Definitions overloading utility functions in bit_utils.h, making it generally
 // possible to use OverflowBitset as we use regular uint64_t bitsets
 // (e.g. NodeMap).
@@ -350,6 +365,9 @@ class OverflowBitsetBitsIn {
     // end pointer.)
     std::array<const uint64_t *, N> m_next;
     const uint64_t *const m_end;
+    // The number of bits in the words preceding the current word (m_state). The
+    // bit index in the overflow bitset is found by adding m_base to the index
+    // of the bit inside the current word. m_base is always a multiple of 64.
     int m_base;
 
    public:
@@ -373,22 +391,12 @@ class OverflowBitsetBitsIn {
           m_next(begin),
           m_end(end),
           m_base(-64) {
-      while (m_state == 0 && m_next[0] != m_end) {
-        m_state = ReadAndCombine(m_next, m_combine);
-        for (size_t i = 0; i < N; ++i) {
-          ++m_next[i];
-        }
-        m_base += 64;
-      }
+      SkipEmptyWords();
     }
 
     bool operator==(const iterator &other) const {
       assert(m_end == other.m_end);
       return m_state == other.m_state && m_next[0] == other.m_next[0];
-    }
-    bool operator!=(const iterator &other) const {
-      assert(m_end == other.m_end);
-      return m_state != other.m_state || m_next[0] != other.m_next[0];
     }
     size_t operator*() const { return FindLowestBitSet(m_state) + m_base; }
     iterator &operator++() {
@@ -396,14 +404,33 @@ class OverflowBitsetBitsIn {
       assert(m_state != 0);
       m_state = m_state & (m_state - 1);
 
+      // If we've seen the last bit in the current word, move forward to the
+      // next non-empty word.
+      SkipEmptyWords();
+      return *this;
+    }
+
+   private:
+    // Skip past all empty words so that the iterator points into the first
+    // non-empty word.
+    void SkipEmptyWords() {
       while (m_state == 0 && m_next[0] != m_end) {
-        m_state = ReadAndCombine(m_next, m_combine);
+        m_state = ReadAndCombine();
         for (size_t i = 0; i < N; ++i) {
           ++m_next[i];
         }
         m_base += 64;
       }
-      return *this;
+    }
+
+    // Read the next word from each of the bitsets and combine them into a
+    // single word using the Combine functor.
+    uint64_t ReadAndCombine() const {
+      std::array<uint64_t, N> bits;
+      for (size_t i = 0; i < N; ++i) {
+        bits[i] = *m_next[i];
+      }
+      return std::apply(*m_combine, bits);
     }
   };
 
@@ -446,32 +473,19 @@ class OverflowBitsetBitsIn {
   }
 
  private:
-  static inline uint64_t ReadAndCombine(
-      const std::array<const uint64_t *, N> &ptrs, const Combine *combine) {
-    std::array<uint64_t, N> bits;
-    for (size_t i = 0; i < N; ++i) {
-      bits[i] = *ptrs[i];
-    }
-    return std::apply(*combine, bits);
-  }
-
   const std::array<OverflowBitset, N> m_bitsets;
   const Combine m_combine;
 };
 
-struct IdentityCombine {
-  uint64_t operator()(uint64_t x) const { return x; }
-};
+/// Get a container-like interface of an OverflowBitset, to allow passing it to
+/// algorithms that work on iterators.
 inline auto BitsSetIn(OverflowBitset bitset) {
-  return OverflowBitsetBitsIn<1, IdentityCombine>{{bitset}, IdentityCombine()};
+  return OverflowBitsetBitsIn{std::array{bitset}, std::identity{}};
 }
 
-struct AndCombine {
-  uint64_t operator()(uint64_t x, uint64_t y) const { return x & y; }
-};
+/// Get a container-like interface for the bits set in both of the two bitsets.
 inline auto BitsSetInBoth(OverflowBitset bitset_a, OverflowBitset bitset_b) {
-  return OverflowBitsetBitsIn<2, AndCombine>{{bitset_a, bitset_b},
-                                             AndCombine()};
+  return OverflowBitsetBitsIn{std::array{bitset_a, bitset_b}, std::bit_and{}};
 }
 
 bool OverlapsOverflow(OverflowBitset a, OverflowBitset b);
@@ -506,6 +520,7 @@ inline bool Overlaps(const MutableOverflowBitset &a, OverflowBitset b) {
   return Overlaps(static_cast<const OverflowBitset &>(a), b);
 }
 
+/// Is 'a' a subset of 'b'?
 inline bool IsSubset(OverflowBitset a, OverflowBitset b) {
   assert(a.is_inline() == b.is_inline());
   assert(a.capacity() == b.capacity());
@@ -531,16 +546,19 @@ inline bool IsBitSet(int bit_num, const MutableOverflowBitset &x) {
   return IsBitSet(bit_num, static_cast<const OverflowBitset &>(x));
 }
 
+/// Is 'a' a subset of 'b'?
 inline bool IsSubset(OverflowBitset a, const MutableOverflowBitset &b) {
   return IsSubset(a, static_cast<const OverflowBitset &>(b));
 }
 
+/// Is 'a' a subset of 'b'?
 inline bool IsSubset(const MutableOverflowBitset &a,
                      const MutableOverflowBitset &b) {
   return IsSubset(static_cast<const OverflowBitset &>(a),
                   static_cast<const OverflowBitset &>(b));
 }
 
+/// Is 'a' a subset of 'b'?
 inline bool IsSubset(const MutableOverflowBitset &a, OverflowBitset b) {
   return IsSubset(static_cast<const OverflowBitset &>(a), b);
 }
@@ -565,6 +583,7 @@ inline bool IsEmpty(const MutableOverflowBitset &x) {
   return IsEmpty(static_cast<const OverflowBitset &>(x));
 }
 
+/// Find the nuber of bits set in 'x'.
 inline int PopulationCount(OverflowBitset x) {
   if (x.is_inline()) {
     return std::popcount(x.m_bits) - 1;

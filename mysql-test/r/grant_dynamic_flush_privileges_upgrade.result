@@ -23,11 +23,12 @@ GRANTEE	PRIVILEGE_TYPE	IS_GRANTABLE
 # restart:--upgrade=FORCE
 # Restart server with defaults
 # restart:
-# After upgrade, root and test user shall have FLUSH_PRIVILEGES privilege.
+# After upgrade, root and test user should not have FLUSH_PRIVILEGES privilege.
 SELECT GRANTEE, PRIVILEGE_TYPE, IS_GRANTABLE FROM INFORMATION_SCHEMA.USER_PRIVILEGES
 WHERE PRIVILEGE_TYPE LIKE 'FLUSH_PRIVILEGES' ORDER BY 1,2,3;
 GRANTEE	PRIVILEGE_TYPE	IS_GRANTABLE
-'root'@'localhost'	FLUSH_PRIVILEGES	YES
-'test'@'localhost'	FLUSH_PRIVILEGES	NO
 # Cleanup
 DROP USER test@localhost, test_no_reload@localhost;
+GRANT FLUSH_PRIVILEGES ON *.* TO root@localhost WITH GRANT OPTION;
+Warnings:
+Warning	6016	The privilege 'FLUSH_PRIVILEGES' is deprecated.

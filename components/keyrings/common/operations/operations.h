@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -616,6 +616,14 @@ class Keyring_operations {
     /* Remove it from the cache */
     cache_.erase(metadata);
     return false;
+  }
+
+  /**
+    Clear API to clear entire data cache
+  */
+  void clear() {
+    cache_.clear();
+    valid_ = 0;
   }
 
   /**

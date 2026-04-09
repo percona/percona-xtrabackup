@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,8 +41,6 @@
 #include <SignalSender.hpp>
 
 #define MGM_ERROR_MAX_INJECT_SESSION_ONLY 10000
-
-class SetLogLevelOrd;
 
 class Ndb_mgmd_event_service : public EventLoggerBase {
   friend class MgmtSrvr;
@@ -229,7 +227,6 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
   //**************************************************************************
 
   int setEventReportingLevelImpl(int processId, const EventSubscribeReq &ll);
-  int setNodeLogLevelImpl(int processId, const SetLogLevelOrd &ll);
 
   /**
    *   Insert an error in a DB process.
@@ -442,7 +439,6 @@ class MgmtSrvr : private ConfigSubscriber, public trp_client {
   int _logLevelThreadSleep;
   MutexVector<NodeId> m_started_nodes;
   MutexVector<EventSubscribeReq> m_log_level_requests;
-  LogLevel m_nodeLogLevel[MAX_NODES];
   enum ndb_mgm_node_type nodeTypes[MAX_NODES];
   friend class MgmApiSession;
   friend class Ndb_mgmd_event_service;

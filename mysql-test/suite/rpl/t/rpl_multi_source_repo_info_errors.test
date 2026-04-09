@@ -1,6 +1,5 @@
 --source include/have_binlog_format_row.inc
 --source include/rpl/init_source_replica.inc
---source include/have_replica_parallel_workers.inc
 
 --let $save_replica_parallel_workers=`SELECT @@global.replica_parallel_workers`
 

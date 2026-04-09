@@ -1,0 +1,72 @@
+#
+# Verify behavior of an "empty" ALTER on NDB tables:
+#   - ALTER TABLE ... ENGINE=NDB when table already uses NDB
+#   - ALTER TABLE ... FORCE
+#   - ALGORITHM combinations: NONE, INPLACE, COPY, INSTANT
+#
+# Expected outcomes:
+#   +-----------------------------------+--------+
+#   | Combination                       | Result |
+#   +-----------------------------------+--------+
+#   | ALGORITHM=INPLACE, ENGINE         | ERROR  |
+#   | ALGORITHM=COPY, ENGINE            | COPY   |
+#   | ENGINE                            | COPY   |
+#   | ALGORITHM=INPLACE, FORCE          | ERROR  |
+#   | ALGORITHM=COPY, FORCE             | COPY   |
+#   | FORCE                             | COPY   |
+#   | ALGORITHM=INPLACE, ENGINE, FORCE  | ERROR  |
+#   | COPY, ENGINE, FORCE               | COPY   |
+#   | ENGINE, FORCE                     | COPY   |
+#   | ALGORITHM=INSTANT, ENGINE         | ERROR  |
+#   | ALGORITHM=INSTANT, FORCE          | ERROR  |
+#   | ALGORITHM=INSTANT, ENGINE, FORCE  | ERROR  |
+#   +-----------------------------------+--------+
+# Assertions enforced:
+#   - Row count unchanged
+#   - No temporary tables created (performance_schema session counters unchanged)
+#   - No temporary table artifacts in NDB (#sql%) remain
+#   - INPLACE/INSTANT: expected ERROR; id and version unchanged
+#   - Others (NONE/COPY): expected COPY; table id changes
+#
+ALTER TABLE t1 ALGORITHM=INPLACE, ENGINE=NDB /* inplace + engine */;
+ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Detected unsupported change. Try ALGORITHM=COPY.
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ALGORITHM=COPY, ENGINE=NDB /* copy + engine */;
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ENGINE=NDB /* engine only */;
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ALGORITHM=INPLACE, FORCE /* inplace + force */;
+ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Detected unsupported change. Try ALGORITHM=COPY.
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ALGORITHM=COPY, FORCE /* copy + force */;
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 FORCE /* force only */;
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ALGORITHM=INPLACE, ENGINE=NDB, FORCE /* inplace + engine + force */;
+ERROR 0A000: ALGORITHM=INPLACE is not supported. Reason: Detected unsupported change. Try ALGORITHM=COPY.
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ALGORITHM=COPY, ENGINE=NDB, FORCE /* copy + engine + force */;
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ENGINE=NDB, FORCE /* engine + force */;
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ALGORITHM=INSTANT, ENGINE=NDB /* instant + engine */;
+ERROR 0A000: ALGORITHM=INSTANT is not supported. Reason: Detected unsupported change. Try ALGORITHM=COPY/INPLACE.
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ALGORITHM=INSTANT, FORCE /* instant + force */;
+ERROR 0A000: ALGORITHM=INSTANT is not supported. Reason: Detected unsupported change. Try ALGORITHM=COPY/INPLACE.
+Number of tables with temp name in NDB
+0
+ALTER TABLE t1 ALGORITHM=INSTANT, ENGINE=NDB, FORCE /* instant + engine + force */;
+ERROR 0A000: ALGORITHM=INSTANT is not supported. Reason: Detected unsupported change. Try ALGORITHM=COPY/INPLACE.
+Number of tables with temp name in NDB
+0

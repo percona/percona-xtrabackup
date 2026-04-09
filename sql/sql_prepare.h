@@ -1,6 +1,6 @@
 #ifndef SQL_PREPARE_H
 #define SQL_PREPARE_H
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -178,6 +178,9 @@ class Prepared_statement final {
   /// The query string associated with this statement.
   LEX_CSTRING m_query_string{NULL_CSTR};
 
+  /// The query display string associated with this statement.
+  LEX_CSTRING m_display_query_string{NULL_CSTR};
+
   /// Performance Schema interface for a prepared statement.
   PSI_prepared_stmt *m_prepared_stmt{nullptr};
 
@@ -226,11 +229,33 @@ class Prepared_statement final {
   */
   MEM_ROOT m_mem_root;
 
+  /** DIGEST and DIGEST_TEXT of the prepared statement. */
+  sql_digest_storage m_digest{};
+
+  /** Token array used to store DIGEST and DIGEST_TEXT. */
+  unsigned char *m_token_array{nullptr};
+
+  /** Length of m_token_array. */
+  size_t m_token_array_length{0};
+
   bool prepare_query(THD *thd);
 
  public:
-  Prepared_statement(THD *thd_arg);
-  virtual ~Prepared_statement();
+  explicit Prepared_statement(THD *thd_arg);
+  ~Prepared_statement();
+
+  /** Performance schema instrumentation for execute / deallocate. */
+  void psi_instrumentation(THD *thd, uint digest_prefix_token, bool copy);
+
+  void set_display_query_string(const char *display_query_string,
+                                size_t display_query_string_length);
+  void get_display_query_string(const char **display_query_string_ptr,
+                                size_t *display_query_string_length_ptr) const;
+
+  void set_digest(const sql_digest_storage *digest);
+  const sql_digest_storage *get_digest() const {
+    return m_digest.is_empty() ? nullptr : &m_digest;
+  }
 
   bool set_name(const LEX_CSTRING &name);
   const LEX_CSTRING &name() const { return m_name; }

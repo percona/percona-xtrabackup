@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,10 +30,11 @@
   @file mysys/my_malloc.cc
 */
 
-#include <errno.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
+#include <atomic>
+#include <cassert>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
 
 #ifdef _WIN32
 #include "jemalloc_win.h"
@@ -46,12 +47,9 @@
 #include "my_psi_config.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
-#include "mysql/components/services/bits/psi_bits.h"
 #include "mysql/psi/mysql_memory.h"
 #include "mysql/psi/psi_memory.h"
 #include "mysys_err.h"
-
-struct PSI_thread;
 
 #ifdef HAVE_PSI_MEMORY_INTERFACE
 #define USE_MALLOC_WRAPPER

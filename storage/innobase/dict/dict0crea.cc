@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -48,7 +48,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "my_dbug.h"
 
-#include "dict0upgrade.h"
 #include "page0page.h"
 #include "pars0pars.h"
 #include "que0que.h"
@@ -356,13 +355,7 @@ void dict_build_index_def(const dict_table_t *table, /*!< in: table */
   ut_ad((UT_LIST_GET_LEN(table->indexes) > 0) || index->is_clustered());
 
   if (!table->is_intrinsic()) {
-    if (srv_is_upgrade_mode) {
-      index->id = dd_upgrade_indexes_num++;
-      ut_ad(index->id <= dd_get_total_indexes_num());
-    } else {
-      dict_hdr_get_new_id(nullptr, &index->id, nullptr, table, false);
-    }
-
+    dict_hdr_get_new_id(nullptr, &index->id, nullptr, table, false);
   } else {
     /* Index are re-loaded in process of creation using id.
     If same-id is used for all indexes only first index will always

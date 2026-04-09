@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -112,7 +112,7 @@ TEST_F(dns_srv_data_test, zero_weight) {
   data.add(nonzero, 15, 1, 2);
 
   while (!data.pop_next(host, port)) {
-    std::unordered_set<unsigned>::iterator i = s.find(port);
+    auto i = s.find(port);
     ASSERT_TRUE(i != s.end());
     s.erase(i);
   }
@@ -129,7 +129,7 @@ TEST_F(dns_srv_data_test, mixed_weight) {
   data.add(p2, 15, 2, 1);
 
   while (!data.pop_next(host, port)) {
-    std::unordered_set<unsigned>::iterator i = s.find(port);
+    auto i = s.find(port);
     ASSERT_TRUE(i != s.end());
     if (s.size() > 2)
       ASSERT_STREQ(host.c_str(), p1.c_str());

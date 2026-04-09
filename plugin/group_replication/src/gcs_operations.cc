@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,8 +28,17 @@
 
 #include <mysql/components/services/log_builtins.h>
 #include "my_dbug.h"
+#include "plugin/group_replication/include/mysql_gcs_timestamp_provider.h"
 #include "plugin/group_replication/include/plugin.h"
 #include "plugin/group_replication/include/plugin_messages/transaction_message.h"
+
+#ifndef NDEBUG
+// this is for debug builds only and to run a test with the default
+// GCS clock timestamp provider. This is not used in production
+// builds.
+#include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
+std::shared_ptr<Gcs_clock_timestamp_provider> m_test_clock_timestamp_provider;
+#endif
 
 const std::string Gcs_operations::gcs_engine = "xcom";
 
@@ -98,6 +107,14 @@ int Gcs_operations::initialize() {
 
   reqs.provider = gcs_mysql_net_provider;
   reqs.namespace_manager = &native_interface;
+
+  // provides the timestamps for the GCS_DEBUG_TRACE file
+  reqs.clock_timestamp_provider =
+      std::make_shared<Gr_clock_timestamp_provider>();
+  DBUG_EXECUTE_IF("gcs_debugger_inject_default_clock_timestamp_provider", {
+    reqs.clock_timestamp_provider = m_test_clock_timestamp_provider =
+        std::make_shared<Gcs_clock_timestamp_provider>();
+  });
   gcs_interface->setup_runtime_resources(reqs);
 end:
   gcs_operations_lock->unlock();

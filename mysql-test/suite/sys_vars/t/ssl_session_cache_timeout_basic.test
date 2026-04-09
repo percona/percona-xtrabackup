@@ -61,7 +61,7 @@ SET @@GLOBAL.ssl_session_cache_timeout = 0;
 # expect success
 
 --echo # Set value to max
-SET @@GLOBAL.ssl_session_cache_timeout = 84600;
+SET @@GLOBAL.ssl_session_cache_timeout = 86400;
 # expect success
 
 --echo # Set value below min
@@ -69,7 +69,7 @@ SET @@GLOBAL.ssl_session_cache_timeout = -1;
 # expect warning
 
 --echo # Set value above max
-SET @@GLOBAL.ssl_session_cache_timeout = 84600 + 1;
+SET @@GLOBAL.ssl_session_cache_timeout = 86400 + 1;
 # expect warning
 
 --echo # expect to be able to set it with step of 1
@@ -80,3 +80,13 @@ SET @@GLOBAL.ssl_session_cache_timeout = 299;
 
 --echo # Cleanup
 SET @@GLOBAL.ssl_session_cache_timeout = default;
+
+--echo #
+--echo # Bug #37354555: Contribution: Fix incorrect number of seconds in a day (86400, not 84600)
+--echo #
+
+--echo test: must return 24 hrs * 60 min * 60 sec : 86400
+SELECT MAX_VALUE FROM performance_schema.variables_info
+  WHERE VARIABLE_NAME = 'ssl_session_cache_timeout';
+
+--echo # End of 9.3 Tests

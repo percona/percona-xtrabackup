@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -93,9 +93,6 @@ class Reload_keyring : public Alter_instance {
   */
   bool execute() override;
   virtual ~Reload_keyring() override = default;
-
- private:
-  const static size_t s_error_message_length;
 };
 
 #endif /* SQL_ALTER_INSTANCE_INCLUDED */

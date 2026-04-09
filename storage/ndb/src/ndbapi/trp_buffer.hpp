@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -51,7 +51,7 @@ struct TFPage {
   }
 
   static TFPage *ptr(struct iovec p) {
-    UintPtr v = UintPtr(p.iov_base);
+    auto v = UintPtr(p.iov_base);
     v -= offsetof(TFPage, m_data);
     return (TFPage *)v;
   }

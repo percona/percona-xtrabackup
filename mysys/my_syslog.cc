@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,13 +32,12 @@
   @file mysys/my_syslog.cc
 */
 
-#include <stddef.h>
+#include <cassert>
 
-#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_sys.h"
 #include "mysql/my_loglevel.h"
-#include "mysql/strings/m_ctype.h"
+#include "mysql/strings/m_ctype.h"  // IWYU pragma: keep
 #if defined(_WIN32)
 #include <stdio.h>
 
@@ -283,7 +282,7 @@ static int windows_eventlog_create_registry_entry(const char *key) {
 */
 int my_openlog(const char *name, int option, int facility) {
 #ifndef _WIN32
-  int opts = (option & MY_SYSLOG_PIDS) ? LOG_PID : 0;
+  int const opts = (option & MY_SYSLOG_PIDS) ? LOG_PID : 0;
 
   DBUG_TRACE;
   openlog(name, opts | LOG_NDELAY, facility);
@@ -323,7 +322,7 @@ int my_openlog(const char *name, int option, int facility) {
      0 Success
     -1 Error
 */
-int my_closelog(void) {
+int my_closelog() {
   DBUG_TRACE;
 #ifndef _WIN32
   closelog();

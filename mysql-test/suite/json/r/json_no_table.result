@@ -1042,15 +1042,15 @@ cast(cast('10101abcde' as binary) as json)
 "base64:type15:MTAxMDFhYmNkZQ=="
 select cast(ST_GeomFromText('POINT(1 1)') as json);
 cast(ST_GeomFromText('POINT(1 1)') as json)
-{"type": "Point", "coordinates": [1.0, 1.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
 select cast(ST_GeomFromText('LINESTRING(0 0,1 1,2 2)') as json);
 cast(ST_GeomFromText('LINESTRING(0 0,1 1,2 2)') as json)
-{"type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}
 select cast(ST_GeomFromText('POLYGON((0 0,10 0,10 10,0 10,0 0),
                                      (5 5,7 5,7 7,5 7, 5 5))') as json);
 cast(ST_GeomFromText('POLYGON((0 0,10 0,10 10,0 10,0 0),
                                      (5 5,7 5,7 7,5 7, 5 5))') as json)
-{"type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
 select cast(null as json);
 cast(null as json)
 NULL
@@ -2838,10 +2838,10 @@ json_unquote(cast(cast('2015-01-15 23:24:25' as datetime) as json))
 2015-01-15 23:24:25.000000
 select cast(st_geomfromtext('point(1 1)') as json);
 cast(st_geomfromtext('point(1 1)') as json)
-{"type": "Point", "coordinates": [1.0, 1.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
 select json_unquote(cast(st_geomfromtext('point(1 1)') as json));
 json_unquote(cast(st_geomfromtext('point(1 1)') as json))
-{"type": "Point", "coordinates": [1.0, 1.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
 SELECT JSON_UNQUOTE( '"abc"' );
 JSON_UNQUOTE( '"abc"' )
 abc
@@ -4298,3 +4298,20 @@ ERROR 22032: Invalid JSON text in argument 1 to function json_pretty: "The docum
 do cast(json_arrayagg(convert(utc_timestamp() using gb2312)) <=>
 instr(1 , 0xf722a67b) as char);
 ERROR HY000: Cannot convert string '\xF7"\xA6{' from binary to utf8mb3
+#
+# Bug#38033684: Parse JSON numbers in RapidJSON full-precision mode
+#
+SELECT CAST(5e36 AS JSON) AS v1, CAST('5e36' AS JSON) AS v2,
+CAST(5.0000000000000004e36 AS JSON) AS v3,
+CAST('5.0000000000000004e36' AS JSON) AS v4;
+v1	v2	v3	v4
+5e36	5e36	5.0000000000000004e36	5.0000000000000004e36
+#
+# Bug#38549573: coalesce or any_value: Assertion failed:
+#               !current_thd->is_error() && has_value
+#
+DO COALESCE(JSON_SEARCH(JSON_ARRAY('{}', '$[0]', '{}'), 'all',
+JSON_REMOVE('{}','{"a":1}')
+)
+);
+ERROR 42000: Invalid JSON path expression. The error is around character position 1.

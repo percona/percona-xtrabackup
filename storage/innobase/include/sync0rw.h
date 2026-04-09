@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -49,7 +49,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "os0event.h"
 #include "ut0counter.h"
 #endif /* !UNIV_HOTBACKUP */
-#include <atomic>
 #include "ut0mutex.h"
 
 struct rw_lock_t;

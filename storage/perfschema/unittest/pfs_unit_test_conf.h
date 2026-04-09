@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -111,6 +111,10 @@
 
 #ifdef DISABLE_PSI_SERVER_TELEMETRY_LOGS
 #undef DISABLE_PSI_SERVER_TELEMETRY_LOGS
+#endif
+
+#ifdef DISABLE_PSI_METRICS
+#undef DISABLE_PSI_METRICS
 #endif
 
 #endif /* PFS_UNIT_TEST_CONFIG_INCLUDED */

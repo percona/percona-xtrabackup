@@ -2608,13 +2608,13 @@ SELECT * FROM `t1$EX` ORDER BY ndb$count;
 SELECT ndb$op_type, ndb$cft_cause FROM `t1$EX` ORDER BY ndb$op_type, ndb$cft_cause;
 START REPLICA;
 -- Look at Seconday row
-select a,b,sha1(c) from test.t1 where a=1;
-a	b	sha1(c)
-1	1	6d41e1d402596dff36396d1f0f288d17a4b9800a
+select a,b,sha2(c,256) from test.t1 where a=1;
+a	b	sha2(c,256)
+1	1	e102cc048a84ab60402d04294d30bfd8a7d02fbec6dee1288d7025751975286b
 -- Check it's the same on the Secondary
-select a,b,sha1(c) from test.t1 where a=1;
-a	b	sha1(c)
-1	1	6d41e1d402596dff36396d1f0f288d17a4b9800a
+select a,b,sha2(c,256) from test.t1 where a=1;
+a	b	sha2(c,256)
+1	1	e102cc048a84ab60402d04294d30bfd8a7d02fbec6dee1288d7025751975286b
 Test batching of DELETE vs DELETE with following INSERT
 delete from test.t1;
 insert into test.t1 values (1, 1, "Ma Brows");

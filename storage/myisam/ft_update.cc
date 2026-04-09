@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +25,9 @@
 
 /* functions to work with full-text indices */
 
-#include <math.h>
 #include <sys/types.h>
 #include <algorithm>
+#include <cmath>
 
 #include "my_byteorder.h"
 #include "my_dbug.h"
@@ -83,7 +83,7 @@ uint _mi_ft_segiterator(FT_SEG_ITERATOR *ftsi) {
   }
   ftsi->pos = ftsi->rec + ftsi->seg->start;
   if (ftsi->seg->flag & HA_VAR_LENGTH_PART) {
-    uint pack_length = (ftsi->seg->bit_start);
+    uint const pack_length = (ftsi->seg->bit_start);
     ftsi->len = (pack_length == 1 ? (uint)*ftsi->pos : uint2korr(ftsi->pos));
     ftsi->pos += pack_length; /* Skip VARCHAR length */
     return 1;
@@ -125,7 +125,7 @@ FT_WORD *_mi_ft_parserecord(MI_INFO *info, uint keynr, const uchar *record,
   MYSQL_FTPARSER_PARAM *param;
   DBUG_TRACE;
   if (!(param = ftparser_call_initializer(info, keynr, 0))) return nullptr;
-  memset(&ptree, 0, sizeof(ptree));
+  memset((void *)&ptree, 0, sizeof(ptree));
   param->flags = 0;
   if (_mi_ft_parse(&ptree, info, keynr, record, param, mem_root))
     return nullptr;
@@ -270,7 +270,7 @@ uint _ft_make_key(MI_INFO *info, uint keynr, uchar *keybuf, FT_WORD *wptr,
   DBUG_TRACE;
 
   {
-    float weight = (float)((filepos == HA_OFFSET_ERROR) ? 0 : wptr->weight);
+    auto weight = (float)((filepos == HA_OFFSET_ERROR) ? 0 : wptr->weight);
     mi_float4store(buf, weight);
   }
 

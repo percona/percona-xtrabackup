@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,8 +27,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-namespace mysql::containers::buffers {
-namespace grow_calculator::unittest {
+namespace mysql::containers::buffers::grow_calculator::unittest {
 
 using Grow_calculator_t = mysql::containers::buffers::Grow_calculator;
 using Size_t = mysql::containers::buffers::Grow_calculator::Size_t;
@@ -60,5 +59,4 @@ TEST(GrowPolicyTest, BasicGrowPolicyTest) {
   EXPECT_EQ(error, grow_calculator.compute_new_size(0, 1001));
 }
 
-}  // namespace grow_calculator::unittest
-}  // namespace mysql::containers::buffers
+}  // namespace mysql::containers::buffers::grow_calculator::unittest

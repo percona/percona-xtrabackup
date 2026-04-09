@@ -1,25 +1,25 @@
 #
-# Test temptable_use_mmap
+# Test temptable_max_mmap
 #
 
 # Restart the server to clean up any prior allocations
 let $restart_parameters=;
 --source include/restart_mysqld.inc
 
-SELECT @@global.temptable_use_mmap;
+SELECT @@global.temptable_max_mmap;
 
 --error ER_GLOBAL_VARIABLE
-SET @@session.temptable_use_mmap=false;
+SET @@session.temptable_max_mmap=1073741824;
 
---error ER_WRONG_VALUE_FOR_VAR
-SET @@global.temptable_use_mmap=NULL;
+--error ER_WRONG_TYPE_FOR_VAR
+SET @@global.temptable_max_mmap=NONE;
 
---echo # Test with temptable_use_mmap set to false
+--echo # Test with temptable_max_mmap set to 0
 --echo # to stop overflowing temptable to disk
 
-SET @@global.temptable_use_mmap=false;
+SET @@global.temptable_max_mmap=0;
 
-SELECT @@global.temptable_use_mmap;
+SELECT @@global.temptable_max_mmap;
 
 # Ensure there are no existing allocations
 SELECT count_alloc > 0
@@ -59,11 +59,11 @@ WHERE event_name = 'memory/temptable/physical_disk';
 
 DROP TABLE t;
 
---echo # Test with temptable_use_mmap set to true
+--echo # Test with temptable_max_mmap set to nonzero
 --echo # to enable overflowing temptable to disk
 
-SET @@global.temptable_use_mmap = true;
-SELECT @@global.temptable_use_mmap;
+SET @@global.temptable_max_mmap = 1073741824;
+SELECT @@global.temptable_max_mmap;
 
 #
 # Test TempTable overflow to disk
@@ -93,9 +93,9 @@ LIMIT 2;
 -- enable_result_log
 
 SET GLOBAL temptable_max_ram = 1073741824;
-SET GLOBAL temptable_use_mmap = true;
+SET GLOBAL temptable_max_mmap = 0;
 
-SELECT @@global.temptable_use_mmap;
+SELECT @@global.temptable_max_mmap;
 
 # Just make sure some disk pages were allocated, the exact number of bytes
 # and pages is irrelevant for this test.
@@ -154,4 +154,3 @@ DROP TABLE t;
 
 SET GLOBAL temptable_max_ram = 1073741824;
 SET GLOBAL temptable_max_mmap = 1073741824;
-SET GLOBAL temptable_use_mmap = true;

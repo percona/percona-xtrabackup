@@ -1,7 +1,7 @@
 # ==== Purpose ====
 #
 # Verify that Seconds_Behind_Source is calculated correctly on a
-# Multi-threaded Slave when replica_parallel_type = 'LOGICAL_CLOCK'.
+# Multi-threaded replica applier.
 # The test covers these scenarios:
 #
 # 1) With two workers, check if Seconds_Behind_Source is calculated
@@ -16,6 +16,9 @@
 # 3rd worker working on another database.
 
 --source include/rpl/start_replica.inc
+
+--connect (slave2, 127.0.0.1, root, , test, $SLAVE_MYPORT, )
+--connect (slave3, 127.0.0.1, root, , test, $SLAVE_MYPORT, )
 
 ###############################################################################
 # Scenario 1: On slave, two statements are applied in parallel on one database.
@@ -334,3 +337,6 @@ DROP DATABASE second_test;
 
 --source include/rpl/sync_to_replica.inc
 --source include/rpl/stop_replica.inc
+
+--disconnect slave2
+--disconnect slave3

@@ -739,8 +739,28 @@ EXPLAIN ANALYZE FOR CONNECTION 1;
 ERROR 42000: This version of MySQL doesn't yet support 'EXPLAIN ANALYZE FOR CONNECTION'
 EXPLAIN ANALYZE FORMAT=TRADITIONAL SELECT 1;
 ERROR 42000: This version of MySQL doesn't yet support 'EXPLAIN ANALYZE with TRADITIONAL format'
+SET explain_json_format_version = 1;
 EXPLAIN ANALYZE FORMAT=JSON SELECT 1;
 ERROR 0A000: EXPLAIN ANALYZE does not support FORMAT=JSON with explain_json_format_version=1.
+SET explain_json_format_version = DEFAULT;
+EXPLAIN ANALYZE FORMAT=JSON SELECT 1;
+EXPLAIN
+{
+  "query": "/* select#1 */ select 1 AS `1`",
+  "query_plan": {
+    "operation": "Rows fetched before execution",
+    "access_type": "rows_fetched_before_execution",
+    "actual_rows": 1.0,
+    "actual_loops": 1,
+    "estimated_rows": 1.0,
+    "actual_last_row_ms": "elided",
+    "actual_first_row_ms": "elided",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
+  "query_type": "select",
+  "json_schema_version": "2.0"
+}
 EXPLAIN ANALYZE FORMAT=TREE SELECT 1;
 EXPLAIN
 -> Rows fetched before execution  (rows=1) (actual rows=1 loops=1)
@@ -881,11 +901,12 @@ EXPLAIN
 -> Select #2 (subquery in projection; dependent)
     -> Limit: 1 row(s)  (rows=1)
         -> Filter: <if>(outer_field_is_not_null, <is_not_null_test>(d.a), true)  (rows=1)
-            -> Alternative plans for IN subquery: Index lookup unless a IS NULL  (rows=4)
-                -> Covering index lookup on d using <auto_key0> (a = <cache>(t1.a) or NULL)  (rows=4)
-                    -> Materialize  (rows=1)
-                        -> Table scan on t1  (rows=1)
-                -> Table scan on d  (rows=2)
+            -> Filter: <if>(outer_field_is_not_null, ((<cache>(t1.a) = d.a) or (d.a is null)), true)  (rows=1)
+                -> Alternative plans for IN subquery: Index lookup unless a IS NULL  (rows=4)
+                    -> Covering index lookup on d using <auto_key0> (a = <cache>(t1.a) or NULL)  (rows=4)
+                        -> Materialize  (rows=1)
+                            -> Table scan on t1  (rows=1)
+                    -> Table scan on d  (rows=2)
 
 Warnings:
 Warning	1287	Setting user variables within expressions is deprecated and will be removed in a future release. Consider alternatives: 'SET variable=expression, ...', or 'SELECT expression(s) INTO variables(s)'.
@@ -1338,7 +1359,6 @@ INSERT INTO t VALUES(1,2),(2,3);
 ANALYZE TABLE t;
 Table	Op	Msg_type	Msg_text
 test.t	analyze	status	OK
-SET explain_json_format_version = 2;
 EXPLAIN SELECT a FROM t WHERE 4 IN (SELECT b+1 FROM t);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t	NULL	ALL	NULL	NULL	NULL	NULL	2	100.00	Using where; FirstMatch

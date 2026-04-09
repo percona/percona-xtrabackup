@@ -1,0 +1,125 @@
+source include/have_ndb.inc;
+
+create table t1 (
+  pk int primary key, uk int, ok int default 7,
+  v1 vector, v2 vector(5000), v3 vector(446),
+  key(ok), unique key (uk)
+  ) engine ndbcluster;
+create temporary table t2 (
+  ai int auto_increment primary key, pk int, uk int, ok int default 7,
+  v1 vector, v2 vector(5000), v3 vector(446),
+  key(pk), key(ok), key (uk));
+
+let $i = 2000;
+let $s = insert into t1 (pk,uk,v1,v2,v3) values;
+begin;
+while($i){
+  let $s=$s ($i,$i,
+             STRING_TO_VECTOR(CONCAT('[',REPEAT('1$i,',2047),'$i]')),
+             STRING_TO_VECTOR(CONCAT('[',REPEAT('2$i,',4999),'$i]')),
+             STRING_TO_VECTOR(CONCAT('[',REPEAT('3$i,',445),'$i]'))),;
+  dec $i;
+}
+let $s=$s ($i,$i,
+           STRING_TO_VECTOR(CONCAT('[',REPEAT('1$i,',2047),'$i]')),
+           STRING_TO_VECTOR(CONCAT('[',REPEAT('2$i,',4999),'$i]')),
+           STRING_TO_VECTOR(CONCAT('[',REPEAT('3$i,',445),'$i]')));
+disable_query_log;
+--echo # Insert 2001 rows
+eval $s;
+# TODO: NULL rows
+enable_query_log;
+commit;
+analyze table t1;
+
+echo ========== pk ============== ;
+let $query=
+insert into t2(pk,uk,v1,v2,v3)
+select pk, pk, v1, v2, v3 from t1
+  where pk <= 5
+  or pk between 10 and 15
+  or pk >= 20
+  order by pk;
+source explain_eval_query.inc;
+--disable_query_log
+select
+  COUNT(*), COUNT(v1), COUNT(v2), COUNT(v3),
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v1),',',1)) v1,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v2),',',1)) v2,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v3),',',1)) v3
+from t2;
+truncate table t2;
+--enable_query_log
+
+echo ========== pk ============== ;
+let $query=
+insert into t2(pk,uk,v1,v2,v3)
+select pk, pk, v1, v2, v3 from t1
+  where pk in (1,2,3,5,8,13,100)
+  order by pk;
+source explain_eval_query.inc;
+--disable_query_log
+select
+  COUNT(*), COUNT(v1), COUNT(v2), COUNT(v3),
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v1),',',1)) v1,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v2),',',1)) v2,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v3),',',1)) v3
+from t2;
+truncate table t2;
+--enable_query_log
+
+echo ========== uk ============== ;
+let $query=
+insert into t2(pk,uk,v1,v2,v3)
+select pk, pk, v1, v2, v3 from t1
+  where uk <= 5
+  or uk between 10 and 15
+  or uk >= 20
+  order by uk;
+source explain_eval_query.inc;
+--disable_query_log
+select
+  COUNT(*), COUNT(v1), COUNT(v2), COUNT(v3),
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v1),',',1)) v1,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v2),',',1)) v2,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v3),',',1)) v3
+from t2;
+truncate table t2;
+--enable_query_log
+
+echo ========== ok ============== ;
+let $query=
+insert into t2(pk,uk,v1,v2,v3)
+select pk, pk, v1, v2, v3 from t1
+  where ok <= 8
+  or ok between 10 and 15
+  or ok >= 20
+  order by ok;
+source explain_eval_query.inc;
+--disable_query_log
+select
+  COUNT(*), COUNT(v1), COUNT(v2), COUNT(v3),
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v1),',',1)) v1,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v2),',',1)) v2,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v3),',',1)) v3
+from t2;
+truncate table t2;
+--enable_query_log
+
+echo ========== v1 ============== ;
+let $query=
+insert into t2(pk,uk,v1,v2,v3)
+select t1.pk, t1.pk, t1.v1, t1.v2, t1.v3 from t1 join t1 t2
+  where t1.pk=t2.pk AND t1.v1 = t2.v1;
+source explain_eval_query.inc;
+--disable_query_log
+select
+  COUNT(*), COUNT(v1), COUNT(v2), COUNT(v3),
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v1),',',1)) v1,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v2),',',1)) v2,
+  MIN(SUBSTRING_INDEX(VECTOR_TO_STRING(v3),',',1)) v3
+from t2;
+truncate table t2;
+--enable_query_log
+
+drop tables t1,t2;

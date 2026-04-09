@@ -148,6 +148,8 @@ SELECT user, password_expired FROM mysql.user WHERE user='' AND host='localhost'
 user	password_expired
 	Y
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET GLOBAL init_connect="set @a=2;";
 Pattern "\[Warning\] \[.*\] init_connect variable is ignored for user: user1 host: localhost due to expired password." found
 SELECT @a;

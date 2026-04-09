@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,6 +34,7 @@
 #include "mysql/components/services/persistent_dynamic_loader.h"
 #include "mysql/mysql_lex_string.h"
 #include "mysqld_error.h"
+#include "scope_guard.h"
 #include "sql/dd/cache/dictionary_client.h"  // dd::cache::Dictionary_client
 #include "sql/mysqld.h"                      // srv_registry
 #include "sql/resourcegroups/resource_group_mgr.h"  // Resource_group_mgr
@@ -50,19 +51,25 @@
 using manifest::Manifest_reader;
 
 bool Sql_cmd_install_component::execute(THD *thd) {
+  bool ret = true;
   my_service<SERVICE_TYPE(persistent_dynamic_loader)> persisted_loader(
       "persistent_dynamic_loader", srv_registry);
   if (persisted_loader) {
     my_error(ER_COMPONENTS_CANT_ACQUIRE_SERVICE_IMPLEMENTATION, MYF(0),
              "persistent_dynamic_loader");
-    return true;
+    return ret;
   }
 
   if (acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout))
-    return true;
+    return ret;
 
   const Disable_autocommit_guard autocommit_guard(thd);
   const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+
+  auto txn_end_guard = create_scope_guard([&] {
+    ret = end_transaction(thd, ret);  // Release locks taken before drop_event()
+    thd->mdl_context.release_transactional_locks();
+  });
 
   DBUG_EXECUTE_IF("disable_rg_pfs_notifications", {
     auto name = "file://component_test_pfs_notification";
@@ -79,7 +86,7 @@ bool Sql_cmd_install_component::execute(THD *thd) {
   *arg++ = nullptr;  // no program name
 
   for (auto &set : *m_set_exprs) {
-    if (!set.expr->fixed && set.expr->fix_fields(thd, &set.expr)) return true;
+    if (!set.expr->fixed && set.expr->fix_fields(thd, &set.expr)) return ret;
 
     char buff[STRING_BUFFER_USUAL_SIZE];
     String value(buff, sizeof(buff), system_charset_info), *val;
@@ -93,7 +100,7 @@ bool Sql_cmd_install_component::execute(THD *thd) {
       }
       x.append(set.name.name);
       my_error(ER_INSTALL_COMPONENT_SET_NULL_VALUE, MYF(0), x.c_ptr());
-      return true;
+      return ret;
     }
 
     String argument(STRING_WITH_LEN("--"), system_charset_info);
@@ -114,7 +121,7 @@ bool Sql_cmd_install_component::execute(THD *thd) {
     urns[i] = m_urns[i].str;
   }
   if (persisted_loader->load(thd, urns.data(), m_urns.size())) {
-    return (end_transaction(thd, true));
+    return ret;
   }
 
   bool set_var_failed = false;
@@ -160,43 +167,51 @@ bool Sql_cmd_install_component::execute(THD *thd) {
   if (set_var_failed) {
     if (acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout) ||
         acquire_shared_global_read_lock(thd, thd->variables.lock_wait_timeout))
-      return true;
+      return ret;
     if (dynamic_loader_srv->unload(urns.data(), m_urns.size()) ||
         mysql_persistent_dynamic_loader_imp::remove_from_cache(
             urns.data(), urns.size()) != (int)urns.size()) {
       assert(0);
     }
-    return (end_transaction(thd, true));
+    return ret;
   }
 
+  ret = false;
   my_ok(thd);
-  return (end_transaction(thd, false));
+  return ret;
 }
 
 bool Sql_cmd_uninstall_component::execute(THD *thd) {
+  bool ret = true;
   my_service<SERVICE_TYPE(persistent_dynamic_loader)> service_dynamic_loader(
       "persistent_dynamic_loader", srv_registry);
   if (service_dynamic_loader) {
     my_error(ER_COMPONENTS_CANT_ACQUIRE_SERVICE_IMPLEMENTATION, MYF(0),
              "persistent_dynamic_loader");
-    return true;
+    return ret;
   }
 
   if (acquire_shared_backup_lock(thd, thd->variables.lock_wait_timeout))
-    return true;
+    return ret;
 
   const Disable_autocommit_guard autocommit_guard(thd);
   const dd::cache::Dictionary_client::Auto_releaser releaser(thd->dd_client());
+
+  auto txn_end_guard = create_scope_guard([&] {
+    ret = end_transaction(thd, ret);  // Release locks taken before drop_event()
+    thd->mdl_context.release_transactional_locks();
+  });
 
   std::vector<const char *> urns(m_urns.size());
   for (size_t i = 0; i < m_urns.size(); ++i) {
     urns[i] = m_urns[i].str;
   }
   if (service_dynamic_loader->unload(thd, urns.data(), m_urns.size())) {
-    return (end_transaction(thd, true));
+    return ret;
   }
+  ret = false;
   my_ok(thd);
-  return (end_transaction(thd, false));
+  return ret;
 }
 
 Deployed_components::Deployed_components(const std::string program_name,

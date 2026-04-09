@@ -51,6 +51,8 @@ id	sha1(val)
 8	d8ff0788ec90b18f9d51ecad46274e75aaf4b99f
 9	139101d8480a9a68e4e1256ed300aad365725fbc
 10	NULL
+Warnings:
+Warning	1287	'SHA1' is deprecated and will be removed in a future release. Please use SHA2 instead
 select * from t6 order by id;
 id	val
 3	3
@@ -75,6 +77,8 @@ id	sha1(val)
 8	61984ed58e8de9ab388e62b54ced499e7336e82e
 9	ac1bc0da10ddfceab57a04d09524ffde6eb83cf9
 10	NULL
+Warnings:
+Warning	1287	'SHA1' is deprecated and will be removed in a future release. Please use SHA2 instead
 select count(*) from t9;
 count(*)
 7
@@ -144,6 +148,8 @@ id	sha1(val)
 8	d8ff0788ec90b18f9d51ecad46274e75aaf4b99f
 9	139101d8480a9a68e4e1256ed300aad365725fbc
 10	NULL
+Warnings:
+Warning	1287	'SHA1' is deprecated and will be removed in a future release. Please use SHA2 instead
 select * from t6 order by id;
 id	val
 3	3
@@ -168,6 +174,8 @@ id	sha1(val)
 8	f8f5538687ac9a4294a44de553d46dd798524504
 9	ac1bc0da10ddfceab57a04d09524ffde6eb83cf9
 10	NULL
+Warnings:
+Warning	1287	'SHA1' is deprecated and will be removed in a future release. Please use SHA2 instead
 select count(*) from t9;
 count(*)
 7
@@ -204,6 +212,8 @@ id	sha1(val)
 7	c1bd312a4dd67884e66d15671d38c854e99c8021
 8	d8ff0788ec90b18f9d51ecad46274e75aaf4b99f
 9	139101d8480a9a68e4e1256ed300aad365725fbc
+Warnings:
+Warning	1287	'SHA1' is deprecated and will be removed in a future release. Please use SHA2 instead
 select * from t6 order by id;
 id	val
 7	7
@@ -222,6 +232,8 @@ id	sha1(val)
 7	cf47dcc87c1ca726f74a86a4aac57d453703facc
 8	61984ed58e8de9ab388e62b54ced499e7336e82e
 9	ac1bc0da10ddfceab57a04d09524ffde6eb83cf9
+Warnings:
+Warning	1287	'SHA1' is deprecated and will be removed in a future release. Please use SHA2 instead
 select count(*) from t9;
 count(*)
 3
@@ -268,6 +280,8 @@ id	sha1(val)
 7	c1bd312a4dd67884e66d15671d38c854e99c8021
 8	d8ff0788ec90b18f9d51ecad46274e75aaf4b99f
 9	139101d8480a9a68e4e1256ed300aad365725fbc
+Warnings:
+Warning	1287	'SHA1' is deprecated and will be removed in a future release. Please use SHA2 instead
 select * from t6 order by id;
 id	val
 7	7
@@ -286,6 +300,8 @@ id	sha1(val)
 7	cf47dcc87c1ca726f74a86a4aac57d453703facc
 8	f8f5538687ac9a4294a44de553d46dd798524504
 9	ac1bc0da10ddfceab57a04d09524ffde6eb83cf9
+Warnings:
+Warning	1287	'SHA1' is deprecated and will be removed in a future release. Please use SHA2 instead
 select count(*) from t9;
 count(*)
 3

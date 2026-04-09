@@ -1,4 +1,4 @@
-# Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -21,24 +21,24 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
-Next QMGR 950
+Next QMGR 962
 Next NDBCNTR 1030
 Next NDBFS 2002
-Next DBACC 3006
-Next DBTUP 4039
-Next DBLQH 5112
-Next DBDICT 6227
+Next DBACC 3007
+Next DBTUP 4040
+Next DBLQH 5113
+Next DBDICT 6229
 Next DBDIH 7251
-Next DBTC 8124
+Next DBTC 8127
 Next TRPMAN 9007
 Next CMVMI 9993              Note: CMVMI grows downwards
-Next BACKUP 10057
+Next BACKUP 10061
 Next PGMAN 11010
 Next DBTUX 12010
-Next SUMA 13060
+Next SUMA 13063
 Next LGMAN 15002
 Next TSMAN 16002
-Next DBSPJ 17000
+Next DBSPJ 17124
 Next TRIX 18004
 Next DBUTIL 19002
 
@@ -671,7 +671,9 @@ Backup Stuff:
        Can be supplied with DUMP 13003
        Only works if SCAN_NEXTREQ required ( > 1 batch of
        LCP scan results from fragment)
-
+10057: Delay BACKUP_FRAGMENT_REQ in participant node
+10058: In a participant node abort BACKUP_FRAGMENT_REQ by
+       sending execBACKUP_FRAGMENT_REF to master
 11001: Send UTIL_SEQUENCE_REF (in master)
 
 5028:  Crash when receiving LQHKEYREQ (in non-master)
@@ -820,6 +822,7 @@ Dbdict:
 6221 Delay INDEX_STAT_REQ indefinitely
 6222 Delay CREATE_HASH_MAP_REQ indefinitely
 6223 Only send SCHEMA_TRANS_IMPL_REQ to self preparatory to crashing
+6228 Exercise SUB_START_REQ signal handler version compatibility
 
 Dbtup:
 4014 - handleInsert - Out of undo buffer
@@ -866,10 +869,24 @@ SUMA:
 13041: Crash in SUB_CREATE_REQ (no matter)
 13042: Crash in SUB_START_REQ (if m_restart_server_node_id != 0)
 13051: Delay the DROP_TRIG_IMPL_REQ
+13052: Ignore execSUB_GCP_COMPLETE_ACK from subscribers to fill Suma buffers
+       and provoke SUMA out_of_buffer at start_resend (though it is slightly
+       non-standard as the SUB_GCP_COMPLETE_ACKs are 'lost')
 13057: Changing the ndbrequire from checking whether the gci is higher than
        the known gci instead of the next gci
 13058: Delay subscription reporting during node restart + cause API failure
 13059: Delay subscription reporting during node restart
+13060: Ignore execSUB_GCP_COMPLETE_ACK from subscribers and provoke
+       SUMA out_of_buffer during resend_bucket
+13061: Delay resending and provoke SUMA out_of_buffer after takeover
+       but before resending is completed
+13062: Part of 13061. Crash a node before SUB_GCP_COMPLETE_REP is sent to
+       event API, s.t.,  peer node starts resending.
+       Also 13061 and 13062 shows that event-API flushes all
+       incomplete buckets having epochs <= MISSING_DATA-epoch,
+       including the non-sent-epoch at node crash.
+13063: Solely ignore execSUB_GCP_COMPLETE_ACK from subscribers to provoke
+       start_resend
 
 LGMAN:
 -----

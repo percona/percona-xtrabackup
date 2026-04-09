@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -113,11 +113,12 @@ class MetadataServersStateListener
     metadata_cache::MetadataCacheAPI::instance()->remove_state_listener(this);
   }
 
-  void notify_instances_changed(
-      const metadata_cache::ClusterTopology &cluster_topology,
-      const bool md_servers_reachable, const uint64_t view_id) override {
+  void notify_instances_changed(const bool md_servers_reachable,
+                                const uint64_t view_id) override {
     if (!md_servers_reachable) return;
 
+    const auto &cluster_topology =
+        metadata_cache::MetadataCacheAPI::instance()->get_cluster_topology();
     if (cluster_topology.metadata_servers.empty()) {
       // This happens for example when the router could connect to one of the
       // metadata servers but failed to fetch metadata because the connection
@@ -130,10 +131,10 @@ class MetadataServersStateListener
 
     // need to convert from ManagedInstance to uri string
     std::vector<std::string> metadata_servers_str;
-    for (auto &md_server : cluster_topology.metadata_servers) {
+    for (const auto &md_server : cluster_topology.metadata_servers) {
       mysqlrouter::URI uri;
       uri.scheme = "mysql";
-      uri.host = md_server.address();
+      uri.host = md_server.hostname();
       uri.port = md_server.port();
       metadata_servers_str.emplace_back(uri.str());
     }
@@ -231,7 +232,8 @@ static void start(mysql_harness::PluginFuncEnv *env) {
                          config.metadata_servers_addresses, ttl_config,
                          config.ssl_options, target_cluster, session_config,
                          g_router_attributes, config.thread_stack_size,
-                         config.use_gr_notifications, config.get_view_id());
+                         config.use_gr_notifications, config.get_view_id(),
+                         config.close_connection_after_refresh);
 
     // register callback
     md_cache_dynamic_state = std::move(config.metadata_cache_dynamic_state);

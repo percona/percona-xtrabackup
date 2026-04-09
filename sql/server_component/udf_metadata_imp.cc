@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -22,8 +22,8 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include "udf_metadata_imp.h"
-#include <assert.h>
 #include <mysql/components/service_implementation.h>
+#include <cassert>
 
 #include "my_sys.h"
 #include "mysql/strings/m_ctype.h"
@@ -37,8 +37,6 @@ const std::string collation("collation");
 const std::string charset("charset");
 }  // namespace consts
 
-void mysql_comp_udf_extension_init() { return; }
-
 DEFINE_BOOL_METHOD(mysql_udf_metadata_imp::argument_set,
                    (UDF_ARGS * udf_args, const char *extension_type,
                     unsigned int index, void *in_value)) {
@@ -49,7 +47,7 @@ DEFINE_BOOL_METHOD(mysql_udf_metadata_imp::argument_set,
     my_error(ER_DA_UDF_INVALID_ARGUMENT_TO_SET_CHARSET, MYF(0));
     return true;
   }
-  auto *char_set_name = pointer_cast<const char *>(in_value);
+  const auto *char_set_name = pointer_cast<const char *>(in_value);
   auto *x = pointer_cast<Udf_args_extension *>(udf_args->extension);
   if (!my_strcasecmp(system_charset_info, consts::charset.c_str(),
                      extension_type)) {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@ bool udf_func_init(UDF_INIT *, UDF_ARGS *udf_args, char *) {
 
   std::string value = "utf8mb4";
   mysql_service_mysql_udf_metadata->argument_set(udf_args, "charset", 0,
-                                                 &value[0]);
+                                                 value.data());
   return false;
 }
 

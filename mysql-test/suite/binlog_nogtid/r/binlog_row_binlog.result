@@ -12,11 +12,11 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000001	#	Query	#	#	use `test`; CREATE TABLE t1(a INT PRIMARY KEY, data VARCHAR(100)) ENGINE=Innodb
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Delete_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Delete_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 DROP TABLE t1;
 SET binlog_row_image= @saved_binlog_row_image;
@@ -35,11 +35,11 @@ binlog.000001	#	Query	#	#	use `test`; create table t1 (a int) engine=innodb
 binlog.000001	#	Query	#	#	use `test`; create table t2 (a int) engine=innodb
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t2)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 drop table t1,t2;
 reset binary logs and gtids;
@@ -52,205 +52,205 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000001	#	Query	#	#	use `test`; create table t1 (n int) engine=innodb
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Rotate	#	#	binlog.000002;pos=POS
 include/rpl/deprecated/show_binlog_events.inc
@@ -271,11 +271,11 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000001	#	Query	#	#	use `test`; create table t1(n int) engine=innodb
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Query	#	#	use `test`; DROP TABLE `t1` /* generated by server */
 set @bcs = @@binlog_cache_size;
@@ -295,205 +295,205 @@ binlog.000001	#	Query	#	#	use `test`; create table t1 (a int, b char(255)) engin
 binlog.000001	#	Query	#	#	use `test`; flush status
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Rotate	#	#	binlog.000002;pos=POS
 drop table t1;
@@ -515,7 +515,7 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000001	#	Query	#	#	use `test`; create table t1 (a bigint unsigned, b bigint(20) unsigned)
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Query	#	#	use `test`; DROP TABLE `t1` /* generated by server */
 reset binary logs and gtids;
@@ -634,7 +634,7 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 binlog.000001	#	Query	#	#	use `test`; create table t1 (id tinyint auto_increment primary key)
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (test.t1)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Query	#	#	use `test`; DROP TABLE `t1` /* generated by server */
 binlog.000001	#	Query	#	#	use `test`; create table t1 (a int)
@@ -648,15 +648,15 @@ binlog.000001	#	Query	#	#	use `test`; CREATE TABLE IF NOT EXISTS `t3` (
 ) ENGINE=InnoDB
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (mysql.user)
-binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Write_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (mysql.user)
-binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Update_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 binlog.000001	#	Query	#	#	BEGIN
 binlog.000001	#	Table_map	#	#	table_id: # (mysql.user)
-binlog.000001	#	Delete_rows	#	#	table_id: # flags: STMT_END_F
+binlog.000001	#	Delete_rows	#	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 binlog.000001	#	Xid	#	#	COMMIT /* XID */
 drop table t1,t2,t3,tt1;
 reset binary logs and gtids;
@@ -701,7 +701,7 @@ Log_name	Pos	Event_type	Server_id	End_log_pos	Info
 #	#	Query	1	#	use `test`; CREATE TABLE t1 (a INT PRIMARY KEY)
 #	#	Query	1	#	BEGIN
 #	#	Table_map	1	#	table_id: # (test.t1)
-#	#	Write_rows	1	#	table_id: # flags: STMT_END_F
+#	#	Write_rows	1	#	table_id: # flags: STMT_END_F USE_SQL_FOREIGN_KEY_F
 #	#	Xid	1	#	COMMIT /* XID */
 #	#	Query	1	#	BEGIN
 #	#	Table_map	1	#	table_id: # (test.t1)

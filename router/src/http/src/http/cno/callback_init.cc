@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,10 +25,9 @@
 
 #include "http/cno/callback_init.h"
 
-#include <stdio.h>
+#include <cstdio>
 
-namespace http {
-namespace cno {
+namespace http::cno {
 
 CnoInterface *get_cno(void *cb_data) {
   return reinterpret_cast<CnoInterface *>(cb_data);
@@ -93,5 +92,4 @@ void callback_init(cno_connection_t *cno, CnoInterface *icno) {
   cno->cb_code = &g_cno_vtable;
 }
 
-}  // namespace cno
-}  // namespace http
+}  // namespace http::cno

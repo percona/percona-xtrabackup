@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -117,29 +117,28 @@
   I/O finished.
 */
 
+#include <assert.h>
 #include <errno.h>
 #include <stddef.h>
+#include <stdio.h>  // IWYU pragma: keep snprintf
 #include <string.h>
 #include <sys/types.h>
 #include <algorithm>
 #include <bit>
+#include <string_view>
 
 #include "keycache.h"
-#include "my_compiler.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
-#include "my_io.h"
-#include "my_macros.h"
 #include "my_pointer_arithmetic.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
-#include "mysql/my_loglevel.h"
+#include "mysql/my_loglevel.h"  // IWYU pragma: keep
 #include "mysql/psi/mysql_cond.h"
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysys/mysys_priv.h"
 #include "mysys_err.h"
-#include "template_utils.h"
 #include "thr_mutex.h"
 
 #define STRUCT_PTR(TYPE, MEMBER, a) (TYPE *)((char *)(a)-offsetof(TYPE, MEMBER))
@@ -149,6 +148,8 @@
 #define COND_FOR_SAVED 1
 
 typedef mysql_cond_t KEYCACHE_CONDVAR;
+
+struct BLOCK_LINK;
 
 /* descriptor of the page in the key cache block buffer */
 struct KEYCACHE_PAGE {

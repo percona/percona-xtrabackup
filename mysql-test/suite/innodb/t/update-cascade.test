@@ -143,9 +143,9 @@ connection con1;
 set debug_sync='now WAIT_FOR upd_waiting';
 rollback;
 
---echo # The table t1 is updated.
---echo # In t2 delete-mark happened. Retry will happen on t2.
---echo # In t3 yet to be updated.
+--echo # With SQL FK, table t1 is not yet updated. It will be updated after cascade
+--echo # In t2 update happened.
+--echo # In t3 update not yet happened as it is locked. Retry will happen on t3.
 set session transaction isolation level read uncommitted;
 start transaction;
 select f1, right(f2, 20) as p2 from t1;
@@ -213,9 +213,9 @@ connection con1;
 set debug_sync='now WAIT_FOR upd_waiting';
 rollback;
 
---echo # The table t1 is updated.
---echo # In t2 delete-mark happened. Retry will happen on t2.
---echo # In t3 yet to be updated.
+--echo # The table t1 is not yet updated. It will be updated after cascade
+--echo # In t2 update happened.
+--echo # In t3 update not yet happened as it is locked. Retry will happen on t3.
 set session transaction isolation level read uncommitted;
 start transaction;
 --skip_if_hypergraph  # Sees a different intermediate state.

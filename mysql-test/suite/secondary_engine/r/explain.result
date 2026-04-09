@@ -1,3 +1,4 @@
+SET explain_json_format_version = 1;
 #
 # Bug#28556942: ADD USING SECONDARY ENGINE TO EXPLAIN
 #

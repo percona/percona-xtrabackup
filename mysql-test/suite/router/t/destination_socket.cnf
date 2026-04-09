@@ -1,0 +1,4 @@
+!include ../my.cnf
+
+[mysqld.1]
+plugin-load-add=auth_socket.so

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -2761,22 +2761,36 @@ dberr_t dblwr::open() noexcept {
   uint32_t segments_per_file{};
 
   ut_a(dblwr::n_files != 0);
-
-  ib::info(ER_IB_MSG_DBLWR_1324)
-      << "Double write buffer files: " << dblwr::n_files;
-
   ut_a(dblwr::n_pages != 0);
 
-  ib::info(ER_IB_MSG_DBLWR_1323)
-      << "Double write buffer pages per instance: " << dblwr::n_pages;
-
-  if (Double_write::s_n_instances < dblwr::n_files) {
+  if (Double_write::s_n_instances <= dblwr::n_files) {
     segments_per_file = 1;
     Double_write::s_files.resize(Double_write::s_n_instances);
   } else {
     Double_write::s_files.resize(dblwr::n_files);
-    segments_per_file = (Double_write::s_n_instances / dblwr::n_files) + 1;
+    const ulong N = dblwr::n_files;
+    const ulong n_instances = Double_write::s_n_instances;
+
+    /* Calculate minimum number of batch segments in each dblwr file, so that
+    the total number of batch segments across all dblwr files is greater than
+    or equal to the Double_write instances. */
+    segments_per_file = ut::div_ceil(n_instances, N);
+
+    /* Confirm that if there is 1 less segment in each dblwr file, then there
+    is not enough batch segments to service the Double_write instances. */
+    ut_ad(segments_per_file > 1);
+    ut_ad(((segments_per_file - 1) * N) < n_instances);
   }
+
+  ib::info(ER_IB_MSG_DBLWR_1324)
+      << "Double write buffer files: " << Double_write::s_files.size()
+      << ", --innodb-doublewrite-files=" << dblwr::n_files
+      << ", segments_per_file=" << segments_per_file;
+
+  ib::info(ER_IB_MSG_DBLWR_1323)
+      << "Double write buffer pages per instance: " << dblwr::n_pages;
+
+  ut_ad(Double_write::s_n_instances >= Double_write::s_files.size());
 
   dberr_t err{DB_SUCCESS};
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -149,7 +149,7 @@ TEST(sync0rw, rw_lock_reader_thread) {
       mutex_enter(&arr->mutex);
 
       for (size_t j = 0; j < arr->next_free_slot; j++) {
-        sync_cell_t &cell = arr->cells[j];
+        sync_cell_t const &cell = arr->cells[j];
 
         void *latch = cell.latch.mutex;
 
@@ -171,7 +171,7 @@ TEST(sync0rw, rw_lock_reader_thread) {
     EXPECT_EQ(0, fseek(tmp_file, 0, SEEK_SET));
     EXPECT_EQ(len, fread(content.get(), 1, len, tmp_file));
     EXPECT_EQ(0, fclose(tmp_file));
-    std::string cell_print(content.get(), len);
+    std::string const cell_print(content.get(), len);
 
     EXPECT_THAT(cell_print, testing::HasSubstr("number of readers 0, waiters"));
     /* Note that std::to_string(thread_id_to_uint64(thread_id) could be

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -204,6 +204,11 @@ enum enum_sql_command {
   SQLCOM_CREATE_SRS,
   SQLCOM_DROP_SRS,
   SQLCOM_SHOW_PARSE_TREE,
+  SQLCOM_CREATE_LIBRARY,
+  SQLCOM_DROP_LIBRARY,
+  SQLCOM_SHOW_CREATE_LIBRARY,
+  SQLCOM_ALTER_LIBRARY,
+  SQLCOM_SHOW_STATUS_LIBRARY,
   /* This should be the last !!! */
   SQLCOM_END
 };

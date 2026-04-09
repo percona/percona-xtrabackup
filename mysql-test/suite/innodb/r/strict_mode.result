@@ -2,7 +2,7 @@
 # Bug #17852083 PRINT A WARNING WHEN DDL HAS AN ERROR IN
 # INNODB_STRICT_MODE = 1
 #
-call mtr.add_suppression("Cannot add field");
+call mtr.add_suppression("Cannot alter the table .* because the record size will exceed the maximum allowed size for a record .*");
 set innodb_strict_mode = 0;
 create table t1 (id int auto_increment primary key,
 v varchar(32),

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1236,7 +1236,11 @@ Cached_authentication_plugins::Cached_authentication_plugins() {
     if (cached_plugins_names[i].str[0]) {
       cached_plugins[i] = my_plugin_lock_by_name(
           nullptr, cached_plugins_names[i], MYSQL_AUTHENTICATION_PLUGIN);
+      /* It's OK to not find mysql_native */
       if (!cached_plugins[i]) m_valid = false;
+      if (cached_plugins[i] &&
+          plugin_load_option(cached_plugins[i]) != PLUGIN_OFF)
+        enabled_plugins.push_back((cached_plugins_enum)i);
     } else
       cached_plugins[i] = nullptr;
   }
@@ -1583,7 +1587,8 @@ void optimize_plugin_compare_by_pointer(LEX_CSTRING *plugin_name) {
 }
 
 bool auth_plugin_is_built_in(const char *plugin_name) {
-  LEX_CSTRING plugin = {STRING_WITH_LEN(plugin_name)};
+  assert(plugin_name != nullptr);
+  LEX_CSTRING plugin = {plugin_name, strlen(plugin_name)};
   return g_cached_authentication_plugins->auth_plugin_is_built_in(&plugin);
 }
 
@@ -1608,9 +1613,9 @@ static void cannot_proxy_error(THD *thd, const MPVIO_EXT &mpvio,
                                int server_error, int client_error) {
   my_error(client_error, MYF(0), mpvio.auth_info.user_name,
            mpvio.auth_info.host_or_ip, mpvio.auth_info.authenticated_as);
-  query_logger.general_log_print(thd, COM_CONNECT, ER_DEFAULT(client_error),
-                                 mpvio.auth_info.user_name,
-                                 mpvio.auth_info.host_or_ip);
+  query_logger.general_log_print(
+      thd, COM_CONNECT, ER_DEFAULT_NONCONST(client_error),
+      mpvio.auth_info.user_name, mpvio.auth_info.host_or_ip);
   LogErr(INFORMATION_LEVEL, server_error, mpvio.auth_info.user_name,
          mpvio.auth_info.host_or_ip, mpvio.auth_info.authenticated_as);
 }
@@ -1896,7 +1901,7 @@ static bool send_server_handshake_packet(MPVIO_EXT *mpvio, const char *data,
   Authentication method Switch Request Packet
 
   If both server and the client support @ref CLIENT_PLUGIN_AUTH capability,
-  server can send this packet tp ask client to use another authentication method.
+  server can send this packet to ask client to use another authentication method.
 
   <table>
   <caption>Payload</caption>
@@ -2245,7 +2250,11 @@ ACL_USER *decoy_user(const LEX_CSTRING &username, const LEX_CSTRING &hostname,
     } else {
       const int DECIMAL_SHIFT = 1000;
       const int random_number = static_cast<int>(my_rnd(rand) * DECIMAL_SHIFT);
-      uint plugin_num = (uint)(random_number % ((uint)PLUGIN_LAST));
+      uint plugin_inx =
+          (uint)(random_number %
+                 g_cached_authentication_plugins->enabled_plugins.size());
+      uint plugin_num =
+          (uint)g_cached_authentication_plugins->enabled_plugins[plugin_inx];
       user->plugin =
           Cached_authentication_plugins::cached_plugins_names[plugin_num];
       unknown_accounts->clear_if_greater(MAX_UNKNOWN_ACCOUNTS);
@@ -2965,7 +2974,9 @@ static size_t parse_client_handshake_packet(THD *thd, MPVIO_EXT *mpvio,
   assert(mpvio->status == MPVIO_EXT::FAILURE);
 
   uint charset_code = 0;
-  end = (char *)protocol->get_net()->read_pos;
+
+  NET *net = protocol->get_net();
+  end = (char *)net->read_pos;
   /*
     In order to safely scan a head for '\0' string terminators
     we must keep track of how many bytes remain in the allocated
@@ -2981,6 +2992,8 @@ static size_t parse_client_handshake_packet(THD *thd, MPVIO_EXT *mpvio,
 
   protocol->set_client_capabilities(uint2korr(end));
 
+  bool is_client_proto_41 = protocol->has_client_capability(CLIENT_PROTOCOL_41);
+
   /*
     JConnector only sends server capabilities before starting SSL
     negotiation.  The below code is patch for this.
@@ -2993,7 +3006,7 @@ static size_t parse_client_handshake_packet(THD *thd, MPVIO_EXT *mpvio,
     goto skip_to_ssl;
   }
 
-  if (protocol->has_client_capability(CLIENT_PROTOCOL_41))
+  if (is_client_proto_41)
     packet_has_required_size =
         bytes_remaining_in_packet >= AUTH_PACKET_HEADER_SIZE_PROTO_41;
   else
@@ -3002,7 +3015,7 @@ static size_t parse_client_handshake_packet(THD *thd, MPVIO_EXT *mpvio,
 
   if (!packet_has_required_size) return packet_error;
 
-  if (protocol->has_client_capability(CLIENT_PROTOCOL_41)) {
+  if (is_client_proto_41) {
     protocol->set_client_capabilities(uint4korr(end));
     mpvio->max_client_packet_length = uint4korr(end + 4);
     charset_code = (uint)(uchar) * (end + 8);
@@ -3027,6 +3040,8 @@ skip_to_ssl:
   DBUG_PRINT("info",
              ("client capabilities: %lu", protocol->get_client_capabilities()));
 
+  is_client_proto_41 = protocol->has_client_capability(CLIENT_PROTOCOL_41);
+
   /*
     If client requested SSL then we must stop parsing, try to switch to SSL,
     and wait for the client to send a new handshake packet.
@@ -3040,18 +3055,14 @@ skip_to_ssl:
       We need to make sure that reference count for
       SSL context is kept till the end of function
     */
-    std::unique_ptr<Lock_and_access_ssl_acceptor_context> context;
-    if (thd->is_admin_connection() && g_admin_ssl_configured == true)
-      context =
-          std::make_unique<Lock_and_access_ssl_acceptor_context>(mysql_admin);
-    else
-      context =
-          std::make_unique<Lock_and_access_ssl_acceptor_context>(mysql_main);
+    const bool admin_ctx = thd->is_admin_connection() && g_admin_ssl_configured;
+    Lock_and_access_ssl_acceptor_context context(admin_ctx ? mysql_admin
+                                                           : mysql_main);
+
     /* Do the SSL layering. */
-    if (!context.get()->have_ssl()) return packet_error;
+    if (!context.have_ssl()) return packet_error;
     DBUG_PRINT("info", ("IO layer change in progress..."));
-    if (sslaccept(*(context.get()), protocol->get_vio(),
-                  protocol->get_net()->read_timeout, &errptr)) {
+    if (sslaccept(context, protocol->get_vio(), net->read_timeout, &errptr)) {
       DBUG_PRINT("error", ("Failed to accept new SSL connection"));
       return packet_error;
     }
@@ -3078,20 +3089,17 @@ skip_to_ssl:
       packet but because of legacy reasons we chose not to parse the packet
       fields a second time and instead only assert the length of the packet.
     */
-    if (protocol->has_client_capability(CLIENT_PROTOCOL_41)) {
+    if (is_client_proto_41) {
       packet_has_required_size =
           bytes_remaining_in_packet >= AUTH_PACKET_HEADER_SIZE_PROTO_41;
-      ssl_charset_code =
-          (uint)(uchar) * ((char *)protocol->get_net()->read_pos + 8);
+      ssl_charset_code = (uint)(uchar) * ((char *)net->read_pos + 8);
       DBUG_PRINT("info", ("client_character_set: %u", ssl_charset_code));
-      end = (char *)protocol->get_net()->read_pos +
-            AUTH_PACKET_HEADER_SIZE_PROTO_41;
+      end = (char *)net->read_pos + AUTH_PACKET_HEADER_SIZE_PROTO_41;
       bytes_remaining_in_packet -= AUTH_PACKET_HEADER_SIZE_PROTO_41;
     } else {
       packet_has_required_size =
           bytes_remaining_in_packet >= AUTH_PACKET_HEADER_SIZE_PROTO_40;
-      end = (char *)protocol->get_net()->read_pos +
-            AUTH_PACKET_HEADER_SIZE_PROTO_40;
+      end = (char *)net->read_pos + AUTH_PACKET_HEADER_SIZE_PROTO_40;
       bytes_remaining_in_packet -= AUTH_PACKET_HEADER_SIZE_PROTO_40;
       /**
         Old clients didn't have their own charset. Instead the assumption
@@ -3110,7 +3118,7 @@ skip_to_ssl:
 
   if ((protocol->has_client_capability(CLIENT_TRANSACTIONS)) &&
       opt_using_transactions)
-    protocol->get_net()->return_status = mpvio->server_status;
+    net->return_status = mpvio->server_status;
 
   /*
     The 4.0 and 4.1 versions of the protocol differ on how strings
@@ -3118,12 +3126,8 @@ skip_to_ssl:
     of the packet, the string is not null terminated. Do not assume
     that the returned string is always null terminated.
   */
-  get_proto_string_func_t get_string;
-
-  if (protocol->has_client_capability(CLIENT_PROTOCOL_41))
-    get_string = get_41_protocol_string;
-  else
-    get_string = get_40_protocol_string;
+  const get_proto_string_func_t get_string =
+      is_client_proto_41 ? get_41_protocol_string : get_40_protocol_string;
 
   /*
     When the ability to change default plugin require that the initial password
@@ -3145,8 +3149,7 @@ skip_to_ssl:
     we must keep track of how many bytes remain in the allocated
     buffer or we might read past the end of the buffer.
   */
-  bytes_remaining_in_packet =
-      pkt_len - (end - (char *)protocol->get_net()->read_pos);
+  bytes_remaining_in_packet = pkt_len - (end - (char *)net->read_pos);
 
   size_t user_len;
   char *user = get_string(&end, &bytes_remaining_in_packet, &user_len);
@@ -3227,7 +3230,7 @@ skip_to_ssl:
       read_client_connect_attrs(thd, &end, &bytes_remaining_in_packet, mpvio))
     return packet_error;
 
-  NET_SERVER *ext = static_cast<NET_SERVER *>(protocol->get_net()->extension);
+  auto *ext = static_cast<NET_SERVER *>(net->extension);
   struct compression_attributes *compression = &(ext->compression);
   const bool is_client_supports_zlib =
       protocol->has_client_capability(CLIENT_COMPRESS);
@@ -3325,7 +3328,7 @@ skip_to_ssl:
 
     mpvio->protocol->read_packet();
     passwd_len = protocol->get_packet_length();
-    passwd = (char *)protocol->get_net()->read_pos;
+    passwd = (char *)net->read_pos;
   }
 
   *buff = (uchar *)passwd;
@@ -3511,7 +3514,8 @@ static int server_mpvio_read_packet(MYSQL_PLUGIN_VIO *param, uchar **buf) {
   }
 
   DBUG_EXECUTE_IF("simulate_packet_error", pkt_len = packet_error;);
-  if (pkt_len == packet_error) goto err;
+  if (pkt_len == packet_error) [[unlikely]]
+    goto err;
 
   mpvio->packets_read++;
 
@@ -3521,7 +3525,8 @@ static int server_mpvio_read_packet(MYSQL_PLUGIN_VIO *param, uchar **buf) {
   */
   if (mpvio->packets_read == 1) {
     pkt_len = parse_client_handshake_packet(current_thd, mpvio, buf, pkt_len);
-    if (pkt_len == packet_error) goto err;
+    if (pkt_len == packet_error) [[unlikely]]
+      goto err;
   } else
     *buf = protocol->get_net()->read_pos;
 
@@ -3770,8 +3775,7 @@ static void server_mpvio_initialize(THD *thd, MPVIO_EXT *mpvio,
 
 static void server_mpvio_update_thd(THD *thd, MPVIO_EXT *mpvio) {
   thd->max_client_packet_length = mpvio->max_client_packet_length;
-  if (mpvio->protocol->has_client_capability(CLIENT_INTERACTIVE))
-    thd->variables.net_wait_timeout = thd->variables.net_interactive_timeout;
+  thd->set_protocol_dependent_variables(mpvio->protocol);
   thd->security_context()->assign_user(
       mpvio->auth_info.user_name,
       (mpvio->auth_info.user_name ? strlen(mpvio->auth_info.user_name) : 0));
@@ -3782,8 +3786,6 @@ static void server_mpvio_update_thd(THD *thd, MPVIO_EXT *mpvio) {
   const LEX_CSTRING sctx_user = thd->security_context()->user();
   mpvio->auth_info.user_name = const_cast<char *>(sctx_user.str);
   mpvio->auth_info.user_name_length = sctx_user.length;
-  if (thd->get_protocol()->has_client_capability(CLIENT_IGNORE_SPACE))
-    thd->variables.sql_mode |= MODE_IGNORE_SPACE;
 }
 
 /**
@@ -3971,7 +3973,7 @@ static void check_and_update_password_lock_state(MPVIO_EXT &mpvio, THD *thd,
              mpvio.acl_user->user ? mpvio.acl_user->user : "",
              mpvio.auth_info.host_or_ip ? mpvio.auth_info.host_or_ip : "",
              str_blocked_for_days, str_days_remaining, failed_logins);
-      res = CR_ERROR;
+      res = CR_AUTH_TEMPORARY_ACCOUNT_LOCKED_ERROR;
     } else
       acl_cache_lock.unlock();
   }
@@ -3985,14 +3987,12 @@ static void check_and_update_password_lock_state(MPVIO_EXT &mpvio, THD *thd,
 */
 void send_server_offline_mode_error() {
   ulonglong timestamp_usec = 0;
-  char set_user[USERNAME_CHAR_LENGTH + 1] = "";
 
   // safe sysvar data access
   const System_variable_tracker var_tracker =
       System_variable_tracker::make_tracker({}, "offline_mode");
   auto f = [&](const System_variable_tracker &, sys_var *var) -> int {
     timestamp_usec = var->get_timestamp();
-    memcpy(set_user, var->get_user(), sizeof(set_user));
     return 0;
   };
   int ret = var_tracker
@@ -4018,14 +4018,6 @@ void send_server_offline_mode_error() {
   get_global_variable_attribute(nullptr, "offline_mode", "reason", value);
   if (!value.empty()) {
     my_error(ER_SERVER_OFFLINE_MODE_REASON, MYF(0), set_time, value.c_str());
-    return;
-  }
-
-  // else, if both SET_TIME and SET_USER are not empty:
-  // "The server is currently in offline mode since $SET_TIME, set by user
-  // $SET_USER"
-  if (set_user[0] != '\0') {
-    my_error(ER_SERVER_OFFLINE_MODE_USER, MYF(0), set_time, set_user);
     return;
   }
 
@@ -4188,6 +4180,12 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         case CR_AUTH_USER_CREDENTIALS:
           errors.m_authentication = 1;
           break;
+        case CR_AUTH_ACCOUNT_LOCKED_ERROR:
+          errors.m_account_locked = 1;
+          break;
+        case CR_AUTH_TEMPORARY_ACCOUNT_LOCKED_ERROR:
+          errors.m_temporary_account_locked = 1;
+          break;
         case CR_ERROR:
         default:
           /* Unknown of unspecified auth plugin error. */
@@ -4281,6 +4279,9 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         if (opt_always_activate_granted_roles) {
           activate_all_granted_and_mandatory_roles(acl_user, sctx);
         } else {
+          if (opt_activate_mandatory_roles) {
+            activate_all_mandatory_roles(sctx);
+          }
           /* The server policy is to only activate default roles */
           get_default_roles(authid, default_roles);
           List_of_auth_id_refs::iterator it = default_roles.begin();
@@ -4325,6 +4326,9 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         Check whether the account has been locked.
       */
       if (unlikely(mpvio.acl_user->account_locked)) {
+        Host_errors errors;
+        errors.m_account_locked = 1;
+        inc_host_errors(mpvio.ip, &errors);
         locked_account_connection_count++;
 
         my_error(ER_ACCOUNT_HAS_BEEN_LOCKED, MYF(0), mpvio.acl_user->user,
@@ -4456,13 +4460,6 @@ int acl_authenticate(THD *thd, enum_server_command command) {
       thd->get_stmt_da()->disable_status();
     else
       my_ok(thd);
-#ifdef HAVE_PSI_THREAD_INTERFACE
-    LEX_CSTRING main_sctx_user = thd->m_main_security_ctx.user();
-    LEX_CSTRING main_sctx_host_or_ip = thd->m_main_security_ctx.host_or_ip();
-    PSI_THREAD_CALL(set_thread_account)
-    (main_sctx_user.str, main_sctx_user.length, main_sctx_host_or_ip.str,
-     main_sctx_host_or_ip.length);
-#endif /* HAVE_PSI_THREAD_INTERFACE */
 
     /*
       Turn ON the flag in THD iff the user is granted SYSTEM_USER privilege.
@@ -4476,7 +4473,16 @@ int acl_authenticate(THD *thd, enum_server_command command) {
   ret = 0;
 end:
   if (mpvio.restrictions) mpvio.restrictions->~Restrictions();
-  /* Ready to handle queries */
+    /* Ready to handle queries */
+#ifdef HAVE_PSI_THREAD_INTERFACE
+  LEX_CSTRING main_sctx_user = thd->m_main_security_ctx.user();
+  LEX_CSTRING main_sctx_host_or_ip = thd->m_main_security_ctx.host_or_ip();
+  PSI_THREAD_CALL(set_thread_account)
+  (main_sctx_user.str, main_sctx_user.length, main_sctx_host_or_ip.str,
+   main_sctx_host_or_ip.length);
+  PSI_THREAD_CALL(set_thread_command)(thd->get_command());
+  PSI_THREAD_CALL(set_thread_start_time)(thd->query_start_in_secs());
+#endif /* HAVE_PSI_THREAD_INTERFACE */
   return ret;
 }
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "log_client.h"
 
-#include <assert.h>
+#include <cassert>
 
 #include <iostream>
 
@@ -46,11 +46,7 @@ Ldap_logger::Ldap_logger(ldap_log_level log_level)
   m_log_writer = new Ldap_log_writer_error();
 }
 
-Ldap_logger::~Ldap_logger() {
-  if (m_log_writer) {
-    delete m_log_writer;
-  }
-}
+Ldap_logger::~Ldap_logger() { delete m_log_writer; }
 
 const char dbg_prefix[] = "[DBG]";
 const char info_prefix[] = "[Note]";
@@ -89,6 +85,5 @@ Ldap_log_writer_error::Ldap_log_writer_error() = default;
 
 /**
  */
-Ldap_log_writer_error::~Ldap_log_writer_error() = default;
 
 }  // namespace auth_ldap_sasl_client

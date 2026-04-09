@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,6 +31,7 @@
 #include "my_compiler.h"
 #include "my_inttypes.h"
 #include "storage/ndb/include/ndbapi/NdbDictionary.hpp"
+#include "storage/ndb/plugin/ndb_conflict.h"
 
 class Ndb_event_data;
 class NdbEventOperation;
@@ -70,22 +71,36 @@ class Ndb_binlog_client {
   static std::string event_name_for_table(const char *db,
                                           const char *table_name, bool full);
 
+  struct ReplicationInfo {
+    const st_conflict_fn_def *conflict_fn = nullptr;
+    st_conflict_fn_arg conflict_args[MAX_CONFLICT_ARGS];
+    uint conflict_num_args = MAX_CONFLICT_ARGS;
+    uint32 binlog_flags = 0;
+    uint32 binlog_row_slice_count = 0;
+    uint32 binlog_row_slice_id = 0;
+  } m_rpl_info;
+
  public:
   Ndb_binlog_client(class THD *, const char *dbname, const char *tabname);
   ~Ndb_binlog_client();
+
+  [[nodiscard]] const st_conflict_fn_def *get_conflict_fn() const {
+    return m_rpl_info.conflict_fn;
+  }
+  [[nodiscard]] const st_conflict_fn_arg *get_conflict_fn_args() const {
+    return m_rpl_info.conflict_args;
+  }
+  [[nodiscard]] uint get_conflict_fn_num_args() const {
+    return m_rpl_info.conflict_num_args;
+  }
 
   int read_and_apply_replication_info(Ndb *ndb, NDB_SHARE *share,
                                       const NdbDictionary::Table *ndbtab,
                                       uint server_id);
   int apply_replication_info(Ndb *ndb, NDB_SHARE *share,
-                             const NdbDictionary::Table *ndbtab,
-                             const st_conflict_fn_def *conflict_fn,
-                             const st_conflict_fn_arg *args, uint num_args,
-                             uint32 binlog_flags);
+                             const NdbDictionary::Table *ndbtab);
   bool read_replication_info(Ndb *ndb, const char *db, const char *table_name,
-                             uint server_id, uint32 *binlog_flags,
-                             const st_conflict_fn_def **conflict_fn,
-                             struct st_conflict_fn_arg *args, uint *num_args);
+                             uint server_id);
 
   /**
    * @brief table_should_have_event, decide if a NdbEvent should be created
@@ -128,10 +143,11 @@ class Ndb_binlog_client {
                    const NDB_SHARE *share);
 
  private:
-  NdbEventOperation *create_event_op_in_NDB(
-      Ndb *ndb, const NdbDictionary::Table *ndbtab,
-      const std::string &event_name, const Ndb_event_data *event_data,
-      bool skip_setup_datanode_anyvalue_filter);
+  NdbEventOperation *create_event_op_in_NDB(Ndb *ndb,
+                                            const NdbDictionary::Table *ndbtab,
+                                            const std::string &event_name,
+                                            const Ndb_event_data *event_data,
+                                            bool skip_filter);
 
  public:
   int create_event_op(NDB_SHARE *share, const dd::Table *table_def,

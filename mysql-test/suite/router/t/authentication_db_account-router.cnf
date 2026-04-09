@@ -1,0 +1,21 @@
+[DEFAULT]
+
+[logger]
+level=DEBUG
+
+[routing:undertest]
+bind_address=0.0.0.0
+routing_strategy=round-robin
+protocol=classic
+client_ssl_mode=PREFERRED
+server_ssl_mode=PREFERRED
+server_ssl_verify=DISABLED
+
+[http_server]
+
+[mysql_rest_service]
+
+# use account with auth-socket
+wait_for_metadata_schema_access=320
+mysql_user=account1
+mysql_user_data_access=account2

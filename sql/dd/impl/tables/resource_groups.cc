@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,8 +29,7 @@
 
 struct CHARSET_INFO;
 
-namespace dd {
-namespace tables {
+namespace dd::tables {
 
 Resource_groups::Resource_groups() {
   m_target_def.set_table_name("resource_groups");
@@ -58,7 +57,7 @@ Resource_groups::Resource_groups() {
 }
 
 const Resource_groups &Resource_groups::instance() {
-  static Resource_groups *s_instance = new Resource_groups();
+  static auto *s_instance = new Resource_groups();
   return *s_instance;
 }
 
@@ -72,5 +71,4 @@ bool Resource_groups::update_object_key(Global_name_key *key,
   return false;
 }
 
-}  // namespace tables
-}  // namespace dd
+}  // namespace dd::tables

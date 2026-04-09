@@ -1,5 +1,8 @@
 --source include/have_myisam.inc
 --source include/force_myisam_default.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 # Make some data that we can work on:
 
 UPDATE performance_schema.setup_instruments SET enabled = 'YES', timed = 'YES';
@@ -189,4 +192,5 @@ DROP TABLE t_event;
 UPDATE performance_schema.setup_threads SET ENABLED='YES';
 UPDATE performance_schema.threads SET INSTRUMENTED='YES';
 UPDATE performance_schema.setup_instruments SET enabled = 'YES', timed = 'YES';
-
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

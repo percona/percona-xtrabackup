@@ -42,6 +42,10 @@ COMMIT;
 ALTER TABLE t DROP INDEX c;
 CREATE USER 'tuser01'@'localhost' IDENTIFIED BY 'cDJvI9s_Uq';
 FLUSH PRIVILEGES;
+Warnings:
+Level	Warning
+Code	1681
+Message	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT * FROM information_schema.innodb_cmp_per_index;
 ERROR 42000: Access denied; you need (at least one of) the PROCESS privilege(s) for this operation
 DROP USER 'tuser01'@'localhost';

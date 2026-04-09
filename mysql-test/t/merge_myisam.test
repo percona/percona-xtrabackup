@@ -9,6 +9,9 @@
 # presence of many unsafe statements.
 --source include/rpl/deprecated/not_binlog_format_statement.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 # Save the initial number of concurrent sessions.
 --source include/count_sessions.inc
 
@@ -2895,3 +2898,5 @@ DROP TABLES t1, t2, t3, t4;
 # Check that all connections opened by test cases in this file are really
 # gone so execution of other tests won't be affected by their presence.
 --source include/wait_until_count_sessions.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

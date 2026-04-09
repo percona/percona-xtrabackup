@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,7 +54,7 @@ public class TestRunner {
         test.run(result);
         if (result.wasSuccessful() && result.successes.size() > 0) {
             System.out.println("All tests succeeded.");
-        } else if(result.failures.size() > 0) {
+        } else if(result.failures.size() + result.throwables.size() > 0) {
             System.out.println(resultPrinter.toString());
             System.out.println("\nSome tests failed.");
         } else {

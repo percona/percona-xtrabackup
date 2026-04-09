@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -97,11 +97,11 @@ struct st_mysql_client_plugin_TRACE test_trace_plugin = {
     "A plugin for testing protocol tracing infrastructure",
     {0, 1, 0},
     "GPL",
-    NULL,
+    nullptr,
     test_trace::plugin_init,
     test_trace::plugin_deinit,
-    NULL,  // option handling
-    NULL,
+    nullptr,  // option handling
+    nullptr,
     test_trace::trace_start,
     test_trace::trace_stop,
     test_trace::trace_event};
@@ -199,7 +199,7 @@ size_t Logger::header() {
   end = buffer + len;
 
   if (connection_id) {
-    len += snprintf(end, sizeof(buffer) - len, "%03zu: ", connection_id);
+    len += snprintf(end, sizeof(buffer) - len, "%03lu: ", connection_id);
     end = buffer + len;
   }
 
@@ -221,7 +221,7 @@ void Logger::dump(const char *key, const void *data, size_t data_len) {
   const size_t len = header();
   const unsigned char *ptr = static_cast<const unsigned char *>(data);
 
-  end += snprintf(end, sizeof(buffer) - len, "%s: %lu bytes", key, data_len);
+  end += snprintf(end, sizeof(buffer) - len, "%s: %zu bytes", key, data_len);
 
   /*
     Dump max 2 rows with 16 bytes each. The dump format is like this:
@@ -1007,7 +1007,7 @@ int check_event_WAIT_FOR_FIELD_DEF(MYSQL *conn, struct st_trace_data *data,
       const bool new_client =
           (conn->server_capabilities & CLIENT_DEPRECATE_EOF);
       const bool metadata_eof = (data->col_count == 1 && new_client);
-      bool eof_packet =
+      bool const eof_packet =
           (EOF_PACKET(args.pkt) && args.pkt_len < MAX_PACKET_LENGTH);
       if (!eof_packet && !metadata_eof) {
         data->col_count--;
@@ -1217,7 +1217,7 @@ int check_event_WAIT_FOR_PARAM_DEF(MYSQL *conn, struct st_trace_data *data,
       const bool new_client =
           (conn->server_capabilities & CLIENT_DEPRECATE_EOF);
       const bool param_eof = (data->param_count == 1 && new_client);
-      bool eof_packet =
+      bool const eof_packet =
           (EOF_PACKET(args.pkt) && args.pkt_len < 6 && !new_client);
 
       if (!eof_packet && !param_eof) {

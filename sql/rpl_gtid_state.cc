@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -760,6 +760,9 @@ bool Gtid_state::update_gtids_impl_check_skip_gtid_rollback(THD *thd) {
   if (thd->skip_gtid_rollback) {
     DBUG_PRINT("info", ("skipping gtid rollback because "
                         "thd->skip_gtid_rollback is set"));
+    return true;
+  }
+  if (thd->shall_skip_gtid_rollback()) {
     return true;
   }
   return false;

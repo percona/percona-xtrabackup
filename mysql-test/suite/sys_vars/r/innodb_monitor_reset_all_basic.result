@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 set global innodb_monitor_disable = All;
 select name, status from information_schema.innodb_metrics;
 name	status
@@ -684,3 +685,4 @@ icp_match	1
 drop table monitor_test;
 set global innodb_monitor_disable = All;
 set global innodb_monitor_reset_all = all;
+include/rpl/set_gtid_mode_on.inc

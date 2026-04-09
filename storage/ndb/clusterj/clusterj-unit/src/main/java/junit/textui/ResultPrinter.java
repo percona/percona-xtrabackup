@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,7 +73,7 @@ public class ResultPrinter implements TestListener {
      */
     public void addError(Test test, Throwable t) {
         // report status immediately
-        printer.print("ERROR...");
+        printer.print("ERROR... " + t.getMessage());
         // remember details
         messages.append(testNumber);
         messages.append(": ");
@@ -90,7 +90,7 @@ public class ResultPrinter implements TestListener {
      */
     public void addFailure(Test test, AssertionFailedError t) {
         // report status immediately
-        printer.print("FAILURE...");
+        printer.print("FAILURE... " + t.getMessage());
         // remember details
         messages.append(testNumber);
         messages.append(": ");

@@ -1,0 +1,49 @@
+CREATE TABLE `t1` (
+`id` int NOT NULL,
+`val` int NOT NULL,
+PRIMARY KEY (`id`)
+);
+INSERT INTO t1 VALUES (1,1);
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+INSERT INTO t1 SELECT id+(SELECT MAX(id) FROM t1),0 FROM t1;
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+1048576
+UPDATE t1 SET val=id;
+CREATE INDEX by_val ON t1(val);
+# restart: --innodb_redo_log_capacity=8388608 --innodb_buffer_pool_chunk_size=1048576 --innodb_buffer_pool_size=16000000  --innodb-change-buffering=all
+SELECT @@GLOBAL.innodb_buffer_pool_size/1024/16;
+@@GLOBAL.innodb_buffer_pool_size/1024/16
+960.00000000
+SELECT @@GLOBAL.innodb_redo_log_capacity;
+@@GLOBAL.innodb_redo_log_capacity
+8388608
+set global innodb_checkpoint_disabled=1;
+set global debug='+d,syncpoint_srv_master_sleep';
+BEGIN;
+SELECT * FROM t1 LIMIT 1;
+id	val
+1	1
+DELETE t1.* FROM t1 FORCE INDEX(by_val) WHERE val>1 AND val MOD 1000 = 1;
+DELETE FROM t1 WHERE id MOD 10 = 3;;
+SET GLOBAL innodb_monitor_enable="log_lsn%";
+# Kill and restart: --innodb_redo_log_capacity=8388608 --innodb_buffer_pool_chunk_size=1048576 --innodb_buffer_pool_size=64000000  --innodb-change-buffering=all
+DROP TABLE t1;

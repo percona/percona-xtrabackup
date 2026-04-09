@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,7 +29,7 @@
 
 bool printPREPFAILREQREF(FILE *output, const Uint32 *theData, Uint32 len,
                          Uint16 /*receiverBlockNo*/) {
-  const PrepFailReqRef *cc = (const PrepFailReqRef *)theData;
+  const auto *cc = (const PrepFailReqRef *)theData;
 
   fprintf(output, " xxxBlockRef = (%d, %d) failNo = %d noOfNodes = %d\n",
           refToBlock(cc->xxxBlockRef), refToNode(cc->xxxBlockRef), cc->failNo,

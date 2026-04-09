@@ -1,0 +1,321 @@
+######################################################
+# WL#15413 Subscriber row hash filter
+######################################################
+#
+# General tests
+SET @@GLOBAL.ndb_log_row_slice_count = 2;
+ERROR HY000: Variable 'ndb_log_row_slice_count' is a read only variable
+SET @@GLOBAL.ndb_log_row_slice_id = 2;
+ERROR HY000: Variable 'ndb_log_row_slice_id' is a read only variable
+# #######################################################################
+# First scenario:
+#
+# In this test, there are two split groups of binlogged rows: group 0
+# logged by mysqld.1 and mysqld.2, and group 1 logged by mysqld.3 and
+# mysqld.4. (mysqld.1 == mysqld.3 && mysqld.2 == mysqld.4)
+# In the end, the binlogged rows must match what has been written.
+
+# restart:--ndb-log-row-slice-count=2 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=2 --ndb-log-row-slice-id=1
+# restart:--ndb-log-row-slice-count=2 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=2 --ndb-log-row-slice-id=1
+CREATE TABLE t1 (k INT PRIMARY KEY, a VARCHAR(1024), b VARBINARY(2048)) ENGINE = NDB;
+INSERT INTO t1 VALUES (1, 'first', x'6F6464'),
+(2, 'second', x'6576656E'),
+(3, 'first', x'6F6464'),
+(4, 'second', x'6576656E'),
+(5, 'first', x'6F6464'),
+(6, 'second', x'6576656E'),
+(7, 'first', x'6F6464'),
+(8, 'second', x'6576656E'),
+(9, 'first', x'6F6464'),
+(10, 'second', x'6576656E'),
+(11, 'first', x'6F6464'),
+(12, 'second', x'6576656E');
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t1;
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 12/2
+SET @data_volume = 12/2;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t1;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must be equal to 12
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+12
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# #######################################################################
+# Second scenario:
+#
+# In this test, there are three split groups of binlogged rows: group 0
+# logged by mysqld.1, group 1 logged by mysqld.2 and group 2 logged by
+# both mysqld.3 and mysqld.4. (mysqld.3 == mysqld.4)
+# The restored data must match what was written.
+#
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=1
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=2
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=2
+CREATE TABLE t2 (k INT PRIMARY KEY, a VARCHAR(2048), b VARBINARY(4096)) ENGINE = NDB;
+INSERT INTO t2 VALUES (1, 'odd', repeat(x'6F6464',1024)),
+(2, 'even', repeat(x'6576656E',1024)),
+(3, 'odd', repeat(x'6F6464',1024)),
+(4, 'even', repeat(x'6576656E',1024)),
+(5, 'odd', repeat(x'6F6464',1024)),
+(6, 'even', repeat(x'6576656E',1024)),
+(7, 'odd', repeat(x'6F6464',1024)),
+(8, 'even', repeat(x'6576656E',1024)),
+(9, 'odd', repeat(x'6F6464',1024)),
+(10, 'even', repeat(x'6576656E',1024)),
+(11, 'odd', repeat(x'6F6464',1024)),
+(12, 'even', repeat(x'6576656E',1024));
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t2;
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 12/3
+SET @data_volume = 12/3;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 2*(12/3)
+SET @data_volume = 2*(12/3);
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t2;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must be equal to 12.
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+12
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# #######################################################################
+# Third scenario:
+#
+# In this test, there are four split groups of binlogged rows: group 0
+# logged by mysqld.1, group 1 logged by mysqld.2, group 2 logged by
+# mysqld.3 and group 3 logged by mysqld.4.
+# (mysqld.1 != mysqld.2 != mysqlmysqld.3 != mysqld.4)
+# The restored data must match what was written.
+#
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=1
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=2
+# restart:--ndb-log-row-slice-count=4 --ndb-log-row-slice-id=3
+CREATE TABLE t3 (k INT PRIMARY KEY, a VARCHAR(4096), b VARBINARY(8192)) ENGINE = NDB;
+INSERT INTO t3 VALUES (1, 'odd', repeat(x'6F6464',2048)),
+(2, 'even', repeat(x'6576656E',2048)),
+(3, 'odd', repeat(x'6F6464',2048)),
+(4, 'even', repeat(x'6576656E',2048)),
+(5, 'odd', repeat(x'6F6464',2048)),
+(6, 'even', repeat(x'6576656E',2048)),
+(7, 'odd', repeat(x'6F6464',2048)),
+(8, 'even', repeat(x'6576656E',2048)),
+(9, 'odd', repeat(x'6F6464',2048)),
+(10, 'even', repeat(x'6576656E',2048)),
+(11, 'odd', repeat(x'6F6464',2048)),
+(12, 'even', repeat(x'6576656E',2048));
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t3;
+SELECT COUNT(*) FROM t3;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 12/4
+SET @data_volume = 12/4;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -2 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t3;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 2*(12/4)
+SET @data_volume = 2*(12/4);
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t3;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 3*(12/4)
+SET @data_volume = 3*(12/4);
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +2, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t3;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must be equal to 12.
+SELECT COUNT(*) FROM t3;
+COUNT(*)
+12
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# #######################################################################
+# Fourth scenario:
+#
+# This test illustrates the rollout of the row group splitting feature on
+# an existing cluster. The configuration has one mysqld node binlog 100%
+# of the changes, while the rest of mysqld nodes receive only a subset of
+# the rows.
+# (mysqld.1 = 1/1, mysqld.2 = 1/3, mysqld.3 = 1/3, mysqld.4 = 1/3
+# The restored data from mysqld's 2, 3 and 4 must match what is at mysqld.1
+#
+CREATE TABLE t4 (k INT PRIMARY KEY, a VARCHAR(1024), b VARBINARY(4096)) ENGINE = NDB;
+# restart:--ndb-log-row-slice-count=1 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=0
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=1
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=2
+INSERT INTO t4 VALUES (1, 'odd', repeat(x'6F6464',1024)),
+(2, 'even', repeat(x'6576656E',1024)),
+(3, 'odd', repeat(x'6F6464',1024)),
+(4, 'even', repeat(x'6576656E',1024)),
+(5, 'odd', repeat(x'6F6464',1024)),
+(6, 'even', repeat(x'6576656E',1024)),
+(7, 'odd', repeat(x'6F6464',1024)),
+(8, 'even', repeat(x'6576656E',1024)),
+(9, 'odd', repeat(x'6F6464',1024)),
+(10, 'even', repeat(x'6576656E',1024)),
+(11, 'odd', repeat(x'6F6464',1024)),
+(12, 'even', repeat(x'6576656E',1024));
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+SET sql_log_bin = 'OFF';
+DELETE FROM t4;
+SELECT COUNT(*) FROM t4;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# Should be close to 12/3
+SET @data_volume = 12/3;
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t4;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Should be close to 2*(12/3)
+SET @data_volume = 2*(12/3);
+SELECT IF(COUNT(*)-@data_volume BETWEEN -3 AND +3, 'YES', CONCAT('NO - ',COUNT(*))) AS BALANCED FROM t4;
+BALANCED
+YES
+include/rpl/mysqlbinlog.inc
+# Must be equal to 12.
+SELECT COUNT(*) FROM t4;
+COUNT(*)
+12
+# Mysqld.1's binlog must have all data (100%).
+# Delete and restore from it
+DELETE FROM t4;
+SELECT COUNT(*) FROM t4;
+COUNT(*)
+0
+include/rpl/mysqlbinlog.inc
+# All data imported
+SELECT COUNT(*) FROM t4;
+COUNT(*)
+12
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+SET sql_log_bin = 'ON';
+# #######################################################################
+# Fifth scenario:
+#
+# This test uses the same configuration as before, but the created table
+# contains BLOBs. The create table must fail on a server that configures
+# binlog row slices.
+
+# Using mysqld.2 it fails CREATE TABLE
+CREATE TABLE t5 (k INT PRIMARY KEY, b BLOB, t TEXT) ENGINE = NDB;
+ERROR HY000: Can't create table 't5' (use SHOW WARNINGS for more info).
+SHOW WARNINGS;
+Level	Code	Message
+Warning	1815	Failed to create event operation
+Error	1005	Can't create table 't5' (use SHOW WARNINGS for more info).
+# Using mysqld.1 (no binlog row slices) it fails DISTRIBUTION
+CREATE TABLE t5 (k INT PRIMARY KEY, b BLOB, t TEXT) ENGINE = NDB;
+Warnings:
+Warning	1296	Node 12: 'Distribution of CREATE TABLE 't5' failed'
+Warning	1296	Node 13: 'Distribution of CREATE TABLE 't5' failed'
+Warning	1296	Node 14: 'Distribution of CREATE TABLE 't5' failed'
+# #######################################################################
+# Sixth scenario:
+#
+# This tests uses the same configuration as before, but the created table
+# contains a FK/UK relationship. The table is created but there are warnings
+# that the applying of splitted rows will invalidate the constraints
+# enforced on the relation.
+
+# Using mysqld.2 it must log the warning
+CREATE TABLE t6_p (k INT PRIMARY KEY, v VARCHAR(8)) ENGINE = NDB;
+CREATE TABLE t6_c (j INT PRIMARY KEY,
+p_id INT NOT NULL,
+CONSTRAINT p_id_fk FOREIGN KEY(p_id) REFERENCES t6_p(k)) ENGINE = NDB;
+Warnings:
+Warning	1296	Logging row slice for table with Foreign Key or Unique Key. May not contain all modifications to uphold constraints on apply.
+include/assert.inc [Warns that table with Foreign Key will log row slice]
+# Using mysqld.1, a warning is logged only on binlog servers configured for row-slices (e.g. mysqld.2)
+# [connection mysqld.1]
+CREATE TABLE t6_p1 (k INT PRIMARY KEY, v VARCHAR(8)) ENGINE = NDB;
+CREATE TABLE t6_c1 (j INT PRIMARY KEY,
+p_id INT NOT NULL,
+CONSTRAINT p1_id_fk FOREIGN KEY(p_id) REFERENCES t6_p1(k)) ENGINE = NDB;
+include/assert.inc [Does NOT warn that table with Foreign Key will log row slice]
+# [connection mysqld.2]
+include/assert.inc [Warns that table with Foreign Key will log row slice]
+# Restarting binlog on mysqld.2 must log warning for parent tables as well
+# restart:--ndb-log-row-slice-count=3 --ndb-log-row-slice-id=0
+include/assert.inc [Warns that parent and child tables with Foreign Key relation will log row slice]
+# #######################################################################
+# Seventh scenario:
+#
+# This tests uses a table with a Unique Key, so the table is created but
+# there are warnings that the applying of splitted rows will invalidate
+# the constraints.
+
+# Using mysqld.2 it must log the warning
+CREATE TABLE t7 (k INT PRIMARY KEY, j INT NOT NULL, UNIQUE KEY(j)) ENGINE = NDB;
+Warnings:
+Warning	1296	Logging row slice for table with Foreign Key or Unique Key. May not contain all modifications to uphold constraints on apply.
+include/assert.inc [Warns that table with Unique Key will log row slice]
+# Using mysqld.1, a warning is logged only on binlog servers configured for row-slices (e.g. mysqld.2)
+# [connection mysqld.1]
+CREATE TABLE t7_1 (k INT PRIMARY KEY, j INT NOT NULL, UNIQUE KEY(j)) ENGINE = NDB;
+include/assert.inc [Does NOT warn that table with Unique Key will log row slice]
+# [connection mysqld.2]
+include/assert.inc [Warns that table with Unique Key will log row slice]
+# Cleanup
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+DROP TABLE t4;
+DROP TABLE t5;
+DROP TABLE t6_c;
+DROP TABLE t6_p;
+DROP TABLE t6_c1;
+DROP TABLE t6_p1;
+DROP TABLE t7;
+DROP TABLE t7_1;
+# restart:
+# restart:
+# restart:
+# restart:

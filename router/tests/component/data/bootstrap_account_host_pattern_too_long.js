@@ -4,6 +4,9 @@ var options = {
   cluster_type: "gr",
   gr_id: mysqld.global.gr_id,
   router_version: mysqld.global.router_version,
+  innodb_cluster_name: "my-cluster",
+  innodb_cluster_instances:
+      [["localhost", 5500], ["localhost", 5510], ["localhost", 5520]],
 };
 
 var common_responses = common_stmts.prepare_statement_responses(

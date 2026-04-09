@@ -1,6 +1,7 @@
 SET @saved_binlog_format= @@SESSION.binlog_format;
 Warnings:
 Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t_34455;
 create table t_34455 (
 a int not null,
@@ -524,6 +525,7 @@ fld1	fld2
 # Triggers different code path in InnoDB which was not
 # covered by original fix for the bug.
 # restart
+include/rpl/set_gtid_mode_off.inc
 UPDATE t1 SET fld1= 3;
 SELECT * FROM t1;
 fld1
@@ -583,10 +585,45 @@ t2	CREATE TABLE `t2` (
 INSERT INTO t1(name) VALUES ('test1');
 INSERT INTO t2(name, fname) VALUES ('test1', 'test1');
 UPDATE t1 SET name=CONCAT('St', UNHEX('C3A5') ,'le') WHERE name = 'test1';
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`fname`) REFERENCES `t1` (`name`) ON DELETE CASCADE ON UPDATE CASCADE)
+SELECT id, HEX(name), LENGTH(name), CHAR_LENGTH(name) FROM t1;
+id	HEX(name)	LENGTH(name)	CHAR_LENGTH(name)
+1	7465737431	5	5
+SELECT id, HEX(fname), LENGTH(fname), CHAR_LENGTH(fname) FROM t2;
+id	HEX(fname)	LENGTH(fname)	CHAR_LENGTH(fname)
+1	7465737431	5	5
 # Should not get any rows here
 SELECT t1.name, t2.fname FROM t1, t2 WHERE t1.name <> t2.fname;
 name	fname
-Ståle	StÃ¥le
+UPDATE t1 SET name=CONCAT('Wroc', UNHEX('C582') ,'aw') WHERE id = 1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`fname`) REFERENCES `t1` (`name`) ON DELETE CASCADE ON UPDATE CASCADE)
+INSERT INTO t1(name) VALUES ('test2');
+INSERT INTO t2(name, fname) VALUES ('test2', 'test2');
+DELETE FROM t1 WHERE id=2;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`fname`) REFERENCES `t1` (`name`) ON DELETE CASCADE ON UPDATE CASCADE)
+SELECT * FROM t1;
+id	name
+1	test1
+2	test2
+SELECT * FROM t2;
+id	name	fname
+1	test1	test1
+2	test2	test2
+INSERT INTO t1(name) VALUES ('unrelated');
+# Note that updating a t1.name value to a string that cannot be
+# converted from utf8mb4 to latin1 also fails here even if the row
+# being updated is not related to any t2 rows.
+UPDATE t1 SET name=CONCAT('Wroc', UNHEX('C582') ,'aw') WHERE name='unrelated';
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`fname`) REFERENCES `t1` (`name`) ON DELETE CASCADE ON UPDATE CASCADE)
+SELECT * FROM t1;
+id	name
+1	test1
+2	test2
+3	unrelated
+SELECT * FROM t2;
+id	name	fname
+1	test1	test1
+2	test2	test2
 DROP TABLE t2;
 DROP TABLE t1;
 #
@@ -4182,16 +4219,16 @@ ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`
 connection default;
 ALTER TABLE t2 ADD CONSTRAINT fk3 FOREIGN KEY (fld2) REFERENCES t3(fld1);
 connection con1;
-# Without patch, reveals parent table's information.
+# Reveals parent information because fk2 is checked before fk3
 INSERT INTO t2 (fld1, fld2) VALUES (1, 2);
-ERROR 23000: Cannot add or update a child row: a foreign key constraint fails
-# Warning displayed does not reveal parent table information.
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`wl8910db`.`t2`, CONSTRAINT `fk2` FOREIGN KEY (`fld1`) REFERENCES `t1` (`fld1`))
+# Warning also reveals parent table information.
 INSERT IGNORE INTO t2 (fld1, fld2) VALUES (1, 2);
 Warnings:
-Warning	1452	Cannot add or update a child row: a foreign key constraint fails
+Warning	1452	Cannot add or update a child row: a foreign key constraint fails (`wl8910db`.`t2`, CONSTRAINT `fk2` FOREIGN KEY (`fld1`) REFERENCES `t1` (`fld1`))
 SHOW WARNINGS;
 Level	Code	Message
-Warning	1452	Cannot add or update a child row: a foreign key constraint fails
+Warning	1452	Cannot add or update a child row: a foreign key constraint fails (`wl8910db`.`t2`, CONSTRAINT `fk2` FOREIGN KEY (`fld1`) REFERENCES `t1` (`fld1`))
 connection default;
 GRANT SELECT ON t3 TO user1@localhost;
 connection con1;
@@ -5568,7 +5605,7 @@ referencing	CREATE TABLE `referencing` (
   CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`f2`) REFERENCES `referenced` (`f1`) ON UPDATE SET NULL,
   CONSTRAINT `referencing_ibfk_2` FOREIGN KEY (`f3`) REFERENCES `referencing` (`f1`) ON DELETE SET NULL ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-SELECT * FROM information_schema.referential_constraints;
+SELECT * FROM information_schema.referential_constraints ORDER BY constraint_name;
 CONSTRAINT_CATALOG	CONSTRAINT_SCHEMA	CONSTRAINT_NAME	UNIQUE_CONSTRAINT_CATALOG	UNIQUE_CONSTRAINT_SCHEMA	UNIQUE_CONSTRAINT_NAME	MATCH_OPTION	UPDATE_RULE	DELETE_RULE	TABLE_NAME	REFERENCED_TABLE_NAME
 def	test	referencing_ibfk_1	def	test	PRIMARY	FULL	SET NULL	NO ACTION	referencing	referenced
 def	test	referencing_ibfk_2	def	test	PRIMARY	PARTIAL	RESTRICT	SET NULL	referencing	referencing
@@ -5990,4 +6027,33 @@ referencing	CREATE TABLE `referencing` (
 DROP TABLE referencing, referenced;
 SET sql_generate_invisible_primary_key=DEFAULT;
 # End:WL#16131 Check implicit references for foreign key
+CREATE TABLE parent (
+p1 int NOT NULL,
+p2 tinyint NOT NULL,
+p3 smallint NOT NULL,
+p4 char (10),
+p5 char(10),
+PRIMARY KEY (p3,p2,p1),
+KEY idx_parent (p3,p2,p5,p4)
+) ;
+CREATE TABLE child (
+c1 int NOT NULL,
+c2 tinyint NOT NULL,
+c3 smallint NOT NULL,
+c4 int DEFAULT NULL,
+PRIMARY KEY (c3,c2,c1),
+KEY idx_child (c3,c2,c4,c1),
+CONSTRAINT fkey_c_p FOREIGN KEY (c3, c2, c4) REFERENCES parent (p3, p2, p1)
+);
+INSERT INTO child (c1,c2,c3,c4) VALUES (1,2,3,4);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `fkey_c_p` FOREIGN KEY (`c3`, `c2`, `c4`) REFERENCES `parent` (`p3`, `p2`, `p1`))
+INSERT INTO parent (p1,p2,p3,p4,p5) VALUES (4,2,3,'four','five');
+INSERT INTO child (c1,c2,c3,c4) VALUES (1,2,3,4);
+DELETE FROM parent WHERE p1=4 AND p2=2 AND p3=3;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `fkey_c_p` FOREIGN KEY (`c3`, `c2`, `c4`) REFERENCES `parent` (`p3`, `p2`, `p1`))
+DELETE FROM child WHERE c1=1 AND c2=2 and c3=3;
+DELETE FROM parent WHERE p1=4 AND p2=2 AND p3=3;
+DROP TABLE child;
+DROP TABLE parent;
 SET FOREIGN_KEY_CHECKS = DEFAULT;
+include/rpl/set_gtid_mode_on.inc

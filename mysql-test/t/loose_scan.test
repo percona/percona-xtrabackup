@@ -92,9 +92,8 @@ eval $query;
 
 # The query should be run using the scanning option for loose index scan.
 # It should only do a few read key calls and many read next calls:
---skip_if_hypergraph  # Does not support this access method yet.
+--skip_if_hypergraph  # Different plan.
 SHOW STATUS LIKE 'Handler_read_key';
---skip_if_hypergraph  # Does not support this access method yet.
 SHOW STATUS LIKE 'Handler_read_next';
 
 DROP TABLE t0, t1;
@@ -107,6 +106,7 @@ CREATE TABLE t (a INT, b INT,KEY k(a,b));
 INSERT INTO t VALUES (1,2),
        (NULL,3),(3,3),(1,NULL),
        (NULL,2), (NULL,NULL);
+ANALYZE TABLE t;
 --replace_column 10 # 11 # 
 EXPLAIN SELECT COUNT(DISTINCT a,b) FROM t;
 SELECT COUNT(DISTINCT a,b) FROM t;
@@ -143,6 +143,8 @@ CREATE TABLE t3 (
 ) CHARSET utf8mb4;
 
 INSERT INTO t3 VALUES (1, 'v'),(2, NULL);
+
+ANALYZE TABLE t1, t2, t3;
 
 let $query=
   SELECT  t1.col_int

@@ -1,4 +1,4 @@
-# Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -39,10 +39,14 @@ ELSEIF(WIN32)
   FIND_PROGRAM(WSL_EXECUTABLE wsl HINTS C:/Windows/Sysnative)
   IF (WSL_EXECUTABLE)
     SET (COMPILER "gcc")
-    # Check that the compiler is available under WSL.
-    EXECUTE_PROCESS(
-      COMMAND ${WSL_EXECUTABLE} which ${COMPILER}
-      OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE COMPILER_LOCATION)
+    EXECUTE_PROCESS(COMMAND ${WSL_EXECUTABLE} --status
+      RESULT_VARIABLE WSL_STATUS_OK OUTPUT_QUIET)
+    IF (WSL_STATUS_OK EQUAL "0")
+      # Check that the compiler is available under WSL.
+      EXECUTE_PROCESS(
+        COMMAND ${WSL_EXECUTABLE} which ${COMPILER}
+        OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE COMPILER_LOCATION)
+    ENDIF()
     IF (COMPILER_LOCATION STREQUAL "/usr/bin/gcc")
       SET(RUN_ABI_CHECK 1)
       MESSAGE(STATUS "Will do ABI check using ${WSL_EXECUTABLE} (gcc/sed)")

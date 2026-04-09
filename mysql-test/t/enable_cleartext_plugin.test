@@ -1,4 +1,6 @@
 --source include/have_plugin_auth.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --echo #
 --echo # Bug #21235226 : THE --ENABLE-CLEARTEXT-PLUGIN IS NOT IMPLEMENTED
@@ -64,3 +66,5 @@ DROP DATABASE db21235226;
 DROP USER uplain@localhost;
 --remove_file $MYSQLTEST_VARDIR/tmp/t1.txt
 --remove_file $MYSQLTEST_VARDIR/tmp/t1.sql
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

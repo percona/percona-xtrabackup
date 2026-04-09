@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@
 #ifndef LOGHANDLER_H
 #define LOGHANDLER_H
 
-#include <time.h>
+#include <ctime>
 
 #include "Logger.hpp"
 
@@ -94,9 +94,9 @@ class LogHandler {
    * @param pMsg the log message.
    */
   virtual void append(const char *pCategory, Logger::LoggerLevel level,
-                      const char *pMsg, time_t now);
+                      const char *pMsg, const std::timespec *now);
   void append_impl(const char *pCategory, Logger::LoggerLevel level,
-                   const char *pMsg, time_t now);
+                   const char *pMsg, const std::timespec *now);
 
   /**
    * Returns a default formatted header. It currently has the
@@ -108,7 +108,8 @@ class LogHandler {
    * @return the header.
    */
   const char *getDefaultHeader(char *pStr, const char *pCategory,
-                               Logger::LoggerLevel level, time_t now) const;
+                               Logger::LoggerLevel level,
+                               const std::timespec *now) const;
 
   /**
    * Returns a default formatted footer. Currently only returns a newline.
@@ -196,7 +197,7 @@ class LogHandler {
    * @param level the log level.
    */
   virtual void writeHeader(const char *pCategory, Logger::LoggerLevel level,
-                           time_t now) = 0;
+                           const std::timespec *now) = 0;
 
   /**
    * Write the message to the log.
@@ -223,7 +224,7 @@ class LogHandler {
   // for handling repeated messages
   unsigned m_count_repeated_messages;
   unsigned m_max_repeat_frequency;
-  time_t m_last_log_time;
+  std::timespec m_last_log_time;
   char m_last_category[MAX_HEADER_LENGTH];
   char m_last_message[MAX_LOG_MESSAGE_SIZE];
   Logger::LoggerLevel m_last_level;

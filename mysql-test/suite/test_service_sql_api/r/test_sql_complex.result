@@ -2287,7 +2287,7 @@ EXECUTING:[17][SELECT b FROM tbl]
 ------------------------------------------------------------------
 EXECUTING:[43][ALTER USER bogus@remotehost PASSWORD EXPIRE]
 [CS_TEXT_REPRESENTATION]
-[1396][HY000][Operation ALTER USER failed for 'bogus'@'remotehost']		[meta] rows: 0
+[1396][HY000][Operation ALTER USER failed for 'bogus'@'remotehost' (User account does not exist)]		[meta] rows: 0
 		[meta] cols: 0
 		[meta] server status: 0
 		[meta] server status: 
@@ -2306,7 +2306,7 @@ EXECUTING:[43][ALTER USER bogus@remotehost PASSWORD EXPIRE]
 		[end] last insert id: 0
 		[end] message: 
 [CS_BINARY_REPRESENTATION]
-[1396][HY000][Operation ALTER USER failed for 'bogus'@'remotehost']		[meta] rows: 0
+[1396][HY000][Operation ALTER USER failed for 'bogus'@'remotehost' (User account does not exist)]		[meta] rows: 0
 		[meta] cols: 0
 		[meta] server status: 0
 		[meta] server status: 
@@ -5496,7 +5496,7 @@ EXECUTING:[17][SELECT b FROM tbl]
 ------------------------------------------------------------------
 EXECUTING:[43][ALTER USER bogus@remotehost PASSWORD EXPIRE]
 [CS_TEXT_REPRESENTATION]
-[1396][HY000][Operation ALTER USER failed for 'bogus'@'remotehost']		[meta] rows: 0
+[1396][HY000][Operation ALTER USER failed for 'bogus'@'remotehost' (User account does not exist)]		[meta] rows: 0
 		[meta] cols: 0
 		[meta] server status: 0
 		[meta] server status: 
@@ -5515,7 +5515,7 @@ EXECUTING:[43][ALTER USER bogus@remotehost PASSWORD EXPIRE]
 		[end] last insert id: 0
 		[end] message: 
 [CS_BINARY_REPRESENTATION]
-[1396][HY000][Operation ALTER USER failed for 'bogus'@'remotehost']		[meta] rows: 0
+[1396][HY000][Operation ALTER USER failed for 'bogus'@'remotehost' (User account does not exist)]		[meta] rows: 0
 		[meta] cols: 0
 		[meta] server status: 0
 		[meta] server status: 

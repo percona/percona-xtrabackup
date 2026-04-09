@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
@@ -591,11 +591,11 @@ Access_bitmask Security_context::procedure_acl(LEX_CSTRING db,
   else {
     SP_access_map::iterator it;
     String q_name;
-    append_identifier(&q_name, db.str, db.length);
+    append_identifier_with_backtick(&q_name, db.str, db.length);
     q_name.append(".");
     std::string name(procedure_name.str, procedure_name.length);
     my_casedn_str(files_charset_info, &name[0]);
-    append_identifier(&q_name, name.c_str(), name.length());
+    append_identifier_with_backtick(&q_name, name.c_str(), name.length());
     it = m_acl_map->sp_acls()->find(q_name.c_ptr());
     if (it == m_acl_map->sp_acls()->end()) return 0;
     return filter_access(it->second, q_name.c_ptr());
@@ -608,16 +608,31 @@ Access_bitmask Security_context::function_acl(LEX_CSTRING db,
     return 0;
   else {
     String q_name;
-    append_identifier(&q_name, db.str, db.length);
+    append_identifier_with_backtick(&q_name, db.str, db.length);
     q_name.append(".");
     std::string name(func_name.str, func_name.length);
     my_casedn_str(files_charset_info, &name[0]);
-    append_identifier(&q_name, name.c_str(), name.length());
+    append_identifier_with_backtick(&q_name, name.c_str(), name.length());
     SP_access_map::iterator it;
     it = m_acl_map->func_acls()->find(q_name.c_ptr());
     if (it == m_acl_map->func_acls()->end()) return 0;
     return filter_access(it->second, q_name.c_ptr());
   }
+}
+
+Access_bitmask Security_context::library_acl(LEX_CSTRING db,
+                                             LEX_CSTRING lib_name) {
+  if (m_acl_map == nullptr) return 0;
+  String q_name;
+  append_identifier_with_backtick(&q_name, db.str, db.length);
+  q_name.append(".");
+  std::string name(lib_name.str, lib_name.length);
+  my_casedn_str(files_charset_info, &name[0]);
+  append_identifier_with_backtick(&q_name, name.c_str(), name.length());
+  SP_access_map::iterator it;
+  it = m_acl_map->lib_acls()->find(q_name.c_ptr());
+  if (it == m_acl_map->lib_acls()->end()) return 0;
+  return filter_access(it->second, q_name.c_ptr());
 }
 
 // return the entire element instead of just the acl?
@@ -626,9 +641,9 @@ Grant_table_aggregate Security_context::table_and_column_acls(
   if (m_acl_map == nullptr) return Grant_table_aggregate();
   Table_access_map::iterator it;
   String q_name;
-  append_identifier(&q_name, db.str, db.length);
+  append_identifier_with_backtick(&q_name, db.str, db.length);
   q_name.append(".");
-  append_identifier(&q_name, table.str, table.length);
+  append_identifier_with_backtick(&q_name, table.str, table.length);
   it = m_acl_map->table_acls()->find(std::string(q_name.c_ptr_quick()));
   if (it == m_acl_map->table_acls()->end()) return Grant_table_aggregate();
   return it->second;
@@ -645,9 +660,9 @@ bool Security_context::has_with_admin_acl(const LEX_CSTRING &role_name,
   DBUG_TRACE;
   if (m_acl_map == nullptr) return false;
   String q_name;
-  append_identifier(&q_name, role_name.str, role_name.length);
+  append_identifier_with_backtick(&q_name, role_name.str, role_name.length);
   q_name.append("@");
-  append_identifier(&q_name, role_host.str, role_host.length);
+  append_identifier_with_backtick(&q_name, role_host.str, role_host.length);
   Grant_acl_set::iterator it =
       m_acl_map->grant_acls()->find(std::string(q_name.c_ptr_quick()));
   if (it != m_acl_map->grant_acls()->end()) return true;
@@ -659,7 +674,7 @@ bool Security_context::any_sp_acl(const LEX_CSTRING &db) {
   SP_access_map::iterator it = m_acl_map->sp_acls()->begin();
   for (; it != m_acl_map->sp_acls()->end(); ++it) {
     String id_db;
-    append_identifier(&id_db, db.str, db.length);
+    append_identifier_with_backtick(&id_db, db.str, db.length);
     if (it->first.compare(0, id_db.length(), id_db.c_ptr(), id_db.length()) ==
         0) {
       /* There's at least one SP with grants for this db */
@@ -674,7 +689,7 @@ bool Security_context::any_table_acl(const LEX_CSTRING &db) {
   Table_access_map::iterator table_it = m_acl_map->table_acls()->begin();
   for (; table_it != m_acl_map->table_acls()->end(); ++table_it) {
     String id_db;
-    append_identifier(&id_db, db.str, db.length);
+    append_identifier_with_backtick(&id_db, db.str, db.length);
     if (table_it->first.compare(0, id_db.length(), id_db.c_ptr(),
                                 id_db.length()) == 0) {
       /* There's at least one table with grants for this db*/

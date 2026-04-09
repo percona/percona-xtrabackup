@@ -16,8 +16,9 @@ ANALYZE TABLE t1;
 
 let $query= SELECT a, HEX(b) FROM t1 WHERE b >= 'te' and (a % 2);
 eval EXPLAIN $query;
---skip_if_hypergraph  # Depends on the query plan.
-eval EXPLAIN FORMAT=JSON $query;
+eval EXPLAIN FORMAT=JSON INTO @plan $query;
+--skip_if_hypergraph  # Doesn't support ICP.
+SELECT JSON_EXTRACT(@plan, '$**.pushed_index_condition') AS pushed_condition;
 eval $query;
 
 DROP TABLE t1;

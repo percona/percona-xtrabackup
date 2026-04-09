@@ -1,0 +1,13 @@
+--source include/have_ndb.inc
+
+create table pear(x int primary key) engine=ndbcluster;
+create table lemon(a int primary key,
+                   v int generated always as (a+1) virtual,
+                   x int,
+                   y int,
+                   foreign key (x) references pear(x)) engine=ndbcluster;
+--error ER_ALTER_OPERATION_NOT_SUPPORTED_REASON
+alter table lemon algorithm=inplace, rename column x to z;
+show warnings;
+alter table lemon algorithm=inplace, rename column y to w;
+drop tables lemon,pear;

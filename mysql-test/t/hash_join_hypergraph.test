@@ -65,4 +65,59 @@ EXPLAIN FORMAT=TREE SELECT x FROM small_tab STRAIGHT_JOIN large_tab USING (x);
 DROP TABLE large_tab;
 DROP TABLE small_tab;
 
+--echo #
+--echo # Bug#38385568	Hypergraph: inefficient join order for hash join
+--echo #
+
+CREATE TABLE narrow (a INT);
+CREATE TABLE wide (a INT, c VARCHAR(2048));
+
+INSERT INTO narrow
+  WITH RECURSIVE qn(n) AS (
+    SELECT 1 UNION ALL SELECT n+1 FROM qn WHERE n < 256
+  )
+  SELECT n FROM qn;
+
+INSERT INTO wide SELECT a, REPEAT('X', 2048) FROM narrow LIMIT 240;
+
+ANALYZE TABLE narrow,wide;
+
+--echo # Use 'narrow' as the build-relation, since that is smaller.
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT wide.c FROM narrow,wide WHERE narrow.a=wide.a;
+
+--echo # Use 'wide' as the build-relation, since that is smaller.
+--replace_regex $elide_costs_and_rows
+EXPLAIN FORMAT=TREE SELECT 1 FROM narrow,wide WHERE narrow.a=wide.a;
+
+DROP TABLE narrow,wide;
+
+eval INSTALL PLUGIN mock SONAME '$MOCK_PLUGIN';
+
+SET @old_threshold = @@session.secondary_engine_cost_threshold;
+SET secondary_engine_cost_threshold = 0;
+
+
+CREATE TABLE t1 (x INT) SECONDARY_ENGINE MOCK;
+ALTER TABLE t1 SECONDARY_LOAD;
+ANALYZE TABLE t1;
+
+SET SESSION OPTIMIZER_TRACE="enabled=on";
+
+--echo # We should only propose one join order to a secondary engine.
+SELECT 1 FROM t1 x1 JOIN t1 x2 ON x1.x=x2.x;
+
+# Propose exactly one hash join.
+SELECT REGEXP_SUBSTR(trace, "- [{]HASH_JOIN",1,1,'n') IS NULL first,
+REGEXP_SUBSTR(trace, "- [{]HASH_JOIN",1,2,'n') IS NULL second
+FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE;
+
+SET SESSION OPTIMIZER_TRACE="enabled=off";
+
+DROP TABLE t1;
+
+UNINSTALL PLUGIN mock;
+
+SET @@session.secondary_engine_cost_threshold = @old_threshold;
+
 --source include/disable_hypergraph.inc

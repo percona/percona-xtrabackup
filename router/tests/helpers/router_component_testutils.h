@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -30,9 +30,9 @@
 #include <string>
 #include <vector>
 
+#include "mysql/harness/destination.h"
 #include "mysqlrouter/cluster_metadata.h"
 #include "mysqlrouter/mysql_session.h"
-#include "tcp_address.h"
 
 std::string create_state_file_content(
     const std::string &cluster_type_specific_id,
@@ -41,7 +41,7 @@ std::string create_state_file_content(
     const uint64_t view_id = 0);
 
 std::string create_state_file_content(
-    const std::vector<mysql_harness::TCPAddress> &metadata_servers,
+    const std::vector<mysql_harness::TcpDestination> &metadata_servers,
     const std::string &cluster_type_specific_id,
     const std::string &clusterset_id, const uint64_t view_id = 0);
 

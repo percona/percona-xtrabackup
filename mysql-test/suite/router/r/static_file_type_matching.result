@@ -1,0 +1,74 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+# Registred SERVICE at path: /svc1
+# Registred CONTENT_SET at path: /svc1/sch
+# Registred CONTENT_FILE at path: /svc1/sch/file
+# Registred CONTENT_FILE at path: /svc1/sch/file.gif
+# Registred CONTENT_FILE at path: /svc1/sch/file.jpg
+# Registred CONTENT_FILE at path: /svc1/sch/file.png
+# Registred CONTENT_FILE at path: /svc1/sch/file.js
+# Registred CONTENT_FILE at path: /svc1/sch/file.mjs
+# Registred CONTENT_FILE at path: /svc1/sch/file.html
+# Registred CONTENT_FILE at path: /svc1/sch/file.htm
+# Registred CONTENT_FILE at path: /svc1/sch/file.css
+# Registred CONTENT_FILE at path: /svc1/sch/file.svg
+# Registred CONTENT_FILE at path: /svc1/sch/file.map
+# Registred CONTENT_FILE at path: /svc1/sch/file.unknown
+# Registred CONTENT_FILE at path: /svc1/sch/.gif
+# Registred CONTENT_FILE at path: /svc1/sch/file.gif.jpg
+# Registred DB_SCHEMA at path: /svc1/basic_schema
+# Registred DB_OBJECT at path: /svc1/basic_schema/obj
+
+
+## I. Check Content-Type header for different file extenstions
+#
+GET /svc1/sch/file
+plaintext file
+OK
+GET /svc1/sch/file.gif
+gif file
+OK
+GET /svc1/sch/file.jpg
+jpg file
+OK
+GET /svc1/sch/file.png
+png file
+OK
+GET /svc1/sch/file.js
+js file
+OK
+GET /svc1/sch/file.mjs
+mjs file
+OK
+GET /svc1/sch/file.html
+html file
+OK
+GET /svc1/sch/file.htm
+htm file
+OK
+GET /svc1/sch/file.css
+css file
+OK
+GET /svc1/sch/file.svg
+svg file
+OK
+GET /svc1/sch/file.map
+map file
+OK
+GET /svc1/sch/file.unknown
+unknown file
+OK
+GET /svc1/sch/.gif
+no name file
+OK
+GET /svc1/sch/file.gif.jpg
+jpg after all
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

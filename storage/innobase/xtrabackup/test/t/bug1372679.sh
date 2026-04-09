@@ -29,6 +29,8 @@ function cleanup()
 
 MYSQLD_EXTRA_MY_CNF_OPTS="
 slave_parallel_workers=2
+gtid_mode=OFF
+enforce_gtid_consistency=OFF
 "
 start_slave
 

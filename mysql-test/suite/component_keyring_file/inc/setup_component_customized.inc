@@ -1,3 +1,6 @@
+# all tests which use global manifest and/or config must not be exectuted in parallel manner
+--source include/not_parallel.inc
+
 # Setup test to use keyring component
 
 --echo # ----------------------------------------------------------------------
@@ -8,6 +11,10 @@
 --let COMPONENT_LIBRARY = `SELECT SUBSTRING_INDEX('$KEYRING_FILE_COMPONENT_LOAD', '=', -1)`
 --let COMPONENT_DIR = $KEYRING_FILE_COMPONENT_DIR
 --let COMPONENT_NAME = `SELECT SUBSTRING_INDEX('$COMPONENT_LIBRARY', '.', 1)`
+
+# backup global files content (needs COMPONENT_DIR and COMPONENT_NAME)
+--source include/keyring_tests/helper/backup_global_files_once.inc
+
 --let GLOBAL_MANIFEST_CONTENT = `SELECT CONCAT('{ \"components\": \"file://', '$COMPONENT_NAME', '\" }')`
 # Create manifest file for mysqld binary
 --source include/keyring_tests/helper/binary_create_customized_manifest.inc

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,24 +23,10 @@
 
 Include(GenerateExportHeader)
 
-# get the INCLUDE_DIRECTORIES manually, as cmake 3.6.x will fail if
-#
-#   $<TARGET_PROPERTY,mysqlxmessages:INCLUDE_DIRECTORIES>
-#
-# is used in TARGET_INCLUDE_DIRECTORIES().
-
-GET_TARGET_PROPERTY(XMSG_INC_DIRS mysqlxmessages_shared
-  INCLUDE_DIRECTORIES)
-GET_TARGET_PROPERTY(XMSG_SYS_INC_DIRS mysqlxmessages_shared
-  INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
 # get the sources from 'mysqlxmessages' instead of
 # the shared version to get the dependencies lined up properly.
 GET_TARGET_PROPERTY(XMSG_SOURCES mysqlxmessages
   SOURCES)
-GET_TARGET_PROPERTY(XMSG_COMPILE_DEFS mysqlxmessages_shared
-  INTERFACE_COMPILE_DEFINITIONS)
-GET_TARGET_PROPERTY(XMSG_COMPILE_OPTS mysqlxmessages_shared
-  INTERFACE_COMPILE_OPTIONS)
 
 SET_SOURCE_FILES_PROPERTIES(${XMSG_SOURCES}
   PROPERTIES GENERATED TRUE)
@@ -59,17 +45,18 @@ ROUTER_ADD_SHARED_LIBRARY(router_mysqlxmessages
   )
 
 TARGET_INCLUDE_DIRECTORIES(router_mysqlxmessages
-  PUBLIC ${XMSG_INC_DIRS}
+  PUBLIC $<TARGET_PROPERTY:mysqlxmessages,INCLUDE_DIRECTORIES>
   )
 TARGET_INCLUDE_DIRECTORIES(router_mysqlxmessages
-  SYSTEM PUBLIC ${XMSG_SYS_INC_DIRS}
+  SYSTEM PUBLIC
+  $<TARGET_PROPERTY:mysqlxmessages,INTERFACE_SYSTEM_INCLUDE_DIRECTORIES>
   )
 TARGET_COMPILE_DEFINITIONS(router_mysqlxmessages
-  PUBLIC ${XMSG_COMPILE_DEFS}
+  PUBLIC $<TARGET_PROPERTY:mysqlxmessages_shared,INTERFACE_COMPILE_DEFINITIONS>
   PRIVATE mysqlxmessages_shared_EXPORTS=1
   )
 TARGET_COMPILE_OPTIONS(router_mysqlxmessages
-  PUBLIC ${XMSG_COMPILE_OPTS}
+  PUBLIC $<TARGET_PROPERTY:mysqlxmessages_shared,INTERFACE_COMPILE_OPTIONS>
   )
 # See MY_PROTOBUF_FLAGS in MYSQL_PROTOBUF_GENERATE_CPP_LIBRARY
 IF(MY_COMPILER_IS_GNU_OR_CLANG AND NOT WIN32_CLANG)
@@ -94,21 +81,16 @@ ENDIF()
 
 ## rebuild mysqlxclient as router_mysqlxclient
 
-GET_TARGET_PROPERTY(XCLI_INC_DIRS mysqlxclient_shared
-  INCLUDE_DIRECTORIES)
-GET_TARGET_PROPERTY(XCLI_SYS_INC_DIRS mysqlxclient_shared
-  INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
 GET_TARGET_PROPERTY(XCLI_SOURCES mysqlxclient_shared
   SOURCES)
-GET_TARGET_PROPERTY(XCLI_SOURCE_DIR mysqlxclient_shared
-  SOURCE_DIR)
 
 SET(XCLI_SOURCE_ABSOLUTE)
 FOREACH(F ${XCLI_SOURCES})
   IF(IS_ABSOLUTE ${F})
     LIST(APPEND XCLI_SOURCES_ABSOLUTE ${F})
   ELSE()
-    LIST(APPEND XCLI_SOURCES_ABSOLUTE ${XCLI_SOURCE_DIR}/${F})
+    LIST(APPEND XCLI_SOURCES_ABSOLUTE
+      $<TARGET_PROPERTY:mysqlxclient_shared,SOURCE_DIR>/${F})
   ENDIF()
 ENDFOREACH()
 
@@ -131,10 +113,11 @@ ROUTER_ADD_SHARED_LIBRARY(router_mysqlxclient
   )
 
 TARGET_INCLUDE_DIRECTORIES(router_mysqlxclient
-  PUBLIC ${XCLI_INC_DIRS}
+  PUBLIC $<TARGET_PROPERTY:mysqlxclient_shared,INCLUDE_DIRECTORIES>
   )
 TARGET_INCLUDE_DIRECTORIES(router_mysqlxclient
-  SYSTEM PUBLIC ${XCLI_SYS_INC_DIRS}
+  SYSTEM PUBLIC
+  $<TARGET_PROPERTY:mysqlxclient_shared,INTERFACE_SYSTEM_INCLUDE_DIRECTORIES>
   )
 TARGET_COMPILE_DEFINITIONS(router_mysqlxclient
   PUBLIC USE_MYSQLX_FULL_PROTO=1

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -32,6 +32,7 @@
 // http://wg21.link/p2164
 
 #include <iterator>
+#include <ranges>
 #include <tuple>
 #include <utility>  // declval, forward
 
@@ -143,6 +144,22 @@ constexpr auto enumerate(T &&iterable) {
   return enumerate_view{std::forward<T>(iterable)};
 }
 }  // namespace views
+
+/**
+ * Checks if a container contains a specified element. Implements
+ * https://en.cppreference.com/w/cpp/algorithm/ranges/contains
+ *
+ * @param container The container in which to search for the needle.
+ * @param needle The element to search for in the container.
+ * @return `true` if the needle is found in the container, `false` otherwise.
+ */
+template <std::ranges::input_range Range, typename T>
+  requires std::convertible_to<T, typename Range::value_type> bool
+contains(const Range &container, const T &needle) {
+  return std::find(container.begin(), container.end(), needle) !=
+         container.end();
+}
+
 }  // namespace stdx::ranges
 
 namespace stdx {

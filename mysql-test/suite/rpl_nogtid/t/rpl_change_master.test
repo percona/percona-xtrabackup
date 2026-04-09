@@ -110,7 +110,7 @@ SET SQL_LOG_BIN=1;
 
 connection slave;
 --source include/rpl/stop_receiver.inc
-CHANGE REPLICATION SOURCE TO SOURCE_USER = 'root', SOURCE_PASSWORD = '', SOURCE_SSL=0;
+CHANGE REPLICATION SOURCE TO SOURCE_USER = 'root', SOURCE_PASSWORD = '';
 --source include/rpl/start_replica.inc
 
 --source include/rpl/deinit.inc

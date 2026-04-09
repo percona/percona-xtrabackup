@@ -1,4 +1,4 @@
-# Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -74,7 +74,7 @@ Source0:        https://cdn.mysql.com/Downloads/MySQL-@MYSQL_BASE_VERSION@/%{src
 %if 0%{?compatlib}
 Source1:        %{compatsrc}
 %endif
-URL:            http://www.mysql.com/
+URL:            https://www.mysql.com/
 Packager:       MySQL Release Engineering <mysql-build@oss.oracle.com>
 Vendor:         %{mysql_vendor}
 BuildRequires:  bison >= 3.0.4
@@ -135,7 +135,7 @@ BuildRequires:  systemd
 BuildRequires:  time
 BuildRequires:  zlib-devel
 # For rpm => 4.9 only: https://fedoraproject.org/wiki/Packaging:AutoProvidesAndRequiresFiltering
-%global _privatelibs libabsl_.*|libprotobuf.*|libmysqlharness\.so.*|libmysqlharness_stdx\.so.*|libmysqlharness_tls\.so.*|libmysqlrouter\.so\..*|libmysqlrouter_.*\.so\..*
+%global _privatelibs libabsl_.*|libicu.*|libprotobuf.*|libmysqlharness\.so.*|libmysqlharness_stdx\.so.*|libmysqlharness_tls\.so.*|libmysqlrouter\.so\..*|libmysqlrouter_.*\.so\..*|libjitexecutor.*
 %global _privateperl perl\\((GD|hostnames|lib::mtr|lib::v1|mtr_|My::)
 %global __requires_exclude ^((%{_privatelibs})|(%{_privateperl}))
 %global __provides_exclude_from ^(/usr/share/(mysql|mysql-test)/.*|%{_libdir}/mysql/plugin/.*\\.so|%{_libdir}/mysql/private/.*|%{_libdir}/mysqlrouter/.*|%{_libdir}/mysqlrouter/private/.*)$
@@ -154,7 +154,7 @@ licenses from %{mysql_vendor} if you do not wish to be bound by the terms of
 the GPL. See the chapter "Licensing and Support" in the manual for
 further info.
 
-The MySQL web site (http://www.mysql.com/) provides the latest
+The MySQL web site (https://www.mysql.com/) provides the latest
 news and information about the MySQL software. Also please see the
 documentation and the manual for more information.
 
@@ -194,6 +194,15 @@ Obsoletes:      mariadb-server
 Obsoletes:      mariadb-server-utils
 Obsoletes:      mariadb-galera-server
 Obsoletes:      mariadb-server-galera
+%if 0%{?fedora} >= 42
+Obsoletes:      mariadb11.8
+Obsoletes:      mariadb11.8-server
+Obsoletes:      mariadb11.8-backup
+Obsoletes:      mariadb11.8-cracklib-password-check
+Obsoletes:      mariadb11.8-gssapi-server
+Obsoletes:      mariadb11.8-server-utils
+Obsoletes:      mariadb11.8-client-utils
+%endif
 Obsoletes:      community-mysql-server < %{version}-%{release}
 Obsoletes:      mysql-server < %{version}-%{release}
 Obsoletes:      mysql-community-embedded-compat < 8.0.3
@@ -202,6 +211,7 @@ Provides:       mysql-server = %{version}-%{release}
 Provides:       mysql-server%{?_isa} = %{version}-%{release}
 Provides:       mysql-compat-server = %{version}-%{release}
 Provides:       mysql-compat-server%{?_isa} = %{version}-%{release}
+Obsoletes:      mysql8.4-server < %{version}-%{release}
 Requires(post):   systemd
 Requires(preun):  systemd
 Requires(postun): systemd
@@ -220,7 +230,7 @@ licenses from %{mysql_vendor} if you do not wish to be bound by the terms of
 the GPL. See the chapter "Licensing and Support" in the manual for
 further info.
 
-The MySQL web site (http://www.mysql.com/) provides the latest news and
+The MySQL web site (https://www.mysql.com/) provides the latest news and
 information about the MySQL software.  Also please see the documentation
 and the manual for more information.
 
@@ -254,10 +264,13 @@ Requires:       mysql-commercial-libs%{?_isa} >= %{min}
 Requires:       %{name}-libs%{?_isa} >= %{min}
 %endif
 Obsoletes:      mariadb
+Obsoletes:      mariadb-client-utils
 Obsoletes:      community-mysql < %{version}-%{release}
 Obsoletes:      mysql < %{version}-%{release}
 Provides:       mysql = %{version}-%{release}
 Provides:       mysql%{?_isa} = %{version}-%{release}
+Obsoletes:      mysql8.4 < %{version}-%{release}
+Obsoletes:      mysql8.4-server < %{version}-%{release}
 
 %description    client
 This package contains the standard MySQL clients and administration
@@ -281,6 +294,10 @@ Obsoletes:      mysql-errmsg < %{version}-%{release}
 Obsoletes:      mysql-common < %{version}-%{release}
 Provides:       mysql-common = %{version}-%{release}
 Provides:       mysql-common%{?_isa} = %{version}-%{release}
+Provides:       user(mysql)
+Provides:       group(mysql)
+Obsoletes:      mysql8.4-common < %{version}-%{release}
+Obsoletes:      mysql8.4-errmsg < %{version}-%{release}
 
 %description    common
 This packages contains common files needed by MySQL client library and
@@ -405,6 +422,7 @@ Obsoletes:      mysql-commercial-client-plugins < %{version}-%{release}
 Conflicts:      mysql-community-server < 8.0.21
 Conflicts:      mysql-community-client < 8.0.22
 %endif
+Obsoletes:      mysql8.4-server < %{version}-%{release}
 
 %description    client-plugins
 This package contains the client-plugins libraries used by MySQL client applications.
@@ -431,7 +449,7 @@ licenses from Oracle and/or its affiliates if you do not wish to be
 bound by the terms of the GPL. See the chapter "Licensing and Support"
 in the manual for further info.
 
-The MySQL web site (http://www.mysql.com/) provides the latest news
+The MySQL web site (https://www.mysql.com/) provides the latest news
 and information about the MySQL software. Also please see the
 documentation and the manual for more information.
 
@@ -547,7 +565,7 @@ mkdir debug
 (
   cd debug
   # Attempt to remove any optimisation flags from the debug build
-  optflags=$(echo "%{optflags}" | sed -e 's/-O2 / /' -e 's/-Wp,-D_FORTIFY_SOURCE=2/ /' -e 's/%{_lto_cflags}/ /')
+  optflags=$(echo "%{optflags}" | sed -e 's/-O2 / /' -e 's/-Wp,-U_FORTIFY_SOURCE,-D_FORTIFY_SOURCE=[0-9]/ /' -e 's/%{_lto_cflags}/ /')
   cmake ../%{src_dir} \
            -DBUILD_CONFIG=mysql_release \
            -DINSTALL_LAYOUT=RPM \
@@ -568,11 +586,14 @@ mkdir debug
 %endif
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/run/mysqld/mysqlx.sock" \
+%if 0%{?mrs_jit_executor_lib:1}
+           -DMRS_JIT_EXECUTOR_LIB="%{mrs_jit_executor_lib}" \
+%endif
            -DWITH_NUMA=ON \
            -DCOMPILATION_COMMENT="%{compilation_comment_debug}" \
            -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_debug}" \
            -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
-  echo BEGIN_DEBUG_CONFIG ; egrep '^#define' include/my_config.h ; echo END_DEBUG_CONFIG
+  echo BEGIN_DEBUG_CONFIG ; grep -E '^#define' include/my_config.h ; echo END_DEBUG_CONFIG
   make %{?_smp_mflags} VERBOSE=1
 )
 
@@ -599,11 +620,14 @@ mkdir release
 %endif
            -DMYSQL_UNIX_ADDR="%{mysqldatadir}/mysql.sock" \
            -DMYSQLX_UNIX_ADDR="/run/mysqld/mysqlx.sock" \
+%if 0%{?mrs_jit_executor_lib:1}
+           -DMRS_JIT_EXECUTOR_LIB="%{mrs_jit_executor_lib}" \
+%endif
            -DWITH_NUMA=ON \
            -DCOMPILATION_COMMENT="%{compilation_comment_release}" \
            -DCOMPILATION_COMMENT_SERVER="%{compilation_comment_server_release}" \
            -DMYSQL_SERVER_SUFFIX="%{?server_suffix}"
-  echo BEGIN_NORMAL_CONFIG ; egrep '^#define' include/my_config.h ; echo END_NORMAL_CONFIG
+  echo BEGIN_NORMAL_CONFIG ; grep -E '^#define' include/my_config.h ; echo END_NORMAL_CONFIG
   make %{?_smp_mflags} VERBOSE=1
 )
 
@@ -620,9 +644,6 @@ mkdir release
 %endif # 0%{?compatlib}
 
 MBD=$RPM_BUILD_DIR/%{src_dir}
-
-# Ignore absolute RPATH followed by $ORIGIN in mysqld.
-export QA_RPATHS=0x0008
 
 # Ensure that needed directories exists
 install -d -m 0751 %{buildroot}/var/lib/mysql
@@ -688,6 +709,7 @@ rm -r $(readlink var) var
 
 %post server
 [ -e /var/log/mysqld.log ] || install -m0640 -omysql -gmysql /dev/null /var/log/mysqld.log >/dev/null 2>&1 || :
+[ -e /var/log/mysqld.log.00.json ] || install -m0640 -omysql -gmysql /dev/null /var/log/mysqld.log.00.json >/dev/null 2>&1 || :
 %systemd_post mysqld.service
 if [ $1 -eq 1 ]; then
     /usr/bin/systemctl enable mysqld >/dev/null 2>&1 || :
@@ -751,6 +773,9 @@ fi
 %attr(755, root, root) %{_sbindir}/mysqld
 
 %dir %{_libdir}/mysql/private
+%attr(755, root, root) %{_libdir}/mysql/private/libicui18n.so.77.1
+%attr(755, root, root) %{_libdir}/mysql/private/libicustubdata.so.77.1
+%attr(755, root, root) %{_libdir}/mysql/private/libicuuc.so.77.1
 %attr(755, root, root) %{_libdir}/mysql/private/libprotobuf-lite.so.24.4.0
 %attr(755, root, root) %{_libdir}/mysql/private/libprotobuf.so.24.4.0
 %attr(755, root, root) %{_libdir}/mysql/private/libabsl_bad_any_cast_impl.so
@@ -849,8 +874,10 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_mysqlbackup.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_audit_api_message_emit.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_classic_hashing.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_query_attributes.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_reference_cache.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/ddl_rewriter.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/ha_example.so
@@ -863,12 +890,9 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/mysql_clone.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/rewrite_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/rewriter.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/semisync_master.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/semisync_slave.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/semisync_source.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/semisync_replica.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/validate_password.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/version_token.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_keyring_file.so
 
 %attr(644, root, root) %{_datadir}/mysql-*/mysql-log-rotate
@@ -897,8 +921,10 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_mysqlbackup.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_validate_password.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_audit_api_message_emit.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_classic_hashing.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_query_attributes.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_reference_cache.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/connection_control.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/ddl_rewriter.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/ha_example.so
@@ -911,12 +937,9 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/mysql_no_login.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/rewrite_example.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/rewriter.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_master.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_slave.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_source.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/semisync_replica.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/validate_password.so
-%attr(755, root, root) %{_libdir}/mysql/plugin/debug/version_token.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_keyring_file.so
 
 %files common
@@ -952,12 +975,12 @@ fi
 %files icu-data-files
 %defattr(-, root, root, -)
 %doc %{?license_files_server}
-%dir %attr(755, root, root) %{_libdir}/mysql/private/icudt73l
-%{_libdir}/mysql/private/icudt73l/cnvalias.icu
-%{_libdir}/mysql/private/icudt73l/uemoji.icu
-%{_libdir}/mysql/private/icudt73l/ulayout.icu
-%{_libdir}/mysql/private/icudt73l/unames.icu
-%{_libdir}/mysql/private/icudt73l/brkitr
+%dir %attr(755, root, root) %{_libdir}/mysql/private/icudt77l
+%{_libdir}/mysql/private/icudt77l/cnvalias.icu
+%{_libdir}/mysql/private/icudt77l/uemoji.icu
+%{_libdir}/mysql/private/icudt77l/ulayout.icu
+%{_libdir}/mysql/private/icudt77l/unames.icu
+%{_libdir}/mysql/private/icudt77l/brkitr
 
 %files client
 %doc %{?license_files_server}
@@ -971,6 +994,9 @@ fi
 %attr(755, root, root) %{_bindir}/mysqlslap
 %attr(755, root, root) %{_bindir}/mysql_config_editor
 %attr(755, root, root) %{_bindir}/mysql_migrate_keyring
+%if 0%{?commercial}
+%attr(755, root, root) %{_bindir}/mysqldm
+%endif # commercial
 
 %attr(644, root, root) %{_mandir}/man1/mysql.1*
 %attr(644, root, root) %{_mandir}/man1/mysqladmin.1*
@@ -1121,7 +1147,14 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_runtime_error.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_system_variable_set.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_table_access.so
+%if 0%{?commercial}
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_telemetry_resource_provider.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_telemetry_secret_provider.so
+%endif # commercial
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_component_deinit.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_component_deinit_no_deadlock.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_component_init_fail.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_component_init_then_register.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_command_services.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/test_services_command_services.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_execute_prepared_statement.so
@@ -1148,6 +1181,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_status_var_service_unreg_only.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_system_variable_source.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_audit_api_message.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_udf_aggregate.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_udf_services.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/conflicting_variables.so
 %attr(644, root, root) %{_libdir}/mysql/plugin/daemon_example.ini
@@ -1200,6 +1234,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_event_tracking_consumer_a.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_event_tracking_consumer_b.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/component_test_event_tracking_consumer_c.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/component_test_mysql_file_service.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/auth_test_plugin.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/authentication_ldap_sasl_client.so
@@ -1225,9 +1260,17 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_host_application_signal.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_current_thread_reader.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_runtime_error.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_udf_aggregate.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_system_variable_set.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_table_access.so
+%if 0%{?commercial}
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_telemetry_resource_provider.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_telemetry_secret_provider.so
+%endif # commercial
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_component_deinit.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_component_deinit_no_deadlock.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_component_init_fail.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_component_init_then_register.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_command_services.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/test_services_command_services.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_execute_prepared_statement.so
@@ -1305,6 +1348,7 @@ fi
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_event_tracking_consumer_a.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_event_tracking_consumer_b.so
 %attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_event_tracking_consumer_c.so
+%attr(755, root, root) %{_libdir}/mysql/plugin/debug/component_test_mysql_file_service.so
 
 %if 0%{?cluster}
 %files management-server
@@ -1344,7 +1388,9 @@ fi
 %config(noreplace) %{_sysconfdir}/mysqlrouter/mysqlrouter.conf
 %attr(644, root, root) %config(noreplace,missingok) %{_sysconfdir}/logrotate.d/mysqlrouter
 %{_bindir}/mysqlrouter
+%{_bindir}/mysqlrouter_bootstrap
 %{_bindir}/mysqlrouter_keyring
+%{_bindir}/mysqlrouter_mrs_client
 %{_bindir}/mysqlrouter_passwd
 %{_bindir}/mysqlrouter_plugin_info
 %attr(644, root, root) %{_mandir}/man1/mysqlrouter.1*
@@ -1352,6 +1398,7 @@ fi
 %attr(644, root, root) %{_mandir}/man1/mysqlrouter_plugin_info.1*
 %{_unitdir}/mysqlrouter.service
 %{_tmpfilesdir}/mysqlrouter.conf
+%{_libdir}/mysqlrouter/private/libmysqlrouter_http_client.so.*
 %{_libdir}/mysqlrouter/private/libmysqlharness.so.*
 %{_libdir}/mysqlrouter/private/libmysqlharness_stdx.so.*
 %{_libdir}/mysqlrouter/private/libmysqlharness_tls.so.*
@@ -1371,9 +1418,16 @@ fi
 %{_libdir}/mysqlrouter/private/libmysqlrouter_mysql.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_routing.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_routing_connections.so.*
+%{_libdir}/mysqlrouter/private/libmysqlrouter_routing_guidelines.so.*
 %{_libdir}/mysqlrouter/private/libmysqlrouter_utils.so.*
 %{_libdir}/mysqlrouter/private/libprotobuf.so.24.4.0
+%{_libdir}/mysqlrouter/private/libicui18n.so.77.1
+%{_libdir}/mysqlrouter/private/libicustubdata.so.77.1
+%{_libdir}/mysqlrouter/private/libicuuc.so.77.1
 %{_libdir}/mysqlrouter/private/libabsl_*.so
+%if 0%{?mrs_jit_executor_lib:1}
+  %{_libdir}/mysqlrouter/private/libjitexecutor*.so
+%endif
 %dir %{_libdir}/mysqlrouter
 %dir %{_libdir}/mysqlrouter/private
 %{_libdir}/mysqlrouter/*.so
@@ -1382,6 +1436,25 @@ fi
 %endif # with_router
 
 %changelog
+* Thu Oct 14 2025 Marek Szymczak <marek.szymczak@oracle.com> - 9.6.0-1
+- Added component_test_mysql_file_service
+
+* Fri Aug  1 2025 Marc Alff <marc.alff@oracle.com> - 9.5.0-1
+- Added component_test_telemetry_resource_provider
+- Added component_test_telemetry_secret_provider
+
+* Wed Jun 11 2025 Krzysztof Horszczaruk <krzysztof.horszczaruk@oracle.com> - 9.5.0-1
+- Added component_test_component_init_fail
+
+* Wed Apr 30 2025 Krzysztof Horszczaruk <krzysztof.horszczaruk@oracle.com> - 9.4.0
+- Added component_test_component_deinit_no_deadlock
+
+* Wed Apr 30 2025 Krzysztof Horszczaruk <krzysztof.horszczaruk@oracle.com> - 9.4.0
+- Added component_test_component_init_then_register
+
+* Wed Nov 13 2024 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 9.2.0-1
+- Added component_connection_control
+
 * Wed Jul 10 2024 Samar Pratap Singh <samar.pratap.singh@oracle.com> - 9.1.0-1
 - Added authentication_openid_connect plugin
 - Added mysql_test_jwt_generator tool

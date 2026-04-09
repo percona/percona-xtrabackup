@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ bool printBACKUP_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const BackupReq *sig = (const BackupReq *)theData;
+  const auto *sig = (const BackupReq *)theData;
   fprintf(output, " senderData: %d DataLength: %d flags: %d\n", sig->senderData,
           sig->backupDataLen, sig->flags);
   return true;
@@ -46,7 +46,7 @@ bool printBACKUP_DATA(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const BackupData *sig = (const BackupData *)theData;
+  const auto *sig = (const BackupData *)theData;
   if (sig->requestType == BackupData::ClientToMaster) {
     fprintf(output, " ClientToMaster: senderData: %d backupId: %d\n",
             sig->senderData, sig->backupId);
@@ -64,7 +64,7 @@ bool printBACKUP_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const BackupRef *sig = (const BackupRef *)theData;
+  const auto *sig = (const BackupRef *)theData;
   fprintf(output, " senderData: %d errorCode: %d masterRef: %d\n",
           sig->senderData, sig->errorCode, sig->masterRef);
   return true;
@@ -77,7 +77,7 @@ bool printBACKUP_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const BackupConf *sig = (const BackupConf *)theData;
+  const auto *sig = (const BackupConf *)theData;
   fprintf(output, " senderData: %d backupId: %d\n", sig->senderData,
           sig->backupId);
   return true;
@@ -90,7 +90,7 @@ bool printBACKUP_ABORT_REP(FILE *out, const Uint32 *data, Uint32 len,
     return false;
   }
 
-  const BackupAbortRep *sig = (const BackupAbortRep *)data;
+  const auto *sig = (const BackupAbortRep *)data;
   fprintf(out, " senderData: %d backupId: %d reason: %d\n", sig->senderData,
           sig->backupId, sig->reason);
   return true;
@@ -103,7 +103,7 @@ bool printBACKUP_COMPLETE_REP(FILE *out, const Uint32 *data, Uint32 len,
     return false;
   }
 
-  const BackupCompleteRep *sig = (const BackupCompleteRep *)data;
+  const auto *sig = (const BackupCompleteRep *)data;
   fprintf(out, " senderData: %d backupId: %d records: %llu bytes: %llu\n",
           sig->senderData, sig->backupId,
           sig->noOfRecordsLow + (((Uint64)sig->noOfRecordsHigh) << 32),
@@ -122,10 +122,9 @@ bool printABORT_BACKUP_ORD(FILE *out, const Uint32 *data, Uint32 len,
     return false;
   }
 
-  const AbortBackupOrd *sig = (const AbortBackupOrd *)data;
+  const auto *sig = (const AbortBackupOrd *)data;
 
-  AbortBackupOrd::RequestType rt =
-      (AbortBackupOrd::RequestType)sig->requestType;
+  auto rt = (AbortBackupOrd::RequestType)sig->requestType;
   switch (rt) {
     case AbortBackupOrd::ClientAbort:
       fprintf(out, " ClientAbort: senderData: %d backupId: %d\n",

@@ -1776,8 +1776,11 @@ CREATE TABLE t1 (
   c11 CHAR(6) CHECK (c11 IS NULL));
 SHOW CREATE TABLE t1;
 --replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
---exec $MYSQL_DUMP --databases test1 > $MYSQLTEST_VARDIR/tmp/test1_db.sql 2>&1
+--exec $MYSQL_DUMP --databases test1 > $MYSQLTEST_VARDIR/tmp/test1_db.sql
 DROP DATABASE test1;
+
+RESET BINARY LOGS AND GTIDS;
+
 --exec $MYSQL < $MYSQLTEST_VARDIR/tmp/test1_db.sql
 USE test1;
 SHOW CREATE TABLE t1;
@@ -2766,5 +2769,45 @@ ALTER TABLE t1 MODIFY f2 INT CHECK (f2 > 0), ALGORITHM = INPLACE;
 ALTER TABLE t1 MODIFY f2 INT CHECK (f2 > 0), ALGORITHM = INSTANT;
 ALTER TABLE t1 MODIFY f2 INT CHECK (f2 > 0), ALGORITHM = COPY;
 SHOW CREATE TABLE t1;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#30453221: CHECK CONSTRAINTS CHARACTER SET MISMATCH
+--echo #
+
+# Note: UTF8 representatation of "价" is "\xE4\xBB\xB7". The latter
+# is not a valid sequence of bytes in GBK.
+
+SET @bug30453221_create = 'CREATE TABLE t1 (价 INT DEFAULT 0 CHECK (价 BETWEEN 0 AND 9))';
+SET @bug30453221_alter = 'ALTER TABLE t1 ADD CONSTRAINT CHECK (价 % 2 = 0)';
+
+# Make sure that the query is ok while the current charset is default (utf8mb4):
+
+PREPARE stmt FROM @bug30453221_create;
+EXECUTE stmt;
+PREPARE stmt FROM @bug30453221_alter;
+EXECUTE stmt;
+DROP TABLE t1;
+
+# Convert the query to GBK and make sure that it parses ok while the current
+# charset is GBK:
+
+SET @bug30453221_create = CONVERT(@bug30453221_create USING GBK);
+SET @bug30453221_alter = CONVERT(@bug30453221_alter USING GBK);
+SET NAMES GBK;
+PREPARE stmt FROM @bug30453221_create;
+EXECUTE stmt;
+PREPARE stmt FROM @bug30453221_alter;
+EXECUTE stmt;
+SET NAMES DEFAULT;
+
+SHOW CREATE TABLE t1;
+
+--error ER_CHECK_CONSTRAINT_VIOLATED
+INSERT INTO t1 VALUES (7);
+INSERT INTO t1 VALUES (8);
+--error ER_CHECK_CONSTRAINT_VIOLATED
+INSERT INTO t1 VALUES (11);
 
 DROP TABLE t1;

@@ -1,4 +1,4 @@
-# Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -153,7 +153,6 @@ NDB_ADD_EXECUTABLE(ndb_perror
   )
 NDB_ADD_EXECUTABLE(ndb_restore
   restore/restore_main.cpp
-  restore/consumer.cpp
   restore/consumer_restore.cpp
   restore/consumer_printer.cpp
   restore/Restore.cpp

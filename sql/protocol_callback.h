@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -214,7 +214,7 @@ class Protocol_callback final : public Protocol {
     @retval false  success
     @retval true   failure
   */
-  bool store_time(const MYSQL_TIME &time, uint precision) override;
+  bool store_time(const Time_val &time, uint precision) override;
 
   /**
     Sends Field

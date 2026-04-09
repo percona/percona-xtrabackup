@@ -1,0 +1,106 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+
+
+## I. Set invalid values in `config.data` JSON object
+#
+# 1. `responseCache`.`maxCacheSize` text value
+# 2. `fileCache`.`maxCacheSize` text value
+# 3. `session`.`expiration` text value
+# 4. `session`.`inactivity` text value
+# 5. `jwt`.`expiration` text value
+#
+## II. Set too large values in `config.data` JSON object
+#
+# 1. `session`.`expiration` text value
+# 2. `session`.`inactivity` text value
+# 3. `jwt`.`expiration` text value
+#
+
+#
+# I.1
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "responseCache": {
+         "maxCacheSize": "xyz"
+       }
+     }';
+# Verify the change
+include/wait_for_pattern_in_file.inc [.*WARNING .* Option responseCache.maxCacheSize has an invalid value and will fallback to the default.*]
+
+#
+# I.2
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "fileCache": {
+         "maxCacheSize": "xyz"
+       }
+     }';
+# Verify the change
+include/wait_for_pattern_in_file.inc [.*WARNING .* Option fileCache.maxCacheSize has an invalid value and will fallback to the default.*]
+
+#
+# I.3
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "session": {
+         "expiration": "xyz"
+       }
+     }';
+# Verify the change
+include/wait_for_pattern_in_file.inc [.*WARNING .* Option 'session.expiration' has an invalid value and will fallback to the default.*]
+
+#
+# I.4
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "session": {
+         "inactivity": "xyz"
+       }
+     }';
+# Verify the change
+include/wait_for_pattern_in_file.inc [.*WARNING .* Option 'session.inactivity' has an invalid value and will fallback to the default.*]
+
+#
+# I.5
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "jwt": {
+         "expiration": "xyz"
+       }
+     }';
+# Verify the change
+include/wait_for_pattern_in_file.inc [.*WARNING .* Option 'jwt.expiration' has an invalid value and will fallback to the default.*]
+
+#
+# II.1
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "session": {
+         "expiration": 100000000000
+        }
+     }';
+# Verify the change
+include/wait_for_pattern_in_file.inc [.*WARNING .* Option 'session.expiration' value is too large. It was truncated to the maximum allowed value: 43200*.*]
+
+#
+# II.2
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "session": {
+         "inactivity": 100000000000
+       }
+     }';
+# Verify the change
+include/wait_for_pattern_in_file.inc [.*WARNING .* Option 'session.inactivity' value is too large. It was truncated to the maximum allowed value: 43200*]
+
+#
+# II.3
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "jwt": {
+         "expiration": 100000000000
+       }
+     }';
+# Verify the change
+include/wait_for_pattern_in_file.inc [.*WARNING .* Option 'jwt.expiration' value is too large. It was truncated to the maximum allowed value: 60*]
+
+# Cleanup
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -196,7 +196,7 @@ bool RowIDIntersectionIterator::init_ror_merged_scan() {
   return false;
 }
 
-bool RowIDIntersectionIterator::Init() {
+bool RowIDIntersectionIterator::DoInit() {
   DBUG_TRACE;
   if (!inited) {
     /* Check if m_last_rowid was successfully allocated in ctor */
@@ -239,7 +239,7 @@ RowIDUnionIterator::RowIDUnionIterator(
   rowid_length = table->file->ref_length;
 }
 
-bool RowIDUnionIterator::Init() {
+bool RowIDUnionIterator::DoInit() {
   if (!inited) {
     if (queue.reserve(m_children.size())) {
       table()->file->print_error(HA_ERR_OUT_OF_MEM, MYF(0));
@@ -298,7 +298,7 @@ RowIDUnionIterator::~RowIDUnionIterator() {
 /*
   Retrieve next record.
   SYNOPSIS
-     RowIDIntersectionIterator::Read()
+     RowIDIntersectionIterator::DoRead()
 
   NOTES
     Invariant on enter/exit: all intersected selects have retrieved all index
@@ -320,7 +320,7 @@ RowIDUnionIterator::~RowIDUnionIterator() {
   RETURN
     See RowIterator::Read()
  */
-int RowIDIntersectionIterator::Read() {
+int RowIDIntersectionIterator::DoRead() {
   size_t current_child_idx = 0;
 
   DBUG_TRACE;
@@ -421,7 +421,7 @@ int RowIDIntersectionIterator::Read() {
 /*
   Retrieve next record.
   SYNOPSIS
-    RowIDUnionIterator::Read()
+    RowIDUnionIterator::DoRead()
 
   NOTES
     Enter/exit invariant:
@@ -431,7 +431,7 @@ int RowIDIntersectionIterator::Read() {
   RETURN
     See RowIterator::Read()
  */
-int RowIDUnionIterator::Read() {
+int RowIDUnionIterator::DoRead() {
   DBUG_TRACE;
 
   for (;;) {  // Termination condition within loop.

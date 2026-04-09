@@ -19,7 +19,7 @@ include/rpl/sync_to_replica.inc
 XA RECOVER;
 formatID	gtrid_length	bqual_length	data
 1	6	0	xatest
-Waiting until gtid is MASTER_UUID:2
+Waiting until gtid is Source_UUID:2
 ---- XA COMMIT ----
 [connection master]
 XA COMMIT 'xatest';
@@ -28,24 +28,22 @@ include/rpl/sync_to_replica.inc
 # Expecting no prepared transactions
 XA RECOVER;
 formatID	gtrid_length	bqual_length	data
-Waiting until gtid is MASTER_UUID:3
+Waiting until gtid is Source_UUID:3
 include/diff_tables.inc [master:t,slave:t]
 [connection master]
 DROP TABLE t;
 include/rpl/sync_to_replica.inc
 include/rpl/reset.inc
 ####################################################################
-# Test Case 2: Enable Multithreaded Slave with replica_parallel_type as
-# DATABASE. Verify that slave displays appropriate XA_STATE in
+# Test Case 2: Enable Multithreaded Slave.
+# Verify that slave displays appropriate XA_STATE in
 # performance schema table, post XA PREPARE AND XA COMMIT command
 # execution.
 ####################################################################
 [connection slave]
+include/rpl/stop_replica.inc
 SET @save_replica_parallel_workers=@@global.replica_parallel_workers;
-SET @replica_parallel_type=@@global.replica_parallel_type;
-include/rpl/stop_replica.inc
 SET GLOBAL replica_parallel_workers=4;
-SET GLOBAL replica_parallel_type='DATABASE';
 include/rpl/start_replica.inc
 [connection slave]
 TRUNCATE TABLE performance_schema.events_transactions_current;
@@ -63,7 +61,7 @@ include/rpl/sync_to_replica.inc
 XA RECOVER;
 formatID	gtrid_length	bqual_length	data
 1	6	0	xatest
-Waiting until gtid is MASTER_UUID:2
+Waiting until gtid is Source_UUID:2
 ---- XA COMMIT ----
 [connection master]
 XA COMMIT 'xatest';
@@ -72,48 +70,7 @@ include/rpl/sync_to_replica.inc
 # Expecting no prepared transactions
 XA RECOVER;
 formatID	gtrid_length	bqual_length	data
-Waiting until gtid is MASTER_UUID:3
-include/diff_tables.inc [master:t,slave:t]
-[connection master]
-DROP TABLE t;
-include/rpl/sync_to_replica.inc
-include/rpl/reset.inc
-####################################################################
-# Test Case 3: Enable Multithreaded Slave with replica_parallel_type as
-# LOGICAL_CLOCK. Verify that slave displays appropriate XA_STATE in
-# performance schema table, post XA PREPARE AND XA COMMIT command
-# execution.
-####################################################################
-include/rpl/stop_replica.inc
-SET GLOBAL replica_parallel_workers=4;
-SET GLOBAL replica_parallel_type='LOGICAL_CLOCK';
-include/rpl/start_replica.inc
-[connection slave]
-TRUNCATE TABLE performance_schema.events_transactions_current;
----- Setup ----
-[connection master]
-CREATE TABLE t ( f INT) ENGINE=INNODB;
----- XA PREPARE ----
-XA START 'xatest';
-INSERT INTO t VALUES (10);
-XA END 'xatest';
-XA PREPARE 'xatest';
-include/rpl/sync_to_replica.inc
-# Wait for XA_STATE to become PREPARED on slave
-# Expecting one prepared transaction
-XA RECOVER;
-formatID	gtrid_length	bqual_length	data
-1	6	0	xatest
-Waiting until gtid is MASTER_UUID:2
----- XA COMMIT ----
-[connection master]
-XA COMMIT 'xatest';
-include/rpl/sync_to_replica.inc
-# Wait for XA_STATE to become COMMITTED on slave
-# Expecting no prepared transactions
-XA RECOVER;
-formatID	gtrid_length	bqual_length	data
-Waiting until gtid is MASTER_UUID:3
+Waiting until gtid is Source_UUID:3
 include/diff_tables.inc [master:t,slave:t]
 [connection master]
 DROP TABLE t;
@@ -121,6 +78,5 @@ include/rpl/sync_to_replica.inc
 [connection slave]
 include/rpl/stop_replica.inc
 set @@global.replica_parallel_workers= @save_replica_parallel_workers;
-set @@global.replica_parallel_type= @replica_parallel_type;
 include/rpl/start_replica.inc
 include/rpl/deinit.inc

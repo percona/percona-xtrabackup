@@ -1,4 +1,4 @@
--- Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+-- Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@ DROP FUNCTION IF EXISTS quote_identifier;
 
 DELIMITER $$
 
--- https://dev.mysql.com/doc/refman/5.7/en/identifiers.html
+-- https://dev.mysql.com/doc/refman/en/identifiers.html
 -- Maximum supported length for any of the current identifiers in 5.7.5+ is 256 characters.
 -- Before that, user variables could have any length.
 --

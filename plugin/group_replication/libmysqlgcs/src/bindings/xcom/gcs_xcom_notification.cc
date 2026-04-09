@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,8 +23,8 @@
 
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_notification.h"
 
-#include <assert.h>
-#include <stddef.h>
+#include <cassert>
+#include <cstddef>
 
 #include "my_compiler.h"
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_logging_system.h"
@@ -155,7 +155,7 @@ void Protocol_change_notification::do_execute() {
 }
 
 void *process_notification_thread(void *ptr_object) {
-  Gcs_xcom_engine *engine = static_cast<Gcs_xcom_engine *>(ptr_object);
+  auto *engine = static_cast<Gcs_xcom_engine *>(ptr_object);
 
   /*
     This thread will invoke the event handlers on Group Replication,
@@ -200,7 +200,7 @@ void Gcs_xcom_engine::initialize(xcom_initialize_functor *functor
 void Gcs_xcom_engine::finalize(xcom_finalize_functor *functor) {
   MYSQL_GCS_LOG_DEBUG("Gcs_xcom_engine::finalize invoked!");
   auto *notification = new Finalize_notification(this, functor);
-  bool scheduled = push(notification);
+  bool const scheduled = push(notification);
   if (!scheduled) {
     MYSQL_GCS_LOG_DEBUG(
         "Tried to enqueue a finalize but the member is about to stop.")

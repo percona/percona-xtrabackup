@@ -1,0 +1,62 @@
+# Validate authentication application with SSL
+#
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Handling of HTTP2
+--echo #
+--echo # 1. verify that given resources are available over HTTP/1.1
+--echo # 2. verify that connection is rejected when client tries to speak HTTP/2.0 at connection start
+--echo # 3. verify that connection protocol switch is ignored and connection is handled as HTTP/1.1
+--echo #
+--source ../include/mrs/start_object_definition.inc
+
+# The test uses HOST to have only paths in HREF fields.
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table3
+--let $mrs_add_db_object_path=/t1
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/basic/t1/1?f=id'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/basic/t1/1?f=id'
+--let $mrs_client_arg_protocol=http2
+--let $mrs_client_arg_expected_fatal_error=eof
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_arg_path='/svc/basic/t1/1?f=id'
+--let $mrs_client_arg_header_http2_settings=AAMAAABkAARAAAAAAAIAAAAA
+--let $mrs_client_arg_header_upgrade=h2c
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo # Cleanup
+--source ../include/mrs/cleanup.inc

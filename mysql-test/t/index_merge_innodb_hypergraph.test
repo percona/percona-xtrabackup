@@ -56,4 +56,19 @@ EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE b=0 AND c=0;
 
 DROP TABLE t1;
 
+--echo #
+--echo # Bug##37199882: Hypergraph chooses ROR intersection for a single range
+--echo #
+
+CREATE TABLE t1 (f1 INT, f2 INT, f3 INT, PRIMARY KEY (f1,f2), KEY(f1));
+INSERT INTO t1 VALUES (1,1,1),(2,2,2),(3,3,3),(4,4,4),(5,5,5),(6,6,6),
+(7,7,7),(8,8,8),(9,9,9),(10,10,10);
+
+ANALYZE TABLE t1;
+
+--replace_regex $elide_costs
+EXPLAIN FORMAT=TREE SELECT * FROM t1 WHERE f1=10;
+
+DROP TABLE t1;
+
 --source include/disable_hypergraph.inc

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -93,9 +93,7 @@ class Decompression_input_stream
     return Skip(count - left);
   }
 
-  google::protobuf::int64 ByteCount() const override {
-    return m_all + m_output_buffer_offset;
-  }
+  int64_t ByteCount() const override { return m_all + m_output_buffer_offset; }
 
  private:
   bool ReadCompressed() {

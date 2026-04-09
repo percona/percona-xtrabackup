@@ -32,8 +32,6 @@
 #include <components/keyrings/common/component_helpers/include/keyring_load_service_definition.h>
 /* Keyring_keys_metadata_iterator_service_impl */
 #include <components/keyrings/common/component_helpers/include/keyring_keys_metadata_iterator_service_definition.h>
-/* Log_builtins_keyring */
-#include <components/keyrings/common/component_helpers/include/keyring_log_builtins_definition.h>
 /* Keyring_metadata_query_service_impl */
 #include <components/keyrings/common/component_helpers/include/keyring_metadata_query_service_definition.h>
 /* Keyring_reader_service_impl */
@@ -182,10 +180,6 @@ KEYRING_COMPONENT_STATUS_IMPLEMENTOR(component_keyring_vault);
 KEYRING_COMPONENT_METADATA_QUERY_IMPLEMENTOR(component_keyring_vault);
 KEYRING_READER_IMPLEMENTOR(component_keyring_vault);
 KEYRING_WRITER_IMPLEMENTOR(component_keyring_vault);
-/* Used if log_builtins is not available */
-KEYRING_LOG_BUILTINS_IMPLEMENTOR(component_keyring_vault);
-KEYRING_LOG_BUILTINS_STRING_IMPLEMENTOR(component_keyring_vault);
-
 /** Component provides */
 BEGIN_COMPONENT_PROVIDES(component_keyring_vault)
 PROVIDES_SERVICE(component_keyring_vault, keyring_aes),
@@ -196,8 +190,6 @@ PROVIDES_SERVICE(component_keyring_vault, keyring_aes),
     PROVIDES_SERVICE(component_keyring_vault, keyring_component_metadata_query),
     PROVIDES_SERVICE(component_keyring_vault, keyring_reader_with_status),
     PROVIDES_SERVICE(component_keyring_vault, keyring_writer),
-    PROVIDES_SERVICE(component_keyring_vault, log_builtins),
-    PROVIDES_SERVICE(component_keyring_vault, log_builtins_string),
     END_COMPONENT_PROVIDES();
 
 REQUIRES_PSI_MEMORY_SERVICE_PLACEHOLDER;

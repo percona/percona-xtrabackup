@@ -1,7 +1,7 @@
 #ifndef SQL_ITERATORS_BASIC_ROW_ITERATORS_H_
 #define SQL_ITERATORS_BASIC_ROW_ITERATORS_H_
 
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -73,10 +73,10 @@ class TableScanIterator final : public TableRowIterator {
                     ha_rows *examined_rows);
   ~TableScanIterator() override;
 
-  bool Init() override;
-  int Read() override;
-
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   uchar *const m_record;
   const double m_expected_rows;
   ha_rows *const m_examined_rows;
@@ -118,10 +118,10 @@ class IndexScanIterator final : public TableRowIterator {
                     double expected_rows, ha_rows *examined_rows);
   ~IndexScanIterator() override;
 
-  bool Init() override;
-  int Read() override;
-
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   uchar *const m_record;
   const int m_idx;
   const bool m_use_order;
@@ -147,10 +147,10 @@ class IndexDistanceScanIterator final : public TableRowIterator {
                             QUICK_RANGE *query_mbr, double expected_rows,
                             ha_rows *examined_rows);
 
-  bool Init() override;
-  int Read() override;
-
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   uchar *const m_record;
   const int m_idx;
   QUICK_RANGE *m_query_mbr;
@@ -188,8 +188,6 @@ class SortBufferIterator final : public RowIterator {
                      ha_rows *examined_rows);
   ~SortBufferIterator() override;
 
-  bool Init() override;
-  int Read() override;
   void UnlockRow() override {}
   void SetNullRowFlag(bool) override {
     // Handled by SortingIterator.
@@ -197,6 +195,9 @@ class SortBufferIterator final : public RowIterator {
   }
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   // NOTE: No m_record -- unpacks directly into each Field's field->ptr.
   Filesort_info *const m_sort;
   Sort_result *const m_sort_result;
@@ -229,8 +230,6 @@ class SortBufferIndirectIterator final : public RowIterator {
                              bool ignore_not_found_rows, bool has_null_flags,
                              ha_rows *examined_rows);
   ~SortBufferIndirectIterator() override;
-  bool Init() override;
-  int Read() override;
   void SetNullRowFlag(bool) override {
     // Handled by SortingIterator.
     assert(false);
@@ -238,6 +237,9 @@ class SortBufferIndirectIterator final : public RowIterator {
   void UnlockRow() override {}
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   Sort_result *const m_sort_result;
   Mem_root_array<TABLE *> m_tables;
   uint m_sum_ref_length;
@@ -264,8 +266,6 @@ class SortFileIterator final : public RowIterator {
                    Filesort_info *sort, ha_rows *examined_rows);
   ~SortFileIterator() override;
 
-  bool Init() override { return false; }
-  int Read() override;
   void UnlockRow() override {}
   void SetNullRowFlag(bool) override {
     // Handled by SortingIterator.
@@ -273,6 +273,9 @@ class SortFileIterator final : public RowIterator {
   }
 
  private:
+  bool DoInit() override { return false; }
+  int DoRead() override;
+
   uchar *const m_rec_buf;
   const uint m_buf_length;
   Mem_root_array<TABLE *> m_tables;
@@ -302,8 +305,6 @@ class SortFileIndirectIterator final : public RowIterator {
                            bool has_null_flags, ha_rows *examined_rows);
   ~SortFileIndirectIterator() override;
 
-  bool Init() override;
-  int Read() override;
   void SetNullRowFlag(bool) override {
     // Handled by SortingIterator.
     assert(false);
@@ -311,6 +312,9 @@ class SortFileIndirectIterator final : public RowIterator {
   void UnlockRow() override {}
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   IO_CACHE *m_io_cache = nullptr;
   ha_rows *const m_examined_rows;
   Mem_root_array<TABLE *> m_tables;
@@ -330,12 +334,13 @@ class FakeSingleRowIterator final : public RowIterator {
   FakeSingleRowIterator(THD *thd, ha_rows *examined_rows)
       : RowIterator(thd), m_examined_rows(examined_rows) {}
 
-  bool Init() override {
+ private:
+  bool DoInit() override {
     m_has_row = true;
     return false;
   }
 
-  int Read() override {
+  int DoRead() override {
     if (m_has_row) {
       m_has_row = false;
       if (m_examined_rows != nullptr) {
@@ -347,6 +352,7 @@ class FakeSingleRowIterator final : public RowIterator {
     }
   }
 
+ public:
   void SetNullRowFlag(bool is_null_row [[maybe_unused]]) override {
     assert(!is_null_row);
   }
@@ -370,18 +376,18 @@ class UnqualifiedCountIterator final : public RowIterator {
   UnqualifiedCountIterator(THD *thd, JOIN *join)
       : RowIterator(thd), m_join(join) {}
 
-  bool Init() override {
-    m_has_row = true;
-    return false;
-  }
-
-  int Read() override;
-
   void SetNullRowFlag(bool) override { assert(false); }
 
   void UnlockRow() override {}
 
  private:
+  bool DoInit() override {
+    m_has_row = true;
+    return false;
+  }
+
+  int DoRead() override;
+
   bool m_has_row;
   JOIN *const m_join;
 };
@@ -400,15 +406,15 @@ class ZeroRowsIterator final : public RowIterator {
  public:
   ZeroRowsIterator(THD *thd, Mem_root_array<TABLE *> pruned_tables);
 
-  bool Init() override { return false; }
-
-  int Read() override { return -1; }
-
   void SetNullRowFlag(bool is_null_row) override;
 
   void UnlockRow() override {}
 
  private:
+  bool DoInit() override { return false; }
+
+  int DoRead() override { return -1; }
+
   const Mem_root_array<TABLE *> m_pruned_tables;
 };
 
@@ -426,18 +432,18 @@ class ZeroRowsAggregatedIterator final : public RowIterator {
   ZeroRowsAggregatedIterator(THD *thd, JOIN *join, ha_rows *examined_rows)
       : RowIterator(thd), m_join(join), m_examined_rows(examined_rows) {}
 
-  bool Init() override {
-    m_has_row = true;
-    return false;
-  }
-
-  int Read() override;
-
   void SetNullRowFlag(bool) override { assert(false); }
 
   void UnlockRow() override {}
 
  private:
+  bool DoInit() override {
+    m_has_row = true;
+    return false;
+  }
+
+  int DoRead() override;
+
   bool m_has_row;
   JOIN *const m_join;
   ha_rows *const m_examined_rows;
@@ -474,9 +480,6 @@ class FollowTailIterator final : public TableRowIterator {
                      ha_rows *examined_rows);
   ~FollowTailIterator() override;
 
-  bool Init() override;
-  int Read() override;
-
   /**
     Signal where we can expect to find the number of generated rows for this
     materialization (this points into the MaterializeIterator's data).
@@ -498,6 +501,9 @@ class FollowTailIterator final : public TableRowIterator {
   bool RepositionCursorAfterSpillToDisk();
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   bool m_inited = false;
   uchar *const m_record;
   const double m_expected_rows;
@@ -534,14 +540,14 @@ class TableValueConstructorIterator final : public RowIterator {
       const mem_root_deque<mem_root_deque<Item *> *> &row_value_list,
       Mem_root_array<Item_values_column *> *output_refs);
 
-  bool Init() override;
-  int Read() override;
-
   void SetNullRowFlag(bool) override { assert(false); }
 
   void UnlockRow() override {}
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   ha_rows *const m_examined_rows{nullptr};
 
   /// Contains the row values that are part of a VALUES clause. Read() will

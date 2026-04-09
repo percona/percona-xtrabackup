@@ -1,32 +1,4 @@
 #
-# Bug #26300119	ASSERTION IN PREBUILT->TRX->ISOLATION_LEVEL == TRX_ISO_READ_UNCOMMITTED
-#
-CREATE PROCEDURE populate_t1(IN BASE INT, IN SIZE INT)
-BEGIN
-DECLARE i INT DEFAULT BASE;
-WHILE (i <= SIZE) DO
-INSERT INTO t1 VALUES  (i, repeat('10101010101010101010',2000));
-SET i = i + 1;
-END WHILE;
-END|
-CREATE TABLE t1 (
-pk int,
-col_blob_key blob,
-primary key (pk)
-);
-CALL populate_t1(1, 100);
-START TRANSACTION;
-CALL populate_t1(101, 199);
-SET DEBUG_SYNC='before_insertion_of_blob SIGNAL halted_insert WAIT_FOR proceed';
-INSERT INTO t1 VALUES (200, repeat('10101010101010101010',2000));;
-SET DEBUG_SYNC='now WAIT_FOR halted_insert';
-SET DEBUG_SYNC='allow_insert SIGNAL proceed';
-SELECT pk, col_blob_key FROM t1 WHERE pk between 99 and 100;
-COMMIT;
-SET DEBUG_SYNC='RESET';
-DROP PROCEDURE populate_t1;
-DROP TABLE t1;
-#
 # Bug#32291506 ASSERTION FAILURE: ROW0SEL.CC: MYSQL_COL_LEN == LEN
 #
 CREATE TABLE t1 (
@@ -40,13 +12,11 @@ KEY i1 (c2, c1(1))
 INSERT  INTO t1(c0,c1,c3) VALUES (1,'1',1);
 START TRANSACTION;
 DELETE FROM t1;
-SET DEBUG = "+d, compare_end_range";
 # No lock Range select with KEY i1 and end range check
 SELECT * FROM t1  WHERE c2 < 0;
 c0	c1	c2	c3
 # X lock Range select with KEY i1 and end range check
 DELETE FROM t1  WHERE c2 < 0;
-SET DEBUG = "-d, compare_end_range";
 COMMIT;
 DROP TABLE t1;
 #

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -262,6 +262,8 @@ std::shared_ptr<UniqueId::ProcessUniqueIds> UniqueId::process_unique_ids() {
 }
 
 uint16_t TcpPortPool::get_next_available() {
+  if (reuse_port_) return reuse_port_;
+
   net::io_context io_ctx;
 
   constexpr const auto bind_address = net::ip::address_v4::loopback();

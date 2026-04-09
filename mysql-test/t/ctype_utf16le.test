@@ -2,6 +2,9 @@
 --echo # Start of 5.6 tests
 --echo #
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 SET NAMES utf8mb3, collation_connection=utf16le_general_ci;
 SELECT HEX('a'), HEX('a ');
 -- source include/endspace.inc
@@ -597,7 +600,8 @@ SHOW CREATE TABLE t1;
 INSERT INTO t1 VALUES ('abc'),('zyx'),('acb');
 SELECT UPPER(c) FROM t1 ORDER BY 1 DESC;
 DROP TABLE t1;
-
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc
 
 --echo #
 --echo # WL#3664 WEIGHT_STRING

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 
    This program is free software; you can redistribute it and/or modify
@@ -27,11 +27,10 @@
 #ifdef TEST_NDBPROCESS
 
 #include "portlib/NdbProcess.hpp"
-#include <stdlib.h>
-#include <string.h>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -45,6 +44,7 @@ using std::filesystem::path;
 
 #ifdef _WIN32
 #define strcasecmp _stricmp
+#include <crtdbg.h>
 #endif
 
 bool check_call_output(const NdbProcess::Args &args, FILE *rfile) {
@@ -178,7 +178,7 @@ bool test_call_arg_passing(const char *host, const path &prog,
   } else {
     ok = check_call_output(args, rfile);
   }
-  fclose(rfile);
+  if (rfile != nullptr) fclose(rfile);
 
   int ret = 1;
   if (!proc->wait(ret, 30'000)) {
@@ -201,6 +201,10 @@ int print_arguments(int argc, const char *argv[]) {
 }
 
 int main(int argc, const char *argv[]) {
+#ifdef _WIN32
+  _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+  _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif
   const path prog = argv[0];
   const path full_prog = canonical(prog);
   int argi = 1;

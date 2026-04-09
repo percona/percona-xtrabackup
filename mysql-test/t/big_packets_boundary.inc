@@ -39,7 +39,7 @@ let $i = 0;
 while ($i < 16)
 {
   let $str = z$str;
-  eval SELECT MD5("$str");
+  eval SELECT SHA2("$str",256);
   eval SELECT LENGTH("$str");
   replace_column 1 verylongstring;
   eval SELECT "Q $str END";

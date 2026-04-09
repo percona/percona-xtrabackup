@@ -4090,3 +4090,84 @@ SELECT JSON_ARRAY(ST_ASGEOJSON(ST_GEOMFROMTEXT('')), 1);
 # Exercise a previously untested error path.
 --error ER_GIS_INVALID_DATA
 SELECT JSON_ARRAY(ST_ASGEOJSON(0x00), 1);
+
+--echo #
+--echo # WL#16929: Include CRS URN in implicit JSON representation of geometries
+--echo #
+
+# For SRID 0 the CRS URN should be 'urn:ogc:def:crs:MySQL::0'.
+
+# Implicit SRID 0:
+SELECT JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)'));
+SELECT CAST(ST_GeomFromText('POINT(1 2)') AS JSON);
+SELECT JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)'));
+SELECT JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)'));
+SELECT JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)'));
+
+# Explicit SRID 0:
+SELECT JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)', 0));
+SELECT CAST(ST_GeomFromText('POINT(1 2)', 0) AS JSON);
+SELECT JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 0));
+SELECT JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 0));
+SELECT JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)', 0));
+
+# For SRID 3857, the CRS URN should be 'urn:ogc:def:crs:EPSG::3857'.
+SELECT JSON_OBJECT('geom', ST_GeomFromText('POINT(1 2)', 3857));
+SELECT CAST(ST_GeomFromText('POINT(1 2)', 3857) AS JSON);
+SELECT JSON_SET('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 3857));
+SELECT JSON_INSERT('{}', '$.geom', ST_GeomFromText('POINT(1 2)', 3857));
+SELECT JSON_ARRAY_APPEND('[]', '$', ST_GeomFromText('POINT(1 2)', 3857));
+
+# ST_AsGeoJSON should return correct CRS specifier for SRID 0 and
+# options 2 and 4
+
+# For option 2: the value should be 'MySQL:0'
+SELECT ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 2);
+SELECT ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 2);
+
+# For option 4: the value should be 'urn:ogc:def:crs:MySQL::0'
+SELECT ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 4);
+SELECT ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 4);
+
+# ST_GeomFromGeoJSON should still use SRID 4326 when no SRID is specified.
+SELECT ST_SRID(ST_GeomFromGeoJSON('{"type": "Point", "coordinates": [1, 2]}'));
+
+# ST_GeomFromGeoJSON should understand both the short and the long
+# name of SRID 0.
+SELECT ST_SRID(ST_GeomFromGeoJSON(
+                 '{"crs": {"type": "name", "properties": '
+                 '{"name": "MySQL:0"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}'));
+SELECT ST_SRID(ST_GeomFromGeoJSON(
+                 '{"crs": {"type": "name", "properties": '
+                 '{"name": "urn:ogc:def:crs:MySQL::0"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}'));
+
+# Using another number than 0 in the MySQL-specific SRID should fail.
+--error ER_INVALID_GEOJSON_UNSPECIFIED
+SELECT ST_GeomFromGeoJSON(
+                 '{"crs": {"type": "name", "properties": '
+                 '{"name": "MySQL:1"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}');
+--error ER_INVALID_GEOJSON_UNSPECIFIED
+SELECT ST_GeomFromGeoJSON(
+                 '{"crs": {"type": "name", "properties": '
+                 '{"name": "urn:ogc:def:crs:MySQL::1"}}, '
+                 '"type": "Point", "coordinates": [1, 2]}');
+
+# The SRID should be preserved when a geometry is converted to JSON
+# and back to geometry.
+
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 2)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)'), 0, 4)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 2)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 0), 0, 4)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 3857), 0, 2)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 3857), 0, 4)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 4326), 0, 2)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(ST_AsGeoJSON(ST_GeomFromText('POINT(1 2)', 4326), 0, 4)));
+
+SELECT ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)') AS JSON)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 0) AS JSON)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 3857) AS JSON)));
+SELECT ST_SRID(ST_GeomFromGeoJSON(CAST(ST_GeomFromText('POINT(1 2)', 4326) AS JSON)));

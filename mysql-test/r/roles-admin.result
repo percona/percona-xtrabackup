@@ -260,6 +260,8 @@ GRANT r3 TO u1 WITH ADMIN OPTION;
 SET ROLE r3;
 # Let's see if this stick after we flush the caches.
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET ROLE r3;
 GRANT r3 TO u2;
 GRANT r3 TO u2 WITH ADMIN OPTION;

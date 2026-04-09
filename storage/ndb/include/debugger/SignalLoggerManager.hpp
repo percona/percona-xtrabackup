@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -171,7 +171,7 @@ class SignalLoggerManager {
    * Print data word in hex.  Adds line break before the word
    * when pos > 0 && pos % 7 == 0.  Increments pos.
    */
-  static void printDataWord(FILE *output, Uint32 &pos, const Uint32 data);
+  static void printDataWord(FILE *output, Uint32 &pos, Uint32 data);
 
  private:
   bool m_logDistributed;

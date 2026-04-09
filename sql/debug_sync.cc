@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -22,7 +22,9 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 /**
-  == Debug Sync Facility ==
+  @page PAGE_DEBUG_SYNC Debug Sync Facility
+
+  @section DEBUG_SYNC_INTRO Introduction
 
   The Debug Sync Facility allows placement of synchronization points in
   the server code by using the DEBUG_SYNC macro:
@@ -173,7 +175,7 @@
       SET DEBUG_SYNC= 'name TEST';
 
 
-  === Formal Syntax ===
+  @section DEBUG_SYNC_SYNTAX Formal Syntax
 
   The string to "assign" to the DEBUG_SYNC variable can contain:
 
@@ -189,7 +191,7 @@
   separated by '&|' must be present or both of them.
 
 
-  === Activation/Deactivation ===
+  @section DEBUG_SYNC_ACTIVATION Activation/Deactivation
 
   The facility is an optional part of the MySQL server.
   It is enabled in a debug server by default.
@@ -231,7 +233,7 @@
   parsed into a debug sync action and stored apart from the variable value.
 
 
-  === Implementation ===
+  @section DEBUG_SYNC_IMPL Implementation
 
   Pseudo code for a sync point:
 
@@ -247,11 +249,12 @@
   new action, the array is sorted again.
 
 
-  === A typical synchronization pattern ===
+  @section DEBUG_SYNC_PATTERN A typical synchronization pattern
 
   There are quite a few places in MySQL, where we use a synchronization
   pattern like this:
 
+@verbatim
   mysql_mutex_lock(&mutex);
   thd->enter_cond(&condition_variable, &mutex, new_message);
   # if defined(ENABLE_DEBUG_SYNC)
@@ -262,6 +265,7 @@
     mysql_cond_wait(&condition_variable, &mutex);
   mysql_mutex_unlock(&mutex);
   thd->exit_cond(old_message);
+@endverbatim
 
   Here some explanations:
 
@@ -294,6 +298,7 @@
   A bit off-topic: At some places, the loop is taken around the whole
   synchronization pattern:
 
+@verbatim
   while (!thd->killed && !end_of_wait_condition)
   {
     mysql_mutex_lock(&mutex);
@@ -306,6 +311,7 @@
     mysql_mutex_unlock(&mutex);
     thd->exit_cond(old_message);
   }
+@endverbatim
 
   Note that it is important to repeat the test for thd->killed after
   enter_cond(). Otherwise the killing thread may kill this thread after
@@ -321,7 +327,7 @@
   mysql_cond_wait(), the signaling happens at the right place. We
   have a safe synchronization.
 
-  === Co-work with the DBUG facility ===
+  @section DEBUG_SYNC_CO_WORK Co-work with the DBUG facility
 
   When running the MySQL test suite with the --debug command line
   option, the Debug Sync Facility writes trace messages to the DBUG
@@ -337,10 +343,7 @@
   been run through (hit) with or without executing actions. Then add
   "|debug_sync_point:" to the egrep pattern.
 
-  === Further reading ===
-
-  For a discussion of other methods to synchronize threads see
-  http://forge.mysql.com/wiki/MySQL_Internals_Test_Synchronization
+  @section DEBUG_SYNC_FURTHER Further reading
 
   For complete syntax tests, functional tests, and examples see the test
   case debug_sync.test.
@@ -351,12 +354,12 @@
 
 #include "sql/debug_sync.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <memory>
 #include <vector>
 
@@ -1985,7 +1988,7 @@ bool debug_sync_set_action(THD *thd, const char *action_str, size_t len) {
   return rc;
 }
 
-void conditional_sync_point(std::string name) {
+void conditional_sync_point(const std::string &name, unsigned short timeout) {
   if (current_thd == nullptr) return;
   const std::string debug_symbol = "syncpoint_" + name;
   DBUG_EXECUTE_IF(debug_symbol.c_str(), {
@@ -1996,12 +1999,15 @@ void conditional_sync_point(std::string name) {
                         name.c_str()));
     std::string act =
         "now SIGNAL reached_" + name + " WAIT_FOR continue_" + name;
+    if (timeout) {
+      act += " TIMEOUT " + std::to_string(timeout);
+    }
     bool ret = debug_sync_set_action(current_thd, act.c_str(), act.length());
     assert(!ret);
   });
 }
 
-void conditional_sync_point_for_timestamp(std::string name) {
+void conditional_sync_point_for_timestamp(const std::string &name) {
   if (current_thd == nullptr) return;
   conditional_sync_point(name + "_" +
                          std::to_string(current_thd->start_time.tv_sec));

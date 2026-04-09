@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -401,7 +401,7 @@ class NdbSchemaOp {
                       int aDistributionKey = 0, int aDistributionGroup = 0,
                       int aDistributionGroupNoOfBits = 16,
                       bool aAutoIncrement = false,
-                      const char *aDefaultValue = 0);
+                      const char *aDefaultValue = nullptr);
 
   /**
    * @deprecated do not use!

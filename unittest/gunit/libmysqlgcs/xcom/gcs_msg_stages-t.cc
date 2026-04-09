@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -258,7 +258,7 @@ TEST_F(XcomStagesTest, CannotCompressPayloadTooBig) {
   constexpr unsigned long long payload_size =
       Gcs_message_stage_lz4::max_input_compression() + 1;
 
-  Mock_gcs_message_data msg_data(payload_size);
+  Mock_gcs_message_data const msg_data(payload_size);
 
   std::vector<Gcs_packet> packets_out;
   std::tie(error, packets_out) =
@@ -273,7 +273,7 @@ TEST_F(XcomStagesTest, CannotCompressPayloadTooBig) {
   */
   constexpr unsigned long long payload_size_2 = (1ULL << 32) + 1;
 
-  Mock_gcs_message_data msg_data_2(payload_size_2);
+  Mock_gcs_message_data const msg_data_2(payload_size_2);
 
   std::vector<Gcs_packet> packets_out_2;
   std::tie(error, packets_out_2) =
@@ -299,7 +299,7 @@ TEST_F(XcomStagesTest, CannotFragmentPayloadFragmentSizeTooSmall) {
   constexpr unsigned long long payload_size =
       std::numeric_limits<unsigned int>::max();
 
-  Mock_gcs_message_data msg_data(payload_size);
+  Mock_gcs_message_data const msg_data(payload_size);
 
   std::vector<Gcs_packet> packets_out;
   std::tie(error, packets_out) =
@@ -433,18 +433,18 @@ TEST_F(XcomStagesTest, ReceivePacketWithUnknownStage) {
  */
 class Gcs_new_stage_1 : public Gcs_message_stage {
  protected:
-  virtual stage_status skip_apply(
+  stage_status skip_apply(
       uint64_t const &original_payload_size) const override {
-    bool result = (original_payload_size != 0);
+    bool const result = (original_payload_size != 0);
     return result ? stage_status::apply : stage_status::abort;
   }
 
-  virtual stage_status skip_revert(const Gcs_packet &packet) const override {
-    bool result = (packet.get_payload_length() != 0);
+  stage_status skip_revert(const Gcs_packet &packet) const override {
+    bool const result = (packet.get_payload_length() != 0);
     return result ? stage_status::apply : stage_status::abort;
   }
 
-  virtual std::pair<bool, std::vector<Gcs_packet>> apply_transformation(
+  std::pair<bool, std::vector<Gcs_packet>> apply_transformation(
       Gcs_packet &&packet) override {
     int64_t id = htole64(get_id());
 
@@ -470,8 +470,8 @@ class Gcs_new_stage_1 : public Gcs_message_stage {
     return std::make_pair(false, std::move(packets_out));
   }
 
-  virtual std::pair<Gcs_pipeline_incoming_result, Gcs_packet>
-  revert_transformation(Gcs_packet &&packet) override {
+  std::pair<Gcs_pipeline_incoming_result, Gcs_packet> revert_transformation(
+      Gcs_packet &&packet) override {
 #ifndef NDEBUG
     auto const old_payload_length = packet.get_payload_length();
 #endif
@@ -509,9 +509,9 @@ class Gcs_new_stage_1 : public Gcs_message_stage {
  public:
   explicit Gcs_new_stage_1() : m_id(std::rand()) {}
 
-  virtual ~Gcs_new_stage_1() override = default;
+  ~Gcs_new_stage_1() override = default;
 
-  virtual Stage_code get_stage_code() const override { return my_stage_code(); }
+  Stage_code get_stage_code() const override { return my_stage_code(); }
 
   static Stage_code my_stage_code() { return static_cast<Stage_code>(10); }
 
@@ -555,7 +555,7 @@ class Gcs_new_stage_split_4 : public Gcs_message_stage_split_v2 {
 
   ~Gcs_new_stage_split_4() override = default;
 
-  virtual Stage_code get_stage_code() const override { return my_stage_code(); }
+  Stage_code get_stage_code() const override { return my_stage_code(); }
 
   static Stage_code my_stage_code() { return static_cast<Stage_code>(13); }
 };
@@ -567,7 +567,7 @@ class Gcs_new_stage_lz4_5 : public Gcs_message_stage_lz4 {
 
   ~Gcs_new_stage_lz4_5() override = default;
 
-  virtual Stage_code get_stage_code() const override { return my_stage_code(); }
+  Stage_code get_stage_code() const override { return my_stage_code(); }
 
   static Stage_code my_stage_code() { return static_cast<Stage_code>(14); }
 };
@@ -679,7 +679,7 @@ TEST_F(XcomMultipleStagesTest, MultipleStagesCheckVersion) {
    Check properties when the different versions are set up and they are
    increasing.
    */
-  std::vector<Gcs_protocol_version> requested_inc_versions = {
+  std::vector<Gcs_protocol_version> const requested_inc_versions = {
       Gcs_protocol_version::UNKNOWN, Gcs_protocol_version::V1,
       Gcs_protocol_version::V2, Gcs_protocol_version::V3,
       Gcs_protocol_version::V5};
@@ -710,7 +710,7 @@ TEST_F(XcomMultipleStagesTest, MultipleStagesCheckVersion) {
    Check properties when the different versions are set up and they are
    increasing.
    */
-  std::vector<Gcs_protocol_version> requested_dec_versions = {
+  std::vector<Gcs_protocol_version> const requested_dec_versions = {
       Gcs_protocol_version::V5, Gcs_protocol_version::V3,
       Gcs_protocol_version::V2, Gcs_protocol_version::V1};
   std::vector<Gcs_protocol_version> configured_dec_versions = {
@@ -737,7 +737,7 @@ TEST_F(XcomMultipleStagesTest, MultipleStagesCheckVersion) {
 }
 
 TEST_F(XcomMultipleStagesTest, MultipleStagesCheckData) {
-  std::string sent_message("Message in a bottle. Message in a bottle.");
+  std::string const sent_message("Message in a bottle. Message in a bottle.");
 
   /*
    Configure the pipeline with the set of supported versions.
@@ -750,7 +750,7 @@ TEST_F(XcomMultipleStagesTest, MultipleStagesCheckData) {
   pipeline.register_stage<Gcs_message_stage_split_v2>(true, 10);
 
   // clang-format off
-  bool pipeline_error = pipeline.register_pipeline({
+  bool const pipeline_error = pipeline.register_pipeline({
     {Gcs_protocol_version::V1,
      {Gcs_new_stage_1::my_stage_code(),
       Gcs_new_stage_2::my_stage_code()}
@@ -773,8 +773,8 @@ TEST_F(XcomMultipleStagesTest, MultipleStagesCheckData) {
    Define/update the membership for all the stages that need it.
    */
   Gcs_xcom_nodes nodes;
-  Gcs_xcom_node_information node("127.0.0.1:8080", Gcs_xcom_uuid::create_uuid(),
-                                 0, true);
+  Gcs_xcom_node_information const node("127.0.0.1:8080",
+                                       Gcs_xcom_uuid::create_uuid(), 0, true);
   nodes.add_node(node);
 
   Gcs_message_stage &split2 = pipeline.get_stage(Stage_code::ST_SPLIT_V2);
@@ -783,14 +783,14 @@ TEST_F(XcomMultipleStagesTest, MultipleStagesCheckData) {
   /*
    Check properties when the different versions are set up.
    */
-  std::vector<Gcs_protocol_version> requested_versions = {
+  std::vector<Gcs_protocol_version> const requested_versions = {
       Gcs_protocol_version::V1, Gcs_protocol_version::V3,
       Gcs_protocol_version::V4};
   for (const auto &version : requested_versions) {
     /*
      Calculate sizes of different bits and pieces.
      */
-    unsigned long long payload_size = sent_message.size() + 1;
+    unsigned long long const payload_size = sent_message.size() + 1;
 
     /*
      Setting the protocol version to be used.
@@ -843,7 +843,7 @@ TEST_F(XcomMultipleStagesTest, MultipleStagesCheckData) {
         Gcs_message_data received_msg_data(packet_in.get_payload_length());
         ASSERT_FALSE(received_msg_data.decode(packet_in.get_payload_pointer(),
                                               packet_in.get_payload_length()));
-        std::string received_message{
+        std::string const received_message{
             reinterpret_cast<char const *>(received_msg_data.get_payload())};
         ASSERT_EQ(sent_message.compare(received_message), 0);
       }
@@ -875,8 +875,8 @@ TEST_F(XcomMultipleStagesTest, SingleFragment) {
 
   // Define/update the membership for all the stages that need it.
   Gcs_xcom_nodes nodes;
-  Gcs_xcom_node_information node("127.0.0.1:8080", Gcs_xcom_uuid::create_uuid(),
-                                 0, true);
+  Gcs_xcom_node_information const node("127.0.0.1:8080",
+                                       Gcs_xcom_uuid::create_uuid(), 0, true);
   nodes.add_node(node);
   Gcs_message_stage &split2 = pipeline.get_stage(Stage_code::ST_SPLIT_V2);
   split2.update_members_information(node.get_member_id(), nodes);
@@ -937,10 +937,10 @@ TEST_F(XcomMultipleStagesTest, SplitMessages) {
   /*
    Define a message to be sent and that shall be split and compressed.
    */
-  std::string base_message("Message in a bottle. Message in a bottle.");
+  std::string const base_message("Message in a bottle. Message in a bottle.");
   std::ostringstream os;
   for (int i = 0; i < 1024; i++) os << base_message;
-  std::string sent_message(os.str());
+  std::string const sent_message(os.str());
 
   /*
    Configure the pipeline with the set of supported versions.
@@ -951,7 +951,7 @@ TEST_F(XcomMultipleStagesTest, SplitMessages) {
   pipeline.register_stage<Gcs_new_stage_lz4_5>(true, 1);
 
   // clang-format off
-    bool pipeline_error = pipeline.register_pipeline({
+    bool const pipeline_error = pipeline.register_pipeline({
       {Gcs_protocol_version::V1,
         {Stage_code::ST_SPLIT_V2,
          Stage_code::ST_LZ4_V2
@@ -970,8 +970,8 @@ TEST_F(XcomMultipleStagesTest, SplitMessages) {
    Define/update the membership for all the stages that need it.
    */
   Gcs_xcom_nodes nodes;
-  Gcs_xcom_node_information node("127.0.0.1:8080", Gcs_xcom_uuid::create_uuid(),
-                                 0, true);
+  Gcs_xcom_node_information const node("127.0.0.1:8080",
+                                       Gcs_xcom_uuid::create_uuid(), 0, true);
   nodes.add_node(node);
 
   Gcs_message_stage &split2 = pipeline.get_stage(Stage_code::ST_SPLIT_V2);
@@ -984,13 +984,13 @@ TEST_F(XcomMultipleStagesTest, SplitMessages) {
   /*
    Check properties when the different versions are set up.
    */
-  std::vector<Gcs_protocol_version> requested_versions = {
+  std::vector<Gcs_protocol_version> const requested_versions = {
       Gcs_protocol_version::V1, Gcs_protocol_version::V2};
   for (const auto &version : requested_versions) {
     /*
      Calculate sizes of different bits and pieces.
      */
-    unsigned long long payload_size = sent_message.size() + 1;
+    unsigned long long const payload_size = sent_message.size() + 1;
 
     /*
      Setting the protocol version to be used.
@@ -1043,7 +1043,7 @@ TEST_F(XcomMultipleStagesTest, SplitMessages) {
         Gcs_message_data received_msg_data(packet_in.get_payload_length());
         ASSERT_FALSE(received_msg_data.decode(packet_in.get_payload_pointer(),
                                               packet_in.get_payload_length()));
-        std::string received_message{
+        std::string const received_message{
             reinterpret_cast<char const *>(received_msg_data.get_payload())};
         ASSERT_EQ(sent_message.compare(received_message), 0);
       }

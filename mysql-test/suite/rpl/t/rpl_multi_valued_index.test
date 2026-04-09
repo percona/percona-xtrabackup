@@ -65,6 +65,7 @@ explain select * from t1 force index(i1) where json_contains(f1->"$[*]", "[5,7]"
 --source include/rpl/connection_source.inc
 select * from t1 force index(i1) where 99 member of  (f1->"$[*]");
 update t1 set f1=cast('[100,99]' as json) where 99 member of (f1->"$[*]");
+analyze table t1;
 select * from t1 force index(i1) where json_contains(f1->"$[*]", "[100]");
 explain select * from t1 force index(i1) where json_contains(f1->"$[*]", "[100]");
 --source include/rpl/sync_to_replica.inc

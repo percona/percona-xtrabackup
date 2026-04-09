@@ -177,10 +177,10 @@ select * from t1 order by val;
 select * from t2 order by id;
 select * from t3 order by id;
 select * from t4 order by id;
-select id, sha1(val) from t5 order by id;
+select id, sha2(val,256) from t5 order by id;
 select * from t6 order by id;
 select * from t7 order by id;
-select id, sha1(val) from t8 order by id;
+select id, sha2(val,256) from t8 order by id;
 select * from t9 order by auto;
 
 --echo "Drop tables after backup completes"

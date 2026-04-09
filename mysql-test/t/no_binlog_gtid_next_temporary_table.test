@@ -43,6 +43,9 @@
 # Should be tested against "binlog disabled" server
 --source include/not_log_bin.inc
 
+# Should be started with gtid_mode set to OFF in the beginning
+--source include/rpl/set_gtid_mode_off.inc
+
 # Clean gtid_executed so that test can execute after other tests
 RESET BINARY LOGS AND GTIDS;
 CREATE TABLE t1 (c1 INT);
@@ -77,3 +80,6 @@ COMMIT;
 # Reset
 SET SESSION autocommit = 1;
 SET @@GLOBAL.GTID_MODE = OFF;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

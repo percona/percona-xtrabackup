@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
+#include <deque>
+#include <string>
+#include <string_view>
 
 #include "my_byteorder.h"
 #include "my_sys.h"
@@ -42,6 +44,7 @@
 #include "mysql/strings/m_ctype.h"
 #include "mysys_err.h"
 #include "sql_chars.h"
+#include "string_with_len.h"
 #include "strings/collations_internal.h"
 #include "strings/m_ctype_internals.h"
 #include "template_utils.h"
@@ -63,12 +66,6 @@
     http://oss.software.ibm.com/icu/userguide/Collate_Customization.html
 
 */
-
-template <size_t N>
-bool starts_with(std::string name, const char (&prefix)[N]) {
-  size_t len = N - 1;
-  return name.size() >= len && memcmp(name.data(), prefix, len) == 0;
-}
 
 extern CHARSET_INFO my_charset_ucs2_unicode_ci;
 extern CHARSET_INFO my_charset_utf16_unicode_ci;
@@ -374,8 +371,8 @@ static int fill_uint16(uint16_t *a, unsigned size, const char *str,
 
 static int tailoring_append(MY_XML_PARSER *st, const char *fmt, size_t len,
                             const char *attr) {
-  struct my_cs_file_info *i = (struct my_cs_file_info *)st->user_data;
-  size_t newlen = i->tailoring_length + len + 64; /* 64 for format */
+  auto *i = (struct my_cs_file_info *)st->user_data;
+  size_t const newlen = i->tailoring_length + len + 64; /* 64 for format */
   if (MY_XML_OK == my_charset_file_tailoring_realloc(i, newlen)) {
     char *dst = i->tailoring + i->tailoring_length;
     sprintf(dst, fmt, (int)len, attr);
@@ -388,8 +385,9 @@ static int tailoring_append(MY_XML_PARSER *st, const char *fmt, size_t len,
 static int tailoring_append2(MY_XML_PARSER *st, const char *fmt, size_t len1,
                              const char *attr1, size_t len2,
                              const char *attr2) {
-  struct my_cs_file_info *i = (struct my_cs_file_info *)st->user_data;
-  size_t newlen = i->tailoring_length + len1 + len2 + 64; /* 64 for format */
+  auto *i = (struct my_cs_file_info *)st->user_data;
+  size_t const newlen =
+      i->tailoring_length + len1 + len2 + 64; /* 64 for format */
   if (MY_XML_OK == my_charset_file_tailoring_realloc(i, newlen)) {
     char *dst = i->tailoring + i->tailoring_length;
     sprintf(dst, fmt, (int)len1, attr1, (int)len2, attr2);
@@ -410,14 +408,15 @@ static size_t scan_one_character(const char *s, const char *e, my_wc_t *wc) {
     }
     wc[0] = 0;
     return len;
-  } else if ((s[0] & 0x80) == 0) /* 7-bit character */
+  }
+  if ((s[0] & 0x80) == 0) /* 7-bit character */
   {
     wc[0] = 0;
     return 1;
   } else /* Non-escaped character */
   {
-    int rc = cs->cset->mb_wc(cs, wc, pointer_cast<const uint8_t *>(s),
-                             pointer_cast<const uint8_t *>(e));
+    int const rc = cs->cset->mb_wc(cs, wc, pointer_cast<const uint8_t *>(s),
+                                   pointer_cast<const uint8_t *>(e));
     if (rc > 0) return (size_t)rc;
   }
   return 0;
@@ -438,9 +437,9 @@ static int tailoring_append_abbreviation(MY_XML_PARSER *st, const char *fmt,
 
 extern "C" {
 static int cs_enter(MY_XML_PARSER *st, const char *attr, size_t len) {
-  struct my_cs_file_info *i = (struct my_cs_file_info *)st->user_data;
+  auto *i = (struct my_cs_file_info *)st->user_data;
   struct my_cs_file_section_st *s = cs_file_sec(attr, len);
-  int state = s ? s->state : 0;
+  int const state = s ? s->state : 0;
 
   switch (state) {
     case 0:
@@ -465,9 +464,9 @@ static int cs_enter(MY_XML_PARSER *st, const char *attr, size_t len) {
 }
 
 static int cs_leave(MY_XML_PARSER *st, const char *attr, size_t len) {
-  struct my_cs_file_info *i = (struct my_cs_file_info *)st->user_data;
+  auto *i = (struct my_cs_file_info *)st->user_data;
   struct my_cs_file_section_st *s = cs_file_sec(attr, len);
-  int state = s ? s->state : 0;
+  int const state = s ? s->state : 0;
   int rc;
 
   switch (state) {
@@ -540,9 +539,9 @@ static const char *context_diff_fmt[5] = {
 
 extern "C" {
 static int cs_value(MY_XML_PARSER *st, const char *attr, size_t len) {
-  struct my_cs_file_info *i = (struct my_cs_file_info *)st->user_data;
+  auto *i = (struct my_cs_file_info *)st->user_data;
   struct my_cs_file_section_st *s;
-  int state =
+  int const state =
       (int)((s = cs_file_sec(st->attr.start, st->attr.end - st->attr.start))
                 ? s->state
                 : 0);
@@ -564,8 +563,11 @@ static int cs_value(MY_XML_PARSER *st, const char *attr, size_t len) {
       break;
     case _CS_COLNAME: {
       // Replace "utf8_" with "utf8mb3_" for external character sets.
-      std::string collation_name_string(attr, len);
-      if (starts_with(collation_name_string, "utf8_")) {
+      // Convert to lowercase first.
+      mysql::collation::Name normalized_name(attr, len);
+      if (normalized_name.to_string_view().starts_with("utf8_")) {
+        std::string collation_name_string =
+            std::string(normalized_name.to_string_view());
         // insert "mb3" to get "utf8mb3_xxx"
         collation_name_string.insert(4, "mb3");
         i->cs.m_coll_name =
@@ -575,15 +577,18 @@ static int cs_value(MY_XML_PARSER *st, const char *attr, size_t len) {
         i->cs.m_coll_name = mstr(i->name, attr, len, MY_CS_NAME_SIZE - 1);
       }
     } break;
-    case _CS_CSNAME:
+    case _CS_CSNAME: {
       // Replace "utf8" with "utf8mb3" for external character sets.
-      if (0 == strncmp(attr, "utf8", len))
+      // Convert to lowercase first.
+      mysql::collation::Name normalized_name(attr, len);
+      if (normalized_name.to_string_view() == "utf8") {
         i->cs.csname =
             mstr(i->csname, STRING_WITH_LEN("utf8mb3"), MY_CS_NAME_SIZE - 1);
-      else
+      } else {
         i->cs.csname = mstr(i->csname, attr, len, MY_CS_NAME_SIZE - 1);
+      }
       assert(0 != strcmp(i->cs.csname, "utf8"));
-      break;
+    } break;
     case _CS_CSDESCRIPT:
       i->cs.comment = mstr(i->comment, attr, len, MY_CS_CSDESCR_SIZE - 1);
       break;
@@ -774,7 +779,7 @@ bool my_parse_charset_xml(MY_CHARSET_LOADER *loader, const char *buf,
   my_xml_set_leave_handler(&p, cs_leave);
   info.loader = loader;
   my_xml_set_user_data(&p, (void *)&info);
-  rc = (my_xml_parse(&p, buf, len) == MY_XML_OK) ? false : true;
+  rc = my_xml_parse(&p, buf, len) != MY_XML_OK;
   my_xml_parser_free(&p);
   my_charset_file_free(&info);
   if (rc != MY_XML_OK) {
@@ -940,37 +945,32 @@ size_t my_convert(char *to, size_t to_length, const CHARSET_INFO *to_cs,
 
   length = length2 = std::min(to_length, from_length);
 
-#if defined(__i386__) || defined(_WIN32) || defined(__x86_64__)
   /*
-    Special loop for i386, it allows to refer to a
-    non-aligned memory block as UINT32, which makes
-    it possible to copy four bytes at once. This
-    gives about 10% performance improvement comparing
-    to byte-by-byte loop.
+    We no longer read non-aligned memory in the korr/store functions,
+    but this is still faster than reading byte-by-byte.
   */
-  for (; length >= 4; length -= 4, from += 4, to += 4) {
-    if (uint4korr(from) & 0x80808080) break;
-    int4store(to, uint4korr(from));
-  }
-#endif /* __i386__ */
-
-  for (;; *to++ = *from++, length--) {
-    if (!length) {
-      *errors = 0;
-      return length2;
+  for (; length >= 8; length -= 8, from += 8, to += 8) {
+    if (uint8korr(from) & 0x8080808080808080) {
+      break;
     }
-    if ((static_cast<uint8_t>(*from)) > 0x7F) /* A non-ASCII character */
-    {
-      size_t copied_length = length2 - length;
-      to_length -= copied_length;
-      from_length -= copied_length;
-      return copied_length + my_convert_internal(to, to_length, to_cs, from,
-                                                 from_length, from_cs, errors);
-    }
+    int8store(to, uint8korr(from));
   }
 
-  assert(false);  // Should never get to here
-  return 0;       // Make compiler happy
+  while (length > 0 && static_cast<uint8_t>(*from) < 0x80) {
+    *to++ = *from++;
+    --length;
+  }
+
+  if (length == 0) {
+    *errors = 0;
+    return length2;
+  }
+
+  size_t const copied_length = length2 - length;
+  to_length -= copied_length;
+  from_length -= copied_length;
+  return copied_length + my_convert_internal(to, to_length, to_cs, from,
+                                             from_length, from_cs, errors);
 }
 
 /**
@@ -1128,7 +1128,7 @@ static bool cs_copy_data(MY_CHARSET_LOADER *loader, CHARSET_INFO *to,
   }
 
   if (from->tab_to_uni) {
-    size_t sz = MY_CS_TO_UNI_TABLE_SIZE * sizeof(uint16_t);
+    size_t const sz = MY_CS_TO_UNI_TABLE_SIZE * sizeof(uint16_t);
     to->tab_to_uni =
         static_cast<uint16_t *>(once_memdup(loader, from->tab_to_uni, sz));
     if (to->tab_to_uni == nullptr) return true;
@@ -1220,78 +1220,61 @@ int MY_CHARSET_LOADER::add_collation(CHARSET_INFO *cs) {
     dst->state |= MY_CS_BINSORT;
   }
 
-  if (!(dst->state & MY_CS_COMPILED)) {
-    if (cs_copy_data(this, dst, cs)) return MY_XML_ERROR;
+  if (cs_copy_data(this, dst, cs)) return MY_XML_ERROR;
 
-    dst->caseup_multiply = dst->casedn_multiply = 1;
-    dst->levels_for_compare = 1;
+  dst->caseup_multiply = dst->casedn_multiply = 1;
+  dst->levels_for_compare = 1;
 
-    if (!strcmp(cs->csname, "ucs2")) {
-      copy_uca_collation(dst, &my_charset_ucs2_unicode_ci);
-      dst->state |= MY_CS_LOADED | MY_CS_NONASCII;
-    } else if (!strcmp(cs->csname, "utf8") || !strcmp(cs->csname, "utf8mb3")) {
-      copy_uca_collation(dst, &my_charset_utf8mb3_unicode_ci);
-      dst->ctype = my_charset_utf8mb3_unicode_ci.ctype;
-      dst->state |= MY_CS_LOADED;
-    } else if (!strcmp(cs->csname, "utf8mb4")) {
-      copy_uca_collation(dst, &my_charset_utf8mb4_unicode_ci);
-      dst->ctype = my_charset_utf8mb4_unicode_ci.ctype;
-      dst->state |= MY_CS_LOADED;
-    } else if (!strcmp(cs->csname, "utf16")) {
-      copy_uca_collation(dst, &my_charset_utf16_unicode_ci);
-      dst->state |= MY_CS_LOADED | MY_CS_NONASCII;
-    } else if (!strcmp(cs->csname, "utf32")) {
-      copy_uca_collation(dst, &my_charset_utf32_unicode_ci);
-      dst->state |= MY_CS_LOADED | MY_CS_NONASCII;
-    } else {
-      const uint8_t *sort_order = dst->sort_order;
-      simple_cs_init_functions(dst);
-      dst->mbminlen = 1;
-      dst->mbmaxlen = 1;
-      if (simple_cs_is_full(dst)) {
-        dst->state |= MY_CS_LOADED;
-      }
-
-      /*
-        Check if case sensitive sort order: A < a < B.
-        We need MY_CS_FLAG for regex library, and for
-        case sensitivity flag for 5.0 client protocol,
-        to support isCaseSensitive() method in JDBC driver
-      */
-      if (sort_order &&
-          sort_order[static_cast<int>('A')] <
-              sort_order[static_cast<int>('a')] &&
-          sort_order[static_cast<int>('a')] < sort_order[static_cast<int>('B')])
-        dst->state |= MY_CS_CSSORT;
-
-      if (my_charset_is_8bit_pure_ascii(dst)) {
-        dst->state |= MY_CS_PUREASCII;
-      }
-      if (!my_charset_is_ascii_compatible(cs)) {
-        dst->state |= MY_CS_NONASCII;
-      }
-    }
-    if (dst->ctype && is_supported_parser_charset(dst) &&
-        init_state_maps(this, dst)) {
-      return MY_XML_ERROR;
-    }
-    dst->state |= MY_CS_AVAILABLE;
+  if (!strcmp(cs->csname, "ucs2")) {
+    copy_uca_collation(dst, &my_charset_ucs2_unicode_ci);
+    dst->state |= MY_CS_LOADED | MY_CS_NONASCII;
+  } else if (!strcmp(cs->csname, "utf8") || !strcmp(cs->csname, "utf8mb3")) {
+    copy_uca_collation(dst, &my_charset_utf8mb3_unicode_ci);
+    dst->ctype = my_charset_utf8mb3_unicode_ci.ctype;
+    dst->state |= MY_CS_LOADED;
+  } else if (!strcmp(cs->csname, "utf8mb4")) {
+    copy_uca_collation(dst, &my_charset_utf8mb4_unicode_ci);
+    dst->ctype = my_charset_utf8mb4_unicode_ci.ctype;
+    dst->state |= MY_CS_LOADED;
+  } else if (!strcmp(cs->csname, "utf16")) {
+    copy_uca_collation(dst, &my_charset_utf16_unicode_ci);
+    dst->state |= MY_CS_LOADED | MY_CS_NONASCII;
+  } else if (!strcmp(cs->csname, "utf32")) {
+    copy_uca_collation(dst, &my_charset_utf32_unicode_ci);
+    dst->state |= MY_CS_LOADED | MY_CS_NONASCII;
   } else {
+    const uint8_t *sort_order = dst->sort_order;
+    simple_cs_init_functions(dst);
+    dst->mbminlen = 1;
+    dst->mbmaxlen = 1;
+    if (simple_cs_is_full(dst)) {
+      dst->state |= MY_CS_LOADED;
+    }
+
     /*
-      We need the below to make get_collation_name()
-      and get_charset_number() working even if a
-      character set has not been really incompiled.
-      The above functions are used for example
-      in error message compiler utilities/comp_err.cc.
+      Check if case sensitive sort order: A < a < B.
+      We need MY_CS_FLAG for regex library, and for
+      case sensitivity flag for 5.0 client protocol,
+      to support isCaseSensitive() method in JDBC driver
     */
-    if (cs->comment)
-      if (!(dst->comment = once_strdup(this, cs->comment))) return MY_XML_ERROR;
-    if (cs->csname)
-      if (!(dst->csname = once_strdup(this, cs->csname))) return MY_XML_ERROR;
-    if (cs->m_coll_name)
-      if (!(dst->m_coll_name = once_strdup(this, cs->m_coll_name)))
-        return MY_XML_ERROR;
+    if (sort_order &&
+        sort_order[static_cast<int>('A')] < sort_order[static_cast<int>('a')] &&
+        sort_order[static_cast<int>('a')] < sort_order[static_cast<int>('B')])
+      dst->state |= MY_CS_CSSORT;
+
+    if (my_charset_is_8bit_pure_ascii(dst)) {
+      dst->state |= MY_CS_PUREASCII;
+    }
+    if (!my_charset_is_ascii_compatible(cs)) {
+      dst->state |= MY_CS_NONASCII;
+    }
   }
+  if (dst->ctype && is_supported_parser_charset(dst) &&
+      init_state_maps(this, dst)) {
+    return MY_XML_ERROR;
+  }
+  dst->state |= MY_CS_AVAILABLE;
+
   clear_cs_info(cs);
   if (mysql::collation_internals::entry->add_internal_collation(dst)) {
     return MY_XML_ERROR;  // TODO: error message on duplicates?

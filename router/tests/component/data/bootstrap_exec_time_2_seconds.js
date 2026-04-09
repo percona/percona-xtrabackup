@@ -3,8 +3,10 @@ var common_stmts = require("common_statements");
 var options = {
   cluster_type: "gr",
   gr_id: mysqld.global.gr_id,
-  innodb_cluster_name: "mycluster",
   router_version: mysqld.global.router_version,
+  innodb_cluster_name: "my-cluster",
+  innodb_cluster_instances:
+      [["localhost", 5500], ["localhost", 5510], ["localhost", 5520]],
 };
 
 var common_responses = common_stmts.prepare_statement_responses(
@@ -24,6 +26,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_start_transaction",
       "router_commit",
       "router_clusterset_present",
+      "get_routing_guidelines_version",
     ],
     options);
 
@@ -39,9 +42,11 @@ var common_responses_regex = common_stmts.prepare_statement_responses_regex(
       "router_grant_on_pfs_db",
       "router_grant_on_routers",
       "router_grant_on_v2_routers",
+      "router_grant_on_router_stats",
       "router_update_routers_in_metadata",
       "router_update_router_options_in_metadata",
       "router_select_config_defaults_stored_gr_cluster",
+      "router_update_local_cluster_in_metadata",
     ],
     options);
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -53,9 +53,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 struct CHARSET_INFO;
 
-/** "NULL" value of a document id. */
-#define FTS_NULL_DOC_ID 0
-
 /** FTS hidden column that is used to map to and from the row */
 #define FTS_DOC_ID_COL_NAME "FTS_DOC_ID"
 
@@ -103,6 +100,9 @@ those defined in mysql file ft_global.h */
 
 #define FTS_INDEX_TABLE_IND_NAME "FTS_INDEX_TABLE_IND"
 #define FTS_COMMON_TABLE_IND_NAME "FTS_COMMON_TABLE_IND"
+
+/** "NULL" value of a document id. */
+constexpr doc_id_t FTS_NULL_DOC_ID = 0;
 
 /** The number of FTS index partitions for a fulltext index. */
 constexpr size_t FTS_NUM_AUX_INDEX = 6;
@@ -290,7 +290,7 @@ we have to implement our own. We use UTF-16 without surrogate processing
 as our in-memory format. This typedef is a single such character. */
 typedef unsigned short ib_uc_t;
 
-/** An UTF-16 ro UTF-8 string. */
+/** An UTF-16 or UTF-8 string. */
 struct fts_string_t {
   byte *f_str;    /*!< string, not necessary terminated in
                   any way */
@@ -946,22 +946,5 @@ tables' metadata updated in DD
 @param[in,out]  table           table to check
 @return DB_SUCCESS or error code */
 dberr_t fts_create_index_dd_tables(dict_table_t *table);
-
-/** Upgrade FTS AUX Tables. The FTS common and aux tables are
-renamed because they have table_id in their name. We move table_ids
-by DICT_MAX_DD_TABLES offset. Aux tables are registered into DD
-after rename.
-@param[in]      table           InnoDB table object
-@return DB_SUCCESS or error code */
-dberr_t fts_upgrade_aux_tables(dict_table_t *table);
-
-/** Rename FTS AUX tablespace name from 8.0 format to 5.7 format.
-This will be done on upgrade failure
-@param[in]      table           parent table
-@param[in]      rollback        rollback the rename from 8.0 to 5.7
-                                if true, rename to 5.7 format
-                                if false, mark the table as evictable
-@return DB_SUCCESS on success, DB_ERROR on error */
-dberr_t fts_upgrade_rename(const dict_table_t *table, bool rollback);
 
 #endif

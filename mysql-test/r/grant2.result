@@ -10,6 +10,8 @@ delete from mysql.db where user like 'mysqltest\_%';
 delete from mysql.tables_priv where user like 'mysqltest\_%';
 delete from mysql.columns_priv where user like 'mysqltest\_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user mysqltest_1@localhost, mysqltest_3@localhost, mysqltest_4@localhost;
 grant all privileges on `my\_1`.* to mysqltest_1@localhost with grant option;
 grant create user on *.* to mysqltest_1@localhost;
@@ -26,6 +28,8 @@ delete from mysql.db where user like 'mysqltest\_%';
 delete from mysql.tables_priv where user like 'mysqltest\_%';
 delete from mysql.columns_priv where user like 'mysqltest\_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user mysqltest_1@localhost, mysqltest_2@localhost,
 mysqltest_3@localhost, mysqltest_4@localhost;
 grant all privileges on `my\_%`.* to mysqltest_1@localhost with grant option;
@@ -48,6 +52,8 @@ GRANT ALL PRIVILEGES ON `my\_1`.* TO `mysqltest_2`@`localhost` WITH GRANT OPTION
 delete from mysql.user where user like 'mysqltest\_%';
 delete from mysql.db where user like 'mysqltest\_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create database mysqltest_1;
 create user mysqltest_1@localhost;
 grant all privileges on `mysqltest\_1`.* to mysqltest_1@localhost with grant option;
@@ -70,10 +76,14 @@ delete from mysql.user where user like 'mysqltest\_%';
 delete from mysql.db where user like 'mysqltest\_%';
 drop database mysqltest_1;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create database mysqltest;
 create user mysqltest_1@localhost;
 grant INSERT, SELECT on mysqltest.* to mysqltest_1@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 use mysqltest;
 create table t1 (id int primary key, data varchar(255));
 show grants for current_user();
@@ -92,6 +102,8 @@ drop table t1;
 delete from mysql.user where user like 'mysqltest\_%';
 delete from mysql.db where user like 'mysqltest\_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create table t1 (a int, b int);
 create user  mysqltest_1@localhost;
 grant select (a) on t1 to mysqltest_1@localhost with grant option;
@@ -105,6 +117,8 @@ delete from mysql.db where user like 'mysqltest\_%';
 delete from mysql.tables_priv where user like 'mysqltest\_%';
 delete from mysql.columns_priv where user like 'mysqltest\_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop database mysqltest;
 use test;
 create user mysqltest_1@host1;
@@ -115,6 +129,8 @@ create user mysqltest_5@host5;
 create user mysqltest_6@host6;
 create user mysqltest_7@host7;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop user mysqltest_3@host3;
 drop user mysqltest_1@host1, mysqltest_2@host2, mysqltest_4@host4,
 mysqltest_5@host5, mysqltest_6@host6, mysqltest_7@host7;
@@ -129,13 +145,15 @@ delete from mysql.user where user like 'mysqltest\_1';
 delete from mysql.db where user like 'mysqltest\_1';
 drop database mysqltest_1;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 set sql_mode='ANSI';
 drop table if exists t1, t2;
 create table t1(c1 int);
 create table t2(c1 int, c2 int);
 create user 'mysqltest_1';
 create user 'mysqltest_1';
-ERROR HY000: Operation CREATE USER failed for 'mysqltest_1'@'%'
+ERROR HY000: Operation CREATE USER failed for 'mysqltest_1'@'%' (User account already exists)
 create user 'mysqltest_2' identified by 'Mysqltest-2';
 create user 'mysqltest_3' identified with 'caching_sha2_password' as 'fffffffffffffffffffffffffffffffffffffffff';
 ERROR HY000: The password hash doesn't have the expected format.
@@ -204,10 +222,12 @@ GRANT UPDATE ON "test"."t1" TO "mysqltest_1"@"%"
 GRANT UPDATE ("c2") ON "test"."t2" TO "mysqltest_1"@"%"
 drop user 'mysqltest_1';
 drop user 'mysqltest_1';
-ERROR HY000: Operation DROP USER failed for 'mysqltest_1'@'%'
+ERROR HY000: Operation DROP USER failed for 'mysqltest_1'@'%' (User account does not exist)
 drop table t1, t2;
 insert into mysql.db set user='mysqltest_1', db='%', host='%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for 'mysqltest_1';
 ERROR 42000: There is no such grant defined for user 'mysqltest_1' on host '%'
 revoke all privileges, grant option from 'mysqltest_1';
@@ -217,6 +237,8 @@ select host,db,user from mysql.db where user = 'mysqltest_1' order by host,db,us
 host	db	user
 insert into mysql.tables_priv set host='%', db='test', user='mysqltest_1', table_name='t1';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for 'mysqltest_1';
 ERROR 42000: There is no such grant defined for user 'mysqltest_1' on host '%'
 drop user 'mysqltest_1';
@@ -224,6 +246,8 @@ select host,db,user,table_name from mysql.tables_priv where user = 'mysqltest_1'
 host	db	user	table_name
 insert into mysql.columns_priv set host='%', db='test', user='mysqltest_1', table_name='t1', column_name='c1';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for 'mysqltest_1';
 ERROR 42000: There is no such grant defined for user 'mysqltest_1' on host '%'
 drop user 'mysqltest_1';
@@ -234,17 +258,17 @@ drop user 'mysqltest_1', 'mysqltest_2', 'mysqltest_3';
 create user 'mysqltest_1', 'mysqltest_2' identified by 'Mysqltest-2', 'mysqltest_3' identified by 'haha';
 rename user 'mysqltest_1' to 'mysqltest_1a', 'mysqltest_2' TO 'mysqltest_2a', 'mysqltest_3' TO 'mysqltest_3a';
 drop user 'mysqltest_1', 'mysqltest_2', 'mysqltest_3';
-ERROR HY000: Operation DROP USER failed for 'mysqltest_1'@'%','mysqltest_2'@'%','mysqltest_3'@'%'
+ERROR HY000: Operation DROP USER failed for 'mysqltest_1'@'%' (User account does not exist),'mysqltest_2'@'%' (User account does not exist),'mysqltest_3'@'%' (User account does not exist)
 drop user 'mysqltest_1a', 'mysqltest_2a', 'mysqltest_3a';
 create user 'mysqltest_1', 'mysqltest_2', 'mysqltest_3';
 create user 'mysqltest_1a', 'mysqltest_2', 'mysqltest_3a';
-ERROR HY000: Operation CREATE USER failed for 'mysqltest_2'@'%'
+ERROR HY000: Operation CREATE USER failed for 'mysqltest_2'@'%' (User account already exists)
 create user 'mysqltest_1a', 'mysqltest_3a';
 rename user 'mysqltest_1a' to 'mysqltest_1b', 'mysqltest_2a' TO 'mysqltest_2b', 'mysqltest_3a' TO 'mysqltest_3b';
 ERROR HY000: Operation RENAME USER failed for 'mysqltest_2a'@'%'
 drop user 'mysqltest_1', 'mysqltest_2', 'mysqltest_3';
 drop user 'mysqltest_1b', 'mysqltest_2b', 'mysqltest_3b';
-ERROR HY000: Operation DROP USER failed for 'mysqltest_1b'@'%','mysqltest_2b'@'%','mysqltest_3b'@'%'
+ERROR HY000: Operation DROP USER failed for 'mysqltest_1b'@'%' (User account does not exist),'mysqltest_2b'@'%' (User account does not exist),'mysqltest_3b'@'%' (User account does not exist)
 drop user 'mysqltest_1a', 'mysqltest_3a';
 create user 'mysqltest_2' identified by 'Mysqltest-2';
 drop user 'mysqltest_2' identified by 'Mysqltest-2';
@@ -311,6 +335,8 @@ i
 REVOKE ALL ON mysqltest_1.t1 FROM mysqltest_1@'127.0.0.0/255.0.0.0';
 delete from mysql.user where user like 'mysqltest\_1';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop table mysqltest_1.t1;
 create user mysqltest_1@'127.0.0.1';
 grant all on mysqltest_1.* to mysqltest_1@'127.0.0.1';
@@ -324,6 +350,8 @@ host	length(authentication_string)
 revoke all on mysqltest_1.* from mysqltest_1@'127.0.0.1';
 delete from mysql.user where user like 'mysqltest\_1';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create user mysqltest_1@'127.0.0.0/255.0.0.0';
 grant all on mysqltest_1.* to mysqltest_1@'127.0.0.0/255.0.0.0';
 select current_user();
@@ -336,6 +364,8 @@ host	length(authentication_string)
 revoke all on mysqltest_1.* from mysqltest_1@'127.0.0.0/255.0.0.0';
 delete from mysql.user where user like 'mysqltest\_1';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop database mysqltest_1;
 set password = "changed";
 ERROR 42000: You are using MySQL as an anonymous user and anonymous users are not allowed to change passwords
@@ -344,6 +374,8 @@ lock table mysql.user write;
 flush privileges;
 grant all on *.* to 'mysqltest_1'@'localhost';
 unlock tables;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 lock table mysql.user write;
 set password for 'mysqltest_1'@'localhost' = '';
 revoke all on *.* from 'mysqltest_1'@'localhost';
@@ -362,6 +394,8 @@ Warning	1364	Field 'x509_subject' doesn't have a default value
 INSERT INTO mysql.db (host, db, user, select_priv) VALUES
 ('%','TESTDB','mysqltest_1','Y');
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create database TEStdb;
 Got one of the listed errors
 delete from mysql.user;
@@ -370,6 +404,8 @@ insert into mysql.user select * from t1;
 drop table t1, t2;
 drop database TESTDB;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET @old_log_bin_trust_function_creators= @@global.log_bin_trust_function_creators;
 Warnings:
 Warning	1287	'@@log_bin_trust_function_creators' is deprecated and will be removed in a future release.
@@ -479,6 +515,8 @@ SELECT user,host,length(authentication_string),insert_priv FROM user WHERE user=
 user	host	length(authentication_string)	insert_priv
 root	localhost	0	N
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 USE test;
 End of 5.1 tests
 
@@ -863,4 +901,6 @@ DROP USER mysqltest_u4@localhost;
 DROP USER mysqltest_u5@localhost;
 set GLOBAL sql_mode= @orig_sql_mode_global;
 set SESSION sql_mode= @orig_sql_mode_session;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # mysql.user table restored to original values.

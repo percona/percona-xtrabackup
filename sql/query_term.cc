@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -142,8 +142,9 @@ Query_term *Query_term::pushdown_limit_order_by(Query_term_set_op *parent) {
           child_block->n_sum_items += this_block->n_sum_items;
           child_block->n_child_sum_items += this_block->n_child_sum_items;
           child_block->n_scalar_subqueries += this_block->n_scalar_subqueries;
+          child_block->n_stored_func_calls += this_block->n_stored_func_calls;
 
-          if (this_block->first_inner_query_expression() != nullptr) {
+          if (this_block->order_list.size() > 0) {
             // Change context of any items in ORDER BY to child block
             Item_ident::Change_context ctx(&child_block->context);
             for (ORDER *o = this_block->order_list.first; o; o = o->next) {
@@ -151,7 +152,8 @@ Query_term *Query_term::pushdown_limit_order_by(Query_term_set_op *parent) {
                                     enum_walk::POSTFIX,
                                     reinterpret_cast<uchar *>(&ctx));
             }
-
+          }
+          if (this_block->first_inner_query_expression() != nullptr) {
             // Also move any inner query expression's to the child block.
             // This can happen if an ORDER BY expression has a subquery
             Query_expression *qe = this_block->first_inner_query_expression();
@@ -208,7 +210,6 @@ bool Query_term::create_tmp_table(THD *thd, ulonglong create_options) {
 
   if (setop_query_result_union()->create_result_table(
           thd, *m_parent->types_array(), distinct, create_options, buffer,
-          false,
           /*instantiate_tmp_table*/ m_parent->is_materialized(), m_parent))
     return true;
   setop_query_result_union()->table->pos_in_table_list = m_result_table;
@@ -476,84 +477,53 @@ bool Query_term_set_op::prepare_query_term(
   // proper nullability, and when all children have been processed, we assign
   // proper nullability to the types.
   //
+  size_t contributing_children = m_children.size();
+  /*
+    Recursive query blocks don't determine output types of the result.
+    The only thing to check could be if the recursive query block has a type
+    which can't be cast to the output type of the result.
+    But in MySQL, all types can be cast to each other (at least during
+    resolution; an error may be reported when trying to actually insert, for
+    example an INT into a POINT). So no further compatibility check is
+    needed here. Thus, the number of contributing children is calculated here.
+  */
+  if (qe->is_recursive()) {
+    for (size_t i = 0; i < m_children.size(); i++) {
+      if (m_children[i]->term_type() == QT_QUERY_BLOCK &&
+          m_children[i]->query_block()->is_recursive()) {
+        contributing_children--;
+      }
+    }
+  }
+  size_t visible_columns = 0;
   Mem_root_array<bool> columns_nullable(thd->mem_root);
 
   for (size_t i = 0; i < m_children.size(); i++) {
+    Query_block *const child_block =
+        m_children[i]->term_type() == QT_QUERY_BLOCK
+            ? m_children[i]->query_block()
+            : nullptr;
+
     Query_result *const cmn_result =
         (i == 0) ? nullptr : m_children[0]->setop_query_result();
     // operands 1..size-1 inherit operand 0's query_result: they all
     // contribute to the same result.
     if (m_children[i]->prepare_query_term(
             thd, qe, save_query_block, insert_field_list, cmn_result,
-            added_options, removed_options, create_options))
+            added_options, removed_options, create_options)) {
       return true;
-
-    Query_block *const child_block =
-        m_children[i]->term_type() == QT_QUERY_BLOCK
-            ? m_children[i]->query_block()
-            : nullptr;
+    }
 
     if (i == 0) {
-      // operand one determines the result set column names, and sets their
-      // initial type
-      for (Item *item_tmp : m_children[i]->types_iterator()) {
-        /*
-          If the outer query has a GROUP BY clause, an outer reference to this
-          query block may have been wrapped in a Item_outer_ref, which has not
-          been fixed yet. An Item_type_holder must be created based on a fixed
-          Item, so use the inner Item instead.
-        */
-        assert(item_tmp->fixed ||
-               (item_tmp->type() == Item::REF_ITEM &&
-                down_cast<Item_ref *>(item_tmp)->ref_type() ==
-                    Item_ref::OUTER_REF));
-        if (!item_tmp->fixed) item_tmp = item_tmp->real_item();
-        Item_type_holder *holder;
-        if (item_tmp->type() == Item::TYPE_HOLDER_ITEM) {
-          holder = down_cast<Item_type_holder *>(item_tmp);
-        } else {
-          holder = new Item_type_holder(thd, item_tmp);
-          if (holder == nullptr) return true; /* purecov: inspected */
-          const bool top_level = m_parent == nullptr;
-          if (top_level && qe->is_recursive()) {
-            holder->set_nullable(true);  // Always nullable, per SQL standard.
-            /*
-              The UNION code relies on unify_types() to change some
-              transitional types like MYSQL_TYPE_DATETIME2 into other types; in
-              case this is the only nonrecursive query block unify_types() won't
-              be called so we need an explicit call:
-            */
-            holder->unify_types(thd, item_tmp);
-          }
-        }
-        if (m_types->push_back(holder)) return true;
-      }
-    } else {
-      // join types of operand 1 with operands 2..n
-      if (m_types->size() != m_children[i]->visible_column_count()) {
-        my_error(ER_WRONG_NUMBER_OF_COLUMNS_IN_SELECT, MYF(0));
+      visible_columns = m_children[0]->visible_column_count();
+      // We can only size this now after left side operand has been resolved
+      if (columns_nullable.resize(visible_columns, false)) {
         return true;
       }
-
-      if (child_block != nullptr && child_block->is_recursive()) {
-        /*
-          Recursive query blocks don't determine output types of the result.
-          The only thing to check could be if the recursive query block has a
-          type which can't be cast to the output type of the result.
-          But in MySQL, all types can be cast to each other (at least during
-          resolution; an error may reported when trying to actually insert, for
-          example an INT into a POINT). So no further compatibility check is
-          needed here.
-        */
-      } else {
-        auto it = m_children[i]->types_iterator().begin();
-        auto tp = m_types->begin();
-        for (; it != m_children[i]->types_iterator().end() &&
-               tp != m_types->end();
-             ++it, ++tp) {
-          if (down_cast<Item_type_holder *>(*tp)->unify_types(thd, *it))
-            return true;
-        }
+    } else {
+      if (visible_columns != m_children[i]->visible_column_count()) {
+        my_error(ER_WRONG_NUMBER_OF_COLUMNS_IN_SELECT, MYF(0));
+        return true;
       }
     }
     if (child_block != nullptr && child_block->recursive_reference != nullptr &&
@@ -575,8 +545,6 @@ bool Query_term_set_op::prepare_query_term(
         // with the right value for result column in case QT_UNION below anyway.
         const bool recursive_nullable = top_level && qe->is_recursive();
         column_nullable = column_nullable || recursive_nullable;
-        // We can only size this now after left side operand has been resolved
-        columns_nullable.resize(m_children[i]->visible_column_count(), false);
         columns_nullable[j] = column_nullable;
       } else {
         switch (term_type()) {
@@ -595,10 +563,17 @@ bool Query_term_set_op::prepare_query_term(
       }
       j++;
     }
-  }
-
-  for (size_t j = 0; j < m_types->size(); j++) {
-    (*m_types)[j]->set_nullable(columns_nullable[j]);
+    /*
+      When all contributing children have been resolved, type holder items
+      can be created, and their types determined. Recursive child query terms
+      may reference this query term, so this query term's types must be
+      resolved before the recursive children are resolved.
+    */
+    if (i == contributing_children - 1 &&
+        prepare_type_holders(thd, qe, contributing_children, visible_columns,
+                             columns_nullable)) {
+      return true;
+    }
   }
 
   // Do this only now when we have computed m_types completely
@@ -610,11 +585,11 @@ bool Query_term_set_op::prepare_query_term(
   // only ever set nullable here if result field originally was computed
   // as nullable in unify_types(). And removing nullability for a Field isn't
   // a problem.
-  size_t idx = 0;
+  size_t j = 0;
   for (auto *f : qb->visible_fields()) {
-    f->set_nullable(columns_nullable[idx]);
+    f->set_nullable(columns_nullable[j]);
     assert(f->type() == Item::FIELD_ITEM);
-    if (columns_nullable[idx]) {
+    if (columns_nullable[j]) {
       down_cast<Item_field *>(f)->field->clear_flag(NOT_NULL_FLAG);
     } else {
       if (term_type() == QT_UNION)
@@ -623,6 +598,7 @@ bool Query_term_set_op::prepare_query_term(
       // to store a NULL value for this field during hashing even though the
       // logical result of the set operation can not be NULL.
     }
+    ++j;
   }
 
   if (m_is_materialized) {
@@ -657,6 +633,86 @@ bool Query_term_set_op::prepare_query_term(
   }
 
   if (check_joined_types()) return true;
+  return false;
+}
+
+bool Query_term_set_op::prepare_type_holders(
+    THD *thd, Query_expression *qe, size_t contributing_children,
+    size_t visible_columns, Mem_root_array<bool> &columns_nullable) {
+  /*
+    Allocate type holder objects for all selected expressions from query term.
+    Copy names from first child.
+    Set nullability from data generated by caller.
+  */
+  size_t i = 0;
+  for (Item *item : m_children[i]->types_iterator()) {
+    /*
+      If the outer query has a GROUP BY clause, an outer reference to this
+      query block may have been wrapped in a Item_outer_ref, which has not
+      been fixed yet. An Item_type_holder must be created based on a fixed
+      Item, so use the inner Item instead.
+    */
+    assert(item->fixed ||
+           (item->type() == Item::REF_ITEM &&
+            down_cast<Item_ref *>(item)->ref_type() == Item_ref::OUTER_REF));
+    if (!item->fixed) item = item->real_item();
+    Item_type_holder *holder;
+    if (item->type() == Item::TYPE_HOLDER_ITEM) {
+      holder = down_cast<Item_type_holder *>(item);
+    } else {
+      holder = new Item_type_holder(thd, item);
+      if (holder == nullptr) return true; /* purecov: inspected */
+      const bool top_level = m_parent == nullptr;
+      if (top_level && qe->is_recursive()) {
+        holder->set_nullable(true);  // Always nullable, per SQL standard.
+      }
+    }
+    if (m_types->push_back(holder)) return true;
+
+    holder->set_nullable(columns_nullable[i]);
+    i++;
+  }
+  /*
+    Unify types for all operands at once and store them in the array of
+    child items.
+  */
+  Item **child_items = new (thd->mem_root) Item *[contributing_children];
+  if (child_items == nullptr) return true;
+
+  // Upcase operator_string for error message
+  std::string os(operator_string());
+  std::transform(os.begin(), os.end(), os.begin(), ::toupper);
+
+  auto tp = m_types->begin();
+  for (size_t j = 0; j < visible_columns && tp != m_types->end(); ++j, ++tp) {
+    size_t childno = 0;  // index into child query term array
+    for (auto *child : m_children) {
+      // Skip unifying types from CTE recursive block
+      Query_block *const child_block =
+          child->term_type() == QT_QUERY_BLOCK ? child->query_block() : nullptr;
+      if (child_block != nullptr && child_block->is_recursive()) continue;
+
+      // Build vector for column position 'j' in the result set
+      // from all contributing set operands.
+      auto it = child->types_iterator().begin();
+      size_t idx = 0;
+      for (; it != child->types_iterator().end(); ++it) {
+        assert(childno < contributing_children);
+        if (idx == j) {
+          child_items[childno] = *it;
+        }
+        idx++;
+      }
+      childno++;
+    }
+
+    // we vertically join types from all operands, one column position at a time
+    // cf. outermost loop.
+    if (down_cast<Item_type_holder *>(*tp)->unify_types(
+            os.c_str(), child_items, contributing_children)) {
+      return true;
+    }
+  }
   return false;
 }
 

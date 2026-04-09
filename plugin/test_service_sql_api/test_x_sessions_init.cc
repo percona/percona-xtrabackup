@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 
 #include <fcntl.h>
 #include <mysql/plugin.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cstdlib>
 
 #include "mysql/components/my_service.h"
 #include "mysql/components/services/log_builtins.h"
@@ -190,8 +190,8 @@ static void test_session_only_open(void *p [[maybe_unused]]) {
       LogPluginErrMsg(ERROR_LEVEL, ER_LOG_PRINTF_MSG,
                       "srv_session_open_%d failed.", i);
   }
-  struct st_plugin_ctx *ctx = new st_plugin_ctx();
-  struct st_plugin_ctx *pctx = (struct st_plugin_ctx *)ctx;
+  auto *ctx = new st_plugin_ctx();
+  auto *pctx = (struct st_plugin_ctx *)ctx;
   COM_DATA cmd;
   pctx->reset();
   memset(&cmd, 0, sizeof(cmd));
@@ -212,7 +212,7 @@ struct test_thread_context {
 
 static void *test_sql_threaded_wrapper(void *param) {
   char buffer[STRING_BUFFER_SIZE];
-  struct test_thread_context *context = (struct test_thread_context *)param;
+  auto *context = (struct test_thread_context *)param;
 
   WRITE_SEP();
   WRITE_STR("init thread\n");

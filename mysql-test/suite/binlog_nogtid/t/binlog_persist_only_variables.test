@@ -72,7 +72,7 @@ INSERT INTO aliases(name) VALUES
   ('init_slave'), ('rpl_stop_slave_timeout'), ('log_slow_slave_statements'),
   ('slave_max_allowed_packet'), ('slave_compressed_protocol'),
   ('slave_exec_mode'), ('slave_type_conversions'),
-  ('slave_sql_verify_checksum'), ('slave_parallel_type'),
+  ('slave_sql_verify_checksum'),
   ('slave_preserve_commit_order'), ('master_verify_checksum'),
   ('log_slave_updates'), ('slave_allow_batching'), ('slave_load_tmpdir'),
   ('slave_net_timeout'), ('sql_slave_skip_counter'), ('slave_skip_errors'),
@@ -84,7 +84,7 @@ INSERT INTO aliases(name) VALUES
 # If this count differs, it means a variable has been added or removed.
 # In that case, this testcase needs to be updated accordingly.
 --echo
---let $expected = 108
+--let $expected = 106
 --let $assert_text = Expect $expected variables in the table.
 --let $assert_cond = [SELECT COUNT(*) as count FROM rplvars, count, 1] = $expected
 --source include/assert.inc
@@ -116,7 +116,7 @@ while ( $varid <= $countvars )
 }
 
 --echo
---let $expected = 97
+--let $expected = 95
 --let $assert_text = Expect $expected persisted variables in persisted_variables table.
 --let $assert_cond = [SELECT COUNT(*) as count FROM performance_schema.persisted_variables, count, 1] = $expected
 --source include/assert.inc

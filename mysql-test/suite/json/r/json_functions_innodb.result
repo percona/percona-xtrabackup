@@ -1255,8 +1255,8 @@ id	rank	j	JSON_TYPE(j)
 8	7	-9223372036854775809	DECIMAL
 9	8	-9223372036854775808	INTEGER
 10	9	-9223372036854775807	INTEGER
-11	10	-9.999999999999999e-51	DOUBLE
-12	11	-1.2345678901233999e-71	DOUBLE
+11	10	-1e-50	DOUBLE
+12	11	-1.2345678901234e-71	DOUBLE
 13	12	-0.000000000000000000000000000000000000000000000000000000000000000000000012	DECIMAL
 14	12	-1.2e-71	DOUBLE
 15	13	-1.0345678901234e-71	DOUBLE
@@ -1270,8 +1270,8 @@ id	rank	j	JSON_TYPE(j)
 23	17	1.0345678901234e-71	DOUBLE
 24	18	0.000000000000000000000000000000000000000000000000000000000000000000000012	DECIMAL
 25	18	1.2e-71	DOUBLE
-26	19	1.2345678901233999e-71	DOUBLE
-27	20	9.999999999999999e-51	DOUBLE
+26	19	1.2345678901234e-71	DOUBLE
+27	20	1e-50	DOUBLE
 28	21	9223372036854775806	INTEGER
 29	22	9223372036854775807	INTEGER
 30	23	9223372036854775808	UNSIGNED INTEGER
@@ -2037,8 +2037,8 @@ null	NULL
 "bc"	STRING
 {"an": "object"}	OBJECT
 {"another": "object"}	OBJECT
-{"type": "Point", "coordinates": [0.0, 0.0]}	OBJECT
-{"type": "Point", "coordinates": [0.0, 1.0]}	OBJECT
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0.0, 0.0]}	OBJECT
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0.0, 1.0]}	OBJECT
 ["an array"]	ARRAY
 ["another array"]	ARRAY
 false	BOOLEAN
@@ -2051,7 +2051,7 @@ true	BOOLEAN
 "2000-02-01"	DATE
 "2010-12-02"	DATE
 "9999-12-31"	DATE
-"-630:59:59.000000"	TIME
+"-838:59:59.000000"	TIME
 "-24:00:00.000000"	TIME
 "-12:00:00.000000"	TIME
 "-00:00:00.000001"	TIME
@@ -2071,7 +2071,7 @@ true	BOOLEAN
 "03:04:06.000000"	TIME
 "23:59:59.999999"	TIME
 "24:00:00.000000"	TIME
-"630:59:59.000000"	TIME
+"838:59:59.000000"	TIME
 "1000-01-01 00:00:00.000000"	DATETIME
 "1960-01-02 03:04:05.000000"	DATETIME
 "1960-01-02 03:04:06.000000"	DATETIME
@@ -2148,7 +2148,7 @@ j	tp
 "1960-01-02 03:04:06.000000"	DATETIME
 "1960-01-02 03:04:05.000000"	DATETIME
 "1000-01-01 00:00:00.000000"	DATETIME
-"630:59:59.000000"	TIME
+"838:59:59.000000"	TIME
 "24:00:00.000000"	TIME
 "23:59:59.999999"	TIME
 "03:04:06.000000"	TIME
@@ -2168,7 +2168,7 @@ j	tp
 "-00:00:00.000001"	TIME
 "-12:00:00.000000"	TIME
 "-24:00:00.000000"	TIME
-"-630:59:59.000000"	TIME
+"-838:59:59.000000"	TIME
 "9999-12-31"	DATE
 "2010-12-02"	DATE
 "2000-02-01"	DATE
@@ -2181,8 +2181,8 @@ true	BOOLEAN
 false	BOOLEAN
 ["an array"]	ARRAY
 ["another array"]	ARRAY
-{"type": "Point", "coordinates": [0.0, 0.0]}	OBJECT
-{"type": "Point", "coordinates": [0.0, 1.0]}	OBJECT
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0.0, 0.0]}	OBJECT
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0.0, 1.0]}	OBJECT
 {"an": "object"}	OBJECT
 {"another": "object"}	OBJECT
 "bc"	STRING
@@ -2789,8 +2789,8 @@ null	NULL
 "bc"	STRING
 {"an": "object"}	OBJECT
 {"another": "object"}	OBJECT
-{"type": "Point", "coordinates": [0.0, 0.0]}	OBJECT
-{"type": "Point", "coordinates": [0.0, 1.0]}	OBJECT
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0.0, 0.0]}	OBJECT
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0.0, 1.0]}	OBJECT
 ["an array"]	ARRAY
 ["another array"]	ARRAY
 false	BOOLEAN
@@ -2803,7 +2803,7 @@ true	BOOLEAN
 "2000-02-01"	DATE
 "2010-12-02"	DATE
 "9999-12-31"	DATE
-"-630:59:59.000000"	TIME
+"-838:59:59.000000"	TIME
 "-24:00:00.000000"	TIME
 "-12:00:00.000000"	TIME
 "-00:00:00.000001"	TIME
@@ -2823,7 +2823,7 @@ true	BOOLEAN
 "03:04:06.000000"	TIME
 "23:59:59.999999"	TIME
 "24:00:00.000000"	TIME
-"630:59:59.000000"	TIME
+"838:59:59.000000"	TIME
 "1000-01-01 00:00:00.000000"	DATETIME
 "1960-01-02 03:04:05.000000"	DATETIME
 "1960-01-02 03:04:06.000000"	DATETIME
@@ -2986,8 +2986,8 @@ null	1
 "bc"	1
 {"an": "object"}	1
 {"another": "object"}	1
-{"type": "Point", "coordinates": [0, 0]}	1
-{"type": "Point", "coordinates": [0, 1]}	1
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0, 1]}	1
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0, 0]}	1
 ["an array"]	1
 ["another array"]	1
 false	1
@@ -3000,7 +3000,7 @@ true	1
 "20000201"	1
 "2010-1202"	1
 "9999-12-31"	1
-"-630:59:59000"	1
+"-838:59:59000"	1
 "-24:00:00000"	1
 "-12:00:00000"	1
 "00:00:00001"	1
@@ -3019,7 +3019,7 @@ true	1
 "03:04:06000"	1
 "23:59:59.999999"	1
 "24:00:00000"	1
-"630:59:59000"	1
+"838:59:59000"	1
 "10000101 00:00:00000"	1
 "19600102 03:04:05000"	1
 "19600102 03:04:06000"	1
@@ -3155,8 +3155,8 @@ null	1
 "bc"	1
 {"an": "object"}	1
 {"another": "object"}	1
-{"type": "Point", "coordinates": [0, 0]}	1
-{"type": "Point", "coordinates": [0, 1]}	1
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0, 1]}	1
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0, 0]}	1
 ["an array"]	1
 ["another array"]	1
 false	1
@@ -3169,7 +3169,7 @@ true	1
 "20000201"	1
 "2010-1202"	1
 "9999-12-31"	1
-"-630:59:59000"	1
+"-838:59:59000"	1
 "-24:00:00000"	1
 "-12:00:00000"	1
 "00:00:00001"	1
@@ -3188,7 +3188,7 @@ true	1
 "03:04:06000"	1
 "23:59:59.999999"	1
 "24:00:00000"	1
-"630:59:59000"	1
+"838:59:59000"	1
 "10000101 00:00:00000"	1
 "19600102 03:04:05000"	1
 "19600102 03:04:06000"	1
@@ -3324,8 +3324,8 @@ null	1
 "bc"	1
 {"an": "object"}	1
 {"another": "object"}	1
-{"type": "Point", "coordinates": [0, 0]}	1
-{"type": "Point", "coordinates": [0, 1]}	1
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0, 1]}	1
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0, 0]}	1
 ["an array"]	1
 ["another array"]	1
 false	1
@@ -3338,7 +3338,7 @@ true	1
 "20000201"	1
 "2010-1202"	1
 "9999-12-31"	1
-"-630:59:59000"	1
+"-838:59:59000"	1
 "-24:00:00000"	1
 "-12:00:00000"	1
 "00:00:00001"	1
@@ -3357,7 +3357,7 @@ true	1
 "03:04:06000"	1
 "23:59:59.999999"	1
 "24:00:00000"	1
-"630:59:59000"	1
+"838:59:59000"	1
 "10000101 00:00:00000"	1
 "19600102 03:04:05000"	1
 "19600102 03:04:06000"	1
@@ -3494,8 +3494,8 @@ null	1
 "bc"	1
 {"an": "object"}	1
 {"another": "object"}	1
-{"type": "Point", "coordinates": [0, 0]}	1
-{"type": "Point", "coordinates": [0, 1]}	1
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0, 1]}	1
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [0, 0]}	1
 ["an array"]	1
 ["another array"]	1
 false	1
@@ -3508,7 +3508,7 @@ true	1
 "20000201"	1
 "2010-1202"	1
 "9999-12-31"	1
-"-630:59:59000"	1
+"-838:59:59000"	1
 "-24:00:00000"	1
 "-12:00:00000"	1
 "00:00:00001"	1
@@ -3527,7 +3527,7 @@ true	1
 "03:04:06000"	1
 "23:59:59.999999"	1
 "24:00:00000"	1
-"630:59:59000"	1
+"838:59:59000"	1
 "10000101 00:00:00000"	1
 "19600102 03:04:05000"	1
 "19600102 03:04:06000"	1
@@ -3705,8 +3705,8 @@ j	COUNT(*)
 {"a": 1, "b": 2}	2
 {"a": 1, "b": 2, "c": 3, "d": 4}	2
 []	2
-[2]	2
 [1]	2
+[2]	2
 [1, 2]	2
 [2, 1]	2
 [1, 2, 3]	2
@@ -4626,16 +4626,16 @@ cast(se as json)
 "a,c"
 select cast(ge as json) from t1;
 cast(ge as json)
-{"type": "Point", "coordinates": [1.0, 1.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
 select cast(po as json) from t1;
 cast(po as json)
-{"type": "Point", "coordinates": [1.0, 1.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
 select cast(ls as json) from t1;
 cast(ls as json)
-{"type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}
 select cast(py as json) from t1;
 cast(py as json)
-{"type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
 select cast(js as json) from t1;
 cast(js as json)
 [123]
@@ -4759,7 +4759,7 @@ i	json_keys(j)
 25	NULL
 26	NULL
 27	NULL
-28	["type", "coordinates"]
+28	["crs", "type", "coordinates"]
 29	NULL
 30	NULL
 31	NULL
@@ -4841,9 +4841,9 @@ json_object('existing', pk),
 json_object('new', 'apple')
 ) as field1 from t21304639 order by field1;
 field1
+{"existing": 1}
 {"existing": 2}
 {"existing": 3}
-{"existing": 1}
 Warnings:
 Warning	1235	This version of MySQL doesn't yet support 'sorting of non-scalar JSON values'
 select json_set(
@@ -4852,9 +4852,9 @@ json_object('existing', pk),
 json_object('new', 'apple')
 ) as field1 from t21304639 order by field1;
 field1
+{"existing": 1}
 {"existing": 2}
 {"existing": 3}
-{"existing": 1}
 Warnings:
 Warning	1235	This version of MySQL doesn't yet support 'sorting of non-scalar JSON values'
 drop table t21304639;
@@ -4898,7 +4898,7 @@ insert into misc_dt values
 );
 select id, json_array( true, py, false ) from misc_dt order by id;
 id	json_array( true, py, false )
-1	[true, {"type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}, false]
+1	[true, {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}, false]
 2	[true, null, false]
 drop table misc_dt;
 create table jro
@@ -5541,8 +5541,8 @@ null
 7
 "abc"
 "abcd"
-{"a": 1, "b": 2}
 {"a": 1, "b": 3}
+{"a": 1, "b": 2}
 [true, false]
 [true, true]
 false
@@ -5726,16 +5726,16 @@ a
 "a,b"
 "a,c"
 "b"
-{"a": 1, "b": 2}
 {"a": 1, "b": 3}
-{"type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
-{"type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 9.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
-{"type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}
-{"type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]]}
-{"type": "Point", "coordinates": [1.0, 1.0]}
-{"type": "Point", "coordinates": [1.0, 4.0]}
-{"type": "Point", "coordinates": [1.0, 2.0]}
-{"type": "Point", "coordinates": [1.0, 3.0]}
+{"a": 1, "b": 2}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 3.0]]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 3.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 2.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 4.0]}
+{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 9.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
 [1, 2]
 [1, 3]
 "2013-11-25"
@@ -5859,10 +5859,10 @@ insert into jtable select 3, 'linestring', cast(ls as json) from misc_dt;
 insert into jtable select 4, 'polygon', cast(py as json) from misc_dt;
 select id, descr, json_type( doc ), doc from jtable order by id;
 id	descr	json_type( doc )	doc
-1	geometry	OBJECT	{"type": "Point", "coordinates": [1.0, 1.0]}
-2	point	OBJECT	{"type": "Point", "coordinates": [1.0, 1.0]}
-3	linestring	OBJECT	{"type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}
-4	polygon	OBJECT	{"type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
+1	geometry	OBJECT	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
+2	point	OBJECT	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}
+3	linestring	OBJECT	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}
+4	polygon	OBJECT	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}
 select json_object
 (
 'geometry', ST_GeomFromText('POINT(1 1)'),
@@ -5879,7 +5879,7 @@ json_object
 'polygon', ST_GeomFromText('POLYGON((0 0,10 0,10 10,0 10,0 0),
     (5 5,7 5,7 7,5 7, 5 5))')
 )
-{"point": {"type": "Point", "coordinates": [1.0, 1.0]}, "polygon": {"type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}, "geometry": {"type": "Point", "coordinates": [1.0, 1.0]}, "linestring": {"type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}}
+{"point": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}, "polygon": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Polygon", "coordinates": [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]}, "geometry": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "Point", "coordinates": [1.0, 1.0]}, "linestring": {"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "LineString", "coordinates": [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]}}
 delete from misc_dt;
 select * from misc_dt;
 ge	po	ls	py
@@ -5936,10 +5936,10 @@ insert into jtable select 3, 'multilinestring', cast(ls as json) from misc_dt;
 insert into jtable select 4, 'multipolygon', cast(py as json) from misc_dt;
 select id, descr, json_type( doc ), doc from jtable order by id;
 id	descr	json_type( doc )	doc
-1	geometrycollection	OBJECT	{"type": "GeometryCollection", "geometries": [{"type": "Point", "coordinates": [1.0, 1.0]}, {"type": "Point", "coordinates": [2.0, 2.0]}]}
-2	multipoint	OBJECT	{"type": "MultiPoint", "coordinates": [[1.0, 1.0], [2.0, 2.0]]}
-3	multilinestring	OBJECT	{"type": "MultiLineString", "coordinates": [[[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]], [[0.0, 0.0], [11.0, 11.0], [12.0, 12.0]]]}
-4	multipolygon	OBJECT	{"type": "MultiPolygon", "coordinates": [[[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]], [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]]}
+1	geometrycollection	OBJECT	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "GeometryCollection", "geometries": [{"type": "Point", "coordinates": [1.0, 1.0]}, {"type": "Point", "coordinates": [2.0, 2.0]}]}
+2	multipoint	OBJECT	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "MultiPoint", "coordinates": [[1.0, 1.0], [2.0, 2.0]]}
+3	multilinestring	OBJECT	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "MultiLineString", "coordinates": [[[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]], [[0.0, 0.0], [11.0, 11.0], [12.0, 12.0]]]}
+4	multipolygon	OBJECT	{"crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:MySQL::0"}}, "type": "MultiPolygon", "coordinates": [[[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]], [[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]], [[5.0, 5.0], [7.0, 5.0], [7.0, 7.0], [5.0, 7.0], [5.0, 5.0]]]]}
 select ST_AsGeoJSON( ge ),
 ST_AsGeoJSON( po ),
 ST_AsGeoJSON( ls ),
@@ -7211,8 +7211,8 @@ NULL	1
 NULL	1
 NULL	2
 Warnings:
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column j at row 3
-Warning	3156	Invalid JSON value for CAST to DATE/TIME/DATETIME/TIMESTAMP from column j at row 4
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column j at row 3
+Warning	3156	Invalid JSON value for CAST to DATETIME/TIMESTAMP from column j at row 4
 UPDATE tt SET j = CAST(CAST('2015-06-19' AS DATE) AS JSON) WHERE j IS NOT NULL;
 SELECT CAST(j AS DATE), COUNT(*) FROM tt GROUP BY j, i WITH ROLLUP;
 CAST(j AS DATE)	COUNT(*)
@@ -9674,6 +9674,7 @@ id	j1	j2	ss1	sf1	ss2	sf2
 1	{"a": "a", "b": "b"}	{"a": "a", "b": "b"}	25	0	25	0
 2	NULL	NULL	NULL	NULL	NULL	NULL
 3	{"a": "aa", "b": "bb"}	{"a": "aa", "b": "bb"}	27	0	27	0
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON UPDATE t SET j1 = JSON_SET(j1, '$.a', 'x'),
 j2 = JSON_SET(j2, '$.a', 'y'),
 j1 = JSON_SET(j1, '$.b', 'z');
@@ -10835,6 +10836,7 @@ id	j	ss	sf
 3	null	2	0
 4	NULL	NULL	NULL
 DROP TABLE t;
+SET explain_json_format_version = DEFAULT;
 #
 # WL#9692: Add JSON_MERGE_PATCH
 #
@@ -11123,3 +11125,26 @@ SELECT * FROM t1 LEFT JOIN t2 ON x=y WHERE JSON_REPLACE('{}', '$.a', y) <> 3;
 x	y
 a	NULL
 DROP TABLE t1, t2;
+#
+# Bug#337458212: Extreme TIME value magically appear smaller when
+#                converted to JSON
+#
+CREATE TABLE times (t TIME(6));
+INSERT INTO times VALUES
+('-838:59:59'),
+('838:59:59'),
+('-00:00:00.000001'),
+('-00:00:00'),
+('24:00:00'),
+('-12:00:00'),
+('-24:00:00');
+SELECT CAST(t AS JSON) FROM times;
+CAST(t AS JSON)
+"-00:00:00.000001"
+"-12:00:00.000000"
+"-24:00:00.000000"
+"-838:59:59.000000"
+"00:00:00.000000"
+"24:00:00.000000"
+"838:59:59.000000"
+DROP TABLE times;

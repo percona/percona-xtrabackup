@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 DROP TABLE IF EXISTS t1;
 ==== Test BUG#32407 ====
 select * from t1;
@@ -93,3 +94,4 @@ BINLOG '-2079193929';
 ERROR HY000: Decoding of base64 string failed
 BINLOG 'xç↓%~∙D╒ƒ╡';
 ERROR HY000: Decoding of base64 string failed
+include/rpl/set_gtid_mode_on.inc

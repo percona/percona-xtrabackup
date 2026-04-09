@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,12 +26,12 @@
 #include <mysql/plugin_validate_password.h>
 #include <mysql/service_my_plugin_log.h>
 #include <mysql/service_mysql_string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
-#include <time.h>
 #include <algorithm>  // std::swap
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
 #include <fstream>
 #include <set>
 #include <string>
@@ -411,15 +411,13 @@ static int get_password_strength(mysql_string_handle password) {
 
   mysql_string_iterator_free(iter);
   if (n_chars < MIN_DICTIONARY_WORD_LENGTH) return (policy);
-  if (n_chars < validate_password_length)
-    return (PASSWORD_SCORE);
-  else {
-    policy = PASSWORD_POLICY_LOW;
-    if (validate_password_policy_strength(password, PASSWORD_POLICY_MEDIUM)) {
-      policy = PASSWORD_POLICY_MEDIUM;
-      if (validate_dictionary_check(password)) policy = PASSWORD_POLICY_STRONG;
-    }
+  if (n_chars < validate_password_length) return (PASSWORD_SCORE);
+  policy = PASSWORD_POLICY_LOW;
+  if (validate_password_policy_strength(password, PASSWORD_POLICY_MEDIUM)) {
+    policy = PASSWORD_POLICY_MEDIUM;
+    if (validate_dictionary_check(password)) policy = PASSWORD_POLICY_STRONG;
   }
+
   return ((policy + 1) * PASSWORD_SCORE + PASSWORD_SCORE);
 }
 

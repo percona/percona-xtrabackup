@@ -1,4 +1,4 @@
-# Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -93,28 +93,6 @@ IF(GCOV_VERSION AND GCOV_VERSION VERSION_LESS 10)
     "At least version 10 is required")
 ENDIF()
 
-IF(WITH_ROUTER)
-  # extra/duktape/duktape-2.7.0/src/duktape.c has ~140 #line directives.
-  # Just create some empty files, to make fastcov happy.
-  SET(DUKTAPE_SOURCE_DIR ${CMAKE_SOURCE_DIR}/extra/duktape/duktape-2.7.0)
-  EXECUTE_PROCESS(COMMAND
-    grep "\#line [12] " ${DUKTAPE_SOURCE_DIR}/src/duktape.c
-    OUTPUT_VARIABLE DUKTAPE_LINES
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-  STRING(REPLACE "\n" ";" DUKTAPE_LINES "${DUKTAPE_LINES}")
-  FOREACH(LINE ${DUKTAPE_LINES})
-    STRING(REGEX MATCH "#line [12] \"(.*)\"" XXX ${LINE})
-    SET(DUK_SOURCE_FILE ${CMAKE_MATCH_1})
-    IF(CMAKE_GENERATOR MATCHES "Ninja")
-      FILE(WRITE ${CMAKE_BINARY_DIR}/${DUK_SOURCE_FILE} "")
-    ELSE()
-      FILE(WRITE
-        ${CMAKE_BINARY_DIR}/router/src/mock_server/src/${DUK_SOURCE_FILE} "")
-    ENDIF()
-  ENDFOREACH()
-ENDIF(WITH_ROUTER)
-
 # We may be running gcov in-source.
 IF(NOT THIS_IS_AN_IN_SOURCE_BUILD)
   FOREACH(FILE
@@ -152,9 +130,8 @@ FOREACH(FASTCOV_EXCLUDE
     "/usr/lib"
     "${BOOST_INCLUDE_DIR}"
     ${GMOCK_INCLUDE_DIRS}
-    "${CMAKE_SOURCE_DIR}/extra/duktape"
-    "${CMAKE_SOURCE_DIR}/extra/lz4"
     "${CMAKE_SOURCE_DIR}/extra/rapidjson"
+    "${CMAKE_SOURCE_DIR}/extra/xxhash"
     )
   LIST(APPEND FASTCOV_EXCLUDE_LIST "${FASTCOV_EXCLUDE}")
 ENDFOREACH()

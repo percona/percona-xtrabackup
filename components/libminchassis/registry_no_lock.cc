@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -54,8 +54,7 @@ void mysql_registry_no_lock_imp::deinit() {
 mysql_service_implementation *
 mysql_registry_no_lock_imp::get_service_implementation_by_interface(
     my_h_service interface) {
-  my_interface_mapping::const_iterator iter =
-      mysql_registry_no_lock_imp::interface_mapping.find(interface);
+  auto iter = mysql_registry_no_lock_imp::interface_mapping.find(interface);
   if (iter == mysql_registry_no_lock_imp::interface_mapping.cend()) {
     return nullptr;
   }
@@ -75,8 +74,7 @@ mysql_registry_no_lock_imp::get_service_implementation_by_interface(
 */
 uint64_t mysql_registry_no_lock_imp::get_service_implementation_reference_count(
     my_h_service interface) {
-  my_interface_mapping::const_iterator iter =
-      mysql_registry_no_lock_imp::interface_mapping.find(interface);
+  auto iter = mysql_registry_no_lock_imp::interface_mapping.find(interface);
   if (iter == mysql_registry_no_lock_imp::interface_mapping.cend()) {
     return -1;
   }
@@ -163,38 +161,36 @@ bool mysql_registry_no_lock_imp::register_service_nolock(
     const char *service_implementation_name, my_h_service ptr) {
   try {
     std::unique_ptr<mysql_service_implementation> imp =
-        std::unique_ptr<mysql_service_implementation>(
-            new mysql_service_implementation(ptr, service_implementation_name));
+        std::make_unique<mysql_service_implementation>(
+            ptr, service_implementation_name);
 
     if (imp->interface() == nullptr) {
       return true;
     }
 
     /* Register the implementation name. */
-    std::pair<my_service_registry::iterator, bool> addition_result =
+    std::pair<my_service_registry::iterator, bool> const addition_result =
         mysql_registry_no_lock_imp::service_registry.emplace(imp->name_c_str(),
                                                              imp.get());
 
     /* Fail if it was present already. */
     if (!addition_result.second) {
       return true;
-    } else {
-      try {
-        /* Register interface in mapping */
-        mysql_registry_no_lock_imp::interface_mapping.emplace(imp->interface(),
-                                                              imp.get());
+    }
+    try {
+      /* Register interface in mapping */
+      mysql_registry_no_lock_imp::interface_mapping.emplace(imp->interface(),
+                                                            imp.get());
 
-        /* Register the Service Implementation as default for Service name in
-          case none were registered before. */
-        mysql_registry_no_lock_imp::service_registry.emplace_hint(
-            addition_result.first, imp->service_name_c_str(), imp.get());
-      } catch (...) {
-        mysql_registry_no_lock_imp::service_registry.erase(
-            addition_result.first);
-        /* unique_ptr still has ownership over implementation object, we
-          don't have to delete it explicitly. */
-        return true;
-      }
+      /* Register the Service Implementation as default for Service name in
+        case none were registered before. */
+      mysql_registry_no_lock_imp::service_registry.emplace_hint(
+          addition_result.first, imp->service_name_c_str(), imp.get());
+    } catch (...) {
+      mysql_registry_no_lock_imp::service_registry.erase(addition_result.first);
+      /* unique_ptr still has ownership over implementation object, we
+        don't have to delete it explicitly. */
+      return true;
     }
 
     /* Pointer is stored in registry, thous we release ownership. */
@@ -225,9 +221,8 @@ bool mysql_registry_no_lock_imp::unregister_nolock(
 
     {
       /* Find the implementation and check if it is not being referenced. */
-      my_service_registry::iterator imp_iter =
-          mysql_registry_no_lock_imp::service_registry.find(
-              service_implementation_name);
+      auto imp_iter = mysql_registry_no_lock_imp::service_registry.find(
+          service_implementation_name);
       if (imp_iter == mysql_registry_no_lock_imp::service_registry.end() ||
           imp_iter->second->get_reference_count() > 0) {
         return true;
@@ -246,9 +241,8 @@ bool mysql_registry_no_lock_imp::unregister_nolock(
         mysql_registry_no_lock_imp::interface_mapping.find(imp->interface()));
 
     /* Look if it is the default implementation. */
-    my_service_registry::iterator default_iter =
-        mysql_registry_no_lock_imp::service_registry.find(
-            imp->service_name_c_str());
+    auto default_iter = mysql_registry_no_lock_imp::service_registry.find(
+        imp->service_name_c_str());
     if (default_iter == mysql_registry_no_lock_imp::service_registry.end()) {
       /* A Service Implementation and no default present. The state is not
         consistent. */
@@ -257,7 +251,7 @@ bool mysql_registry_no_lock_imp::unregister_nolock(
 
     if (default_iter->second == imp.get()) {
       /* Remove the default implementation too. */
-      my_service_registry::iterator new_default_iter =
+      auto new_default_iter =
           mysql_registry_no_lock_imp::service_registry.erase(default_iter);
 
       /* Search for a new default implementation. */
@@ -333,7 +327,7 @@ DEFINE_BOOL_METHOD(mysql_registry_no_lock_imp::acquire_related,
     if (strchr(service_name, '.') != nullptr) {
       return true;
     }
-    my_string service_implementation_name =
+    my_string const service_implementation_name =
         my_string(service_name) + component_part;
     /* Try to acquire such Service. */
     if (mysql_registry_no_lock_imp::acquire_nolock(

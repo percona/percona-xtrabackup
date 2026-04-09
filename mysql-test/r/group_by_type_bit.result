@@ -1,0 +1,266 @@
+SET internal_tmp_mem_storage_engine='memory';
+#
+# BIT type checks
+#
+# InnoDB table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+# MyISAM table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+# HEAP table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=HEAP;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	note	The storage engine for the table doesn't support analyze
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+SET internal_tmp_mem_storage_engine='TempTable';
+#
+# BIT type checks
+#
+# InnoDB table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+# MyISAM table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+# HEAP table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=HEAP;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	note	The storage engine for the table doesn't support analyze
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+SET internal_tmp_mem_storage_engine=default;
+SET SESSION big_tables=true;
+#
+# BIT type checks
+#
+# InnoDB table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+# MyISAM table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=MyISAM;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+# HEAP table
+CREATE TABLE t1 (a BIT(7), b INT) ENGINE=HEAP;
+INSERT INTO t1 VALUES (64, 1), (65, 2), (65, 3), (NULL, NULL), (66, 4);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	note	The storage engine for the table doesn't support analyze
+SELECT COUNT(a) FROM t1;
+COUNT(a)
+4
+EXPLAIN FORMAT=tree SELECT COUNT(a) FROM t1;
+EXPLAIN
+-> Aggregate: count(t1.a)  (rows=1)
+    -> Table scan on t1  (rows=5)
+
+SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+SUM(b)
+NULL
+1
+4
+5
+EXPLAIN FORMAT=tree SELECT SUM(b) FROM t1 GROUP BY a ORDER BY SUM(b);
+EXPLAIN
+-> Sort: SUM(b)
+    -> Table scan on <temporary>
+        -> Aggregate using temporary table
+            -> Table scan on t1  (rows=5)
+
+DROP TABLE t1;
+SET SESSION big_tables=default;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -136,7 +136,8 @@ extern const char *globerrs[]; /* my_error_messages is here */
 #define EE_FAILED_TO_RESET_BEFORE_SECONDARY_IGNORABLE_CHAR 91
 #define EE_FAILED_PROCESSING_DIRECTIVE 92
 #define EE_PTHREAD_KILL_FAILED 93
-#define EE_ERROR_LAST 93 /* Copy last error nr */
+#define EE_COLLATION_ALIAS_ERROR 94
+#define EE_ERROR_LAST 94 /* Copy last error nr */
 /* Add error numbers before EE_ERROR_LAST and change it accordingly. */
 
 /* Exit codes for option processing. When exiting from server use the

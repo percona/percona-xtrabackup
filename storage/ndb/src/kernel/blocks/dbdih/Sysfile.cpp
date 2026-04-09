@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -144,7 +144,7 @@ int Sysfile::pack_sysfile_format_v2(Uint32 cdata[],
   Uint32 indexGCI = index_node_bit_words + node_bit_words;
   Uint32 expectedGCI = newestRestorableGCI;
   for (Uint32 i = 1; i <= max_node_id; i++) {
-    ActiveStatus active_status = (ActiveStatus)getNodeStatus(i);
+    auto active_status = (ActiveStatus)getNodeStatus(i);
     Uint32 bits = 0;
     Uint32 diff = 0;
     Uint32 nodeGCI = lastCompletedGCI[i];
@@ -222,11 +222,11 @@ int Sysfile::pack_sysfile_format_v2(Uint32 cdata[],
   const Uint32 index_ng = index + node_group_bit_words;
   data = 0;
   start_bit = 0;
-  Uint16 *ng_area = (Uint16 *)&cdata[index_ng];
+  auto *ng_area = (Uint16 *)&cdata[index_ng];
   Uint32 predicted_ng = 0;
   Uint32 first_ng = NO_NODE_GROUP_ID;
   for (Uint32 i = 1; i <= max_node_id; i++) {
-    ActiveStatus active_status = (ActiveStatus)getNodeStatus(i);
+    auto active_status = (ActiveStatus)getNodeStatus(i);
     Uint32 diff = 0;
     Uint32 nodeGroup;
     switch (active_status) {
@@ -313,7 +313,7 @@ int Sysfile::pack_sysfile_format_v2(Uint32 cdata[],
 }
 
 int Sysfile::pack_sysfile_format_v1(Uint32 cdata[],
-                                    Uint32 *cdata_size_ptr) const {
+                                    Uint32 * /*cdata_size_ptr*/) const {
   if (maxNodeId == 0 || maxNodeId > 48) {
     return -1;
   }
@@ -472,13 +472,13 @@ int Sysfile::unpack_sysfile_format_v2(const Uint32 cdata[],
   require((index + numGCIs) == indexGCI);
   index = indexGCI;
   const Uint32 index_ng = index + node_group_words;
-  Uint16 *ng_array = (Uint16 *)&cdata[index_ng];
+  auto *ng_array = (Uint16 *)&cdata[index_ng];
   start_bit = 0;
   Uint32 replica_index = 0;
   Uint32 ng_index = 0;
   Uint32 current_ng = 0;
   for (Uint32 i = 1; i <= max_node_id; i++) {
-    ActiveStatus active_status = (ActiveStatus)getNodeStatus(i);
+    auto active_status = (ActiveStatus)getNodeStatus(i);
     Uint32 data = cdata[index];
     Uint32 ng_bit = (data >> start_bit) & 0x1;
     Uint32 nodeGroup = NO_NODE_GROUP_ID;

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1997, 2024, Oracle and/or its affiliates.
+Copyright (c) 1997, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -44,7 +44,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 /** Default value for maximum on-disk size of change buffer in terms
 of percentage of the buffer pool. */
-constexpr uint32_t CHANGE_BUFFER_DEFAULT_SIZE = 25;
+constexpr uint32_t CHANGE_BUFFER_DEFAULT_SIZE = 5;
 
 #ifndef UNIV_HOTBACKUP
 /* Possible operations buffered in the insert/whatever buffer. See
@@ -209,7 +209,7 @@ static inline bool ibuf_bitmap_page(const page_id_t &page_id,
                                     const page_size_t &page_size);
 
 /** Checks if a page is a level 2 or 3 page in the ibuf hierarchy of pages.
-Must not be called when recv_no_ibuf_operations==true.
+Must not be called when recv_recovery_is_on().
 @param[in]      page_id         page id
 @param[in]      page_size       page size
 @param[in]      x_latch         false if relaxed check (avoid latching the
@@ -225,7 +225,7 @@ in which case a new transaction is created.
                                  mtr_t *mtr) MY_ATTRIBUTE((warn_unused_result));
 
 /** Checks if a page is a level 2 or 3 page in the ibuf hierarchy of pages.
-Must not be called when recv_no_ibuf_operations==true.
+Must not be called when recv_recovery_is_on().
 @param[in]      page_id         Tablespace/page identifier
 @param[in]      page_size       Page size
 @param[in]  location Location where requested

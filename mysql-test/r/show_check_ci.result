@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET @old_log_output= @@global.log_output;
 SET GLOBAL log_output="FILE,TABLE";
 drop table if exists t1,t2;
@@ -524,6 +525,8 @@ Warnings:
 Warning	1287	'|| as a synonym for OR' is deprecated and will be removed in a future release. Please use OR instead
 Warning	1287	'|| as a synonym for OR' is deprecated and will be removed in a future release. Please use OR instead
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE t1(
 field1 text NOT NULL,
 PRIMARY KEY(field1(750))
@@ -852,7 +855,7 @@ def			TRIGGERS	Table	Table	253	192	2	Y	0	0	33
 def		triggers	TRIGGERS	Statement	Statement	252	4294967295	10	N	4241	0	33
 def		triggers	TRIGGERS	Timing	Timing	254	18	6	N	4481	0	33
 def		triggers	TRIGGERS	Created	Created	7	22	22	N	4225	2	63
-def		triggers	TRIGGERS	sql_mode	sql_mode	254	1560	117	N	6273	0	33
+def		triggers	TRIGGERS	sql_mode	sql_mode	254	1638	117	N	6273	0	33
 def		triggers	TRIGGERS	Definer	Definer	253	864	14	N	4225	0	33
 def		character_sets	TRIGGERS	character_set_client	character_set_client	253	192	6	N	4097	0	33
 def		collations	TRIGGERS	collation_connection	collation_connection	253	192	6	N	4097	0	33
@@ -896,7 +899,7 @@ def		TRIGGERS	TRIGGERS	ACTION_REFERENCE_OLD_TABLE	ACTION_REFERENCE_OLD_TABLE	6	0
 def		TRIGGERS	TRIGGERS	ACTION_REFERENCE_NEW_TABLE	ACTION_REFERENCE_NEW_TABLE	6	0	0	Y	32896	0	63
 def		TRIGGERS	TRIGGERS	ACTION_REFERENCE_OLD_ROW	ACTION_REFERENCE_OLD_ROW	253	9	3	N	1	31	33
 def		TRIGGERS	TRIGGERS	ACTION_REFERENCE_NEW_ROW	ACTION_REFERENCE_NEW_ROW	253	9	3	N	1	31	33
-def	information_schema	TRIGGERS	TRIGGERS	SQL_MODE	SQL_MODE	254	1560	117	N	6273	0	33
+def	information_schema	TRIGGERS	TRIGGERS	SQL_MODE	SQL_MODE	254	1638	117	N	6273	0	33
 def	information_schema	TRIGGERS	TRIGGERS	DEFINER	DEFINER	253	864	14	N	20617	0	33
 TRIGGER_CATALOG	TRIGGER_SCHEMA	TRIGGER_NAME	EVENT_MANIPULATION	EVENT_OBJECT_CATALOG	EVENT_OBJECT_SCHEMA	EVENT_OBJECT_TABLE	ACTION_CONDITION	ACTION_STATEMENT	ACTION_ORIENTATION	ACTION_TIMING	ACTION_REFERENCE_OLD_TABLE	ACTION_REFERENCE_NEW_TABLE	ACTION_REFERENCE_OLD_ROW	ACTION_REFERENCE_NEW_ROW	SQL_MODE	DEFINER
 def	test	t1_bi	INSERT	def	test	t1	NULL	SET @a = 1	ROW	BEFORE	NULL	NULL	OLD	NEW	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	root@localhost
@@ -976,7 +979,7 @@ def		ROUTINES	ROUTINES	IS_DETERMINISTIC	IS_DETERMINISTIC	253	9	2	N	1	31	33
 def	information_schema	ROUTINES	ROUTINES	SQL_DATA_ACCESS	SQL_DATA_ACCESS	254	51	12	N	4481	0	33
 def		ROUTINES	ROUTINES	SQL_PATH	SQL_PATH	6	0	0	Y	32896	0	63
 def	information_schema	ROUTINES	ROUTINES	SECURITY_TYPE	SECURITY_TYPE	254	21	7	N	4481	0	33
-def	information_schema	ROUTINES	ROUTINES	SQL_MODE	SQL_MODE	254	1560	117	N	6273	0	33
+def	information_schema	ROUTINES	ROUTINES	SQL_MODE	SQL_MODE	254	1638	117	N	6273	0	33
 def	information_schema	ROUTINES	ROUTINES	ROUTINE_COMMENT	ROUTINE_COMMENT	252	196605	0	N	4241	0	33
 def	information_schema	ROUTINES	ROUTINES	DEFINER	DEFINER	253	864	14	N	20617	0	33
 SPECIFIC_NAME	ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	DTD_IDENTIFIER	ROUTINE_BODY	ROUTINE_DEFINITION	EXTERNAL_NAME	EXTERNAL_LANGUAGE	PARAMETER_STYLE	IS_DETERMINISTIC	SQL_DATA_ACCESS	SQL_PATH	SECURITY_TYPE	SQL_MODE	ROUTINE_COMMENT	DEFINER
@@ -1031,7 +1034,7 @@ def		ROUTINES	ROUTINES	IS_DETERMINISTIC	IS_DETERMINISTIC	253	9	2	N	1	31	33
 def	information_schema	ROUTINES	ROUTINES	SQL_DATA_ACCESS	SQL_DATA_ACCESS	254	51	12	N	4481	0	33
 def		ROUTINES	ROUTINES	SQL_PATH	SQL_PATH	6	0	0	Y	32896	0	63
 def	information_schema	ROUTINES	ROUTINES	SECURITY_TYPE	SECURITY_TYPE	254	21	7	N	4481	0	33
-def	information_schema	ROUTINES	ROUTINES	SQL_MODE	SQL_MODE	254	1560	117	N	6273	0	33
+def	information_schema	ROUTINES	ROUTINES	SQL_MODE	SQL_MODE	254	1638	117	N	6273	0	33
 def	information_schema	ROUTINES	ROUTINES	ROUTINE_COMMENT	ROUTINE_COMMENT	252	196605	0	N	4241	0	33
 def	information_schema	ROUTINES	ROUTINES	DEFINER	DEFINER	253	864	14	N	20617	0	33
 SPECIFIC_NAME	ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	DTD_IDENTIFIER	ROUTINE_BODY	ROUTINE_DEFINITION	EXTERNAL_NAME	EXTERNAL_LANGUAGE	PARAMETER_STYLE	IS_DETERMINISTIC	SQL_DATA_ACCESS	SQL_PATH	SECURITY_TYPE	SQL_MODE	ROUTINE_COMMENT	DEFINER
@@ -1077,6 +1080,8 @@ delete from mysql.user where user='mysqltest_4';
 delete from mysql.db where user='mysqltest_4';
 delete from mysql.tables_priv where user='mysqltest_4';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop database mysqltest;
 show plugins;
 create database `mysqlttest\1`;
@@ -1390,7 +1395,7 @@ ERROR 42000: You have an error in your SQL syntax; check the manual that corresp
 #               SHOW CREATE TABLE
 #
 CREATE TABLE t1 (i CHAR(3),
-n CHAR(20) CHARACTER SET utf8mb3 GENERATED ALWAYS AS (md5(i)));
+n CHAR(20) CHARACTER SET utf8mb3 GENERATED ALWAYS AS (sha2(i,256)));
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 # Use SHOW CREATE TABLE output below unmodified to re-create table
@@ -1398,12 +1403,12 @@ SHOW CREATE TABLE t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
   `i` char(3) DEFAULT NULL,
-  `n` char(20) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci GENERATED ALWAYS AS (md5(`i`)) VIRTUAL
+  `n` char(20) CHARACTER SET utf8mb3 COLLATE utf8mb3_general_ci GENERATED ALWAYS AS (sha2(`i`,256)) VIRTUAL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 DROP TABLE t1;
 CREATE TABLE `t1` (
 `i` char(3) DEFAULT NULL,
-`n` char(20) CHARACTER SET utf8mb3 GENERATED ALWAYS AS (md5(i)) VIRTUAL
+`n` char(20) CHARACTER SET utf8mb3 GENERATED ALWAYS AS (sha2(i,256)) VIRTUAL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
@@ -1590,3 +1595,4 @@ DROP TABLE t3;
 SET @@global.log_output = @old_log_output;
 TRUNCATE TABLE mysql.general_log;
 TRUNCATE TABLE mysql.slow_log;
+include/rpl/set_gtid_mode_on.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -113,6 +113,10 @@ class Table {
 
   Result enable_indexes();
 
+  /** Returns the ID of the owner THD.
+   * @retval ID of the THD of the session using this temptable */
+  my_thread_id owner_id() const;
+
  private:
   /** Index entry for storing index pointer as well
    * as allocated memory size. */
@@ -168,6 +172,8 @@ class Table {
   Columns m_columns;
 
   TABLE_SHARE *m_mysql_table_share;
+
+  my_thread_id m_owner_id{};
 };
 
 /* Implementation of inlined methods. */

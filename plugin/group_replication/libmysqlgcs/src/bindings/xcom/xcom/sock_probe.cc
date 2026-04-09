@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,7 +24,7 @@
 #ifndef _WIN32
 #include <netdb.h>
 #endif
-#include <stdlib.h>
+#include <cstdlib>
 #ifdef _MSC_VER
 #include <stdint.h>
 #endif
@@ -125,7 +125,7 @@ node_no xcom_find_node_index(node_list *nodes) {
       /* Get addresses of host */
 
       saved_addr = addr = probe_get_addrinfo(name);
-      IFDBG(D_NONE, FN; STRLIT("name "); STRLIT(name); PTREXP(addr));
+      XCOM_IFDBG(D_NONE, FN; STRLIT("name "); STRLIT(name); PTREXP(addr));
       /* getaddrinfo returns linked list of addrinfo */
       bool using_net_ns = !net_namespace.empty();
       while (addr) {
@@ -189,7 +189,7 @@ node_no xcom_mynode_match(char *name, xcom_port port) {
     }
 
     saved_addr = addr = probe_get_addrinfo(name);
-    IFDBG(D_NONE, FN; STREXP(name); PTREXP(addr));
+    XCOM_IFDBG(D_NONE, FN; STREXP(name); PTREXP(addr));
     /* getaddrinfo returns linked list of addrinfo */
     using_net_ns = !net_namespace.empty();
     while (addr) {

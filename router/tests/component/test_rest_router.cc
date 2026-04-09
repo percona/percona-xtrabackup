@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -23,9 +23,6 @@
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include <array>
-#include <thread>
-
 #include <gmock/gmock.h>
 
 #ifdef RAPIDJSON_NO_SIZETYPEDEFINE
@@ -39,15 +36,16 @@
 #include <rapidjson/stringbuffer.h>
 
 #include "config_builder.h"
-#include "dim.h"
+#include "mysql/harness/net_ts/buffer.h"
+#include "mysql/harness/net_ts/internet.h"
+#include "mysql/harness/net_ts/io_context.h"
 #include "mysql/harness/utility/string.h"  // ::join
-#include "mysqlrouter/mysql_session.h"
+#include "mysqlrouter/rest_client.h"
 #include "process_launcher.h"
 #include "rest_api_testutils.h"
 #include "router_component_test.h"
 #include "router_config.h"
-
-#include "mysqlrouter/rest_client.h"
+#include "stdx_expected_no_error.h"
 
 using namespace std::chrono_literals;
 
@@ -80,6 +78,44 @@ TEST_P(RestRouterApiTest, ensure_openapi) {
 
   ASSERT_NO_FATAL_FAILURE(
       fetch_and_validate_schema_and_resource(GetParam(), http_server));
+}
+
+class RestRouterURITest : public RestApiComponentTest {};
+
+TEST_F(RestRouterURITest, router_status_invalid_uri) {
+  RecordProperty("Description",
+                 "Check that invalid URLs are handled properly by the "
+                 "http_server plugin.");
+  const std::string http_hostname = "127.0.0.1";
+
+  const std::string userfile = create_password_file();
+
+  router_spawner().spawn(
+      {"-c",
+       create_config_file(
+           conf_dir_.name(),
+           mysql_harness::join(
+               get_restapi_config("rest_router", userfile, true), "\n"))});
+
+  net::io_context io_ctx;
+
+  net::ip::tcp::socket sock(io_ctx);
+
+  auto connect_res = sock.connect(
+      net::ip::tcp::endpoint(net::ip::address_v4::loopback(), http_port_));
+  ASSERT_NO_ERROR(connect_res);
+
+  std::string http_request("GET /path?someparam=${...://...} HTTP/1.0\r\n\r\n");
+  auto write_res = net::write(sock, net::buffer(http_request));
+  ASSERT_NO_ERROR(write_res);
+
+  std::string read_buf;
+  auto read_res = net::read(sock, net::dynamic_buffer(read_buf));
+  if (!read_res) {
+    ASSERT_EQ(read_res.error(), net::stream_errc::eof);
+  }
+
+  EXPECT_THAT(read_buf, ::testing::StartsWith("HTTP/1.1 400 Bad Request"));
 }
 
 // ****************************************************************************

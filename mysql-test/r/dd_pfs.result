@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 create schema s;
 create table s.t1(i int);
 create table s.t2(i int) tablespace innodb_system;
@@ -96,3 +97,4 @@ i
 include/assert.inc ['DROP SCHEMA s4' will allocate 7 objects.]
 include/assert.inc ['DROP SCHEMA s4' will free 18 objects.]
 include/assert.inc ['DROP SCHEMA s4' will leave -11 objects.]
+include/rpl/set_gtid_mode_on.inc

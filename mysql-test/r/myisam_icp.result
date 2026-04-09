@@ -534,7 +534,7 @@ id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered
 1	PRIMARY	table2	NULL	ref	col_varchar_key	col_varchar_key	7	test.table3.col_varchar_key	2	100.00	Using index
 2	DEPENDENT SUBQUERY	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	NULL	no matching row in const table
 Warnings:
-Note	1003	/* select#1 */ select `test`.`table1`.`col_int_nokey` AS `col_int_nokey` from `test`.`t1` `table1` join `test`.`t1` `table2` join `test`.`t1` `table3` where ((`test`.`table2`.`col_varchar_key` = `test`.`table3`.`col_varchar_key`) and (`test`.`table3`.`col_int_nokey` = `test`.`table1`.`col_int_key`) and <nop>(<in_optimizer>(`test`.`table3`.`col_int_key`,<exists>(/* select#2 */ select NULL from `test`.`t2` where <if>(outer_field_is_not_null, (<cache>(`test`.`table3`.`col_int_key`) <> NULL), true)))))
+Note	1003	/* select#1 */ select `test`.`table1`.`col_int_nokey` AS `col_int_nokey` from `test`.`t1` `table1` join `test`.`t1` `table2` join `test`.`t1` `table3` where ((`test`.`table2`.`col_varchar_key` = `test`.`table3`.`col_varchar_key`) and (`test`.`table3`.`col_int_nokey` = `test`.`table1`.`col_int_key`) and <nop>(<in_optimizer>(`test`.`table3`.`col_int_key`,<exists>(/* select#2 */ select NULL from `test`.`t2` where (<cache>(`test`.`table3`.`col_int_key`) <> NULL)))))
 SELECT table1.col_int_nokey
 FROM t1 AS table1 STRAIGHT_JOIN (
 t1 AS table2 INNER JOIN t1 AS table3

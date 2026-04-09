@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
@@ -372,7 +372,10 @@ template <std::size_t Extent>
 inline int cstrbuf_format(ndb::span<char, Extent> buf, const char fmt[],
                           std::va_list ap) noexcept {
   cstrbuf strbuf(buf);
+  MY_COMPILER_DIAGNOSTIC_PUSH()
+  MY_COMPILER_GCC_WORKAROUND_FALSE_POSITIVE_SUGGEST_ATTRIBUTE_FORMAT()
   return strbuf.vappendf(fmt, ap);
+  MY_COMPILER_DIAGNOSTIC_POP()
 }
 
 template <std::size_t Extent>

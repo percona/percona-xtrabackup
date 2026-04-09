@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_group_member_information.h"
 
-#include <assert.h>
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <sstream>
@@ -34,13 +34,13 @@
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/gcs_xcom_proxy.h"
 #include "plugin/group_replication/libmysqlgcs/src/bindings/xcom/xcom/synode_no.h"
 
-Gcs_xcom_node_address::Gcs_xcom_node_address(std::string member_address)
+Gcs_xcom_node_address::Gcs_xcom_node_address(const std::string &member_address)
     : m_member_address(member_address), m_member_ip(), m_member_port(0) {
   char address[IP_MAX_SIZE];
   xcom_port port;
 
-  int error = get_ip_and_port(const_cast<char *>(member_address.c_str()),
-                              address, &port);
+  int const error = get_ip_and_port(const_cast<char *>(member_address.c_str()),
+                                    address, &port);
   if (!error) {
     m_member_ip.append(address);
     m_member_port = port;
@@ -202,7 +202,7 @@ Gcs_xcom_uuid Gcs_xcom_uuid::create_uuid() {
      any reason. The server already has the code to do it, so we could make
      this an option and pass the information to GCS.
   */
-  uint64_t value = My_xp_util::getsystime();
+  uint64_t const value = My_xp_util::getsystime();
 
   ss << value;
   uuid.actual_value = ss.str();
@@ -272,7 +272,7 @@ Gcs_xcom_nodes::Gcs_xcom_nodes(const site_def *site, node_set &nodes)
 
   for (unsigned int i = 0; i < nodes.node_set_len; ++i) {
     /* Get member address and save it. */
-    std::string address(site->nodes.node_list_val[i].address);
+    std::string const address(site->nodes.node_list_val[i].address);
 
     /* Get member uuid and save it. */
     uuid.decode(reinterpret_cast<uchar *>(
@@ -280,9 +280,9 @@ Gcs_xcom_nodes::Gcs_xcom_nodes(const site_def *site, node_set &nodes)
                 site->nodes.node_list_val[i].uuid.data.data_len);
 
     /* Get member status and save it */
-    bool alive = nodes.node_set_val[i] ? true : false;
+    bool const alive = nodes.node_set_val[i] != 0;
 
-    Gcs_xcom_node_information node(address, uuid, i, alive);
+    Gcs_xcom_node_information const node(address, uuid, i, alive);
 
     m_nodes.push_back(node);
   }

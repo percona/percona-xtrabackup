@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CALL mtr.add_suppression("Storage engine '.*' does not support system tables. \\[mysql.*\\]");
 CALL mtr.add_suppression("Column count of mysql.* is wrong. "
                          "Expected .*, found .*. "
@@ -660,6 +661,8 @@ FLUSH PRIVILEGES;;
 COMMIT;
 
 # Connection: con1
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 
 # Connection: default
 SELECT user, host FROM mysql.user WHERE host = 'h';
@@ -731,15 +734,15 @@ DROP USER user2@localhost;
 SELECT user, host FROM mysql.user where user like 'user%';
 user	host
 DROP USER no_user@localhost;
-ERROR HY000: Operation DROP USER failed for 'no_user'@'localhost'
+ERROR HY000: Operation DROP USER failed for 'no_user'@'localhost' (User account does not exist)
 SHOW WARNINGS;
 Level	Code	Message
-Error	1396	Operation DROP USER failed for 'no_user'@'localhost'
+Error	1396	Operation DROP USER failed for 'no_user'@'localhost' (User account does not exist)
 CREATE USER user2@localhost, user3@localhost;
 DROP USER no_user@localhost, user3@localhost,
 no_user1@localhost, user2@localhost,
 no_user2@localhost;
-ERROR HY000: Operation DROP USER failed for 'no_user'@'localhost','no_user1'@'localhost','no_user2'@'localhost'
+ERROR HY000: Operation DROP USER failed for 'no_user'@'localhost' (User account does not exist),'no_user1'@'localhost' (User account does not exist),'no_user2'@'localhost' (User account does not exist)
 DROP USER user2@localhost, user3@localhost;
 SELECT user, host FROM mysql.user where user like 'user%';
 user	host
@@ -808,12 +811,12 @@ DROP USER user7@localhost;
 ####################################################################
 CREATE USER user2@localhost;
 CREATE USER user2@localhost;
-ERROR HY000: Operation CREATE USER failed for 'user2'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user2'@'localhost' (User account already exists)
 CREATE USER user3@localhost, user2@localhost, user4@localhost;
-ERROR HY000: Operation CREATE USER failed for 'user3'@'localhost','user2'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user3'@'localhost' (User account already exists),'user2'@'localhost' (User account already exists)
 SHOW WARNINGS;
 Level	Code	Message
-Error	1396	Operation CREATE USER failed for 'user3'@'localhost','user2'@'localhost'
+Error	1396	Operation CREATE USER failed for 'user3'@'localhost' (User account already exists),'user2'@'localhost' (User account already exists)
 SELECT user, host FROM mysql.user where user like 'user%';
 user	host
 user2	localhost
@@ -829,12 +832,12 @@ SELECT user, password_lifetime FROM mysql.user where USER like 'u_';
 user	password_lifetime
 u2	5
 ALTER USER u3@l PASSWORD EXPIRE INTERVAL 5 DAY;
-ERROR HY000: Operation ALTER USER failed for 'u3'@'l'
+ERROR HY000: Operation ALTER USER failed for 'u3'@'l' (User account does not exist)
 ALTER USER u3@l, u2@l, u4@l PASSWORD EXPIRE INTERVAL 7 DAY;
-ERROR HY000: Operation ALTER USER failed for 'u3'@'l','u4'@'l'
+ERROR HY000: Operation ALTER USER failed for 'u3'@'l' (User account does not exist),'u4'@'l' (User account does not exist)
 SHOW WARNINGS;
 Level	Code	Message
-Error	1396	Operation ALTER USER failed for 'u3'@'l','u4'@'l'
+Error	1396	Operation ALTER USER failed for 'u3'@'l' (User account does not exist),'u4'@'l' (User account does not exist)
 SELECT user, password_lifetime FROM mysql.user WHERE user LIKE 'u_';
 user	password_lifetime
 u2	5
@@ -986,6 +989,7 @@ FLUSH PRIVILEGES;
 ERROR HY000: The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 SHOW WARNINGS;
 Level	Code	Message
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Error	3501	The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 Error	1105	Unknown error
 SET debug='-d,wl7158_grant_load_1';
@@ -994,6 +998,7 @@ FLUSH PRIVILEGES;
 ERROR HY000: The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 SHOW WARNINGS;
 Level	Code	Message
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Error	3501	The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 Error	1105	Unknown error
 SET debug='-d,wl7158_grant_load_proc_1';
@@ -1002,6 +1007,7 @@ FLUSH PRIVILEGES;
 ERROR HY000: The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 SHOW WARNINGS;
 Level	Code	Message
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Error	3501	The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 Error	1105	Unknown error
 SET debug='-d,wl7158_grant_load_2';
@@ -1010,20 +1016,26 @@ FLUSH PRIVILEGES;
 ERROR HY000: The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 SHOW WARNINGS;
 Level	Code	Message
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Error	3501	The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 Error	1105	Unknown error
 SET debug="-d,wl7158_grant_load_proc_2";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 GRANT EXECUTE on PROCEDURE p to u1@h;
 SET debug="+d,wl7158_grant_load_proc_3";
 FLUSH PRIVILEGES;
 ERROR HY000: The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 SHOW WARNINGS;
 Level	Code	Message
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Error	3501	The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 Error	1105	Unknown error
 SET debug="-d,wl7158_grant_load_proc_3";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE TABLE t1(a INT);
 GRANT SELECT ON t1 TO u1@h;
 SET debug='+d,wl7158_grant_load_3';
@@ -1031,6 +1043,7 @@ FLUSH PRIVILEGES;
 ERROR HY000: The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 SHOW WARNINGS;
 Level	Code	Message
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 Error	3501	The ACL operation failed due to the following error from SE: errcode 149 - Lock deadlock; Retry transaction
 Error	1105	Unknown error
 SET debug='-d,wl7158_grant_load_3';
@@ -1781,6 +1794,7 @@ call mtr.add_suppression("mysql.user has no `Event_priv` column at position 28")
 # Starting mysqld in the regular mode...
 
 # restart
+include/rpl/set_gtid_mode_off.inc
 
 # Check that any ACL statement is failed when privilege tables
 # have engine type MyISAM
@@ -1816,6 +1830,7 @@ user	MyISAM
 
 # mysql_upgrade...
 # restart:--upgrade=FORCE
+include/rpl/set_gtid_mode_off.inc
 
 # The ACL tables must have been upgraded.
 SELECT table_name, engine FROM INFORMATION_SCHEMA.TABLES
@@ -1857,6 +1872,8 @@ GRANT SHUTDOWN ON *.* TO 'mysql.session'@localhost;
 GRANT CONNECTION_ADMIN ON *.* TO 'mysql.session'@localhost;
 GRANT SYSTEM_USER ON *.* TO 'mysql.session'@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP USER u1@h;
 DROP TABLE t1;
 #
@@ -1877,3 +1894,4 @@ SET innodb_lock_wait_timeout= 1;
 GRANT ALL ON t1 TO 'u1';
 DROP USER u1;
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

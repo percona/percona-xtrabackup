@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -100,48 +100,46 @@ static bool geometry_collection_apply_equals(const Equals &f,
         mpy_equals = f(g1_mpy.get(), g2_mpy.get());
 
       return mpt_equals && mls_equals && mpy_equals;
-    } else {
-      return f(g2, g1);
+    }
+    return f(g2, g1);
+  }
+  if (g2->type() == Geometry_type::kGeometrycollection) {
+    std::unique_ptr<Multipoint> g2_mpt;
+    std::unique_ptr<Multilinestring> g2_mls;
+    std::unique_ptr<Multipolygon> g2_mpy;
+    split_gc(down_cast<const Geometrycollection *>(g2), &g2_mpt, &g2_mls,
+             &g2_mpy);
+    gc_union(f.semi_major(), f.semi_minor(), &g2_mpt, &g2_mls, &g2_mpy);
+
+    switch (g1->type()) {
+      case Geometry_type::kPoint:
+      case Geometry_type::kMultipoint: {
+        bool const mls_empty = !g2_mls || g2_mls->empty();
+        bool const mpy_empty = !g2_mpy || g2_mpy->empty();
+        if (!mls_empty || !mpy_empty) return false;
+        return f(g1, g2_mpt.get());
+      }
+      case Geometry_type::kLinestring:
+      case Geometry_type::kMultilinestring: {
+        bool const mpt_empty = !g2_mpt || g2_mpt->empty();
+        bool const mpy_empty = !g2_mpy || g2_mpy->empty();
+        if (!mpt_empty || !mpy_empty) return false;
+        return f(g1, g2_mls.get());
+      }
+      case Geometry_type::kPolygon:
+      case Geometry_type::kMultipolygon: {
+        bool const mpt_empty = !g2_mpt || g2_mpt->empty();
+        bool const mls_empty = !g2_mls || g2_mls->empty();
+        if (!mpt_empty || !mls_empty) return false;
+        return f(g1, g2_mpy.get());
+      }
+      default:
+        // All possible combinations should be covered above.
+        assert(false);
+        return false;
     }
   } else {
-    if (g2->type() == Geometry_type::kGeometrycollection) {
-      std::unique_ptr<Multipoint> g2_mpt;
-      std::unique_ptr<Multilinestring> g2_mls;
-      std::unique_ptr<Multipolygon> g2_mpy;
-      split_gc(down_cast<const Geometrycollection *>(g2), &g2_mpt, &g2_mls,
-               &g2_mpy);
-      gc_union(f.semi_major(), f.semi_minor(), &g2_mpt, &g2_mls, &g2_mpy);
-
-      switch (g1->type()) {
-        case Geometry_type::kPoint:
-        case Geometry_type::kMultipoint: {
-          bool mls_empty = !g2_mls.get() || g2_mls->empty();
-          bool mpy_empty = !g2_mpy.get() || g2_mpy->empty();
-          if (!mls_empty || !mpy_empty) return false;
-          return f(g1, g2_mpt.get());
-        }
-        case Geometry_type::kLinestring:
-        case Geometry_type::kMultilinestring: {
-          bool mpt_empty = !g2_mpt.get() || g2_mpt->empty();
-          bool mpy_empty = !g2_mpy.get() || g2_mpy->empty();
-          if (!mpt_empty || !mpy_empty) return false;
-          return f(g1, g2_mls.get());
-        }
-        case Geometry_type::kPolygon:
-        case Geometry_type::kMultipolygon: {
-          bool mpt_empty = !g2_mpt.get() || g2_mpt->empty();
-          bool mls_empty = !g2_mls.get() || g2_mls->empty();
-          if (!mpt_empty || !mls_empty) return false;
-          return f(g1, g2_mpy.get());
-        }
-        default:
-          // All possible combinations should be covered above.
-          assert(false);
-          return false;
-      }
-    } else {
-      return f(g1, g2);
-    }
+    return f(g1, g2);
   }
 }
 
@@ -759,8 +757,8 @@ bool equals(const dd::Spatial_reference_system *srs, const Geometry *g1,
       return false;
     }
 
-    Equals equals_func(srs ? srs->semi_major_axis() : 0.0,
-                       srs ? srs->semi_minor_axis() : 0.0);
+    Equals const equals_func(srs ? srs->semi_major_axis() : 0.0,
+                             srs ? srs->semi_minor_axis() : 0.0);
     *equals = equals_func(g1, g2);
   } catch (...) {
     handle_gis_exception(func_name);
@@ -791,8 +789,8 @@ bool mbr_equals(const dd::Spatial_reference_system *srs, const Geometry *g1,
       return false;
     }
 
-    Equals equals_func(srs ? srs->semi_major_axis() : 0.0,
-                       srs ? srs->semi_minor_axis() : 0.0);
+    Equals const equals_func(srs ? srs->semi_major_axis() : 0.0,
+                             srs ? srs->semi_minor_axis() : 0.0);
 
     switch (g1->coordinate_system()) {
       case Coordinate_system::kCartesian: {

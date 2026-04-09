@@ -23,7 +23,7 @@ namespace xtrabackup {
 namespace components {
 /** Data types */
 extern bool keyring_component_initialized;
-extern std::string component_config_path;
+extern std::string component_config_path __attribute__((weak));
 extern const char *XTRABACKUP_KEYRING_FILE_CONFIG;
 extern const char *XTRABACKUP_KEYRING_KMIP_CONFIG;
 extern const char *XTRABACKUP_KEYRING_KMS_CONFIG;

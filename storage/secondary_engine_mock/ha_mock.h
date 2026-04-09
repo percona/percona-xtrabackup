@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 
 #include "my_base.h"
 #include "sql/handler.h"
+#include "sql/partitioning/partition_handler.h"
 #include "thr_lock.h"
 
 class THD;
@@ -37,6 +38,35 @@ class Table;
 }
 
 namespace mock {
+
+/**
+ * The MOCK storage engine does not actually implement partitioning,
+ * but we support the Partition_handler interface in order to be able
+ * to access tables that are partitioned in the primary engine.
+ */
+class FakePartitionHandler : public Partition_handler {
+ public:
+  explicit FakePartitionHandler(const handler *engine) : m_engine(engine) {}
+
+  void get_dynamic_partition_info(ha_statistics *stat_info,
+                                  ha_checksum *check_sum,
+                                  uint part_id) override {
+    auto *primary_part_handler =
+        m_engine->ha_get_primary_handler()->get_partition_handler();
+
+    return primary_part_handler->get_dynamic_partition_info(stat_info,
+                                                            check_sum, part_id);
+  }
+
+  void set_part_info(partition_info *, bool) override {}
+
+  enum row_type get_partition_row_type(const dd::Table *, uint) override {
+    return ROW_TYPE_NOT_USED;
+  }
+
+ private:
+  const handler *m_engine;
+};
 
 /**
  * The MOCK storage engine is used for testing MySQL server functionality
@@ -55,6 +85,13 @@ namespace mock {
 class ha_mock : public handler {
  public:
   ha_mock(handlerton *hton, TABLE_SHARE *table_share);
+
+  /**
+   * Partition_handler
+   */
+  Partition_handler *get_partition_handler() override {
+    return &m_part_handler;
+  }
 
  private:
   int create(const char *, TABLE *, HA_CREATE_INFO *, dd::Table *) override {
@@ -113,6 +150,7 @@ class ha_mock : public handler {
                    bool error_if_not_loaded) override;
 
   THR_LOCK_DATA m_lock;
+  FakePartitionHandler m_part_handler;
 };
 
 }  // namespace mock

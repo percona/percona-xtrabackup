@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,11 +26,11 @@
 #ifndef MYSQLROUTER_ROUTING_INCLUDED
 #define MYSQLROUTER_ROUTING_INCLUDED
 
+#include "mysql/harness/stdx/expected.h"
 #include "mysqlrouter/base_protocol.h"
 #include "mysqlrouter/mysql_session.h"
 
 #include <chrono>
-#include <map>
 #include <string>
 
 namespace routing {
@@ -242,6 +242,12 @@ constexpr std::string_view kDefaultXRwSectionName{"bootstrap_x_rw"};
 constexpr std::string_view kDefaultXRoSectionName{"bootstrap_x_ro"};
 constexpr std::string_view kDefaultRwSplitSectionName{"bootstrap_rw_split"};
 
+/**
+ * Default for the configuration option determining if the Router opens the
+ * accepting port/socket for a routing instance.
+ */
+constexpr bool kDefaultAcceptConnections{true};
+
 /** @brief Modes supported by Routing plugin */
 enum class RoutingMode {
   kUndefined = 0,
@@ -263,11 +269,10 @@ enum class AccessMode {
 
 /** @brief Routing strategies supported by Routing plugin */
 enum class RoutingStrategy {
-  kUndefined = 0,
-  kFirstAvailable = 1,
-  kNextAvailable = 2,
-  kRoundRobin = 3,
-  kRoundRobinWithFallback = 4,
+  kFirstAvailable = 0,
+  kNextAvailable = 1,
+  kRoundRobin = 2,
+  kRoundRobinWithFallback = 3,
 };
 
 /**
@@ -309,13 +314,11 @@ std::string get_routing_strategy_names(bool metadata_cache);
 
 /** @brief Returns RoutingStrategy for its literal representation
  *
- * If no RoutingStrategy is found for given string,
- * RoutingStrategy::kUndefined is returned.
- *
  * @param value literal representation of the access mode
- * @return RoutingStrategy for the given string or RoutingStrategy::kUndefined
+ * @return RoutingStrategy for the given string
  */
-RoutingStrategy get_routing_strategy(const std::string &value);
+stdx::expected<RoutingStrategy, std::error_code> get_routing_strategy(
+    std::string_view value);
 
 /** @brief Returns literal name of given routing strategy
  *

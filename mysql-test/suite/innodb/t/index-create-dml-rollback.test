@@ -1,0 +1,87 @@
+#
+# Test rollbacks dml operations with NULL values that were performed in parallel
+# to a index creation ddl.
+#
+
+--source include/have_debug_sync.inc
+
+--echo #
+--echo # Bug#37235041 - Duplicate Detection Flaw for NULL Values in UK During
+--echo # DDL Rollback Operations
+--echo #
+# During a index creation, delete records from the table and in parallel insert
+# rows after row_log_apply and before index->is_committed() == true. Rollback the
+# deleted records.
+#
+# Case 1: on insert of non-duplicate rows with NULL values, the index
+# creation ddl shouldn't fail.
+#
+connect (con1,localhost,root,,);
+connect (con2,localhost,root,,);
+connection default;
+CREATE TABLE t1 (id int primary key, c1 int,c2 int);
+INSERT INTO t1 VALUES (1,1,null);
+INSERT INTO t1 VALUES (2,2,null);
+SET DEBUG_SYNC = 'row_log_apply_before SIGNAL s1 WAIT_FOR s2';
+SET DEBUG_SYNC = 'row_log_apply_after  WAIT_FOR s3';
+--send ALTER TABLE t1 ADD UNIQUE KEY uk1(c1,c2)
+
+connection con1;
+SET DEBUG_SYNC = 'now WAIT_FOR s1';
+BEGIN;
+# delete (1,null) from uk1
+DELETE FROM t1 where id=1;
+SET DEBUG_SYNC = 'now SIGNAL s2';
+
+connection con2;
+# insert the deleted values into uk1
+INSERT INTO t1 VALUES (3,1,null);
+
+connection con1;
+# bring back the deleted (1,null) into uk1
+ROLLBACK;
+SET DEBUG_SYNC = 'now SIGNAL s3';
+
+connection default;
+--reap
+select id,c1,c2 from t1 force index(primary);
+select id,c1,c2 from t1 force index(uk1);
+DROP TABLE t1;
+
+#
+# Case 2: on insert of non-null columns, the index creation should report
+# error and fail.
+#
+CREATE TABLE t1 (id int primary key, c1 int);
+INSERT INTO t1 VALUES (1,1);
+
+SET DEBUG_SYNC = 'row_log_apply_before SIGNAL s1 WAIT_FOR s2';
+SET DEBUG_SYNC = 'row_log_apply_after  WAIT_FOR s3';
+--send ALTER TABLE t1 ADD UNIQUE KEY uk2(c1)
+
+connection con1;
+SET DEBUG_SYNC = 'now WAIT_FOR s1';
+BEGIN;
+# delete (1) from uk2
+DELETE FROM t1 where id=1;
+SET DEBUG_SYNC = 'now SIGNAL s2';
+
+connection con2;
+# insert the deleted values into uk2
+INSERT INTO t1 VALUES (2,1);
+
+connection con1;
+# bring back the deleted (1) into uk2
+ROLLBACK;
+SET DEBUG_SYNC = 'now SIGNAL s3';
+
+connection default;
+--error ER_DUP_UNKNOWN_IN_INDEX
+--reap
+CHECK TABLE t1;
+SHOW CREATE TABLE t1;
+SELECT * FROM t1;
+
+DROP TABLE t1;
+disconnect con1;
+disconnect con2;

@@ -80,6 +80,9 @@ select inserts, updates, deletes, schemaops, orig_server_id from mysql.ndb_binlo
 --let $rpl_connection_name= source
 --source include/connection.inc
 --source include/rpl/start_replica.inc
+--source include/rpl/wait_for_replica_to_start.inc
+--sync_slave_with_master replica
+--sync_slave_with_master source
 --echo # Source now has own serverid entry as well
 select server_id, log_name from mysql.ndb_apply_status order by server_id;
 

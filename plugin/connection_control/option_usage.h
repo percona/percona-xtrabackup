@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 extern bool connection_control_plugin_option_usage_init();
 extern bool connection_control_plugin_option_usage_deinit();
-extern bool connection_control_plugin_option_usage_set(
-    unsigned long every_nth_time = 100);
+extern unsigned long long opt_option_tracker_usage_connection_control_plugin;
 
 #endif /* CONNECTION_CONTROL_PLUGIN_OPTION_USAGE_H */

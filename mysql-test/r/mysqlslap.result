@@ -275,3 +275,10 @@ DROP USER 'user_with_length_32_abcdefghijkl'@'localhost';
 #
 # End of 5.7 tests
 #
+#
+# Bug #36048754: mysqlslap response not returned
+#
+# Test: must not hang!
+warning
+DROP DATABASE bug36048754;
+# End of 9.3 tests

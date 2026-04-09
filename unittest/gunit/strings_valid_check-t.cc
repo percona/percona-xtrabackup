@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,5 +53,32 @@ static void BM_UTF8_Valid_Check(size_t num_iterations) {
   ASSERT_EQ(0, error);
 }
 BENCHMARK(BM_UTF8_Valid_Check)
+
+static void BM_utf8_Convert_Check(size_t num_iterations) {
+  StopBenchmarkTiming();
+  // There is a non-ascii minus sign here:
+  const char *content =
+      "MEDIUMBLOB\n\nA BLOB column with a maximum length of "
+      "16,777,215 (224 − 1) bytes.";
+  // Visual Studio did not like \u2122, warning C4566: character represented
+  //   by universal-character-name '\u2212' cannot be represented
+  //   in the current code page (1252)
+  // "16,777,215 (224 \u2212 1) bytes.";
+  const size_t content_len = strlen(content);
+  const CHARSET_INFO *from_cs =
+      get_charset_by_name("utf8mb4_0900_ai_ci", MYF(0));
+  const CHARSET_INFO *to_cs = get_charset_by_name("utf8mb3_general_ci", MYF(0));
+
+  char buf[4096];
+  uint errors;
+  StartBenchmarkTiming();
+  for (size_t i = 0; i < num_iterations; ++i) {
+    size_t const len [[maybe_unused]] = my_convert(
+        buf, sizeof(buf), to_cs, content, content_len, from_cs, &errors);
+  }
+  StopBenchmarkTiming();
+  ASSERT_EQ(0, errors);
+}
+BENCHMARK(BM_utf8_Convert_Check)
 
 }  // namespace strings_valid_check_unittest

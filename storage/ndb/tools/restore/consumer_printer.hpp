@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -43,13 +43,10 @@ class BackupPrinter : public BackupConsumer {
   }
 
   bool table(const TableS &) override;
-#ifdef USE_MYSQL
-  virtual bool table(const TableS &, MYSQL *mysqlp);
-#endif
   bool tuple(const TupleS &, Uint32 fragId) override;
   bool logEntry(const LogEntry &) override;
-  void endOfTuples() override {}
-  void endOfLogEntrys() override;
+  bool endOfTuples() override { return true; }
+  bool endOfLogEntrys() override;
   bool update_apply_status(const RestoreMetaData &metaData,
                            bool snapshotstart) override;
   bool delete_epoch_tuple() override;

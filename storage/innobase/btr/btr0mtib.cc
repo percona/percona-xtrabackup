@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -439,6 +439,10 @@ dberr_t Page_extent::flush_one_by_one(fil_node_t *node) {
   const size_t physical_page_size = m_page_loads[0]->get_page_size();
 
   for (auto &page_load : m_page_loads) {
+    if (page_load->get_block() == nullptr) {
+      break;
+    }
+
     ut_ad(page_load->is_memory());
 
     file::Block *compressed_block = nullptr;
@@ -500,13 +504,16 @@ dberr_t Page_extent::flush_one_by_one(fil_node_t *node) {
       file::Block::free(compressed_block);
       const size_t hole_offset = offset + page_size;
       const size_t hole_size = physical_page_size - page_size;
-      ut_ad(hole_size < physical_page_size);
-      dberr_t err =
-          os_file_punch_hole(node->handle.m_file, hole_offset, hole_size);
-      if (err != DB_SUCCESS) {
-        LogErr(WARNING_LEVEL, ER_IB_BULK_FLUSHER_PUNCH_HOLE, index->table_name,
-               index->name(), (size_t)space_id, (size_t)page_no,
-               physical_page_size, hole_size, file_name.c_str(), (size_t)err);
+      if (hole_size > 0) {
+        ut_ad(hole_size < physical_page_size);
+        dberr_t err =
+            os_file_punch_hole(node->handle.m_file, hole_offset, hole_size);
+        if (err != DB_SUCCESS) {
+          LogErr(WARNING_LEVEL, ER_IB_BULK_FLUSHER_PUNCH_HOLE,
+                 index->table_name, index->name(), (size_t)space_id,
+                 (size_t)page_no, physical_page_size, hole_size,
+                 file_name.c_str(), (size_t)err);
+        }
       }
     }
     if (e_block != nullptr) {
@@ -978,6 +985,7 @@ dberr_t Page_load::init_mem_blob(const page_no_t page_no,
   m_page_extent = page_extent;
   m_page_no = page_no;
   m_mtr = nullptr;
+  m_trx_id = m_btree_load->get_trx_id();
 
   /* Going to use BUF_BLOCK_MEMORY.  Allocate a new page. */
   m_block = alloc_mem_block(m_index, page_no);
@@ -1000,7 +1008,9 @@ dberr_t Page_load::init_mem(const page_no_t page_no,
   ut_ad(page_no < page_extent->m_range.second);
   ut_ad(m_heap == nullptr || is_cached());
   ut_ad(page_no != FIL_NULL);
+  ut_ad(m_btree_load != nullptr);
 
+  m_trx_id = m_btree_load->get_trx_id();
   m_page_extent = page_extent;
   m_page_extent->set_page_load(page_no, this);
   m_mtr = nullptr;
@@ -1140,7 +1150,7 @@ void Page_load::reset() noexcept {
   mem_heap_free(m_heap);
   m_heap = nullptr;
   /* m_index is not modified. */
-  /* m_trx_id is not modified. */
+  m_trx_id = 0;
   m_block = nullptr;
   m_page = nullptr;
   m_cur_rec = nullptr;
@@ -1316,6 +1326,11 @@ dberr_t Page_load::insert(const dtuple_t *tuple, const big_rec_t *big_rec,
   offsets = rec_get_offsets(rec, m_index, offsets, ULINT_UNDEFINED,
                             UT_LOCATION_HERE, &m_heap);
 
+#ifndef NDEBUG
+  const size_t rec_size_2 = rec_offs_size(offsets);
+  assert(rec_size == rec_size_2);
+#endif /* NDEBUG */
+
   /* Insert the record.*/
   auto err = insert(rec, offsets);
 
@@ -1380,6 +1395,10 @@ void Page_load::finish() noexcept {
   page_header_set_field(m_page, nullptr, PAGE_N_DIRECTION, 0);
   m_modified = false;
   ut_d(const bool check_min_rec = false;);
+
+  if (!m_index->is_clustered()) {
+    mach_write_to_8(m_page + (PAGE_HEADER + PAGE_MAX_TRX_ID), m_trx_id);
+  }
   ut_ad(page_validate(m_page, m_index, check_min_rec));
 }
 
@@ -1538,34 +1557,20 @@ bool Page_load::is_space_available(size_t rec_size) const noexcept {
 }
 
 bool Page_load::make_ext(dtuple_t *tuple) {
-  for (ulint i = dict_index_get_n_unique_in_tree(m_index);
-       i < dtuple_get_n_fields(tuple); i++) {
-    auto dfield = dtuple_get_nth_field(tuple, i);
-    auto ifield = m_index->get_field(i);
+  auto dfield = tuple->choose_ext(m_index);
 
-    if (ifield->fixed_len || dfield_is_null(dfield) || dfield_is_ext(dfield) ||
-        dfield_get_len(dfield) <= 40) {
-      continue;
-    }
-
-    auto type = ifield->col->mtype;
-
-    switch (type) {
-      case DATA_BLOB: {
-        byte buf[lob::ref_t::SIZE];
-        lob::ref_t ref(buf);
-        auto err = m_btree_load->insert_blob(ref, dfield);
-        if (err == DB_SUCCESS) {
-          memcpy(dfield->data, buf, lob::ref_t::SIZE);
-          dfield->len = lob::ref_t::SIZE;
-          dfield_set_ext(dfield);
-          return true;
-        }
-      } break;
-      default:
-        break;
+  if (dfield != nullptr) {
+    byte buf[lob::ref_t::SIZE];
+    lob::ref_t ref(buf);
+    auto err = m_btree_load->insert_blob(ref, dfield);
+    if (err == DB_SUCCESS) {
+      memcpy(dfield->data, buf, lob::ref_t::SIZE);
+      dfield->len = lob::ref_t::SIZE;
+      dfield_set_ext(dfield);
+      return true;
     }
   }
+
   return false;
 }
 
@@ -1632,12 +1637,15 @@ Btree_load::Btree_load(dict_index_t *index, trx_t *trx, size_t loader_num,
     : m_index(index),
       m_trx(trx),
       m_allocator(allocator),
-      m_compare_key(m_index, nullptr, !m_index->is_clustered()),
+      m_compare_key(m_index, nullptr,
+                    !m_index->is_clustered() && !dict_index_is_unique(m_index)),
       m_loader_num(loader_num),
       m_page_size(dict_table_page_size(m_index->table)),
-      m_blob_inserter(*this) {
+      m_blob_inserter(*this),
+      m_full_blob_inserter(*this) {
   ut_d(fil_space_inc_redo_skipped_count(m_index->space));
   ut_d(m_index_online = m_index->online_status);
+  ut_ad(!index->is_fts_index());
   m_bulk_flusher.start(m_index->space, m_loader_num, flush_queue_size);
 }
 
@@ -1730,6 +1738,22 @@ void Btree_load::add_to_bulk_flusher(Page_extent *page_extent) {
   m_bulk_flusher.add(page_extent, m_fn_wait_begin, m_fn_wait_end);
 }
 
+void Btree_load::add_blobs_to_bulk_flusher() {
+  const size_t n = m_extents_tracked.size();
+  for (size_t i = 0; i < n; ++i) {
+    auto page_extent = m_extents_tracked.front();
+    m_extents_tracked.pop_front();
+    if (page_extent->is_blob()) {
+      m_bulk_flusher.add(page_extent, m_fn_wait_begin, m_fn_wait_end);
+    } else {
+      m_extents_tracked.push_back(page_extent);
+    }
+  }
+  while (m_bulk_flusher.is_work_available()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+}
+
 void Btree_load::add_to_bulk_flusher(bool finish) {
   const size_t n = m_extents_tracked.size();
   for (size_t i = 0; i < n; ++i) {
@@ -1743,6 +1767,7 @@ void Btree_load::add_to_bulk_flusher(bool finish) {
   }
   if (finish) {
     m_blob_inserter.finish();
+    m_full_blob_inserter.finish();
   }
 }
 
@@ -2024,7 +2049,6 @@ dberr_t Btree_load::finish(bool is_err, const bool subtree) noexcept {
 
   if (!is_err && !subtree) {
     err = load_root_page(last_page_no);
-    ut_ad(validate_index(m_index));
   }
 
   /* Ensure that remaining pages modified without redo log is flushed here. */
@@ -2183,6 +2207,10 @@ dberr_t Btree_load::init() {
   if (err != DB_SUCCESS) {
     return err;
   }
+  err = m_full_blob_inserter.init();
+  if (err != DB_SUCCESS) {
+    return err;
+  }
 
   return DB_SUCCESS;
 }
@@ -2202,10 +2230,11 @@ void Bulk_extent_allocator::Extent_cache::init(size_t max_range) {
   m_num_consumed.store(0);
 }
 
-uint64_t Bulk_extent_allocator::init(dict_table_t *table, trx_t *trx,
-                                     size_t size, size_t num_threads,
-                                     bool in_pages) {
+uint64_t Bulk_extent_allocator::init(dict_table_t *table, dict_index_t *index,
+                                     trx_t *trx, size_t size,
+                                     size_t num_threads, bool in_pages) {
   m_table = table;
+  m_index = index;
   m_concurrency = num_threads;
   m_trx = trx;
   auto size_extent = size / (FSP_EXTENT_SIZE * UNIV_PAGE_SIZE);
@@ -2311,13 +2340,12 @@ bool Bulk_extent_allocator::is_interrupted() {
 
 dberr_t Bulk_extent_allocator::allocate_page(bool is_leaf,
                                              Page_range_t &range) {
-  auto index = m_table->first_index();
-  const space_id_t space_id = index->space;
+  const space_id_t space_id = m_index->space;
 
   log_free_check();
   mtr_t mtr;
   mtr.start();
-  mtr.x_lock(dict_index_get_lock(index), UT_LOCATION_HERE);
+  mtr.x_lock(dict_index_get_lock(m_index), UT_LOCATION_HERE);
 
   const page_no_t n_pages = 1;
   const ulint n_ext = 1;
@@ -2329,12 +2357,12 @@ dberr_t Bulk_extent_allocator::allocate_page(bool is_leaf,
     return DB_OUT_OF_FILE_SPACE;
   }
 
-  page_t *root = btr_root_get(index, &mtr);
+  page_t *root = btr_root_get(m_index, &mtr);
 
   size_t header_offset = is_leaf ? PAGE_BTR_SEG_LEAF : PAGE_BTR_SEG_TOP;
   fseg_header_t *seg_header = root + PAGE_HEADER + header_offset;
 
-  const page_size_t page_size = dict_table_page_size(index->table);
+  const page_size_t page_size = dict_table_page_size(m_index->table);
 
   fil_space_t *space = fil_space_acquire(space_id);
 
@@ -2357,8 +2385,7 @@ dberr_t Bulk_extent_allocator::allocate_page(bool is_leaf,
 
 dberr_t Bulk_extent_allocator::allocate_extent(bool is_leaf, mtr_t &mtr,
                                                Page_range_t &range) {
-  auto index = m_table->first_index();
-  return btr_extent_alloc(index, is_leaf, range, &mtr);
+  return btr_extent_alloc(m_index, is_leaf, range, &mtr);
 }
 
 dberr_t Bulk_extent_allocator::allocate(bool is_leaf, bool alloc_page,
@@ -2521,13 +2548,12 @@ dberr_t Bulk_extent_allocator::allocate_extents(bool is_leaf,
   if (num_extents == 0) {
     return DB_SUCCESS;
   }
-  auto index = m_table->first_index();
-  const space_id_t space_id = index->space;
+  const space_id_t space_id = m_index->space;
 
   log_free_check();
   mtr_t mtr;
   mtr.start();
-  mtr.x_lock(dict_index_get_lock(index), UT_LOCATION_HERE);
+  mtr.x_lock(dict_index_get_lock(m_index), UT_LOCATION_HERE);
 
   const page_no_t n_pages = 1;
   ulint n_reserved = 0;
@@ -2644,6 +2670,13 @@ dberr_t Btree_load::Merger::merge(bool sort) {
   if (m_btree_loads.empty()) {
     return DB_SUCCESS;
   }
+
+  /* When the PK is generated DB_ROW_ID, each loader thread can build multiple
+  subtrees. Try to keep the subtrees as minimal as possible (ideally 1).
+  But we also don't want to waste rowid values, so find a balance. */
+  ib::info(ER_BULK_LOADER_INFO)
+      << "Merging " << m_btree_loads.size() << " subtrees created by "
+      << m_n_threads << " threads";
 
   if (sort) {
     Btree_load_compare cmp_obj(m_index);
@@ -3713,6 +3746,8 @@ dberr_t Blob_inserter::init() {
 }
 
 dberr_t Blob_handle::extend() {
+  ut_ad(m_first_page_load->is_memory());
+
   /* Allocate a data page. */
   m_data_page_load = m_blob_inserter.alloc_data_page();
   m_data_page.init(m_data_page_load);

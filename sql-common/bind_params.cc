@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -56,7 +56,7 @@
 */
 
 static bool my_realloc_str(NET *net, ulong length) {
-  const ulong buf_length = (ulong)(net->write_pos - net->buff);
+  const auto buf_length = (ulong)(net->write_pos - net->buff);
   bool res = false;
   DBUG_TRACE;
   if (buf_length + length > net->max_packet) {
@@ -218,7 +218,7 @@ static void store_param_date(NET *net, MYSQL_BIND *param) {
 }
 
 static void store_param_datetime(NET *net, MYSQL_BIND *param) {
-  MYSQL_TIME *tm = (MYSQL_TIME *)param->buffer;
+  auto *tm = (MYSQL_TIME *)param->buffer;
   net_store_datetime(net, tm);
 }
 

@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,7 +28,6 @@
 
 #include "mysql/allocators/memory_resource.h"  // Memory_resource
 #include "mysql/binlog/event/compression/payload_event_buffer_istream.h"
-#include "mysql/utils/nodiscard.h"
 #include "sql/binlog_reader.h"
 #include "sql/raii/targeted_stringstream.h"
 
@@ -236,7 +235,7 @@ class Decompressing_event_object_istream {
   ///
   /// @returns Targeted_stringstream object; the error for this stream
   /// will be set to the given status.
-  [[NODISCARD]] raii::Targeted_stringstream error_stream(Status_t status);
+  [[nodiscard]] raii::Targeted_stringstream error_stream(Status_t status);
 
   /// Prepare to unfold a given Transaction_payload_log_event by
   /// setting state variables and creating the
@@ -295,7 +294,7 @@ class Decompressing_event_object_istream {
   ///
   /// @retval false success
   /// @retval true error
-  [[NODISCARD]] bool decode_from_buffer(Buffer_view_t &buffer,
+  [[nodiscard]] bool decode_from_buffer(Buffer_view_t &buffer,
                                         Event_ptr_t &out);
 
   /// Status from read_from_payload_stream
@@ -312,7 +311,7 @@ class Decompressing_event_object_istream {
   ///
   /// @retval eof Nothing was read because the read position was at
   /// the end of the event.
-  [[NODISCARD]] Read_status read_from_payload_stream(Event_ptr_t &out);
+  [[nodiscard]] Read_status read_from_payload_stream(Event_ptr_t &out);
 
   /// Read and decode the next event from the binlog stream.
   ///
@@ -322,7 +321,7 @@ class Decompressing_event_object_istream {
   ///
   /// @retval true Error or EOF occurred.  In case of error,
   /// `get_error_str` will contain the reason.
-  [[NODISCARD]] bool read_from_binlog_stream(Event_ptr_t &out);
+  [[nodiscard]] bool read_from_binlog_stream(Event_ptr_t &out);
 };
 
 }  // namespace binlog

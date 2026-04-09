@@ -1,4 +1,4 @@
-/* Copyright (c) 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -103,10 +103,8 @@ bool get_jwt_parts(std::string jwt, std::string &head, std::string &body,
   if (get_part(jwt, body)) return true;
 
   sig = jwt;
-  if (sig.empty() ||
-      sig.find_first_not_of(base64url_chars) != std::string::npos)
-    return true;
-  return false;
+  return sig.empty() ||
+         sig.find_first_not_of(base64url_chars) != std::string::npos;
 }
 
 /**

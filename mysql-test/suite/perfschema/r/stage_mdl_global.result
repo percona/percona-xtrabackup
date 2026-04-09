@@ -1,3 +1,5 @@
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 select INSTRUMENTED, HISTORY
 from performance_schema.threads
 where PROCESSLIST_ID = connection_id();
@@ -34,3 +36,5 @@ user2	stage/sql/starting	STATEMENT
 user2	stage/sql/checking permissions	STATEMENT
 user2	stage/sql/Opening tables	STATEMENT
 unlock tables;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

@@ -1,0 +1,136 @@
+# ----------------------------------------------------
+# Tests for the performance schema statement Digests.
+# ----------------------------------------------------
+
+# Test case to show behavior of statements digest when
+# statement-digest-size is 0
+
+# Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
+--source include/no_protocol.inc
+
+TRUNCATE TABLE performance_schema.events_statements_summary_by_digest;
+TRUNCATE TABLE performance_schema.events_statements_history_long;
+
+--disable_query_log
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 1;
+
+# Digest must differ from GROUP BY 1
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 2;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 1, 2, 3;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 3, 2, 1;
+
+# Verify proper storage of TOK_BY_NUMERIC_COLUMN value
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY
+  15, 16, 17,
+  255, 256, 257,
+  4095, 4096, 4097,
+  65535, 65536, 65537,
+  1048575, 1048576, 1048577,
+  16777215, 16777216, 16777217,
+  268435455, 268435456, 268435457,
+  2147483647, 2147483648, 2147483649,
+  4294967295;
+
+# Various stress test cases
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY ROLLUP(1);
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY ROLLUP(1, 2, 3);
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY CUBE(1);
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY CUBE(1, 2, 3);
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 1;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 2;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 1, 2, 3;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 3, 2, 1;
+
+# Various stress test cases where TOK_GENERIC_VALUE is expected
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 0;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY +1;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY -1;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 10000000000000000;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 1+0;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 1*1;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 1 << 1;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 0;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY +1;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY -1;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 10000000000000000;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 1+0;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 1*1;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 1 << 1;
+
+# Various stress test cases with a mix
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 1, a, 3;
+
+--error ER_NO_SUCH_TABLE
+select * from marker GROUP BY 1, (2+0), 3;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 1, a, 3;
+
+--error ER_NO_SUCH_TABLE
+select * from marker ORDER BY 1, (2+0), 3;
+
+--enable_query_log
+
+SELECT SQL_TEXT, DIGEST, DIGEST_TEXT
+  FROM performance_schema.events_statements_history_long
+  WHERE SQL_TEXT LIKE "%marker%"
+  ORDER BY SQL_TEXT;
+
+SELECT COUNT_STAR, DIGEST, DIGEST_TEXT
+  FROM performance_schema.events_statements_summary_by_digest
+  ORDER BY DIGEST_TEXT;
+

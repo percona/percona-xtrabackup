@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -195,32 +195,22 @@ class MetadataHttpAuthTest : public RouterComponentTest {
     JsonValue nodes(rapidjson::kArrayType);
     for (const auto &auth_data : auth_data_collection) {
       JsonValue node(rapidjson::kArrayType);
-      node.PushBack(JsonValue(auth_data.credentials.username.c_str(),
-                              auth_data.credentials.username.size(), allocator),
-                    allocator);
 
-      node.PushBack(
-          JsonValue(auth_data.credentials.password_hash.c_str(),
-                    auth_data.credentials.password_hash.size(), allocator),
-          allocator);
-
-      node.PushBack(JsonValue(auth_data.privileges.c_str(),
-                              auth_data.privileges.size(), allocator),
-                    allocator);
-
-      node.PushBack(JsonValue(auth_data.auth_method.c_str(),
-                              auth_data.auth_method.size(), allocator),
-                    allocator);
-
+      node.PushBack(JsonValue(auth_data.credentials.username, allocator),
+                    allocator)
+          .PushBack(JsonValue(auth_data.credentials.password_hash, allocator),
+                    allocator)
+          .PushBack(JsonValue(auth_data.privileges, allocator), allocator)
+          .PushBack(JsonValue(auth_data.auth_method, allocator), allocator);
       nodes.PushBack(node, allocator);
     }
 
     json_doc.AddMember("rest_user_credentials", nodes, allocator);
 
     JsonValue metadata_version_node(rapidjson::kArrayType);
-    metadata_version_node.PushBack(md_version.major, allocator);
-    metadata_version_node.PushBack(md_version.minor, allocator);
-    metadata_version_node.PushBack(md_version.patch, allocator);
+    metadata_version_node.PushBack(md_version.major, allocator)
+        .PushBack(md_version.minor, allocator)
+        .PushBack(md_version.patch, allocator);
     json_doc.AddMember("metadata_schema_version", metadata_version_node,
                        allocator);
 
@@ -229,11 +219,17 @@ class MetadataHttpAuthTest : public RouterComponentTest {
     EXPECT_NO_THROW(MockServerRestClient(http_port).set_globals(json_str));
   }
 
-  int get_rest_auth_queries_count(const std::string &json_string) const {
+  [[nodiscard]] int get_rest_auth_queries_count(
+      const std::string &json_string) const {
     rapidjson::Document json_doc;
-    json_doc.Parse(json_string.c_str());
+    json_doc.Parse(json_string);
     if (json_doc.HasMember("rest_auth_query_count")) {
-      EXPECT_TRUE(json_doc["rest_auth_query_count"].IsInt());
+      if (json_doc["rest_auth_query_count"].IsNull()) {
+        // no rest-auth-query yet.
+        return 0;
+      }
+
+      EXPECT_TRUE(json_doc["rest_auth_query_count"].IsInt()) << json_string;
       return json_doc["rest_auth_query_count"].GetInt();
     }
     return 0;
@@ -350,7 +346,7 @@ TEST_F(BasicMetadataHttpAuthTest, MetadataHttpAuthDefaultConfig) {
   launch_router(kMetadataCacheSectionBase);
 
   ASSERT_TRUE(wait_for_rest_endpoint_ready(uri, http_server_port));
-  EXPECT_GT(wait_for_rest_auth_query(2, cluster_http_port), 0);
+  ASSERT_GE(wait_for_rest_auth_query(2, cluster_http_port), 2);
 
   IOContext io_ctx;
   RestClient rest_client(io_ctx, "127.0.0.1", http_server_port, "foobar",
@@ -393,7 +389,7 @@ TEST_P(BasicMetadataHttpAuthTest, BasicMetadataHttpAuth) {
   launch_router(metadata_cache_section);
 
   ASSERT_TRUE(wait_for_rest_endpoint_ready(uri, http_server_port));
-  EXPECT_GT(wait_for_rest_auth_query(2, cluster_http_port), 0);
+  ASSERT_GE(wait_for_rest_auth_query(2, cluster_http_port), 2);
 
   IOContext io_ctx;
   RestClient rest_client(io_ctx, "127.0.0.1", http_server_port,
@@ -573,7 +569,7 @@ TEST_P(MetadataHttpAuthTestCustomTimers, MetadataHttpAuthCustomTimers) {
 
   ASSERT_TRUE(wait_for_port_ready(router_port));
   ASSERT_TRUE(wait_for_rest_endpoint_ready(uri, http_server_port));
-  EXPECT_GT(wait_for_rest_auth_query(2, cluster_http_port), 0);
+  ASSERT_GE(wait_for_rest_auth_query(2, cluster_http_port), 2);
 
   IOContext io_ctx;
   RestClient rest_client(io_ctx, "127.0.0.1", http_server_port, "foobar",
@@ -605,7 +601,7 @@ TEST_F(MetadataHttpAuthTest, ExpiredAuthCacheTTL) {
   launch_router(metadata_cache_section);
 
   ASSERT_TRUE(wait_for_rest_endpoint_ready(uri, http_server_port));
-  EXPECT_GT(wait_for_rest_auth_query(2, cluster_http_port), 0);
+  ASSERT_GE(wait_for_rest_auth_query(2, cluster_http_port), 2);
 
   IOContext io_ctx;
   RestClient rest_client(io_ctx, "127.0.0.1", http_server_port, "foobar",
@@ -630,6 +626,8 @@ TEST_F(MetadataHttpAuthTest, ExpiredAuthCacheTTL) {
 }
 
 struct MetadataAuthCacheUpdateParams {
+  std::string test_name;
+
   std::vector<Auth_data> first_auth_cache_data_set;
   Http_response_details first_http_response;
   std::vector<Auth_data> second_auth_cache_data_set;
@@ -650,24 +648,29 @@ TEST_P(MetadataAuthCacheUpdate, AuthCacheUpdate) {
   launch_router(metadata_cache_section);
 
   ASSERT_TRUE(wait_for_rest_endpoint_ready(uri, http_server_port));
-  EXPECT_GT(wait_for_rest_auth_query(2, cluster_http_port), 0);
+  ASSERT_GE(wait_for_rest_auth_query(1, cluster_http_port), 1);
 
   IOContext io_ctx;
+
   RestClient rest_client(io_ctx, "127.0.0.1", http_server_port, "foobar",
                          "password");
 
   JsonDocument json_doc;
+
+  SCOPED_TRACE("// authenticate via HTTP with the right password");
   ASSERT_NO_FATAL_FAILURE(request_json(
       rest_client, uri, HttpMethod::Get, GetParam().first_http_response.code,
       json_doc, GetParam().first_http_response.type));
 
-  // Update authentication metadata
+  SCOPED_TRACE("// Update authentication metadata");
   set_mock_metadata(GetParam().second_auth_cache_data_set, cluster_http_port,
                     cluster_id, cluster_node_port, false, view_id);
 
-  // auth_cache is updated
-  EXPECT_GT(wait_for_rest_auth_query(2, cluster_http_port), 0);
+  SCOPED_TRACE("// wait for the auth_cache to update");
+  // wait for 3 as the 2nd refresh may happen while we set the mock-metadata.
+  ASSERT_GE(wait_for_rest_auth_query(3, cluster_http_port), 3);
 
+  SCOPED_TRACE("// authenticate via HTTP a 2nd time with the same credentials");
   ASSERT_NO_FATAL_FAILURE(request_json(
       rest_client, uri, HttpMethod::Get, GetParam().second_http_response.code,
       json_doc, GetParam().second_http_response.type));
@@ -676,27 +679,46 @@ TEST_P(MetadataAuthCacheUpdate, AuthCacheUpdate) {
 INSTANTIATE_TEST_SUITE_P(
     AuthCacheUpdate, MetadataAuthCacheUpdate,
     ::testing::Values(
-        // add user
-        MetadataAuthCacheUpdateParams{{{kTestUser2, ""}},
+        MetadataAuthCacheUpdateParams{"add_user",
+                                      {
+                                          {kTestUser2, ""},
+                                      },
                                       ResponseUnauthorized,
-                                      {{kTestUser1, ""}, {kTestUser2, ""}},
+                                      {
+                                          {kTestUser1, ""},
+                                          {kTestUser2, ""},
+                                      },
                                       ResponseOk},
-        // add user privileges
-        MetadataAuthCacheUpdateParams{{{kTestUser1, ""}},
+        MetadataAuthCacheUpdateParams{"add_user_privileges",
+                                      {
+                                          {kTestUser1, ""},
+                                      },
                                       ResponseOk,
-                                      {{kTestUser1, "{\"foo\": \"bar\"}"}},
+                                      {
+                                          {kTestUser1, "{\"foo\": \"bar\"}"},
+                                      },
                                       ResponseForbidden},
-        // change password
         MetadataAuthCacheUpdateParams{
-            {{kTestUser1, ""}},
+            "change_password",
+            {
+                {kTestUser1, ""},
+            },
             ResponseOk,
-            {{{kTestUser1.username, kTestUser2.password_hash}, ""}},
+            {
+                {{kTestUser1.username, kTestUser2.password_hash}, ""},
+            },
             ResponseUnauthorized},
-        // rm user
-        MetadataAuthCacheUpdateParams{{{kTestUser1, ""}, {kTestUser2, ""}},
+        MetadataAuthCacheUpdateParams{"remove_user",
+                                      {
+                                          {kTestUser1, ""},
+                                          {kTestUser2, ""},
+                                      },
                                       ResponseOk,
-                                      {{kTestUser2, ""}},
-                                      ResponseUnauthorized}));
+                                      {
+                                          {kTestUser2, ""},
+                                      },
+                                      ResponseUnauthorized}),
+    [](const auto &info) { return info.param.test_name; });
 
 int main(int argc, char *argv[]) {
   init_windows_sockets();

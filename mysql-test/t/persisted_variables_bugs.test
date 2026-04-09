@@ -110,6 +110,7 @@ SELECT @@global.optimizer_trace_offset, @@global.activate_all_roles_on_login,
        @@global.innodb_max_dirty_pages_pct, @@global.init_connect,
        @@global.max_join_size;
 
+--replace_result hypergraph_optimizer=on hypergraph_optimizer=off
 SELECT * FROM performance_schema.persisted_variables ORDER BY 1;
 --echo # Restart server
 --source include/restart_mysqld.inc
@@ -124,6 +125,7 @@ SELECT @@global.optimizer_trace_offset, @@global.activate_all_roles_on_login,
        @@global.innodb_max_dirty_pages_pct, @@global.init_connect,
        @@global.max_join_size;
 
+--replace_result hypergraph_optimizer=on hypergraph_optimizer=off
 SELECT * FROM performance_schema.persisted_variables ORDER BY 1;
 
 --echo # Cleanup
@@ -182,6 +184,7 @@ SET @@persist_only.binlog_cache_size= default,
     @@persist_only.enforce_gtid_consistency= default,
     @@persist_only.sql_mode= default;
 
+--replace_result hypergraph_optimizer=on hypergraph_optimizer=off
 SELECT * FROM performance_schema.persisted_variables ORDER BY 1;
 
 --echo # Restart server
@@ -196,6 +199,7 @@ SELECT @@global.optimizer_switch;
 SELECT @@global.enforce_gtid_consistency;
 SELECT @@global.sql_mode;
 
+--replace_result hypergraph_optimizer=on hypergraph_optimizer=off
 SELECT * FROM performance_schema.persisted_variables ORDER BY 1;
 
 --echo # Cleanup
@@ -209,6 +213,7 @@ SET PERSIST mandatory_roles= default;
 --echo # Restart server and check if server starts
 --source include/restart_mysqld.inc
 
+--replace_result hypergraph_optimizer=on hypergraph_optimizer=off
 SELECT * FROM performance_schema.persisted_variables ORDER BY 1;
 # Cleanup
 RESET PERSIST;
@@ -482,7 +487,7 @@ RESET PERSIST;
 --echo # PERSISTED OPTIONS
 --echo #
 
-SET PERSIST temptable_use_mmap=FALSE;
+SET PERSIST delayed_insert_timeout=300;
 SET PERSIST delayed_insert_limit=100;
 
 --let LOG_ERR=$MYSQLTEST_VARDIR/tmp/myerror.err
@@ -490,9 +495,9 @@ SET PERSIST delayed_insert_limit=100;
 --replace_result $LOG_ERR LOG_ERR
 --source include/restart_mysqld.inc
 
---let $assert_text= Assert that there is a warning at bootstrap when setting temptable_use_mmap
+--let $assert_text= Assert that there is a warning at bootstrap when setting delayed_insert_timeout
 --let $assert_file= $LOG_ERR
---let $assert_select= 'temptable_use_mmap' is deprecated and will be removed in a future release.
+--let $assert_select= '@@delayed_insert_timeout' is deprecated and will be removed in a future release.
 --let $assert_count= 1
 --source include/assert_grep.inc
 
@@ -505,16 +510,16 @@ SET PERSIST delayed_insert_limit=100;
 RESET PERSIST;
 --remove_file $LOG_ERR
 
-SET PERSIST_ONLY temptable_use_mmap=FALSE;
+SET PERSIST_ONLY delayed_insert_timeout=300;
 SET PERSIST_ONLY delayed_insert_limit=100;
 
 --let $restart_parameters=restart:--log_error=$LOG_ERR --no-console
 --replace_result $LOG_ERR LOG_ERR
 --source include/restart_mysqld.inc
 
---let $assert_text= Assert that there is a warning at bootstrap when setting temptable_use_mmap
+--let $assert_text= Assert that there is a warning at bootstrap when setting delayed_insert_timeout
 --let $assert_file= $LOG_ERR
---let $assert_select= 'temptable_use_mmap' is deprecated and will be removed in a future release.
+--let $assert_select= '@@delayed_insert_timeout' is deprecated and will be removed in a future release.
 --let $assert_count= 1
 --source include/assert_grep.inc
 
@@ -572,4 +577,108 @@ RESET PERSIST ssl_crl;
 SET GLOBAL ssl_crl = DEFAULT;
 
 
+--echo ##
+--echo ## Bug#38680162 SET PERSIST creates duplicate variable entries across sections after upgrade
+--echo ##
+
+call mtr.add_suppression("Configuring persisted options failed: \"Variable 'disconnect_on_expired_password' is a read only variable\".");
+
+--echo ## Remove the config file.
+--remove_file $MYSQLD_DATADIR/mysqld-auto.cnf
+--echo ## Create a file with a variable in the invalid sections.
+--write_file $MYSQLD_DATADIR/mysqld-auto.cnf
+{"Version": 2, "mysql_static_variables": {"net_buffer_length": {"Value": "1024", "Metadata": {"Host": "localhost", "User": "root", "Timestamp": 1764614615844946}}}, "mysql_static_parse_early_variables": {"net_buffer_length": {"Value": "2048", "Metadata": {"Host": "localhost", "User": "root", "Timestamp": 1764614615844947}}}, "mysql_static_sensitive_variables": {"net_buffer_length": {"Value": "4096", "Metadata": {"Host": "localhost", "User": "root", "Timestamp": 1764614615844948}}}, "mysql_dynamic_variables": {"disconnect_on_expired_password": {"Value": "OFF", "Metadata": {"Host": "localhost", "User": "root", "Timestamp": 1764614615844949}}}}
+EOF
+
+--echo ## mysql_static_variables should be found.
+--let $assert_select="mysql_static_variables": \{"net_buffer_length"
+--let $assert_count=1
+--let $assert_text=mysql_static_variables/net_buffer_length found.
+--let $assert_file=$MYSQLD_DATADIR/mysqld-auto.cnf
+--source include/assert_grep.inc
+
+--echo ## mysql_dynamic_variables should be found.
+--let $assert_select="mysql_dynamic_variables": \{"disconnect_on_expired_password"
+--let $assert_count=1
+--let $assert_text=mysql_dynamic_variables/disconnect_on_expired_password found.
+--let $assert_file=$MYSQLD_DATADIR/mysqld-auto.cnf
+--source include/assert_grep.inc
+
+--echo ## Restart the server.
+--source include/restart_mysqld.inc
+
+--echo ## First value in the config file should be taken.
+SELECT @@global.net_buffer_length;
+SHOW VARIABLES LIKE 'disconnect_on_expired_password';
+
+--echo ## Replace the variable with the not existing value in the config file.
+SET PERSIST_ONLY net_buffer_length=8192;
+
+--echo ## mysql_static_variables should not be found.
+--let $assert_select="mysql_static_variables": \{"net_buffer_length"
+--let $assert_count=0
+--let $assert_text=mysql_static_variables/net_buffer_length not found.
+--let $assert_file=$MYSQLD_DATADIR/mysqld-auto.cnf
+--source include/assert_grep.inc
+
+--echo ## mysql_static_parse_early_variables variables should not be found.
+--let $assert_select="mysql_static_parse_early_variables": \{"net_buffer_length"
+--let $assert_count=0
+--let $assert_text=mysql_static_parse_early_variables/net_buffer_length not found.
+--let $assert_file=$MYSQLD_DATADIR/mysqld-auto.cnf
+--source include/assert_grep.inc
+
+--echo ## mysql_static_sensitive_variables variables should not be found.
+--let $assert_select="mysql_static_sensitive_variables": \{"net_buffer_length"
+--let $assert_count=0
+--let $assert_text=mysql_static_sensitive_variables/net_buffer_length not found.
+--let $assert_file=$MYSQLD_DATADIR/mysqld-auto.cnf
+--source include/assert_grep.inc
+
+--echo ## mysql_static_sensitive_variables variables should not be found.
+--let $assert_select="mysql_dynamic_variables": \{"disconnect_on_expired_password"
+--let $assert_count=0
+--let $assert_text=mysql_dynamic_variables/disconnect_on_expired_password not found.
+--let $assert_file=$MYSQLD_DATADIR/mysqld-auto.cnf
+--source include/assert_grep.inc
+
+SET PERSIST_ONLY disconnect_on_expired_password = ON;
+
+--echo ## FOUND VARIABLES
+
+--echo ## mysql_dynamic_variables variables should be found.
+--let $assert_select="mysql_dynamic_variables": \{"net_buffer_length"
+--let $assert_count=1
+--let $assert_text=mysql_dynamic_variables/net_buffer_length found.
+--let $assert_file=$MYSQLD_DATADIR/mysqld-auto.cnf
+--source include/assert_grep.inc
+
+--echo ## mysql_static_variables variables should be found.
+--let $assert_select="mysql_static_variables": \{"disconnect_on_expired_password"
+--let $assert_count=1
+--let $assert_text=mysql_dynamic_variables/disconnect_on_expired_password found.
+--let $assert_file=$MYSQLD_DATADIR/mysqld-auto.cnf
+--source include/assert_grep.inc
+
+--echo ## Remove the config file.
+--remove_file $MYSQLD_DATADIR/mysqld-auto.cnf
+
+--echo ## Restart the server.
+--source include/restart_mysqld.inc
+
 --echo # End of the 8.0 tests
+
+
+--echo #
+--echo # Bug #36854635: Invalid variable error on restart
+--echo #
+
+RESET PERSIST;
+--error ER_CANNOT_PERSIST_TRANSACTION_ISOLATION
+SET PERSIST_ONLY TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+--echo # Should be empty
+SELECT VARIABLE_VALUE FROM performance_schema.persisted_variables;
+
+
+--echo # End of the 9.0 tests

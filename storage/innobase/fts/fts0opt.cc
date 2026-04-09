@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -1144,7 +1144,7 @@ static dberr_t fts_optimize_encode_node(
   /* Calculate the space required to store the ilist. */
   ut_ad(doc_id > node->last_doc_id);
   doc_id_delta = doc_id - node->last_doc_id;
-  enc_len = fts_get_encoded_len(static_cast<ulint>(doc_id_delta));
+  enc_len = fts_get_encoded_len(doc_id_delta);
 
   /* Calculate the size of the encoded pos array. */
   while (*src) {
@@ -1189,9 +1189,8 @@ static dberr_t fts_optimize_encode_node(
   src = enc->src_ilist_ptr;
   dst = node->ilist + node->ilist_size;
 
-  /* Encode the doc id. Cast to ulint, the delta should be small and
-  therefore no loss of precision. */
-  dst += fts_encode_int((ulint)doc_id_delta, dst);
+  /* Encode the doc id. */
+  dst += fts_encode_int(doc_id_delta, dst);
 
   /* Copy the encoded pos array. */
   memcpy(dst, src, pos_enc_len);
@@ -1230,10 +1229,9 @@ static dberr_t fts_optimize_node(
   into in the destination node. */
   while (copied < src_node->ilist_size &&
          dst_node->ilist_size < FTS_ILIST_MAX_SIZE) {
-    doc_id_t delta;
     doc_id_t del_doc_id = FTS_NULL_DOC_ID;
 
-    delta = fts_decode_vlc(&enc->src_ilist_ptr);
+    doc_id_t delta = fts_decode_vlc(&enc->src_ilist_ptr);
 
   test_again:
     /* Check whether the doc id is in the delete list, if

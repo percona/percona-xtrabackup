@@ -1,0 +1,11 @@
+--source include/have_ndb.inc
+
+# Verify that autocommit is turned off
+if (`SELECT VARIABLE_VALUE != 0 FROM performance_schema.global_variables WHERE VARIABLE_NAME = 'autocommit'`)
+{
+  die This test needs MySQL configured with autocommit=0;
+}
+
+# Run the standard purger test
+--source suite/ndb_binlog/t/purger.test
+

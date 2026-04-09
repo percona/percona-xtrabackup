@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -62,6 +62,7 @@
 #include "sql/dd/types/event.h"                     // Event
 #include "sql/dd/types/function.h"                  // Routine, Function
 #include "sql/dd/types/index_stat.h"                // Index_stat
+#include "sql/dd/types/library.h"                   // dd::Library
 #include "sql/dd/types/procedure.h"                 // Procedure
 #include "sql/dd/types/schema.h"                    // Schema
 #include "sql/dd/types/spatial_reference_system.h"  // Spatial_reference_system
@@ -461,6 +462,7 @@ template Object_id Storage_adapter::next_oid<Event>();
 template Object_id Storage_adapter::next_oid<Routine>();
 template Object_id Storage_adapter::next_oid<Function>();
 template Object_id Storage_adapter::next_oid<Procedure>();
+template Object_id Storage_adapter::next_oid<Library>();
 template Object_id Storage_adapter::next_oid<Schema>();
 template Object_id Storage_adapter::next_oid<Spatial_reference_system>();
 template Object_id Storage_adapter::next_oid<Tablespace>();
@@ -559,6 +561,8 @@ template bool Storage_adapter::drop(THD *, const Function *);
 template bool Storage_adapter::store(THD *, Function *);
 template bool Storage_adapter::drop(THD *, const Procedure *);
 template bool Storage_adapter::store(THD *, Procedure *);
+template bool Storage_adapter::drop(THD *, const Library *);
+template bool Storage_adapter::store(THD *, Library *);
 
 template bool Storage_adapter::get<Schema::Id_key, Schema>(
     THD *, const Schema::Id_key &, enum_tx_isolation, bool, const Schema **);

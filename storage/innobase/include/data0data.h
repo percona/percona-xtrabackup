@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -157,7 +157,7 @@ If len>0, tests the first len bytes of the content for equality.
 @return true if both fields are NULL or if they are equal */
 [[nodiscard]] inline bool dfield_datas_are_binary_equal(const dfield_t *field1,
                                                         const dfield_t *field2,
-                                                        ulint len);
+                                                        ulint len = 0);
 /** Tests if dfield data length and content is equal to the given.
 @param[in] field Field
 @param[in] len   Data length or UNIV_SQL_NULL
@@ -802,7 +802,14 @@ struct dtuple_t {
     return false;
   }
 
+  /** Choose a field suitable for storing externally. */
+  dfield_t *choose_ext(dict_index_t *index);
   dtuple_t *deep_copy(mem_heap_t *heap) const;
+
+#ifdef UNIV_DEBUG
+  void validate() const;
+  void validate_for_index(const dict_index_t *index) const;
+#endif /* UNIV_DEBUG */
 };
 
 /** A slot for a field in a big rec vector */

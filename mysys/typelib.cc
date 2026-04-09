@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,15 +31,16 @@
   Functions to handle typelib
 */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/types.h>
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 
 #include "m_string.h"
 #include "my_alloc.h"
 #include "my_dbug.h"
-#include "my_inttypes.h"
-#include "my_macros.h"
+#include "my_inttypes.h"  // IWYU pragma: keep
 #include "my_sys.h"
 #include "mysql/strings/m_ctype.h"
 #include "template_utils.h"

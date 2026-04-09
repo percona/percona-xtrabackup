@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@
 #include "field_types.h"
 #include "lex_string.h"
 #include "my_alloc.h"
+#include "my_config.h"
 #include "my_inttypes.h"
 #include "my_macros.h"
 #include "my_table_map.h"
@@ -56,6 +57,7 @@
 #include "sql/tztime.h"
 #include "sql_string.h"
 #include "string_with_len.h"
+#include "unittest/gunit/benchmark.h"
 #include "unittest/gunit/fake_table.h"
 #include "unittest/gunit/mock_field_long.h"
 #include "unittest/gunit/mock_field_timestamp.h"
@@ -251,6 +253,49 @@ TEST_F(ItemTest, ItemInt) {
   */
 }
 
+TEST_F(ItemTest, ItemUIntHash) {
+  Item_uint *item_uint = new Item_uint(10);
+  Item_uint *item_uint2 = new Item_uint(10);
+  Item_uint *item_uint3 = new Item_uint(30);
+  EXPECT_EQ(item_uint->hash(), item_uint2->hash());
+  EXPECT_NE(item_uint3->hash(), item_uint2->hash());
+}
+
+TEST_F(ItemTest, ItemNameConstHash) {
+  const char short_str[] = "abc";
+  const char short_str2[] = "abd";
+  auto *item_short_string =
+      new Item_string(STRING_WITH_LEN(short_str), &my_charset_latin1);
+  auto *item_short_string2 =
+      new Item_string(STRING_WITH_LEN(short_str2), &my_charset_latin1);
+  auto *int_item = new Item_int(10);
+  auto *int_item2 = new Item_int(20);
+  Item_name_const name_const(POS(), item_short_string, int_item);
+  Item_name_const name_const2(POS(), item_short_string, int_item);
+  Item_name_const name_const3(POS(), item_short_string2, int_item2);
+  Item_name_const name_const4(POS(), item_short_string2, int_item);
+  EXPECT_EQ(name_const.hash(), name_const2.hash());
+  EXPECT_NE(name_const3.hash(), name_const2.hash());
+  EXPECT_NE(name_const4.hash(), name_const3.hash());
+  char short_hex_str[] = "a";
+  char short_hex_str2[] = "b";
+  LEX_STRING lex_string{short_hex_str, 1};
+  LEX_STRING lex_string2{short_hex_str2, 1};
+  auto *item_hex_string = new Item_hex_string(POS(), lex_string);
+  auto *item_hex_string2 = new Item_hex_string(POS(), lex_string2);
+  auto *item_hex_string3 = new Item_hex_string(POS(), lex_string2);
+  EXPECT_NE(item_hex_string->hash(), item_hex_string2->hash());
+  EXPECT_EQ(item_hex_string2->hash(), item_hex_string3->hash());
+}
+
+TEST_F(ItemTest, ItemCaseExprHash) {
+  Item_case_expr *item_ce = new Item_case_expr(10);
+  Item_case_expr *item_ce2 = new Item_case_expr(10);
+  Item_case_expr *item_ce3 = new Item_case_expr(30);
+  EXPECT_EQ(item_ce->hash(), item_ce2->hash());
+  EXPECT_NE(item_ce->hash(), item_ce3->hash());
+}
+
 TEST_F(ItemTest, ItemString) {
   const char short_str[] = "abc";
   const char long_str[] = "abcd";
@@ -260,6 +305,10 @@ TEST_F(ItemTest, ItemString) {
 
   Item_string *item_short_string =
       new Item_string(STRING_WITH_LEN(short_str), &my_charset_latin1);
+  Item_string *item_short_string2 =
+      new Item_string(STRING_WITH_LEN(short_str), &my_charset_latin1);
+  Item_string *item_short_string3 =
+      new Item_string(STRING_WITH_LEN(short_str), &my_charset_bin);
   Item_string *item_long_string =
       new Item_string(STRING_WITH_LEN(long_str), &my_charset_latin1);
   Item_string *item_space_string =
@@ -269,6 +318,13 @@ TEST_F(ItemTest, ItemString) {
   Item_string *item_bad_char_end =
       new Item_string(STRING_WITH_LEN(bad_char_end), &my_charset_bin);
 
+  EXPECT_NE(item_short_string->hash(), 0);
+  EXPECT_EQ(item_short_string->hash(), item_short_string2->hash());
+  EXPECT_EQ(item_short_string->hash(), item_short_string3->hash());
+  EXPECT_NE(item_short_string->hash(), item_long_string->hash());
+  EXPECT_NE(item_short_string->hash(), item_space_string->hash());
+  EXPECT_NE(item_short_string->hash(), item_bad_char->hash());
+  EXPECT_NE(item_short_string->hash(), item_bad_char_end->hash());
   /*
     Bug 16407965 ITEM::SAVE_IN_FIELD_NO_WARNING() DOES NOT RETURN CORRECT
                  CONVERSION STATUS
@@ -368,20 +424,32 @@ TEST_F(ItemTest, ItemString) {
 
 TEST_F(ItemTest, ItemEqual) {
   // Bug#13720201 VALGRIND: VARIOUS BLOCKS OF BYTES DEFINITELY LOST
-  Mock_field_timestamp mft;
+  Mock_field_timestamp mft(Field::NONE, 0);
   mft.table->const_table = true;
-  mft.make_readable();
   // foo is longer than STRING_BUFFER_USUAL_SIZE used by cmp_item_sort_string.
   const char foo[] =
       "0123456789012345678901234567890123456789"
       "0123456789012345678901234567890123456789"
       "0123456789012345678901234567890123456789";
+  const char bar[] =
+      "0123456789012345678901234567890123456788"
+      "0123456789012345678901234567890123456781"
+      "0123456789012345678901234567890123456782";
   Item_multi_eq *item_equal =
       new Item_multi_eq(new Item_string(STRING_WITH_LEN(foo), &my_charset_bin),
+                        new Item_field(&mft));
+  Item_multi_eq *item_equal2 =
+      new Item_multi_eq(new Item_string(STRING_WITH_LEN(foo), &my_charset_bin),
+                        new Item_field(&mft));
+  Item_multi_eq *item_equal3 =
+      new Item_multi_eq(new Item_string(STRING_WITH_LEN(bar), &my_charset_bin),
                         new Item_field(&mft));
 
   EXPECT_FALSE(item_equal->fix_fields(thd(), nullptr));
   EXPECT_EQ(1, item_equal->val_int());
+  EXPECT_NE(item_equal->hash(), 0);
+  EXPECT_EQ(item_equal->hash(), item_equal2->hash());
+  EXPECT_NE(item_equal->hash(), item_equal3->hash());
 }
 
 TEST_F(ItemTest, ItemViewRef) {
@@ -390,6 +458,7 @@ TEST_F(ItemTest, ItemViewRef) {
   Item_field *field1 = new Item_field(&f_field1);
   Item_field *field2 = new Item_field(&f_field2);
   Item *field3 = new Item_int(123);
+  Item *field4 = new Item_int(1232);
 
   // Create a view reference over a constant expression from an inner
   // table of an outer join.
@@ -399,11 +468,33 @@ TEST_F(ItemTest, ItemViewRef) {
   Item_view_ref *view_ref =
       new Item_view_ref(&thd()->lex->current_query_block()->context, &field3,
                         nullptr, nullptr, "t1", "f1", &table);
+  Item_view_ref *view_ref2 =
+      new Item_view_ref(&thd()->lex->current_query_block()->context, &field3,
+                        nullptr, nullptr, "t1", "f1", &table);
+  Item_view_ref *view_ref3 =
+      new Item_view_ref(&thd()->lex->current_query_block()->context, &field4,
+                        nullptr, nullptr, "t2", "f1", &table);
 
+  Item_view_ref *view_ref31 =
+      new Item_view_ref(&thd()->lex->current_query_block()->context, &field3,
+                        nullptr, nullptr, "t2", "f1", &table);
+  Item_view_ref *view_ref4 =
+      new Item_view_ref(&thd()->lex->current_query_block()->context, &field3,
+                        nullptr, nullptr, "t1", "f2", &table);
+  EXPECT_NE(view_ref->hash(), 0);
+  EXPECT_EQ(view_ref->hash(), view_ref2->hash());
+  EXPECT_NE(view_ref->hash(), view_ref3->hash());
+  EXPECT_NE(view_ref3->hash(), view_ref31->hash());
+  EXPECT_NE(view_ref3->hash(), view_ref4->hash());
   Item_func_eq *eq1 = new Item_func_eq(field1, field2);
   Item_func_eq *eq2 = new Item_func_eq(field1, field3);
   Item_func_eq *eq3 = new Item_func_eq(field1, view_ref);
-
+  Item_func_eq *eq4 = new Item_func_eq(field1, view_ref);
+  EXPECT_NE(eq1->hash(), 0UL);
+  EXPECT_EQ(eq1->hash(), 4100790992186704807ULL);
+  EXPECT_EQ(eq4->hash(), eq3->hash());
+  EXPECT_NE(eq1->hash(), eq2->hash());
+  EXPECT_NE(eq1->hash(), eq3->hash());
   // True because both arguments are fields.
   EXPECT_TRUE(eq1->contains_only_equi_join_condition());
   // False because the right side argument is a constant and
@@ -415,6 +506,19 @@ TEST_F(ItemTest, ItemViewRef) {
   // it as constant expression there by making it a filter and
   // not a equi-join condition.
   EXPECT_FALSE(eq3->contains_only_equi_join_condition());
+
+  auto *item_int_ref1 =
+      new Item_int_with_ref(field1->field->type(), field1->field->val_int(),
+                            field3, field1->field->is_flag_set(UNSIGNED_FLAG));
+  auto *item_int_ref2 =
+      new Item_int_with_ref(field2->field->type(), field2->field->val_int(),
+                            field4, field2->field->is_flag_set(UNSIGNED_FLAG));
+  auto *item_int_ref3 =
+      new Item_int_with_ref(field2->field->type(), field2->field->val_int(),
+                            field4, field2->field->is_flag_set(UNSIGNED_FLAG));
+
+  EXPECT_NE(item_int_ref1->hash(), item_int_ref2->hash());
+  EXPECT_EQ(item_int_ref3->hash(), item_int_ref2->hash());
 }
 
 TEST_F(ItemTest, ItemRollupSwitcher) {
@@ -434,15 +538,29 @@ TEST_F(ItemTest, ItemRollupSwitcher) {
   EXPECT_TRUE(agg1->eq(sw2));
   EXPECT_TRUE(sw1->eq(sw2));
   EXPECT_TRUE(sw1->eq(agg2));
-
+  EXPECT_EQ(sw1->hash(), sw2->hash());
+  EXPECT_NE(sw1->hash(), 0);
   EXPECT_FALSE(agg1->is_rollup_sum_wrapper());
   EXPECT_TRUE(sw1->is_rollup_sum_wrapper());
+
+  Item_rollup_group_item *gi1 = new Item_rollup_group_item(1, agg1);
+  Item_rollup_group_item *gi2 = new Item_rollup_group_item(1, agg1);
+  Item_rollup_group_item *gi3 = new Item_rollup_group_item(1, agg2);
+  Item_rollup_group_item *gi4 = new Item_rollup_group_item(2, agg2);
+  EXPECT_EQ(gi1->hash(), gi2->hash());
+  EXPECT_EQ(gi3->hash(), gi2->hash());
+  EXPECT_NE(gi3->hash(), gi4->hash());
+  EXPECT_NE(gi1->hash(), 0);
+#if !defined(WORDS_BIGENDIAN)
+  EXPECT_EQ(gi3->hash(), 16249556224246059739ULL);
+  EXPECT_EQ(gi4->hash(), 17376352938218015750ULL);
+#endif
 }
 
 TEST_F(ItemTest, ItemEqualEq) {
-  Mock_field_timestamp field1;
+  Mock_field_timestamp field1(Field::NONE, 0);
   field1.field_name = "field1";
-  Mock_field_timestamp field2;
+  Mock_field_timestamp field2(Field::NONE, 0);
   field2.field_name = "field2";
 
   Item_multi_eq *item_equal1 =
@@ -478,6 +596,60 @@ TEST_F(ItemTest, ItemEqualEq) {
       }
     }
   }
+}
+
+TEST_F(ItemTest, ItemHashEq) {
+  Mock_field_timestamp field1(Field::NONE, 0);
+  field1.field_name = "field1";
+  field1.table->const_table = false;
+  auto *if1 = new Item_field(&field1);
+  if1->table_name = "t1";
+  if1->db_name = "db1";
+  Mock_field_timestamp field2(Field::NONE, 0);
+  field2.field_name = "field1";
+  field2.table->const_table = false;
+  auto *if2 = new Item_field(&field2);
+  if2->table_name = "t1";
+  if2->db_name = "db1";
+  Mock_field_timestamp field3(Field::NONE, 0);
+  field3.field_name = "field1";
+  field3.table->const_table = false;
+  auto *if3 = new Item_field(&field3);
+  if3->table_name = "t2";
+  if3->db_name = "db1";
+  Mock_field_timestamp field4(Field::NONE, 0);
+  field4.field_name = "field2";
+  auto *if4 = new Item_field(&field4);
+  if4->table_name = "t2";
+  if4->db_name = "db1";
+  Mock_field_timestamp field5(Field::NONE, 0);
+  field4.field_name = "field2";
+  auto *if5 = new Item_field(&field5);
+  if5->table_name = "t2";
+  if5->db_name = "db2";
+#if !defined(WORDS_BIGENDIAN)
+  EXPECT_EQ(if1->hash(), 15949012521114663756UL);
+#endif
+  EXPECT_EQ(if1->hash(), if2->hash());
+  EXPECT_EQ(if1->hash(), if2->hash());
+  EXPECT_NE(if2->hash(), if3->hash());
+  EXPECT_NE(if3->hash(), if4->hash());
+  EXPECT_NE(if4->hash(), if5->hash());
+  auto *item_n1 = new Item_int(10);
+  auto *item_n2 = new Item_int(20);
+  auto item_default1 = Item_default_value(POS(), item_n1);
+  auto item_default2 = Item_default_value(POS(), item_n1);
+  auto item_default3 = Item_default_value(POS(), item_n2);
+
+  EXPECT_EQ(item_default1.hash(), item_default2.hash());
+  EXPECT_NE(item_default1.hash(), item_default3.hash());
+
+  auto item_insert1 = Item_insert_value(POS(), item_n1);
+  auto item_insert2 = Item_insert_value(POS(), item_n1);
+  auto item_insert3 = Item_insert_value(POS(), item_n2);
+
+  EXPECT_EQ(item_insert1.hash(), item_insert2.hash());
+  EXPECT_NE(item_insert3.hash(), item_insert2.hash());
 }
 
 TEST_F(ItemTest, ItemFuncExportSet) {
@@ -629,16 +801,47 @@ TEST_F(ItemTest, ItemFuncNegLongLongMin) {
 */
 TEST_F(ItemTest, ItemFuncSetUserVar) {
   const longlong val1 = 1;
-  Item_decimal *item_dec = new Item_decimal(val1, false);
-  Item_string *item_str = new Item_string("1", 1, &my_charset_latin1);
+  auto *item_dec = new Item_decimal(1.0);
+  auto *item_dec0 = new Item_decimal(0.0);
+  auto *item_dec2 = new Item_decimal(1.0);
+  auto *item_dec3 = new Item_decimal(2.0);
+  auto *item_str = new Item_string("1", 1, &my_charset_latin1);
+  EXPECT_EQ(item_dec->hash(), item_dec2->hash());
+  EXPECT_NE(item_dec0->hash(), item_dec2->hash());
+  EXPECT_NE(item_dec0->hash(), 0ULL);
+  EXPECT_NE(item_dec2->hash(), item_dec3->hash());
+  auto *item_f1 = new Item_float("1e1", 3);
+  auto *item_f2 = new Item_float("10e0", 4);
+  auto *item_f3 = new Item_float("5.0e0", 5);
+  auto *item_f4 = new Item_float("5.1e0", 5);
+  EXPECT_EQ(item_f1->hash(), item_f2->hash());
+  EXPECT_NE(item_f3->hash(), item_f4->hash());
 
   LEX_CSTRING var_name = {STRING_WITH_LEN("a")};
+  LEX_CSTRING var_name2 = {STRING_WITH_LEN("b")};
   Item_func_set_user_var *user_var =
       new Item_func_set_user_var(var_name, item_str);
+  Item_func_set_user_var *user_var2 =
+      new Item_func_set_user_var(var_name2, item_str);
+  Item_func_set_user_var *user_var3 =
+      new Item_func_set_user_var(var_name, item_str);
+  POS p;
+  Item_user_var_as_out_param *user_var_out =
+      new Item_user_var_as_out_param(p, Name_string(STRING_WITH_LEN("JSON")));
+  Item_user_var_as_out_param *user_var_out2 =
+      new Item_user_var_as_out_param(p, Name_string(STRING_WITH_LEN("JSON")));
+  Item_user_var_as_out_param *user_var_out3 =
+      new Item_user_var_as_out_param(p, Name_string(STRING_WITH_LEN("JSON2")));
   EXPECT_FALSE(user_var->set_entry(thd(), true));
   EXPECT_FALSE(user_var->fix_fields(thd(), nullptr));
+  EXPECT_FALSE(user_var2->fix_fields(thd(), nullptr));
   EXPECT_EQ(val1, user_var->val_int());
-
+  EXPECT_NE(user_var->hash(), 0);
+  EXPECT_EQ(user_var->hash(), user_var3->hash());
+  EXPECT_NE(user_var2->hash(), user_var3->hash());
+  EXPECT_NE(user_var_out->hash(), 0);
+  EXPECT_EQ(user_var_out->hash(), user_var_out2->hash());
+  EXPECT_NE(user_var_out3->hash(), user_var_out2->hash());
   my_decimal decimal;
   my_decimal *decval_1 = user_var->val_decimal(&decimal);
   user_var->save_item_result(item_str);
@@ -723,9 +926,7 @@ TEST_F(ItemTest, ItemFuncXor) {
 */
 TEST_F(ItemTest, MysqlTimeCache) {
   String str_buff, *str;
-  MysqlTime datetime6(2011, 11, 7, 10, 20, 30, 123456, false,
-                      MYSQL_TIMESTAMP_DATETIME);
-  MysqlTime time6(0, 0, 0, 10, 20, 30, 123456, false, MYSQL_TIMESTAMP_TIME);
+  MysqlTime datetime6(2011, 11, 7, 10, 20, 30, 123456);
   my_timeval tv6 = {1320661230, 123456};
   const MYSQL_TIME *ltime;
   MYSQL_TIME_cache cache;
@@ -780,33 +981,9 @@ TEST_F(ItemTest, MysqlTimeCache) {
   EXPECT_STREQ("2011-11-07 10:20:30.123456", cache.cptr());
 
   /*
-    Testing TIME(6).
-    Initializing from MYSQL_TIME.
-  */
-  cache.set_time(&time6, 6);
-  EXPECT_EQ(709173043776LL, cache.val_packed());
-  EXPECT_EQ(6, cache.decimals());
-  // Call val_str() then cptr()
-  str = cache.val_str(&str_buff);
-  EXPECT_STREQ("10:20:30.123456", str->c_ptr_safe());
-  EXPECT_STREQ("10:20:30.123456", cache.cptr());
-
-  /*
-    Testing TIME(6).
-    Initializing from "struct timeval".
-  */
-  cache.set_time(tv6, 6, my_tz_UTC);
-  EXPECT_EQ(709173043776LL, cache.val_packed());
-  EXPECT_EQ(6, cache.decimals());
-  str = cache.val_str(&str_buff);
-  EXPECT_STREQ("10:20:30.123456", str->c_ptr_safe());
-  EXPECT_STREQ("10:20:30.123456", cache.cptr());
-
-  /*
     Testing DATETIME(5)
   */
-  MysqlTime datetime5 = {
-      2011, 11, 7, 10, 20, 30, 123450, false, MYSQL_TIMESTAMP_DATETIME};
+  MysqlTime datetime5 = {2011, 11, 7, 10, 20, 30, 123450};
   cache.set_datetime(&datetime5, 5);
   EXPECT_EQ(1840440237558456890LL, cache.val_packed());
   EXPECT_EQ(5, cache.decimals());
@@ -823,7 +1000,7 @@ TEST_F(ItemTest, MysqlTimeCache) {
     Testing DATE.
     Initializing from MYSQL_TIME.
   */
-  MysqlTime date(2011, 11, 7, 0, 0, 0, 0, false, MYSQL_TIMESTAMP_DATE);
+  MysqlTime date(2011, 11, 7);
   cache.set_date(&date);
   EXPECT_EQ(1840439528385413120LL, cache.val_packed());
   EXPECT_EQ(0, cache.decimals());
@@ -958,6 +1135,14 @@ TEST_F(ItemTest, ItemJson) {
   Json_string jstr("123");
   Item_json *item = new Item_json(
       make_unique_destroy_only<Json_wrapper>(mem_root, &jstr, true), name);
+  Json_string jstr2("124");
+  Item_json *item2 = new Item_json(
+      make_unique_destroy_only<Json_wrapper>(mem_root, &jstr2, true), name);
+  Item_json *item3 = new Item_json(
+      make_unique_destroy_only<Json_wrapper>(mem_root, &jstr2, true), name);
+
+  EXPECT_NE(item->hash(), item2->hash());
+  EXPECT_EQ(item3->hash(), item2->hash());
 
   Json_wrapper wr;
   EXPECT_FALSE(item->val_json(&wr));
@@ -992,26 +1177,58 @@ TEST_F(ItemTest, ItemJson) {
           mem_root, std::unique_ptr<Json_dom>(new (std::nothrow) Json_datetime(
                         date, MYSQL_TYPE_DATE))),
       name);
-  MYSQL_TIME time_result;
-  EXPECT_FALSE(item->get_date(&time_result, 0));
-  EXPECT_EQ(date.time_type, time_result.time_type);
-  EXPECT_EQ(date.year, time_result.year);
-  EXPECT_EQ(date.month, time_result.month);
-  EXPECT_EQ(date.day, time_result.day);
+  Time_val time_result;
+  Date_val date_result;
+  EXPECT_FALSE(item->val_date(&date_result, 0));
+  EXPECT_EQ(date.time_type, date_result.time_type);
+  EXPECT_EQ(date.year, date_result.year);
+  EXPECT_EQ(date.month, date_result.month);
+  EXPECT_EQ(date.day, date_result.day);
 
-  const MysqlTime time(0, 0, 0, 10, 20, 30, 40, false, MYSQL_TIMESTAMP_TIME);
-  item = new Item_json(
-      make_unique_destroy_only<Json_wrapper>(
-          mem_root, std::unique_ptr<Json_dom>(new (std::nothrow) Json_datetime(
-                        time, MYSQL_TYPE_TIME))),
-      name);
-  EXPECT_FALSE(item->get_time(&time_result));
-  EXPECT_EQ(time.time_type, time_result.time_type);
-  EXPECT_EQ(time.hour, time_result.hour);
-  EXPECT_EQ(time.minute, time_result.minute);
-  EXPECT_EQ(time.second, time_result.second);
-  EXPECT_EQ(time.second_part, time_result.second_part);
-  EXPECT_EQ(time.neg, time_result.neg);
+  const Time_val time(false, 10, 20, 30, 40);
+  item = new Item_json(make_unique_destroy_only<Json_wrapper>(
+                           mem_root, std::unique_ptr<Json_dom>(
+                                         new (std::nothrow) Json_time(time))),
+                       name);
+  EXPECT_FALSE(item->val_time(&time_result));
+  EXPECT_EQ(time.hour(), time_result.hour());
+  EXPECT_EQ(time.minute(), time_result.minute());
+  EXPECT_EQ(time.second(), time_result.second());
+  EXPECT_EQ(time.microsecond(), time_result.microsecond());
+  EXPECT_EQ(time.is_negative(), time_result.is_negative());
 }
+
+static void BM_store_time(size_t iters) {
+  StopBenchmarkTiming();
+
+  my_testing::Server_initializer initializer;
+  initializer.SetUp();
+
+  uchar field_buffer[7];
+  Field_time *field = pointer_cast<Field_time *>(
+      my_malloc(PSI_NOT_INSTRUMENTED, sizeof(Field_time), MYF(0)));
+  new (field)
+      Field_time(field_buffer + 1, field_buffer, 0, Field::NONE, "tm", 6);
+  Time_val time = Time_val(false, 12, 23, 45, 123456);
+  Item *literal = new Item_time_literal(&time, 6);
+  (void)field->store_time(time, 6);
+
+  StartBenchmarkTiming();
+
+  Time_val tv;
+  int dummy = 0;
+  for (size_t i = 0; i < iters; ++i) {
+    (void)literal->save_in_field(field, true);
+    dummy += tv.second();
+  }
+
+  ASSERT_NE(0, dummy);  // To keep the optimizer from removing the loop.
+  MysqlTime timex;
+  *implicit_cast<MYSQL_TIME *>(&timex) = MYSQL_TIME(tv);
+  my_free(field);
+
+  initializer.TearDown();
+}
+BENCHMARK(BM_store_time)
 
 }  // namespace item_unittest

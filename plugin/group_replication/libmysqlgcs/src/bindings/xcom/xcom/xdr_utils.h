@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -106,13 +106,13 @@ extern "C" u_long xdr_sizeof(xdrproc_t, void *);
     name##_array retval = x;                                             \
     u_int i;                                                             \
     retval.name##_array_len = x.name##_array_len;                        \
-    IFDBG(D_XDR, FN; NDBG(retval.name##_array_len, u));                  \
+    XCOM_IFDBG(D_XDR, FN; NDBG(retval.name##_array_len, u));             \
     if (retval.name##_array_len > 0) {                                   \
       retval.name##_array_val =                                          \
           (name *)xcom_calloc((size_t)x.name##_array_len, sizeof(name)); \
       for (i = 0; i < retval.name##_array_len; i++) {                    \
         retval.name##_array_val[i] = x.name##_array_val[i];              \
-        IFDBG(D_XDR, FN; STRLIT("clone_xdr_array"); NDBG(i, u));         \
+        XCOM_IFDBG(D_XDR, FN; STRLIT("clone_xdr_array"); NDBG(i, u));    \
       }                                                                  \
     } else {                                                             \
       retval.name##_array_val = 0;                                       \

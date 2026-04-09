@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -391,8 +391,18 @@ MACRO(EXTRACT_LINK_LIBRARIES target var)
           SET(${var} "${${var}} ${SYSTEM_LINK_FLAG} ")
         ENDIF()
       ELSEIF(lib MATCHES "OpenSSL::SSL")
+        IF(SOLARIS AND WITH_SSL STREQUAL "system")
+          GET_TARGET_PROPERTY(location OpenSSL::SSL IMPORTED_LOCATION)
+          GET_FILENAME_COMPONENT(openssl3_dir ${location} DIRECTORY)
+          SET(${var} "${${var}} -L${openssl3_dir}")
+        ENDIF()
         SET(${var} "${${var}} -lssl ")
       ELSEIF(lib MATCHES "OpenSSL::Crypto")
+        IF(SOLARIS AND WITH_SSL STREQUAL "system")
+          GET_TARGET_PROPERTY(location OpenSSL::Crypto IMPORTED_LOCATION)
+          GET_FILENAME_COMPONENT(openssl3_dir ${location} DIRECTORY)
+          SET(${var} "${${var}} -L${openssl3_dir}")
+        ENDIF()
         SET(${var} "${${var}} -lcrypto ")
       ELSEIF (lib MATCHES "^\\-L")
         # Search directory. Test on FreeBSD: -L/usr/local/lib -lunwind

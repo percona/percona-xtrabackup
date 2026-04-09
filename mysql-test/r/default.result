@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2,t3,t4,t5,t6;
 drop database if exists mysqltest;
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
@@ -325,3 +326,4 @@ HEX(f1)	HEX(f2)	HEX(f3)
 
 # Clean up.
 DROP TABLE t1;
+include/rpl/set_gtid_mode_on.inc

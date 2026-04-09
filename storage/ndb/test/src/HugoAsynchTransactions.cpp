@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -162,7 +162,6 @@ int HugoAsynchTransactions::getNextWorkTask(int *startRecordId,
 
 int HugoAsynchTransactions::defineUpdateOpsForTask(TransactionInfo *tInfo) {
   int check = 0;
-  int a = 0;
 
   NdbTransaction *trans = tInfo->transaction;
 
@@ -183,13 +182,13 @@ int HugoAsynchTransactions::defineUpdateOpsForTask(TransactionInfo *tInfo) {
     int updateVal = calc.getUpdatesValue(rows[recordId]) + 1;
 
     check = pOp->updateTuple();
-    if (equalForRow(pOp, recordId) != 0) {
+    if (check != 0 || equalForRow(pOp, recordId) != 0) {
       NDB_ERR(trans->getNdbError());
       trans->close();
       return -1;
     }
     // Update the record
-    for (a = 0; a < tab.getNoOfColumns(); a++) {
+    for (int a = 0; a < tab.getNoOfColumns(); a++) {
       if (tab.getColumn(a)->getPrimaryKey() == false) {
         if (setValueForAttr(pOp, a, recordId, updateVal) != 0) {
           NDB_ERR(trans->getNdbError());

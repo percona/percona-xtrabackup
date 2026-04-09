@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,8 +29,8 @@
 // First include (the generated) my_config.h, to get correct platform defines.
 #include "my_config.h"
 
-#include <stdarg.h>
-#include <string.h>
+#include <cstdarg>
+#include <cstring>
 
 #include "my_dbug.h"
 #include "my_inttypes.h"
@@ -66,7 +66,7 @@ int sha256_password_init(char *, size_t, int, va_list) {
   return 0;
 }
 
-int sha256_password_deinit(void) {
+int sha256_password_deinit() {
   mysql_reset_server_public_key();
   mysql_mutex_destroy(&g_public_key_mutex);
   return 0;
@@ -160,10 +160,8 @@ static bool encrypt_RSA_public_key(const unsigned char *password,
 static bool encrypt_RSA_public_key(const unsigned char *password,
                                    int password_len, unsigned char *to,
                                    RSA *public_key) {
-  if (RSA_public_encrypt(password_len, password, to, public_key,
-                         RSA_PKCS1_OAEP_PADDING) == -1)
-    return true;
-  return false;
+  return RSA_public_encrypt(password_len, password, to, public_key,
+                            RSA_PKCS1_OAEP_PADDING) == -1;
 }
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
 
@@ -225,8 +223,7 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql) {
     if (vio->write_packet(vio, &zero_byte, 1)) return CR_ERROR;
   } else {
     /* Password is a 0-terminated byte array ('\0' character included) */
-    unsigned int passwd_len =
-        static_cast<unsigned int>(strlen(mysql->passwd) + 1);
+    auto passwd_len = static_cast<unsigned int>(strlen(mysql->passwd) + 1);
     if (!connection_is_secure) {
       /*
         If no public key; request one from the server.
@@ -277,7 +274,7 @@ int sha256_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql) {
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
       int cipher_length = EVP_PKEY_get_size(public_key);
 #else  /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
-      int cipher_length = RSA_size(public_key);
+      int const cipher_length = RSA_size(public_key);
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
       /*
         When using RSA_PKCS1_OAEP_PADDING the password length must be less
@@ -446,8 +443,7 @@ net_async_status sha256_password_auth_client_nonblocking(MYSQL_PLUGIN_VIO *vio,
   int io_result;
   const bool connection_is_secure = (mysql_get_ssl_cipher(mysql) != nullptr);
   unsigned char *pkt;
-  unsigned int passwd_len =
-      static_cast<unsigned int>(strlen(mysql->passwd) + 1);
+  auto passwd_len = static_cast<unsigned int>(strlen(mysql->passwd) + 1);
 
   mysql_async_auth *ctx = ASYNC_DATA(mysql)->connect_context->auth_context;
   switch (static_cast<client_auth_sha256_password_plugin_status>(
@@ -584,7 +580,7 @@ err:
 
 int caching_sha2_password_init(char *, size_t, int, va_list) { return 0; }
 
-int caching_sha2_password_deinit(void) { return 0; }
+int caching_sha2_password_deinit() { return 0; }
 
 static bool is_secure_transport(MYSQL *mysql) {
   if (!mysql || !mysql->net.vio) return false;
@@ -661,8 +657,7 @@ int caching_sha2_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql) {
     return CR_OK;
   } else {
     /* Password is a 0-terminated byte array ('\0' character included) */
-    unsigned int passwd_len =
-        static_cast<unsigned int>(strlen(mysql->passwd) + 1);
+    auto passwd_len = static_cast<unsigned int>(strlen(mysql->passwd) + 1);
     int pkt_len = 0;
     {
       /* First try with SHA2 scramble */
@@ -744,7 +739,7 @@ int caching_sha2_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql) {
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
         int cipher_length = EVP_PKEY_get_size(public_key);
 #else  /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
-        int cipher_length = RSA_size(public_key);
+        int const cipher_length = RSA_size(public_key);
 #endif /* OPENSSL_VERSION_NUMBER >= 0x30000000L */
         /*
            When using RSA_PKCS1_OAEP_PADDING the password length must be less
@@ -813,8 +808,7 @@ net_async_status caching_sha2_password_auth_client_nonblocking(
   net_async_status status = NET_ASYNC_NOT_READY;
   const bool connection_is_secure = is_secure_transport(mysql);
   bool got_public_key_from_server = false;
-  const unsigned int passwd_len =
-      static_cast<unsigned int>(strlen(mysql->passwd) + 1);
+  const auto passwd_len = static_cast<unsigned int>(strlen(mysql->passwd) + 1);
   unsigned char *pkt;
   mysql_async_auth *ctx = ASYNC_DATA(mysql)->connect_context->auth_context;
 

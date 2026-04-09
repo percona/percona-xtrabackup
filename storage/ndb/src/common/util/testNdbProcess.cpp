@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@
 /* The unresponsive child process sleeps for this long and then exits */
 static constexpr int SleeperProcessTimeMsec = 5000;
 
-int run_parent(void);
+int run_parent();
 
 const char *argv0 = nullptr;
 

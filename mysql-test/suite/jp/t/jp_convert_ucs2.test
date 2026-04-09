@@ -110,38 +110,65 @@ INSERT INTO `£‘£π` VALUES
 ,('èÌ»èÌ…èÌ èÌÀèÌÃèÌÕèÌŒèÌœèÌ–èÌ—èÌ“èÌ”èÌ‘èÌ’èÌ÷èÌ◊èÌÿèÌŸèÌ⁄èÌ€');
 
 #InnoDB
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£±`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£±`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£±`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£≤`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£≤`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£≤`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£≥`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£≥`;
+--sorted_result
 # The result will get garbled because jisx0212 is not included in sjis
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£≥`;
 
 #MyISAM
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£¥`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£¥`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£¥`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£µ`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£µ`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£µ`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£∂`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£∂`;
+--sorted_result
 # The result will get garbled because jisx0212 is not included in sjis
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£∂`;
 
 #MEMORY
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£∑`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£∑`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£∑`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£∏`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£∏`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£∏`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using utf8mb3) FROM `£‘£π`;
+--sorted_result
 SELECT `£√£±`, CONVERT(`£√£±` using ucs2) FROM `£‘£π`;
+--sorted_result
 # The result will get garbled because jisx0212 is not included in sjis
 SELECT `£√£±`, CONVERT(`£√£±` using sjis) FROM `£‘£π`;
 

@@ -1,5 +1,8 @@
 #### suite/funcs_1/t/memory_views.test
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 # Memory tables should be used
 #
 # Set $engine_type
@@ -22,4 +25,5 @@ USE test;
 --source suite/funcs_1/views/views_main.inc
 DROP DATABASE test1;
 DROP TABLE test.tb2;
-
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

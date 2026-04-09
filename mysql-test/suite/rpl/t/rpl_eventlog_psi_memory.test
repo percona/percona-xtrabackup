@@ -33,7 +33,6 @@
 
 
 --source include/have_binlog_format_row.inc
---source include/have_replica_parallel_workers.inc
 
 --echo
 --echo # 1. Initial setup

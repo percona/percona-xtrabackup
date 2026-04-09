@@ -1,0 +1,56 @@
+#
+# BUG#38132549 trx_cleanup_at_db_startup did not clean up trx_sys->shards
+# The tests intentionally end mysqld during transaction commit.
+# Then they make sure that during crash recovery phase those transactions
+# are correctly cleaned up.
+#
+
+--source include/have_debug.inc
+
+# Table with a big primary key. This allows to fill undo log faster.
+create table t2 (id int auto_increment, txt1 char(150), txt2 char(150), txt3 char(150), txt4 char(150), primary key(id, txt1, txt2, txt3, txt4));
+insert t2(txt1, txt2, txt3, txt4) values('a', 'a', 'a', 'a');
+insert t2(txt1, txt2, txt3, txt4) values('a', 'a', 'a', 'a');
+
+# Run a transaction that will take more than one page in the insert
+# undo log. This forces the transaction state to be different
+# than cached. See trx_undo_set_state_at_finish.
+connect (con1,localhost,root,,);
+connection con1;
+begin;
+--echo # Prepare data ...
+--disable_query_log
+let $i=64;
+while ($i)
+{
+  insert t2(txt1, txt2, txt3, txt4) values ('a', 'b', 'c', 'd');
+  dec $i;
+}
+--enable_query_log
+
+# Crash the server during transaction commit to memory.
+# After save to redo log, but before cleaning undo log.
+# Forcing inconsistency.
+--source include/expect_crash.inc
+SET SESSION debug='+d,ib_crash_during_trx_commit_in_mem';
+--error CR_SERVER_LOST
+commit;
+
+connection default;
+--source include/wait_until_disconnected.inc
+
+# Restart and make sure it tries to clean up that crashed transaction
+--source include/start_mysqld.inc
+let SEARCH_FILE= $MYSQLTEST_VARDIR/log/mysqld.1.err;
+let SEARCH_PATTERN= Cleaning up trx with id;
+--source include/search_pattern.inc
+
+# Make sure all works fine and those entries in the undo log were
+# cleaned.
+update t2 set id = id + 1000;
+select * from t2 order by id, txt1, txt2, txt3, txt4 limit 10;
+
+# Cleanup
+connection default;
+SET SESSION debug='-d,ib_crash_during_trx_commit_in_mem';
+drop table t2;

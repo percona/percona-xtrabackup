@@ -193,3 +193,5 @@ INSERT IGNORE INTO t_bit (b) SELECT a from t_double;
 SELECT HEX(b) FROM t_bit;
 
 DROP TABLE t_double, t_bit;
+
+--source include/type_bit.inc

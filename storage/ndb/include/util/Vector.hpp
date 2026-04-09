@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -304,8 +304,8 @@ class MutexVector : public NdbLockable {
 
  private:
   // Don't allow copy and assignment of MutexVector
-  MutexVector(const MutexVector &);
-  MutexVector<T> &operator=(const MutexVector<T> &);
+  MutexVector(const MutexVector &) = delete;
+  MutexVector<T> &operator=(const MutexVector<T> &) = delete;
 
   T *m_items;
   unsigned m_size;

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -316,15 +316,18 @@ static void init(mysql_harness::PluginFuncEnv *env) {
 static void run(mysql_harness::PluginFuncEnv *env) {
   auto &srv = HttpServerComponent::get_instance();
 
-  srv.add_route(kRestGlobalsUri,
-                std::make_unique<RestApiV1MockServerGlobals>());
-  Scope_guard global_route_guard(
-      [&srv]() { srv.remove_route(kRestGlobalsUri); });
+  const auto *globals_route = srv.add_regex_route(
+      "", kRestGlobalsUri, std::make_unique<RestApiV1MockServerGlobals>());
 
-  srv.add_route(kRestConnectionsUri,
-                std::make_unique<RestApiV1MockServerConnections>());
+  Scope_guard global_route_guard(
+      [&srv, &globals_route]() { srv.remove_route(globals_route); });
+
+  const auto *connections_route =
+      srv.add_regex_route("", kRestConnectionsUri,
+                          std::make_unique<RestApiV1MockServerConnections>());
+
   Scope_guard connection_route_guard(
-      [&srv]() { srv.remove_route(kRestConnectionsUri); });
+      [&srv, &connections_route]() { srv.remove_route(connections_route); });
 
   mysql_harness::on_service_ready(env);
 

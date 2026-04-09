@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -85,116 +85,128 @@ static struct my_option my_long_options[] = {
         "Number of cluster connections to create."
         " If option --ndb-nodeid=N is given then this number of consecutive"
         " API nodes starting at N must exist",
-        &g_opt.m_connections, nullptr, 0, GET_UINT, REQUIRED_ARG,
-        g_opt.m_connections, 0, 0, 0, 0, 0},
+        &g_opt.m_connections, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+        g_opt.m_connections, 0, 0, nullptr, 0, nullptr},
     {"table", 't',
      "Name of the table where to import the data."
      "Default is the basename from the input csv file name",
-     &g_opt.m_table, nullptr, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_table, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr,
+     0, nullptr},
     {"state-dir", NDB_OPT_NOSHORT,
      "Where to write state files (t1.res etc)."
      " Default is \".\" (currect directory)",
-     &g_opt.m_state_dir, nullptr, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_state_dir, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
     {"keep-state", NDB_OPT_NOSHORT,
      "By default state files are removed when the job completes"
      " successfully, except if there were any rejects (within allowed limit)"
      " then *.rej is kept. This option keeps all state files",
-     &g_opt.m_keep_state, nullptr, 0, GET_BOOL, NO_ARG, false, 0, 0, 0, 0, 0},
+     &g_opt.m_keep_state, nullptr, nullptr, GET_BOOL, NO_ARG, false, 0, 0,
+     nullptr, 0, nullptr},
     {"stats", NDB_OPT_NOSHORT,
      "Save performance related options and internal statistics into"
      " additional state files with suffixes .sto and .stt. The files"
      " are kept also on successful completion",
-     &g_opt.m_stats, nullptr, 0, GET_BOOL, NO_ARG, false, 0, 0, 0, 0, 0},
+     &g_opt.m_stats, nullptr, nullptr, GET_BOOL, NO_ARG, false, 0, 0, nullptr,
+     0, nullptr},
     {"input-type", NDB_OPT_NOSHORT,
      "Input type: csv,random"
      " (random is a test option)",
-     &g_opt.m_input_type, nullptr, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_input_type, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
     {"input-workers", NDB_OPT_NOSHORT, "Number of threads processing input",
-     &g_opt.m_input_workers, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_input_workers, 0, 0, 0, 0, 0},
+     &g_opt.m_input_workers, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_input_workers, 0, 0, nullptr, 0, nullptr},
     {"output-type", NDB_OPT_NOSHORT,
      "Output type: ndb,null"
      " (null is a test option)",
-     &g_opt.m_output_type, nullptr, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_output_type, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
     {"output-workers", NDB_OPT_NOSHORT,
      "Number of threads processing output or relaying db ops",
-     &g_opt.m_output_workers, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_output_workers, 0, 0, 0, 0, 0},
+     &g_opt.m_output_workers, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_output_workers, 0, 0, nullptr, 0, nullptr},
     {"db-workers", NDB_OPT_NOSHORT,
      "Number of threads PER datanode executing db ops", &g_opt.m_db_workers,
-     nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_db_workers, 0, 0, 0, 0, 0},
+     nullptr, nullptr, GET_UINT, REQUIRED_ARG, g_opt.m_db_workers, 0, 0,
+     nullptr, 0, nullptr},
     {"ignore-lines", NDB_OPT_NOSHORT,
      "Ignore given number of initial lines in input file."
      " Used to skip a non-data header."
      " To continue with an aborted job use --resume instead",
-     &g_opt.m_ignore_lines, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_ignore_lines, 0, 0, 0, 0, 0},
+     &g_opt.m_ignore_lines, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_ignore_lines, 0, 0, nullptr, 0, nullptr},
     {"max-rows", NDB_OPT_NOSHORT,
      "Limit number of rows proccessed."
      " Mainly a test option. Default 0 means no limit."
      " More rows may be processed",
-     &g_opt.m_max_rows, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_max_rows, 0,
-     0, 0, 0, 0},
+     &g_opt.m_max_rows, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_max_rows, 0, 0, nullptr, 0, nullptr},
     {"continue", NDB_OPT_NOSHORT,
      "If one job (e.g. CSV import) fails, continue to next job",
-     &g_opt.m_continue, nullptr, 0, GET_BOOL, NO_ARG, false, 0, 0, 0, 0, 0},
+     &g_opt.m_continue, nullptr, nullptr, GET_BOOL, NO_ARG, false, 0, 0,
+     nullptr, 0, nullptr},
     {"resume", NDB_OPT_NOSHORT,
      "If the job(s) are aborted due to e.g. too many rejects or"
      " too many temporary NDB errors or user interrupt,"
      " add this option to try to resume with rows not yet processed",
-     &g_opt.m_resume, nullptr, 0, GET_BOOL, NO_ARG, false, 0, 0, 0, 0, 0},
+     &g_opt.m_resume, nullptr, nullptr, GET_BOOL, NO_ARG, false, 0, 0, nullptr,
+     0, nullptr},
     {"monitor", NDB_OPT_NOSHORT,
      "Periodically print status of running job if something has changed"
      " (status, rejected rows, temporary errors)."
      " Value 0 disables. Value 1 prints any change seen."
      " Higher values reduce status printing exponentially"
      " up to some pre-defined limit",
-     &g_opt.m_monitor, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_monitor, 0,
-     0, 0, 0, 0},
+     &g_opt.m_monitor, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_monitor, 0, 0, nullptr, 0, nullptr},
     {"ai-prefetch-sz", NDB_OPT_NOSHORT,
      "For table with an auto inc (including hidden) PK,"
      " specify number of autoincrement values"
      " that are prefetched. See mysqld",
-     &g_opt.m_ai_prefetch_sz, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_ai_prefetch_sz, 0, 0, 0, 0, 0},
+     &g_opt.m_ai_prefetch_sz, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_ai_prefetch_sz, 0, 0, nullptr, 0, nullptr},
     {"ai-increment", NDB_OPT_NOSHORT,
      "For table with an auto inc (including hidden) PK,"
      " specify autoincrement increment."
      " See mysqld",
-     &g_opt.m_ai_increment, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_ai_increment, 0, 0, 0, 0, 0},
+     &g_opt.m_ai_increment, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_ai_increment, 0, 0, nullptr, 0, nullptr},
     {"ai-offset", NDB_OPT_NOSHORT,
      "For table with an auto inc (including hidden) PK,"
      " specify autoincrement offset."
      " See mysqld",
-     &g_opt.m_ai_offset, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_ai_offset,
-     0, 0, 0, 0, 0},
+     &g_opt.m_ai_offset, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_ai_offset, 0, 0, nullptr, 0, nullptr},
     {"no-asynch", NDB_OPT_NOSHORT,
      "Run db ops as batches under single trans."
      " Used for performance comparison and does not support all features"
      " e.g. detecting individual rejected rows",
-     &g_opt.m_no_asynch, nullptr, 0, GET_BOOL, NO_ARG, false, 0, 0, 0, 0, 0},
+     &g_opt.m_no_asynch, nullptr, nullptr, GET_BOOL, NO_ARG, false, 0, 0,
+     nullptr, 0, nullptr},
     {"no-hint", NDB_OPT_NOSHORT,
      "Do not use distribution key hint to select db node (TC)",
-     &g_opt.m_no_hint, nullptr, 0, GET_BOOL, NO_ARG, false, 0, 0, 0, 0, 0},
+     &g_opt.m_no_hint, nullptr, nullptr, GET_BOOL, NO_ARG, false, 0, 0, nullptr,
+     0, nullptr},
     {"pagesize", NDB_OPT_NOSHORT, "Align I/O buffers to given size",
-     &g_opt.m_pagesize, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_pagesize, 0,
-     0, 0, 0, 0},
+     &g_opt.m_pagesize, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_pagesize, 0, 0, nullptr, 0, nullptr},
     {"pagecnt", NDB_OPT_NOSHORT,
      "Size of I/O buffers as multiple of pagesize."
      " CSV input worker allocates a double sized buffer",
-     &g_opt.m_pagecnt, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_pagecnt, 0,
-     0, 0, 0, 0},
+     &g_opt.m_pagecnt, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_pagecnt, 0, 0, nullptr, 0, nullptr},
     {"pagebuffer", NDB_OPT_NOSHORT,
      "Size of I/O buffers in bytes. Rounded up to pagesize and"
      " overrides pagecnt",
-     &g_opt.m_pagebuffer, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_pagebuffer, 0, 0, 0, 0, 0},
+     &g_opt.m_pagebuffer, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_pagebuffer, 0, 0, nullptr, 0, nullptr},
     {"rowbatch", NDB_OPT_NOSHORT, "Limit rows in row queues (0 no limit)",
-     &g_opt.m_rowbatch, nullptr, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_rowbatch, nullptr, nullptr, GET_UINT, REQUIRED_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
     {"rowbytes", NDB_OPT_NOSHORT, "Limit bytes in row queues (0 no limit)",
-     &g_opt.m_rowbytes, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_rowbytes, 0,
-     0, 0, 0, 0},
+     &g_opt.m_rowbytes, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_rowbytes, 0, 0, nullptr, 0, nullptr},
     {"opbatch", NDB_OPT_NOSHORT,
      "A db execution batch is a set of transactions and operations"
      " sent to NDB kernel."
@@ -202,83 +214,83 @@ static struct my_option my_long_options[] = {
      " in a db execution batch.  Therefore it also limits number"
      " of asynch transactions."
      " Value 0 is not valid",
-     &g_opt.m_opbatch, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_opbatch, 0,
-     0, 0, 0, 0},
+     &g_opt.m_opbatch, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_opbatch, 0, 0, nullptr, 0, nullptr},
     {"opbytes", NDB_OPT_NOSHORT,
      "Limit bytes in db execution batch (0 no limit)", &g_opt.m_opbytes,
-     nullptr, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     nullptr, nullptr, GET_UINT, REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"polltimeout", NDB_OPT_NOSHORT,
      "Millisecond timeout in one poll for completed asynch transactions."
      " Polls continue until all are completed or an error has occurred",
-     &g_opt.m_polltimeout, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_polltimeout, 0, 0, 0, 0, 0},
+     &g_opt.m_polltimeout, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_polltimeout, 0, 0, nullptr, 0, nullptr},
     {"temperrors", NDB_OPT_NOSHORT,
      "Limit temporary NDB errors. Default is 0 which means that any"
      " temporary error is fatal."
      " The errors are counted per db execution batch, not per individual"
      " operations, and do not cause rows to be rejected",
-     &g_opt.m_temperrors, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_temperrors, 0, 0, 0, 0, 0},
+     &g_opt.m_temperrors, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_temperrors, 0, 0, nullptr, 0, nullptr},
     {"tempdelay", NDB_OPT_NOSHORT,
      "Number of milliseconds to sleep between temporary errors",
-     &g_opt.m_tempdelay, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_tempdelay,
-     0, 0, 0, 0, 0},
+     &g_opt.m_tempdelay, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_tempdelay, 0, 0, nullptr, 0, nullptr},
     {"rowswait", NDB_OPT_NOSHORT,
      "Number of milliseconds a worker waits for a signal that new rows"
      " can be processed",
-     &g_opt.m_rowswait, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_rowswait, 0,
-     0, 0, 0, 0},
+     &g_opt.m_rowswait, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_rowswait, 0, 0, nullptr, 0, nullptr},
     {"idlespin", NDB_OPT_NOSHORT, "Number of times to re-try before idlesleep",
-     &g_opt.m_idlespin, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_idlespin, 0,
-     0, 0, 0, 0},
+     &g_opt.m_idlespin, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_idlespin, 0, 0, nullptr, 0, nullptr},
     {"idlesleep", NDB_OPT_NOSHORT,
      "Number of milliseconds to sleep waiting for more to do."
      " Cause can be row queues stall (see --rowswait) or"
      " e.g. passing control between CSV workers",
-     &g_opt.m_idlesleep, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_idlesleep,
-     0, 0, 0, 0, 0},
+     &g_opt.m_idlesleep, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_idlesleep, 0, 0, nullptr, 0, nullptr},
     {"checkloop", NDB_OPT_NOSHORT,
      "A job and its diagnostics team periodically check for"
      " progress from lower levels. This option gives number of"
      " milliseconds to wait between such checks."
      " High values may cause data structures (rowmaps) to grow too much."
      " Low values may interfere too much with the workers",
-     &g_opt.m_checkloop, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_checkloop,
-     0, 0, 0, 0, 0},
+     &g_opt.m_checkloop, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_checkloop, 0, 0, nullptr, 0, nullptr},
     {"alloc-chunk", NDB_OPT_NOSHORT,
      "Number of free rows to alloc (seize) at a time."
      " Higher values reduce mutexing but also may reduce parallelism",
-     &g_opt.m_alloc_chunk, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_alloc_chunk, 0, 0, 0, 0, 0},
+     &g_opt.m_alloc_chunk, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_alloc_chunk, 0, 0, nullptr, 0, nullptr},
     {"rejects", NDB_OPT_NOSHORT,
      "Limit number of rejected rows (rows with permanent error) in data load."
      " Default is 0 which means that any rejected row causes a fatal error."
      " The row(s) exceeding the limit are also added to *.rej."
      " The limit is per current run (not all --resume'd runs)",
-     &g_opt.m_rejects, nullptr, 0, GET_UINT, REQUIRED_ARG, g_opt.m_rejects, 0,
-     0, 0, 0, 0},
+     &g_opt.m_rejects, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_rejects, 0, 0, nullptr, 0, nullptr},
     {"fields-terminated-by", NDB_OPT_NOSHORT,
      "See MySQL LOAD DATA."
      " This and other CSV controls are scanned for escapes"
      " including \\\\,\\n,\\r,\\t",
-     &g_opt.m_optcsv.m_fields_terminated_by, nullptr, 0, GET_STR, REQUIRED_ARG,
-     0, 0, 0, 0, 0, 0},
+     &g_opt.m_optcsv.m_fields_terminated_by, nullptr, nullptr, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"fields-enclosed-by", NDB_OPT_NOSHORT,
      "See MySQL LOAD DATA."
      " For CSV input this is same as --fields-optionally-enclosed-by",
-     &g_opt.m_optcsv.m_fields_enclosed_by, nullptr, 0, GET_STR, REQUIRED_ARG, 0,
-     0, 0, 0, 0, 0},
+     &g_opt.m_optcsv.m_fields_enclosed_by, nullptr, nullptr, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"fields-optionally-enclosed-by", NDB_OPT_NOSHORT, "See MySQL LOAD DATA",
-     &g_opt.m_optcsv.m_fields_optionally_enclosed_by, nullptr, 0, GET_STR,
-     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_optcsv.m_fields_optionally_enclosed_by, nullptr, nullptr, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"fields-escaped-by", NDB_OPT_NOSHORT, "See MySQL LOAD DATA",
-     &g_opt.m_optcsv.m_fields_escaped_by, nullptr, 0, GET_STR, REQUIRED_ARG, 0,
-     0, 0, 0, 0, 0},
+     &g_opt.m_optcsv.m_fields_escaped_by, nullptr, nullptr, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"lines-terminated-by", NDB_OPT_NOSHORT,
      "See MySQL LOAD DATA but note that default is"
      " \\n for unix and \\r\\n for windows",
-     &g_opt.m_optcsv.m_lines_terminated_by, nullptr, 0, GET_STR, REQUIRED_ARG,
-     0, 0, 0, 0, 0, 0},
+     &g_opt.m_optcsv.m_lines_terminated_by, nullptr, nullptr, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, nullptr, 0, nullptr},
     {"csvopt", NDB_OPT_NOSHORT,
      "Set some typical CSV options."
      " Useful for environments where command line quoting and escaping is hard."
@@ -288,26 +300,30 @@ static struct my_option my_long_options[] = {
      " q-fields optionally enclosed by double quotes (\")"
      " n-lines terminated by \\n"
      " r-lines terminated by \\r\\n",
-     &g_opt.m_csvopt, nullptr, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_csvopt, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0, nullptr,
+     0, nullptr},
     {"log-level", NDB_OPT_NOSHORT,
      "Print internal log at given level (0-2 or 0-4 if debug compiled)."
      " Like --debug, this option is for developers",
-     &g_opt.m_log_level, nullptr, 0, GET_UINT, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_log_level, nullptr, nullptr, GET_UINT, REQUIRED_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
     {"abort-on-error", NDB_OPT_NOSHORT, "Dump core on any error, debug option",
-     &g_opt.m_abort_on_error, nullptr, 0, GET_BOOL, NO_ARG, false, 0, 0, 0, 0,
-     0},
+     &g_opt.m_abort_on_error, nullptr, nullptr, GET_BOOL, NO_ARG, false, 0, 0,
+     nullptr, 0, nullptr},
     {"errins-type", NDB_OPT_NOSHORT,
      "Error insert type (test option, give \"list\" to list)",
-     &g_opt.m_errins_type, nullptr, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_errins_type, nullptr, nullptr, GET_STR, REQUIRED_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
     {"errins-delay", NDB_OPT_NOSHORT,
      "Error insert delay in milliseconds (random variation added)",
-     &g_opt.m_errins_delay, nullptr, 0, GET_UINT, REQUIRED_ARG,
-     g_opt.m_errins_delay, 0, 0, 0, 0, 0},
+     &g_opt.m_errins_delay, nullptr, nullptr, GET_UINT, REQUIRED_ARG,
+     g_opt.m_errins_delay, 0, 0, nullptr, 0, nullptr},
     {"missing-ai-column", 'm', "Missing auto-increment column",
-     &g_opt.m_missing_ai_col, nullptr, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+     &g_opt.m_missing_ai_col, nullptr, nullptr, GET_BOOL, NO_ARG, 0, 0, 0,
+     nullptr, 0, nullptr},
     NdbStdOpt::end_of_options};
 
-static void short_usage_sub(void) {
+static void short_usage_sub() {
   ndb_short_usage_sub("database textfile...");
   printf(
       "\n"
@@ -352,11 +368,11 @@ struct TableArg {
   std::string m_stats_file;
 };
 
-static TableArg *g_tablearg = 0;
+static TableArg *g_tablearg = nullptr;
 static uint g_tablecnt = 0;
 
 const char *g_reserved_extension[] = {".res", ".rej", ".map",
-                                      ".sto", ".stt", 0};
+                                      ".sto", ".stt", nullptr};
 
 /*
  * File I/O functions in the Windows API convert "/" to "\" (says
@@ -380,11 +396,11 @@ static int checkarg(TableArg &arg, const char *str) {
     std::string full = str;  // foo/t1.bar.csv
     convertpath(full);
     std::string base = full;  // t1.bar.csv
-    std::size_t slash = full.rfind("/");
+    std::size_t slash = full.rfind('/');
     if (slash != std::string::npos) {
       base = full.substr(slash + 1);
     }
-    for (const char **p = g_reserved_extension; *p != 0; p++) {
+    for (const char **p = g_reserved_extension; *p != nullptr; p++) {
       std::size_t pos = base.rfind(*p);
       if (pos != std::string::npos && pos + strlen(*p) == base.length()) {
         CHK2(false, full.c_str() << ": has reserved suffix: " << *p);
@@ -392,20 +408,20 @@ static int checkarg(TableArg &arg, const char *str) {
     }
     CHK1(ret == 0);
     std::string stem = base;  // t1.bar
-    std::size_t rdot = base.rfind(".");
+    std::size_t rdot = base.rfind('.');
     if (rdot != std::string::npos) {
       stem = base.substr(0, rdot);
     }
     if (g_opt.m_table == nullptr) {
       std::string table = stem;  // t1
-      std::size_t ldot = stem.find(".");
+      std::size_t ldot = stem.find('.');
       if (ldot != std::string::npos) {
         table = stem.substr(0, ldot);
       }
       arg.m_table = table;
     }
     arg.m_input_file = full;
-    std::string path = "";
+    std::string path;
     if (strcmp(g_opt.m_state_dir, ".") != 0) {
       path += g_opt.m_state_dir;
       path += "/";
@@ -415,7 +431,7 @@ static int checkarg(TableArg &arg, const char *str) {
     arg.m_rowmap_file = path + stem + ".map";
     arg.m_stopt_file = path + stem + ".sto";
     arg.m_stats_file = path + stem + ".stt";
-  } while (0);
+  } while (false);
   return ret;
 }
 
@@ -470,7 +486,7 @@ static int checkopts(int argc, char **argv) {
     for (uint i = 0; i < g_tablecnt; i++) {
       CHK1(checkarg(g_tablearg[i], argv[i]) == 0);
     }
-  } while (0);
+  } while (false);
   return ret;
 }
 
@@ -500,10 +516,10 @@ static void setsighandler(bool on) {
   else
     sa.sa_handler = SIG_DFL;
   sigemptyset(&sa.sa_mask);
-  sigprocmask(SIG_SETMASK, &sa.sa_mask, NULL);
+  sigprocmask(SIG_SETMASK, &sa.sa_mask, nullptr);
   sa.sa_flags = SA_RESETHAND;
-  sigaction(SIGHUP, &sa, NULL);
-  sigaction(SIGINT, &sa, NULL);
+  sigaction(SIGHUP, &sa, nullptr);
+  sigaction(SIGINT, &sa, nullptr);
 }
 
 #else
@@ -527,14 +543,14 @@ static const Errins g_errins_list[] = {
     {"sighup", "trigger stopall via SIGHUP"},
     {"sigint", "trigger stopall via SIGINT"},
     {"bug34917498", "use small buffer when calculate nodeid for row"},
-    {0, 0}};
+    {nullptr, nullptr}};
 
 static bool listerrins() {
   const char *type = g_opt.m_errins_type;
-  if (type == 0 || strcmp(type, "list") != 0) return false;
+  if (type == nullptr || strcmp(type, "list") != 0) return false;
   LOG(my_progname << ": only listing error inserts");
   const Errins *list = g_errins_list;
-  for (uint i = 0; list[i].m_type != 0; i++) {
+  for (uint i = 0; list[i].m_type != nullptr; i++) {
     LOG(list[i].m_type << " - " << list[i].m_desc);
   }
   return true;
@@ -544,17 +560,17 @@ static int checkerrins() {
   int ret = 0;
   do {
     const char *type = g_opt.m_errins_type;
-    if (type == 0) break;
+    if (type == nullptr) break;
     const Errins *list = g_errins_list;
     bool found = false;
-    for (uint i = 0; list[i].m_type != 0; i++) {
+    for (uint i = 0; list[i].m_type != nullptr; i++) {
       if (strcmp(list[i].m_type, type) == 0) {
         found = true;
         break;
       }
     }
     CHK2(found, "undefined error insert: " << type);
-  } while (0);
+  } while (false);
   return ret;
 }
 
@@ -562,26 +578,26 @@ static void doerrinsstop(NdbImport::Job &job) {
   const char *type = g_opt.m_errins_type;
   uint delay = g_opt.m_errins_delay;
   uint ms = delay / 2 + ndb_rand() % (delay + 1);
-  if (type == 0) return;
+  if (type == nullptr) return;
   if (strcmp(type, "stopjob") != 0) return;
   NdbSleep_MilliSleep(ms);
   job.do_stop();
 }
 
-static NdbThread *g_errins_thread = 0;
+static NdbThread *g_errins_thread = nullptr;
 
 extern "C" {
 static void *doerrins_c(void *data);
 }
 
-static void *doerrins_c(void *data) {
+static void *doerrins_c(void * /*data*/) {
   const char *type = g_opt.m_errins_type;
   uint delay = g_opt.m_errins_delay;
   uint ms = delay / 2 + ndb_rand() % (delay + 1);
   NdbSleep_MilliSleep(ms);
   if (strcmp(type, "stopall") == 0) {
     NdbImport::set_stop_all();
-    return 0;
+    return nullptr;
   }
 #ifndef _WIN32
   int pid = NdbHost_GetProcessId();
@@ -592,23 +608,23 @@ static void *doerrins_c(void *data) {
 #else
   // TODO
 #endif
-  return 0;
+  return nullptr;
 }
 
 static void doerrins() {
   const char *type = g_opt.m_errins_type;
-  if (type == 0) return;
+  if (type == nullptr) return;
   if (strcmp(type, "stopjob") == 0) return;
   NDB_THREAD_PRIO prio = NDB_THREAD_PRIO_MEAN;
   uint stack_size = 64 * 1024;
-  g_errins_thread =
-      NdbThread_Create(doerrins_c, (void **)0, stack_size, "errins", prio);
-  require(g_errins_thread != 0);
+  g_errins_thread = NdbThread_Create(doerrins_c, (void **)nullptr, stack_size,
+                                     "errins", prio);
+  require(g_errins_thread != nullptr);
 }
 
 static void clearerrins() {
-  if (g_errins_thread == 0) return;
-  NdbThread_WaitFor(g_errins_thread, (void **)0);
+  if (g_errins_thread == nullptr) return;
+  NdbThread_WaitFor(g_errins_thread, (void **)nullptr);
   NdbThread_Destroy(&g_errins_thread);
 }
 
@@ -716,7 +732,7 @@ static void domonitor(NdbImport::Job &job) {
   JobStats old_stats = job.m_stats;
   const uint maxtreshold = 1000;
   uint treshold = 1;
-  while (1) {
+  while (true) {
     NdbSleep_MilliSleep(g_opt.m_checkloop);
     job.get_status();
     JobStatus::Status status = job.m_status;
@@ -783,7 +799,7 @@ static int doimp() {
         if (job.remove_table(tabid) == -1) {
           break;
         }
-      } while (0);
+      } while (false);
       bool imp_error = imp.has_error();
       bool job_error = job.has_error();
       job.get_status();
@@ -807,7 +823,7 @@ static int doimp() {
       }
     }
     CHK1(ret == 0);
-  } while (0);
+  } while (false);
   imp.do_disconnect();
   LOG("jobs summary:"
       << " defined: " << jobs_defined << " run: " << jobs_run
@@ -822,7 +838,7 @@ static int doall() {
     setsighandler(true);
     doerrins();
     CHK1(doimp() == 0);
-  } while (0);
+  } while (false);
   clearerrins();
   setsighandler(false);
   return ret;

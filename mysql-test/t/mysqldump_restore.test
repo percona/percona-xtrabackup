@@ -23,6 +23,8 @@
 ###############################################################################
 
 --source include/have_log_bin.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --echo # Set concurrent_insert = 0 to prevent random errors
 --echo # will reset to original value at the end of the test
@@ -108,3 +110,6 @@ SET @@global.concurrent_insert = @old_concurrent_insert;
 --echo # remove mysqldumpfile
 --error 0,1
 --remove_file $mysqldumpfile
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,15 +32,15 @@
 
 #include "my_getpwnam.h"
 
-#include <atomic>
+#include <cstddef>
 #include <vector>
 
-#include <errno.h>
 #include <unistd.h>
+#include <cerrno>
 
 namespace {
 std::size_t start_bufsz() {
-  long scsz = sysconf(_SC_GETPW_R_SIZE_MAX);
+  long const scsz = sysconf(_SC_GETPW_R_SIZE_MAX);
   return (scsz == -1L ? 256 : scsz);
 }
 

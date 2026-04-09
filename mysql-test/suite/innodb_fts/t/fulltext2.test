@@ -194,7 +194,7 @@ drop table t1;
 #
 
 SET NAMES utf8mb4;
-eval create table t1(a text,fulltext(a)) ENGINE = INNODB collate=utf8_swedish_ci;
+eval create table t1(a text,fulltext(a)) ENGINE = INNODB collate=utf8mb3_swedish_ci;
 insert into t1 values('test test '),('test'),('test'),('test'),
 ('test'),('test'),('test'),('test'),('test'),('test'),('test'),('test'),
 ('test'),('test'),('test'),('test'),('test'),('test'),('test'),('test'),

@@ -2627,6 +2627,14 @@ SELECT 1 UNION SELECT 1 FROM DUAL INTO @var;
 (SELECT 1 UNION SELECT 1 FROM DUAL INTO @var);
 SELECT 1 UNION SELECT 1 FROM DUAL FOR UPDATE INTO @var;
 (SELECT 1 UNION SELECT 1 FROM DUAL FOR UPDATE INTO @var);
+# Check that this also works with flatten_equal_set_ops
+# (minimum three operands to check this)
+SELECT 1 UNION SELECT 1 UNION SELECT 1 INTO @var;
+(SELECT 1 UNION SELECT 1 UNION SELECT 1 INTO @var);
+SELECT 1 UNION SELECT 1 UNION SELECT 1 FROM DUAL INTO @var;
+(SELECT 1 UNION SELECT 1 UNION SELECT 1 FROM DUAL INTO @var);
+SELECT 1 UNION SELECT 1 UNION SELECT 1 FROM DUAL FOR UPDATE INTO @var;
+(SELECT 1 UNION SELECT 1 UNION SELECT 1 FROM DUAL FOR UPDATE INTO @var);
 #
 # Deprecation warning expected:
 #
@@ -2648,6 +2656,34 @@ Warning	3962	The INTO clause is deprecated inside query blocks of query expressi
 (SELECT 1 UNION SELECT 1 INTO @var FOR UPDATE);
 Warnings:
 Warning	3962	The INTO clause is deprecated inside query blocks of query expressions and will be removed in a future release. Please move the INTO clause to the end of statement instead.
+# Check that warning also works with flatten_equal_set_ops
+# (minimum three operands to check this)
+SELECT 1 UNION SELECT 1 UNION SELECT 1 INTO @var FROM DUAL;
+Warnings:
+Warning	3962	The INTO clause is deprecated inside query blocks of query expressions and will be removed in a future release. Please move the INTO clause to the end of statement instead.
+SELECT 1 UNION SELECT 1 UNION (SELECT 1 INTO @var FROM DUAL);
+Warnings:
+Warning	3962	The INTO clause is deprecated inside query blocks of query expressions and will be removed in a future release. Please move the INTO clause to the end of statement instead.
+SELECT 1 UNION SELECT 1 UNION SELECT 1 FROM DUAL INTO @var FOR UPDATE;
+Warnings:
+Warning	3962	The INTO clause is deprecated inside query blocks of query expressions and will be removed in a future release. Please move the INTO clause to the end of statement instead.
+(SELECT 1 UNION SELECT 1 UNION SELECT 1 FROM DUAL INTO @var FOR UPDATE);
+Warnings:
+Warning	3962	The INTO clause is deprecated inside query blocks of query expressions and will be removed in a future release. Please move the INTO clause to the end of statement instead.
+SELECT 1 UNION SELECT 1 UNION SELECT 1 INTO @var FOR UPDATE;
+Warnings:
+Warning	3962	The INTO clause is deprecated inside query blocks of query expressions and will be removed in a future release. Please move the INTO clause to the end of statement instead.
+(SELECT 1 UNION SELECT 1 UNION SELECT 1 INTO @var FOR UPDATE);
+Warnings:
+Warning	3962	The INTO clause is deprecated inside query blocks of query expressions and will be removed in a future release. Please move the INTO clause to the end of statement instead.
+# Check that PT_set_operation::has_into_clause works correctly
+# for more than two operands after flatten_equal_set_ops
+SELECT 1 UNION (SELECT 1 INTO @var FROM DUAL) UNION SELECT 1;
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
+SELECT 1 UNION SELECT 1 UNION SELECT * FROM (SELECT 2 UNION SELECT 1 INTO @var FROM DUAL) t;
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
+SELECT 1 UNION SELECT 1 UNION SELECT * FROM (SELECT 1 UNION SELECT 1 UNION SELECT 1 INTO @var FROM DUAL) t;
+ERROR HY000: Misplaced INTO clause, INTO is not allowed inside subqueries, and must be placed at end of UNION clauses.
 #
 # Syntax error expected:
 #
@@ -2856,3 +2892,201 @@ DROP TABLE source_tls_ciphersuites;
 DROP TABLE source_tls_version;
 DROP TABLE source_user;
 DROP TABLE source_zstd_compression_level;
+#
+# Bug#22574003: Non-reserved "BINLOG" keyword costs 22 shift/reduce
+#               conflicts to MySQL grammar
+#
+CREATE TABLE binlog(binlog INTEGER);
+DROP TABLE binlog;
+CREATE ROLE binlog;
+DROP ROLE binlog;
+CREATE PROCEDURE p()
+BEGIN
+DECLARE x INTEGER DEFAULT 3;
+binlog:
+LOOP
+IF x = 0 THEN
+LEAVE binlog;
+END IF;
+SET x = x - 1;
+END LOOP binlog;
+END;
+//
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ':
+LOOP
+IF x = 0 THEN
+LEAVE binlog;
+END IF;
+SET x = x - 1;
+END LOOP binlog;
+END' at line 4
+#
+#
+#
+CREATE TABLE t(pk INT);
+#
+# 1) Simple comma-separated list exceeding MAX_TABLES (assume MAX_TABLES=61)
+# Expect ER_TOO_MANY_TABLES raised by parser.
+#
+WITH x as (SELECT 1)
+SELECT 1
+FROM x x,x x0,x x1,x x2,x x3,x x4,x x5,x x6,x x7,x x8,x x9,x x10,
+x x11,x x12,x x13,x x14,x x15,x x16,x x17,x x18,x x19,x x20,
+x x21,x x22,x x23,x x24,x x25,x x26,x x27,x x28,x x29,x x30,
+x x31,x x32,x x33,x x34,x x35,x x36,x x37,x x38,x x39,x x40,
+x x41,x x42,x x43,x x44,x x45,x x46,x x47,x x48,x x49,x x50,
+x x51,x x52,x x53,x x54,x x55,x x56,x x57,x x58,x x59,x x60,
+x x61,x x62,x x63;
+ERROR HY000: Too many tables; MySQL can only use 61 tables in a join
+#
+# 2) Long CROSS JOIN chain exceeding MAX_TABLES
+# Expect ER_TOO_MANY_TABLES from parser.
+#
+SELECT 1 FROM
+t as t1
+CROSS JOIN t AS t2
+CROSS JOIN t AS t3
+CROSS JOIN t AS t4
+CROSS JOIN t AS t5
+CROSS JOIN t AS t6
+CROSS JOIN t AS t7
+CROSS JOIN t AS t8
+CROSS JOIN t AS t9
+CROSS JOIN t AS t10
+CROSS JOIN t AS t11
+CROSS JOIN t AS t12
+CROSS JOIN t AS t13
+CROSS JOIN t AS t14
+CROSS JOIN t AS t15
+CROSS JOIN t AS t16
+CROSS JOIN t AS t17
+CROSS JOIN t AS t18
+CROSS JOIN t AS t19
+CROSS JOIN t AS t20
+CROSS JOIN t AS t21
+CROSS JOIN t AS t22
+CROSS JOIN t AS t23
+CROSS JOIN t AS t24
+CROSS JOIN t AS t25
+CROSS JOIN t AS t26
+CROSS JOIN t AS t27
+CROSS JOIN t AS t28
+CROSS JOIN t AS t29
+CROSS JOIN t AS t30
+CROSS JOIN t AS t31
+CROSS JOIN t AS t32
+CROSS JOIN t AS t33
+CROSS JOIN t AS t34
+CROSS JOIN t AS t35
+CROSS JOIN t AS t36
+CROSS JOIN t AS t37
+CROSS JOIN t AS t38
+CROSS JOIN t AS t39
+CROSS JOIN t AS t40
+CROSS JOIN t AS t41
+CROSS JOIN t AS t42
+CROSS JOIN t AS t43
+CROSS JOIN t AS t44
+CROSS JOIN t AS t45
+CROSS JOIN t AS t46
+CROSS JOIN t AS t47
+CROSS JOIN t AS t48
+CROSS JOIN t AS t49
+CROSS JOIN t AS t50
+CROSS JOIN t AS t51
+CROSS JOIN t AS t52
+CROSS JOIN t AS t53
+CROSS JOIN t AS t54
+CROSS JOIN t AS t55
+CROSS JOIN t AS t56
+CROSS JOIN t AS t57
+CROSS JOIN t AS t58
+CROSS JOIN t AS t59
+CROSS JOIN t AS t60
+CROSS JOIN t AS t61
+CROSS JOIN t AS t62
+CROSS JOIN t AS t63;
+ERROR HY000: Too many tables; MySQL can only use 61 tables in a join
+#
+# 3) Mixed comma and JOIN groups exceeding MAX_TABLES
+# Using CROSS JOIN inside parentheses to avoid ON-clause verbosity.
+# Expect ER_TOO_MANY_TABLES from parser.
+#
+SELECT 1 FROM
+(t AS t1 CROSS JOIN t AS t2),   (t AS t3 CROSS JOIN t AS t4),
+(t AS t5 CROSS JOIN t AS t6),   (t AS t7 CROSS JOIN t AS t8),
+(t AS t9 CROSS JOIN t AS t10),  (t AS t11 CROSS JOIN t AS t12),
+(t AS t13 CROSS JOIN t AS t14), (t AS t15 CROSS JOIN t AS t16),
+(t AS t17 CROSS JOIN t AS t18), (t AS t19 CROSS JOIN t AS t20),
+(t AS t21 CROSS JOIN t AS t22), (t AS t23 CROSS JOIN t AS t24),
+(t AS t25 CROSS JOIN t AS t26), (t AS t27 CROSS JOIN t AS t28),
+(t AS t29 CROSS JOIN t AS t30), (t AS t31 CROSS JOIN t AS t32),
+(t AS t33 CROSS JOIN t AS t34), (t AS t35 CROSS JOIN t AS t36),
+(t AS t37 CROSS JOIN t AS t38), (t AS t39 CROSS JOIN t AS t40),
+(t AS t41 CROSS JOIN t AS t42), (t AS t43 CROSS JOIN t AS t44),
+(t AS t45 CROSS JOIN t AS t46), (t AS t47 CROSS JOIN t AS t48),
+(t AS t49 CROSS JOIN t AS t50), (t AS t51 CROSS JOIN t AS t52),
+(t AS t53 CROSS JOIN t AS t54), (t AS t55 CROSS JOIN t AS t56),
+(t AS t57 CROSS JOIN t AS t58), (t AS t59 CROSS JOIN t AS t60),
+(t AS t61 CROSS JOIN t AS t62);
+ERROR HY000: Too many tables; MySQL can only use 61 tables in a join
+#
+# 4) Nested joins exceeding MAX_TABLES
+# Build a deeply nested expression; expect ER_TOO_MANY_TABLES from parser.
+#
+SELECT 1 FROM
+((((t AS t1 CROSS JOIN t AS t2) CROSS JOIN t AS t3) CROSS JOIN t AS t4)
+CROSS JOIN ((((t AS t5 CROSS JOIN t AS t6) CROSS JOIN t AS t7) CROSS JOIN t AS t8)
+CROSS JOIN ((((t AS t9 CROSS JOIN t AS t10) CROSS JOIN t AS t11) CROSS JOIN t AS t12)
+CROSS JOIN ((((t AS t13 CROSS JOIN t AS t14) CROSS JOIN t AS t15) CROSS JOIN t AS t16)
+CROSS JOIN ((((t AS t17 CROSS JOIN t AS t18) CROSS JOIN t AS t19) CROSS JOIN t AS t20)
+CROSS JOIN ((((t AS t21 CROSS JOIN t AS t22) CROSS JOIN t AS t23) CROSS JOIN t AS t24)
+CROSS JOIN ((((t AS t25 CROSS JOIN t AS t26) CROSS JOIN t AS t27) CROSS JOIN t AS t28)
+CROSS JOIN ((((t AS t29 CROSS JOIN t AS t30) CROSS JOIN t AS t31) CROSS JOIN t AS t32)
+CROSS JOIN ((((t AS t33 CROSS JOIN t AS t34) CROSS JOIN t AS t35) CROSS JOIN t AS t36)
+CROSS JOIN ((((t AS t37 CROSS JOIN t AS t38) CROSS JOIN t AS t39) CROSS JOIN t AS t40)
+CROSS JOIN ((((t AS t41 CROSS JOIN t AS t42) CROSS JOIN t AS t43) CROSS JOIN t AS t44)
+CROSS JOIN ((((t AS t45 CROSS JOIN t AS t46) CROSS JOIN t AS t47) CROSS JOIN t AS t48)
+CROSS JOIN ((((t AS t49 CROSS JOIN t AS t50) CROSS JOIN t AS t51) CROSS JOIN t AS t52)
+CROSS JOIN ((((t AS t53 CROSS JOIN t AS t54) CROSS JOIN t AS t55) CROSS JOIN t AS t56)
+CROSS JOIN (t AS t57 CROSS JOIN t AS t58 CROSS JOIN t AS t59
+CROSS JOIN t AS t60 CROSS JOIN t AS t61 CROSS JOIN t AS t62 CROSS JOIN t AS t63)))))))))))))));
+ERROR HY000: Too many tables; MySQL can only use 61 tables in a join
+#
+SELECT COUNT(*) = 0 FROM
+(SELECT t1.pk FROM
+t AS t1, t AS t2, t AS t3, t AS t4, t AS t5,
+t AS t6, t AS t7, t AS t8, t AS t9, t AS t10,
+t AS t11, t AS t12, t AS t13, t AS t14, t AS t15,
+t AS t16, t AS t17, t AS t18, t AS t19, t AS t20,
+t AS t21, t AS t22, t AS t23, t AS t24, t AS t25,
+t AS t26, t AS t27, t AS t28, t AS t29, t AS t30) AS d1
+, (SELECT t31.pk FROM
+t AS t31, t AS t32, t AS t33, t AS t34, t AS t35,
+t AS t36, t AS t37, t AS t38, t AS t39, t AS t40,
+t AS t41, t AS t42, t AS t43, t AS t44, t AS t45,
+t AS t46, t AS t47, t AS t48, t AS t49, t AS t50,
+t AS t51, t AS t52, t AS t53, t AS t54, t AS t55,
+t AS t56, t AS t57, t AS t58, t AS t59, t AS t60) AS d2;
+COUNT(*) = 0
+1
+#
+SELECT 1 FROM t AS t1
+WHERE EXISTS (
+SELECT 1 FROM
+t AS t1, t AS t2, t AS t3, t AS t4, t AS t5,
+t AS t6, t AS t7, t AS t8, t AS t9, t AS t10,
+t AS t11, t AS t12, t AS t13, t AS t14, t AS t15,
+t AS t16, t AS t17, t AS t18, t AS t19, t AS t20,
+t AS t21, t AS t22, t AS t23, t AS t24, t AS t25,
+t AS t26, t AS t27, t AS t28, t AS t29, t AS t30,
+t AS t31, t AS t32, t AS t33, t AS t34, t AS t35,
+t AS t36, t AS t37, t AS t38, t AS t39, t AS t40,
+t AS t41, t AS t42, t AS t43, t AS t44, t AS t45,
+t AS t46, t AS t47, t AS t48, t AS t49, t AS t50,
+t AS t51, t AS t52, t AS t53, t AS t54, t AS t55,
+t AS t56, t AS t57, t AS t58, t AS t59, t AS t60,
+t AS t61, t AS t62, t AS t63
+);
+ERROR HY000: Too many tables; MySQL can only use 61 tables in a join
+DROP TABLE t;

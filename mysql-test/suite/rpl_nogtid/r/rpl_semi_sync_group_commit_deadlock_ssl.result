@@ -5,9 +5,7 @@ Note	####	Storing MySQL user name or password information in the connection meta
 [connection master]
 include/rpl/install_semisync.inc
 [connection slave]
-STOP REPLICA IO_THREAD;
-CHANGE REPLICATION SOURCE TO SOURCE_SSL=1;
-START REPLICA IO_THREAD;
+include/assert.inc [Source_SSL_Allowed must be YES by default]
 [connection master]
 SET @max_binlog_size_save= @@GLOBAL.MAX_BINLOG_SIZE;
 SET @@GLOBAL.MAX_BINLOG_SIZE= 4096;
@@ -80,7 +78,4 @@ include/rpl/sync_to_replica.inc
 [connection master]
 SET @@GLOBAL.MAX_BINLOG_SIZE= @max_binlog_size_save;
 include/rpl/uninstall_semisync.inc
-[connection slave]
-include/rpl/stop_replica.inc
-CHANGE REPLICATION SOURCE TO SOURCE_SSL = 0;
 include/rpl/deinit.inc

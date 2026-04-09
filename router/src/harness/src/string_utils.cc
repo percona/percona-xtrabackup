@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 #include "mysql/harness/string_utils.h"
 
 #include <algorithm>
+#include <cctype>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -70,6 +71,35 @@ void right_trim(std::string &str) {
 void trim(std::string &str) {
   left_trim(str);
   right_trim(str);
+}
+
+bool ieq(const std::string_view &a, const std::string_view &b) {
+  if (a.size() != b.size()) return false;
+
+  return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+                    [](char lhs, char rhs) {
+                      return std::tolower(lhs) == std::tolower(rhs);
+                    });
+}
+
+void upper(std::string &s) {
+  std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+}
+
+std::string make_upper(std::string s) {
+  upper(s);
+
+  return s;
+}
+
+void lower(std::string &s) {
+  std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+}
+
+std::string make_lower(std::string s) {
+  lower(s);
+
+  return s;
 }
 
 namespace {
@@ -127,6 +157,41 @@ std::string limit_lines(const std::string &str, const size_t limit,
     return result;
   }
 
+  return str;
+}
+
+stdx::expected<bool, std::error_code> bool_from_string(std::string str) {
+  if (ieq(str, "true")) return {true};
+  if (ieq(str, "false")) return {false};
+
+  return stdx::unexpected(make_error_code(std::errc::invalid_argument));
+}
+
+std::string replace(std::string_view s, std::string_view from,
+                    std::string_view to) {
+  std::string str;
+
+  if (from.empty()) {
+    str.reserve(to.length() * (s.size() + 1));
+
+    str.append(to);
+    for (char c : s) {
+      str.push_back(c);
+      str.append(to);
+    }
+  } else {
+    str.reserve(s.length());
+
+    int offs = from.length();
+    std::string::size_type start = 0, p = s.find(from);
+    while (p != std::string::npos) {
+      if (p > start) str.append(s, start, p - start);
+      str.append(to);
+      start = p + offs;
+      p = s.find(from, start);
+    }
+    if (start < s.length()) str.append(s, start, s.length() - start);
+  }
   return str;
 }
 

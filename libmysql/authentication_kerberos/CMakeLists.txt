@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,8 +36,10 @@ ENDIF()
 
 IF(KERBEROS_LIB_SSPI)
   MESSAGE(STATUS "Building KERBEROS client authentication plug-in for windows.")
-ELSE()
+ELSEIF(LINUX)
   MESSAGE(STATUS "Building KERBEROS client authentication plug-in for linux.")
+ELSEIF(APPLE)
+  MESSAGE(STATUS "Building KERBEROS client authentication plug-in for macOS.")
 ENDIF()
 
 IF((KERBEROS_INCLUDE_DIR AND GSSAPI_INCLUDE_DIR))
@@ -61,6 +63,7 @@ ELSE()
   RETURN()
 ENDIF()
 
+# Only for WIN32
 IF(KERBEROS_LIB_SSPI)
   LIST(APPEND AUTH_CLIENT "sspi_authentication_client.cc")
   LIST(APPEND UTILITY "sspi_utility.cc")
@@ -89,6 +92,10 @@ MYSQL_ADD_PLUGIN(authentication_kerberos_client
 
 IF(KERBEROS_LIB_SSPI)
   ADD_DEPENDENCIES(authentication_kerberos_client copy_kerberos_dlls)
+ENDIF()
+
+IF(APPLE_WITH_CUSTOM_KERBEROS)
+  ADD_DEPENDENCIES(authentication_kerberos_client copy_custom_libraries)
 ENDIF()
 
 # MYSQL_ADD_PLUGIN may have decided not to build it.

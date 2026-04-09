@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -78,6 +78,8 @@ MetadataCacheAPIBase *MetadataCacheAPI::instance() {
  *                             GR cluster type)
  * @param view_id last known view_id of the cluster metadata (only relevant
  *                for ReplicaSet cluster)
+ * @param close_connection_after_refresh if the connection should be closed
+ * after a refresh.
  */
 void MetadataCacheAPI::cache_init(
     const mysqlrouter::ClusterType cluster_type, const unsigned router_id,
@@ -89,7 +91,7 @@ void MetadataCacheAPI::cache_init(
     const MetadataCacheMySQLSessionConfig &session_config,
     const metadata_cache::RouterAttributes &router_attributes,
     size_t thread_stack_size, bool use_cluster_notifications,
-    const uint64_t view_id) {
+    const uint64_t view_id, bool close_connection_after_refresh) {
   std::lock_guard<std::mutex> lock(g_metadata_cache_m);
 
   switch (cluster_type) {
@@ -107,7 +109,8 @@ void MetadataCacheAPI::cache_init(
           instance_factory_(cluster_type, session_config, ssl_options,
                             use_cluster_notifications, view_id),
           ttl_config, ssl_options, target_cluster, router_attributes,
-          thread_stack_size, use_cluster_notifications);
+          thread_stack_size, use_cluster_notifications,
+          close_connection_after_refresh);
   }
 
   is_initialized_ = true;
@@ -277,16 +280,30 @@ void MetadataCacheAPI::handle_sockets_acceptors_on_md_refresh() {
   g_metadata_cache->handle_sockets_acceptors_on_md_refresh();
 }
 
-bool MetadataCacheAPI::fetch_whole_topology() const {
-  LOCK_METADATA_AND_CHECK_INITIALIZED();
-
-  return g_metadata_cache->fetch_whole_topology();
+void MetadataCacheAPI::add_routing_guidelines_update_callbacks(
+    update_routing_guidelines_callback_t update_callback,
+    on_routing_guidelines_change_callback_t
+        routing_guidelines_change_callback) {
+  { LOCK_METADATA_AND_CHECK_INITIALIZED(); }
+  g_metadata_cache->add_routing_guidelines_update_callbacks(
+      std::move(update_callback),
+      std::move(routing_guidelines_change_callback));
 }
 
-void MetadataCacheAPI::fetch_whole_topology(bool val) {
-  LOCK_METADATA_AND_CHECK_INITIALIZED();
+void MetadataCacheAPI::clear_routing_guidelines_update_callbacks() {
+  { LOCK_METADATA_AND_CHECK_INITIALIZED(); }
+  g_metadata_cache->clear_routing_guidelines_update_callbacks();
+}
 
-  g_metadata_cache->fetch_whole_topology(val);
+void MetadataCacheAPI::add_router_info_update_callback(
+    update_router_info_callback_t update_callback) {
+  { LOCK_METADATA_AND_CHECK_INITIALIZED(); }
+  g_metadata_cache->add_router_info_update_callback(std::move(update_callback));
+}
+
+void MetadataCacheAPI::clear_router_info_update_callback() {
+  { LOCK_METADATA_AND_CHECK_INITIALIZED(); }
+  g_metadata_cache->clear_router_info_update_callback();
 }
 
 }  // namespace metadata_cache

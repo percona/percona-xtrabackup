@@ -1,0 +1,149 @@
+--source include/have_router.inc
+--source include/have_jit_executor.inc
+
+--source ../include/mrs/is_mrs_schema_v4.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes.
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+
+--source ../include/mrs/start_object_definition.inc
+
+# Roles
+--let $mrs_add_role_caption=AllPriv
+--source ../include/mrs/role/add.inc
+
+######## DEFINITION OF SERVICE 1 ########
+--let $mrs_grant_privilege_service_path=/svc1
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+# Service
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+# A schema is needed to create the db_object
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+# Content Set
+--let $mrs_add_content_set_path=/set
+--let $mrs_add_content_set_enabled=1
+--let $mrs_add_content_set_options='{"script_module_files":[{"class_name":"Sample","file_to_load":"/Sample.js"}],"contains_mrs_scripts":true}'
+--let $mrs_add_content_set_content_type='SCRIPTS'
+--source ../include/mrs/content_set/add.inc
+SET @my_set=@content_set_id;
+
+# Content files
+--let $mrs_add_content_file_path=/Sample.js
+let $mrs_add_content="let Sample = (() => {
+  let _classThis; 
+  (class {
+    static { _classThis = this; }
+    static helloWorld() {
+      return 'Hello World From Service One!';
+    }
+  }); return _classThis; })(); export { Sample };";
+
+--source ../include/mrs/content_file/add.inc
+SET @auth_content_file_id=@content_file_id;
+
+--let $default_script_file="/Sample.js"
+--let $default_script_class_name=Sample
+
+# helloWorld end point registration
+--let $script_function_name=helloWorld
+--source scripting_add_endpoint.inc
+
+
+######## DEFINITION OF SERVICE 2 ########
+--let $mrs_grant_privilege_service_path=/svc2
+--let $mrs_grant_privilege_schema_path=*
+--let $mrs_grant_privilege_object_path=*
+--let $mrs_grant_privilege_crud_operations=READ,CREATE,UPDATE,DELETE
+--source ../include/mrs/role/grant_privilege.inc
+
+# Service
+--let $mrs_add_service_path="/svc2"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+# A schema is needed to create the db_object
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+
+# Content Set
+--let $mrs_add_content_set_path=/set
+--let $mrs_add_content_set_enabled=1
+--let $mrs_add_content_set_options='{"script_module_files":[{"class_name":"Sample","file_to_load":"/Sample.js"}],"contains_mrs_scripts":true}'
+--let $mrs_add_content_set_content_type='SCRIPTS'
+--source ../include/mrs/content_set/add.inc
+SET @my_set=@content_set_id;
+
+# Content files
+--let $mrs_add_content_file_path=/Sample.js
+let $mrs_add_content="let Sample = (() => {
+  let _classThis; 
+  (class {
+    static { _classThis = this; }
+    static helloWorld() {
+      return 'Hello World From Service Two!';
+    }
+  }); return _classThis; })(); export { Sample };";
+
+--source ../include/mrs/content_file/add.inc
+SET @auth_content_file_id=@content_file_id;
+
+--let $default_script_file="/Sample.js"
+--let $default_script_class_name=Sample
+
+# helloWorld end point registration
+--let $script_function_name=helloWorld
+--source scripting_add_endpoint.inc
+
+
+
+# Auth
+--let $mrs_add_auth_app=default authentication
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_services=('/svc1', '/svc2')
+--source ../include/mrs/auth_app/add.inc
+
+
+# Users
+--let $mrs_add_user_ext_uid='user1@%'
+--let $mrs_add_user_name='user1'
+--let $mrs_add_user_role=AllPriv
+--let $mrs_add_user_auth_string='ignore'
+--source ../include/mrs/user/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo  Calls a simple JavaScript function that returns 'Hello World!'
+--echo  No authentication is needed for this one
+
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/basic_schema/helloWorld;
+
+exec $MRS_CLIENT_ARGS
+  --path /svc2/basic_schema/helloWorld;
+
+
+# Cleanup
+drop user user1@'%';
+
+--source ../include/mrs/cleanup.inc

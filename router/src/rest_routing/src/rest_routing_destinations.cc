@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -22,6 +22,8 @@
   along with this program; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+
+#define RAPIDJSON_HAS_STDSTRING 1
 
 #include "rest_routing_destinations.h"
 
@@ -67,15 +69,23 @@ bool RestRoutingDestinations::on_handle_request(
 
     rapidjson::Value destinations(rapidjson::kArrayType);
 
-    for (const auto &dst : inst.get_destinations()) {
+    for (const auto &dst : inst.get_destination_candidates()) {
       rapidjson::Value el;
 
-      el.SetObject()
-          .AddMember("address",
-                     rapidjson::Value(dst.address().data(),
-                                      dst.address().size(), allocator),
-                     allocator)
-          .AddMember("port", dst.port(), allocator);
+      if (dst.is_tcp()) {
+        const auto &tcp_dest = dst.as_tcp();
+        el.SetObject()
+            .AddMember("address",
+                       rapidjson::Value(tcp_dest.hostname(), allocator),
+                       allocator)
+            .AddMember("port", tcp_dest.port(), allocator);
+
+      } else {
+        const auto &local_dest = dst.as_local();
+        el.SetObject().AddMember("socket",
+                                 rapidjson::Value(local_dest.path(), allocator),
+                                 allocator);
+      }
       destinations.PushBack(el, allocator);
     }
 

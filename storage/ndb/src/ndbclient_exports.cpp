@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,7 +53,7 @@ extern "C"
         void _ndbclient_exports(void) {
   (void)ndb_init();
   Ndb_cluster_connection cluster_connection;
-  NdbScanFilter scan_filter((NdbOperation *)0);
+  NdbScanFilter scan_filter((NdbOperation *)nullptr);
   NdbIndexStat index_stat;
   NdbInfo info(&cluster_connection, "");
   drop_instance();  // NdbPool

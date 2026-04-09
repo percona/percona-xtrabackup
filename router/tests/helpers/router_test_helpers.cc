@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -364,14 +364,14 @@ bool wait_for_port_unused(const uint16_t port,
 
 void init_keyring(std::map<std::string, std::string> &default_section,
                   const std::string &keyring_dir,
-                  const std::string &user /*= "mysql_router1_user"*/,
-                  const std::string &password /*= "root"*/) {
+                  const KeyringEntries &keyring_entries) {
   // init keyring
   const std::string masterkey_file = Path(keyring_dir).join("master.key").str();
   const std::string keyring_file = Path(keyring_dir).join("keyring").str();
   mysql_harness::init_keyring(keyring_file, masterkey_file, true);
   mysql_harness::Keyring *keyring = mysql_harness::get_keyring();
-  keyring->store(user, "password", password);
+  for (const auto &e : keyring_entries)
+    keyring->store(e.uid, e.attribute, e.value);
   mysql_harness::flush_keyring();
   mysql_harness::reset_keyring();
 
@@ -641,4 +641,17 @@ get_log_timestamp(const std::string &log_file, const std::string &log_regex,
   result += std::chrono::milliseconds(milliseconds);
 
   return result;
+}
+
+std::string escape_regexp(std::string input) {
+  std::string output;
+  std::for_each(std::begin(input), std::end(input), [&output](const char c) {
+    if (c == '\\' || c == '.' || c == '^' || c == '$' || c == '*' || c == '+' ||
+        c == '?' || c == '(' || c == ')' || c == '[' || c == ']' || c == '{' ||
+        c == '}' || c == '|') {
+      output += "\\";
+    }
+    output += c;
+  });
+  return output;
 }

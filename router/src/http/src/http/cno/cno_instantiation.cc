@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2024, Oracle and/or its affiliates.
+  Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,13 +25,11 @@
 
 #include "http/cno/cno_interface.h"
 
-namespace http {
-namespace cno {
+namespace http::cno {
 
 // must be declared in .cc file as otherwise each plugin
 // gets its own class-instance of http::base::RequestHandler which leads
 // to undefined behaviour (ubsan -> vptr)
 CnoInterface::~CnoInterface() = default;
 
-}  // namespace cno
-}  // namespace http
+}  // namespace http::cno

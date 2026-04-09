@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ class GcsTaggedLock : public GcsBaseTest {
 };
 
 TEST_F(GcsTaggedLock, SuccessfulOptimisticRead) {
-  Gcs_tagged_lock lock;
+  Gcs_tagged_lock const lock;
 
   auto tag = lock.optimistic_read();
   ASSERT_TRUE(lock.validate_optimistic_read(tag));

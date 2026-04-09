@@ -1,0 +1,140 @@
+--source include/have_router.inc
+
+# Set the router-id, to generate statistics
+# this way we can wait until router detects
+# changes to DB_OBJECTS.
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Check fetching a default static content file
+--echo #
+--echo ## II. Check feching of a Base64 encoded static content file
+--echo #
+--echo ## III. Check feching of static content file which cannot be Base64 decoded.
+--echo #
+--echo ## IV. Check feching of static content file with existing content file.
+--echo #
+--echo ## V. Check feching of static content file when colliding content file is removed.
+--echo #
+
+--source ../include/mrs/start_object_definition.inc
+
+# Service
+--let $mrs_add_service_path="/svc1"
+--let $mrs_add_host_name=""
+--source ../include/mrs/service/add.inc
+
+# Content set
+--let $mrs_add_content_set_path=/set
+--let $mrs_add_content_set_enabled=1
+--source ../include/mrs/content_set/add.inc
+
+# Content files
+--let $mrs_add_content="first file"
+--let $mrs_add_content_file_path=/first.html
+--source ../include/mrs/content_file/add.inc
+SET @my_set=@content_set_id;
+
+--let $mrs_add_content="second file"
+--let $mrs_add_content_file_path=/second.html
+--source ../include/mrs/content_file/add.inc
+
+# Workaround: the end_object_definition, needs at least one db_object
+# to sync to its refresh.
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic_schema
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table2
+--let $mrs_add_db_object_path=/obj
+--source ../include/mrs/db_object/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+
+--echo #
+--echo # I
+
+--let $mrs_sql_id_variable=@my_set
+--let $mrs_modify_options='{"defaultStaticContent":{"index.html":"static page"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/index.html
+  --response-type RAW
+  --expected-status Ok;
+
+
+--echo #
+--echo # II
+
+# foobar encoded in Base64 is Zm9vYmFy
+--let $mrs_sql_id_variable=@my_set
+--let $mrs_modify_options='{"defaultStaticContent":{"index.html":"Zm9vYmFy"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/index.html
+  --display HEADER,BODY
+  --response-type RAW
+  --expected-status Ok;
+
+--echo #
+--echo # III
+
+--let $mrs_sql_id_variable=@my_set
+--let $mrs_modify_options='{"defaultStaticContent":{"index.html":"Zm9vYmFy!"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/index.html
+  --display HEADER,BODY
+  --response-type RAW
+  --expected-status Ok;
+
+--echo #
+--echo # IV
+
+--let $mrs_sql_id_variable=@my_set
+--let $mrs_modify_options='{"defaultStaticContent":{"first.html":"should not be used"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --response-type RAW
+  --expected-status Ok;
+
+--echo #
+--echo # V
+
+--let $mrs_sql_id_variable=@my_set
+--let $mrs_modify_options='{"defaultStaticContent":{"first.html":"static file in use"}}'
+--source ../include/mrs/content_set/modify_options.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--let $mrs_add_content_file_path=/first.html
+--let $mrs_content_set_id_sql_variable=@my_set
+--source ../include/mrs/content_file/delete.inc
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--replace_regex /^Date.*/Date -> %DATE%/
+exec $MRS_CLIENT_ARGS
+  --path /svc1/set/first.html
+  --response-type RAW
+  --expected-status Ok;
+
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

@@ -1,0 +1,98 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Show that files tested in next steps don't exist
+#
+# 1. request files on global level
+#
+## II. Modify option on global level
+#
+# 1. add files
+# 2. add indexes
+# 3. add redirect
+# 4. remove all
+#
+
+#
+# I.1
+Clear the config.data
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{}';
+SELECT data from  `mysql_rest_service_metadata`.`config`;
+data
+{}
+GET /
+Not Found(404)
+GET /index.html
+Not Found(404)
+GET /other.html
+Not Found(404)
+GET /redirect.html
+Not Found(404)
+
+#
+# II.1
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{"defaultStaticContent":{"index.html":"first page", "other.html":"second page"}}';
+GET /
+Not Found(404)
+GET /redirect.html
+Not Found(404)
+GET /index.html
+first page
+OK
+GET /other.html
+second page
+OK
+
+#
+# II.2
+## Check Directory Index generation
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{"defaultStaticContent":{"index.html":"first page", "other.html":"second page"}, "directoryIndexDirective":["other.html"],"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}';
+GET /
+second page
+OK
+GET /redirect.html
+Not Found(404)
+GET /index.html
+first page
+OK
+GET /other.html
+second page
+OK
+
+#
+# II.3
+## Check Redirect generation
+UPDATE  `mysql_rest_service_metadata`.`config` SET data='{"defaultStaticContent":{"index.html":"first page", "other.html":"second page"}, "directoryIndexDirective":["other.html"],"defaultRedirects":{"redirect.html":"/svc1/sch1/obj1/1"}}';
+GET /
+second page
+OK
+GET /redirect.html
+Temporary Redirect(307)
+GET /index.html
+first page
+OK
+GET /other.html
+second page
+OK
+
+#
+# II.4
+## Check that all files are removed
+UPDATE  `mysql_rest_service_metadata`.`config` SET data=NULL;
+GET /
+Not Found(404)
+GET /index.html
+Not Found(404)
+GET /other.html
+Not Found(404)
+GET /redirect.html
+Not Found(404)
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

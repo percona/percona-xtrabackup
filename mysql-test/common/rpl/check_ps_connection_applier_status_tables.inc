@@ -5,7 +5,6 @@
 #
 # params: $current_gtid  the gtid that is currently being processed
 #         $last_gtid     the gtid that was last processed
-#         $is_mts        [0,1] 1 if MTS test
 
 --source include/rpl/connection_replica.inc
 --let $debug_point= rpl_ps_tables_queue
@@ -31,27 +30,24 @@
 --let $is_first_check= 1
 --source common/rpl/check_ps_connection_applier_status_tables_asserts.inc
 
-if ($is_mts)
-{
-  --let $table= performance_schema.replication_applier_status_by_coordinator
-  --let $now_handling_gtid_column= PROCESSING_TRANSACTION
-  --let $now_handling_OCT_column= PROCESSING_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP
-  --let $now_handling_ICT_column= PROCESSING_TRANSACTION_IMMEDIATE_COMMIT_TIMESTAMP
-  --let $now_handling_start_column= PROCESSING_TRANSACTION_START_BUFFER_TIMESTAMP
-  --let $last_handled_gtid_column= LAST_PROCESSED_TRANSACTION
-  --let $last_handled_OCT_column= LAST_PROCESSED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP
-  --let $last_handled_ICT_column= LAST_PROCESSED_TRANSACTION_IMMEDIATE_COMMIT_TIMESTAMP
-  --let $last_handled_start_column= LAST_PROCESSED_TRANSACTION_START_BUFFER_TIMESTAMP
-  --let $last_handled_end_column= LAST_PROCESSED_TRANSACTION_END_BUFFER_TIMESTAMP
-  --let $debug_sync_1= 'now WAIT_FOR signal.rpl_ps_tables_process_before'
-  --let $debug_sync_2= 'now SIGNAL signal.rpl_ps_tables_process_finish'
-  --let $debug_sync_3= 'now WAIT_FOR signal.rpl_ps_tables_process_after_finish'
-  --let $debug_sync_4= 'now SIGNAL signal.rpl_ps_tables_process_continue'
-  --let $now_handling_action= processing
-  --let $last_handled_action= processed
-  --let $is_first_check= 0
-  --source common/rpl/check_ps_connection_applier_status_tables_asserts.inc
-}
+--let $table= performance_schema.replication_applier_status_by_coordinator
+--let $now_handling_gtid_column= PROCESSING_TRANSACTION
+--let $now_handling_OCT_column= PROCESSING_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP
+--let $now_handling_ICT_column= PROCESSING_TRANSACTION_IMMEDIATE_COMMIT_TIMESTAMP
+--let $now_handling_start_column= PROCESSING_TRANSACTION_START_BUFFER_TIMESTAMP
+--let $last_handled_gtid_column= LAST_PROCESSED_TRANSACTION
+--let $last_handled_OCT_column= LAST_PROCESSED_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP
+--let $last_handled_ICT_column= LAST_PROCESSED_TRANSACTION_IMMEDIATE_COMMIT_TIMESTAMP
+--let $last_handled_start_column= LAST_PROCESSED_TRANSACTION_START_BUFFER_TIMESTAMP
+--let $last_handled_end_column= LAST_PROCESSED_TRANSACTION_END_BUFFER_TIMESTAMP
+--let $debug_sync_1= 'now WAIT_FOR signal.rpl_ps_tables_process_before'
+--let $debug_sync_2= 'now SIGNAL signal.rpl_ps_tables_process_finish'
+--let $debug_sync_3= 'now WAIT_FOR signal.rpl_ps_tables_process_after_finish'
+--let $debug_sync_4= 'now SIGNAL signal.rpl_ps_tables_process_continue'
+--let $now_handling_action= processing
+--let $last_handled_action= processed
+--let $is_first_check= 0
+--source common/rpl/check_ps_connection_applier_status_tables_asserts.inc
 
 if ($is_first_stmt)
 {

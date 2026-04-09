@@ -19,7 +19,7 @@ if (`select @@version_compile_os IN ("Win32","Win64","Windows")`)
 --let SEP=;
 }
 
---let JAVA_MIN_REQUIRED_VERSION=1.8
+--let JAVA_MIN_REQUIRED_VERSION=11
 --source suite/ndb/include/have_java.inc
 --source suite/ndb/include/have_clusterj.inc
 
@@ -35,6 +35,8 @@ exec
   -Djava.library.path=$NDBCLIENT_LIB_DIR
   -Duser.timezone=$TZ
   -Djava.io.tmpdir=$MYSQLTEST_VARDIR/tmp
+  -Djava.util.logging.config.class=testsuite.clusterj.LogAtWarning
+  -XX:ErrorFile=$MYSQLTEST_VARDIR/tmp/clusterj_jvm_error.file
   -classpath $CLUSTERJ_TEST_JAR$SEP$CLUSTERJ_JAR$SEP$MTR_CLASSPATH
   testsuite.clusterj.AllTests
   $CLUSTERJ_TEST_JAR $ENABLE_DEBUG_TESTS
@@ -68,6 +70,7 @@ DROP TABLE charsetsjis;
 DROP TABLE charsetswedishutf8;
 DROP TABLE charsetutf8;
 DROP TABLE conversation_summary;
+DROP TABLE datetypes_pk;
 DROP TABLE datetimetypes;
 DROP TABLE datetypes;
 DROP TABLE decimaltypes;
@@ -83,9 +86,11 @@ DROP TABLE longintstringpk;
 DROP TABLE longlongstringfk;
 DROP TABLE longlongstringpk;
 DROP TABLE longvarbinarypk;
+DROP TABLE longvarcharpk;
 DROP TABLE mediumintegertypes;
 DROP TABLE mediumunsignedtypes;
 DROP TABLE nullvalues;
+DROP TABLE same_table;
 DROP TABLE shortpk;
 DROP TABLE stress;
 DROP TABLE stringtype;
@@ -101,6 +106,13 @@ DROP TABLE subscriber;
 DROP TABLE hashonlylongintstringpk;
 DROP TABLE varbinarypk;
 DROP TABLE varbinarytypes;
+DROP TABLE varcharpk;
+DROP TABLE fgtest;
+DROP TABLE notnulltable;
 DROP TABLE IF EXISTS test2.t_basic2;
+DROP TABLE IF EXISTS test2.same_table;
 DROP DATABASE IF EXISTS test2;
+DROP TABLE IF EXISTS test3.t_basic3;
+DROP TABLE IF EXISTS test3.same_table;
+DROP DATABASE IF EXISTS test3;
 

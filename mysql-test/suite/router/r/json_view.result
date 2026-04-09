@@ -1,0 +1,1642 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `sakila` - created 
+# DB `sakila` - filled
+create table sakila.not_auto_inc (
+id int primary key,
+data text
+);
+create table sakila.compound (
+id1 int,
+id2 int,
+data text,
+primary key(id1, id2)
+);
+insert into sakila.compound values (1,1,'one'), (1,2,'two'), (3,1,'three');
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/sakila
+# Registred DB_OBJECT at path: /svc/sakila/compoud
+# Registred DB_OBJECT at path: /svc/sakila/city
+# Registred OBJECT_REF at sakila.country
+# Registred DB_OBJECT at path: /svc/sakila/citynocheck
+# Registred DB_OBJECT at path: /svc/sakila/country
+# Registred OBJECT_REF at sakila.city
+# Registred DB_OBJECT at path: /svc/sakila/notAutoInc
+# Registred AUTH APP at path: NULL
+# Registred MRS USER: 'admin'
+GET /svc/authentication/login
+
+OK
+# input validation
+GET /svc/sakila/city?q=bla
+{
+    "message": "Value used for `FilterObject` is not JSON.",
+    "status": 400
+}
+OK
+GET /svc/sakila/city?limit=bla
+{
+    "message": "Invalid value for 'limit' parameter",
+    "status": 400
+}
+OK
+GET /svc/sakila/city?offset=bla
+{
+    "message": "Invalid value for 'offset' parameter",
+    "status": 400
+}
+OK
+GET /svc/sakila/city?limit=
+{
+    "message": "Invalid value for 'limit' parameter",
+    "status": 400
+}
+OK
+GET /svc/sakila/city?offset=
+{
+    "message": "Invalid value for 'offset' parameter",
+    "status": 400
+}
+OK
+GET /svc/sakila/city?limit=-1
+{
+    "message": "Invalid value for 'limit' parameter",
+    "status": 400
+}
+OK
+GET /svc/sakila/city?offset=-1
+{
+    "message": "Invalid value for 'offset' parameter",
+    "status": 400
+}
+OK
+GET /svc/sakila/city?limit=999999999999999999999999999999999999
+{
+    "message": "Invalid value for 'limit' parameter",
+    "status": 400
+}
+OK
+GET /svc/sakila/city?offset=999999999999999999999999999999999999
+{
+    "message": "Invalid value for 'offset' parameter",
+    "status": 400
+}
+OK
+# RR1 - On a GET request of a resource path without an id, the defined view must be queried and a list of matching items returned.
+GET /svc/sakila/city
+{
+    "items": [
+        {
+            "city": "A Corua (La Corua)",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/1"
+                }
+            ],
+            "city_id": 1,
+            "country": {
+                "country": "Spain",
+                "country_id": 87,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 87,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Abha",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/2"
+                }
+            ],
+            "city_id": 2,
+            "country": {
+                "country": "Saudi Arabia",
+                "country_id": 82,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 82,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Abu Dhabi",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/3"
+                }
+            ],
+            "city_id": 3,
+            "country": {
+                "country": "United Arab Emirates",
+                "country_id": 101,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 101,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Acua",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/4"
+                }
+            ],
+            "city_id": 4,
+            "country": {
+                "country": "Mexico",
+                "country_id": 60,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 60,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Adana",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/5"
+                }
+            ],
+            "city_id": 5,
+            "country": {
+                "country": "Turkey",
+                "country_id": 97,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 97,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Addis Abeba",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/6"
+                }
+            ],
+            "city_id": 6,
+            "country": {
+                "country": "Ethiopia",
+                "country_id": 31,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 31,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Aden",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/7"
+                }
+            ],
+            "city_id": 7,
+            "country": {
+                "country": "Yemen",
+                "country_id": 107,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 107,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Adoni",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/8"
+                }
+            ],
+            "city_id": 8,
+            "country": {
+                "country": "India",
+                "country_id": 44,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 44,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Ahmadnagar",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/9"
+                }
+            ],
+            "city_id": 9,
+            "country": {
+                "country": "India",
+                "country_id": 44,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 44,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Akishima",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/10"
+                }
+            ],
+            "city_id": 10,
+            "country": {
+                "country": "Japan",
+                "country_id": 50,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 50,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Akron",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/11"
+                }
+            ],
+            "city_id": 11,
+            "country": {
+                "country": "United States",
+                "country_id": 103,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 103,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Ayn",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/12"
+                }
+            ],
+            "city_id": 12,
+            "country": {
+                "country": "United Arab Emirates",
+                "country_id": 101,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 101,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Hawiya",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/13"
+                }
+            ],
+            "city_id": 13,
+            "country": {
+                "country": "Saudi Arabia",
+                "country_id": 82,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 82,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Manama",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/14"
+                }
+            ],
+            "city_id": 14,
+            "country": {
+                "country": "Bahrain",
+                "country_id": 11,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 11,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Qadarif",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/15"
+                }
+            ],
+            "city_id": 15,
+            "country": {
+                "country": "Sudan",
+                "country_id": 89,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 89,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Qatif",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/16"
+                }
+            ],
+            "city_id": 16,
+            "country": {
+                "country": "Saudi Arabia",
+                "country_id": 82,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 82,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Alessandria",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/17"
+                }
+            ],
+            "city_id": 17,
+            "country": {
+                "country": "Italy",
+                "country_id": 49,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 49,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Allappuzha (Alleppey)",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/18"
+                }
+            ],
+            "city_id": 18,
+            "country": {
+                "country": "India",
+                "country_id": 44,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 44,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Allende",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/19"
+                }
+            ],
+            "city_id": 19,
+            "country": {
+                "country": "Mexico",
+                "country_id": 60,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 60,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Almirante Brown",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/20"
+                }
+            ],
+            "city_id": 20,
+            "country": {
+                "country": "Argentina",
+                "country_id": 6,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 6,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Alvorada",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/21"
+                }
+            ],
+            "city_id": 21,
+            "country": {
+                "country": "Brazil",
+                "country_id": 15,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 15,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Ambattur",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/22"
+                }
+            ],
+            "city_id": 22,
+            "country": {
+                "country": "India",
+                "country_id": 44,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 44,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Amersfoort",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/23"
+                }
+            ],
+            "city_id": 23,
+            "country": {
+                "country": "Netherlands",
+                "country_id": 67,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 67,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Amroha",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/24"
+                }
+            ],
+            "city_id": 24,
+            "country": {
+                "country": "India",
+                "country_id": 44,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 44,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Angra dos Reis",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/25"
+                }
+            ],
+            "city_id": 25,
+            "country": {
+                "country": "Brazil",
+                "country_id": 15,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 15,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": true,
+    "count": 25,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/sakila/city/?offset=25"
+        }
+    ]
+}
+OK
+GET /svc/sakila/city?limit=2
+{
+    "items": [
+        {
+            "city": "A Corua (La Corua)",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/1"
+                }
+            ],
+            "city_id": 1,
+            "country": {
+                "country": "Spain",
+                "country_id": 87,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 87,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Abha",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/2"
+                }
+            ],
+            "city_id": 2,
+            "country": {
+                "country": "Saudi Arabia",
+                "country_id": 82,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 82,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        }
+    ],
+    "limit": 2,
+    "offset": 0,
+    "hasMore": true,
+    "count": 2,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/sakila/city/?offset=2&limit=2"
+        }
+    ]
+}
+OK
+GET /svc/sakila/city?limit=0
+{
+    "items": [],
+    "limit": 0,
+    "offset": 0,
+    "hasMore": true,
+    "count": 0,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/sakila/city/?offset=0&limit=0"
+        }
+    ]
+}
+OK
+GET /svc/sakila/city?limit=1&offset=2
+{
+    "items": [
+        {
+            "city": "Abu Dhabi",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/3"
+                }
+            ],
+            "city_id": 3,
+            "country": {
+                "country": "United Arab Emirates",
+                "country_id": 101,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 101,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        }
+    ],
+    "limit": 1,
+    "offset": 2,
+    "hasMore": true,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/sakila/city/?offset=3&limit=1"
+        },
+        {
+            "rel": "prev",
+            "href": "/svc/sakila/city/?offset=1&limit=1"
+        },
+        {
+            "rel": "first",
+            "href": "/svc/sakila/city/?limit=1"
+        }
+    ]
+}
+OK
+GET /svc/sakila/city?offset=10
+{
+    "items": [
+        {
+            "city": "Akron",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/11"
+                }
+            ],
+            "city_id": 11,
+            "country": {
+                "country": "United States",
+                "country_id": 103,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 103,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Ayn",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/12"
+                }
+            ],
+            "city_id": 12,
+            "country": {
+                "country": "United Arab Emirates",
+                "country_id": 101,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 101,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Hawiya",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/13"
+                }
+            ],
+            "city_id": 13,
+            "country": {
+                "country": "Saudi Arabia",
+                "country_id": 82,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 82,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Manama",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/14"
+                }
+            ],
+            "city_id": 14,
+            "country": {
+                "country": "Bahrain",
+                "country_id": 11,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 11,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Qadarif",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/15"
+                }
+            ],
+            "city_id": 15,
+            "country": {
+                "country": "Sudan",
+                "country_id": 89,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 89,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "al-Qatif",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/16"
+                }
+            ],
+            "city_id": 16,
+            "country": {
+                "country": "Saudi Arabia",
+                "country_id": 82,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 82,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Alessandria",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/17"
+                }
+            ],
+            "city_id": 17,
+            "country": {
+                "country": "Italy",
+                "country_id": 49,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 49,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Allappuzha (Alleppey)",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/18"
+                }
+            ],
+            "city_id": 18,
+            "country": {
+                "country": "India",
+                "country_id": 44,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 44,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Allende",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/19"
+                }
+            ],
+            "city_id": 19,
+            "country": {
+                "country": "Mexico",
+                "country_id": 60,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 60,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Almirante Brown",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/20"
+                }
+            ],
+            "city_id": 20,
+            "country": {
+                "country": "Argentina",
+                "country_id": 6,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 6,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Alvorada",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/21"
+                }
+            ],
+            "city_id": 21,
+            "country": {
+                "country": "Brazil",
+                "country_id": 15,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 15,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Ambattur",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/22"
+                }
+            ],
+            "city_id": 22,
+            "country": {
+                "country": "India",
+                "country_id": 44,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 44,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Amersfoort",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/23"
+                }
+            ],
+            "city_id": 23,
+            "country": {
+                "country": "Netherlands",
+                "country_id": 67,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 67,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Amroha",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/24"
+                }
+            ],
+            "city_id": 24,
+            "country": {
+                "country": "India",
+                "country_id": 44,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 44,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Angra dos Reis",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/25"
+                }
+            ],
+            "city_id": 25,
+            "country": {
+                "country": "Brazil",
+                "country_id": 15,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 15,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Anpolis",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/26"
+                }
+            ],
+            "city_id": 26,
+            "country": {
+                "country": "Brazil",
+                "country_id": 15,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 15,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Antofagasta",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/27"
+                }
+            ],
+            "city_id": 27,
+            "country": {
+                "country": "Chile",
+                "country_id": 22,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 22,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Aparecida de Goinia",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/28"
+                }
+            ],
+            "city_id": 28,
+            "country": {
+                "country": "Brazil",
+                "country_id": 15,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 15,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Apeldoorn",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/29"
+                }
+            ],
+            "city_id": 29,
+            "country": {
+                "country": "Netherlands",
+                "country_id": 67,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 67,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Araatuba",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/30"
+                }
+            ],
+            "city_id": 30,
+            "country": {
+                "country": "Brazil",
+                "country_id": 15,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 15,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Arak",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/31"
+                }
+            ],
+            "city_id": 31,
+            "country": {
+                "country": "Iran",
+                "country_id": 46,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 46,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Arecibo",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/32"
+                }
+            ],
+            "city_id": 32,
+            "country": {
+                "country": "Puerto Rico",
+                "country_id": 77,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 77,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Arlington",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/33"
+                }
+            ],
+            "city_id": 33,
+            "country": {
+                "country": "United States",
+                "country_id": 103,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 103,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Ashdod",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/34"
+                }
+            ],
+            "city_id": 34,
+            "country": {
+                "country": "Israel",
+                "country_id": 48,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 48,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        },
+        {
+            "city": "Ashgabat",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/35"
+                }
+            ],
+            "city_id": 35,
+            "country": {
+                "country": "Turkmenistan",
+                "country_id": 98,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 98,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 10,
+    "hasMore": true,
+    "count": 25,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/"
+        },
+        {
+            "rel": "next",
+            "href": "/svc/sakila/city/?offset=35"
+        },
+        {
+            "rel": "prev",
+            "href": "/svc/sakila/city/?offset=0"
+        },
+        {
+            "rel": "first",
+            "href": "/svc/sakila/city"
+        }
+    ]
+}
+OK
+# RR2 - On a GET request of a resource path with an id, the defined view must be queried and returned for that id. If the id doesnt exist, a 404 must be returned.
+GET /svc/sakila/city/45
+{
+    "city": "Baha Blanca",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/45"
+        }
+    ],
+    "city_id": 45,
+    "country": {
+        "country": "Argentina",
+        "country_id": 6,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 6,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag":ETAG
+    }
+}
+OK
+GET /svc/sakila/city/4444444
+{
+    "message": "Not Found",
+    "status": 404
+}
+OK
+# RR4 - If a filterObject is given in case RR1, the list of items returned must be filtered with it
+GET /svc/sakila/city?q=%7B%22city%22:%7B%22%24like%22:%22New%25%22%7D%7D
+{
+    "items": [
+        {
+            "city": "Newcastle",
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/sakila/city/364"
+                }
+            ],
+            "city_id": 364,
+            "country": {
+                "country": "South Africa",
+                "country_id": 85,
+                "last_update": "2006-02-15 04:44:00.000000"
+            },
+            "country_id": 85,
+            "last_update": "2006-02-15 04:45:25.000000",
+            "_metadata": {
+                "etag":ETAG
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/"
+        }
+    ]
+}
+OK
+# RR5 - If a field filter is given, the fields in the output document must be filtered accordingly
+GET /svc/sakila/city/1?f=city,last_updated
+{
+    "city": "A Corua (La Corua)",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/1"
+        }
+    ],
+    "_metadata": {
+        "etag":ETAG
+    }
+}
+OK
+GET /svc/sakila/city/1?f=!country_id,!last_updated
+{
+    "city": "A Corua (La Corua)",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/1"
+        }
+    ],
+    "city_id": 1,
+    "country": {
+        "country": "Spain",
+        "country_id": 87,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag": "CD6F179CF6284340928FD4C2A133A621B680425D4CE7D47B2927F1390E40442B"
+    }
+}
+OK
+GET /svc/sakila/city/1?f=city,!last_updated
+{
+    "message": "Filter must not mix inclusions and exclusions",
+    "status": 400
+}
+OK
+GET /svc/sakila/city/1?f=
+{
+    "city": "A Corua (La Corua)",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/1"
+        }
+    ],
+    "city_id": 1,
+    "country": {
+        "country": "Spain",
+        "country_id": 87,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 87,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag": "CD6F179CF6284340928FD4C2A133A621B680425D4CE7D47B2927F1390E40442B"
+    }
+}
+OK
+GET /svc/sakila/city/1?f=invalid
+{
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "CD6F179CF6284340928FD4C2A133A621B680425D4CE7D47B2927F1390E40442B"
+    }
+}
+OK
+# IR1 - On a POST request of a resource path without an id, the input document given in the request must be inserted in the target table(s). On success, the response must include the inserted document.
+POST /svc/sakila/city (payload-size:195)
+{
+    "city": "New City 900",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/900"
+        }
+    ],
+    "city_id": 900,
+    "country": {
+        "country": "Argentina",
+        "country_id": 6,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 6,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag":ETAG
+        "gtid":GTID
+    }
+}
+OK
+POST /svc/sakila/city/901 (payload-size:195)
+{
+    "message": "Full object must be specified in the request body. Setting ID, from the URL is not supported.",
+    "status": 400
+}
+OK
+# IR2 - Input documents that omit an id/primary key must be rejected with status 400
+POST /svc/sakila/notAutoInc (payload-size:24)
+{
+    "message": "Invalid input JSON document: ID for table `not_auto_inc` missing in JSON input",
+    "status": 400
+}
+OK
+POST /svc/sakila/city (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+# IR2.1 - If the primary key of the table is AUTO_INCREMENT, the id must be generated by the database
+POST /svc/sakila/city (payload-size:181)
+{
+    "city": "New City NoId",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/901"
+        }
+    ],
+    "city_id": 901,
+    "country": {
+        "country": "Argentina",
+        "country_id": 6,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 6,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag":ETAG
+        "gtid":GTID
+    }
+}
+OK
+POST /svc/sakila/city (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/sakila/city (payload-size:195)
+{
+    "message": "Invalid input JSON document: Invalid field \"unknown\" in table `city` in JSON input",
+    "status": 400
+}
+OK
+# IR3 - Any nested objects included in the input document must be inserted, updated and/or have their references updated in their respective tables as defined by the view
+# IR4 - If the object endpoint is not marked to allow the CREATE operation, all POST requests to the endpoint must be rejected with status 403 Forbidden
+# UR1 - On a PUT request of a resource path with an id, the input document given in the request must be compared with the current value of the matching rows with that id in the database and:
+PUT /svc/sakila/city/1000 (payload-size:197)
+{
+    "city": "New City 1000",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/1000"
+        }
+    ],
+    "city_id": 1000,
+    "country": {
+        "country": "Argentina",
+        "country_id": 6,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 6,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag":ETAG
+        "gtid":GTID
+    }
+}
+OK
+PUT /svc/sakila/citynocheck/1000 (payload-size:2)
+{
+    "message": "Invalid input JSON document: ID for table `city` cannot be changed",
+    "status": 400
+}
+OK
+PUT /svc/sakila/city/1000 (payload-size:206)
+{
+    "message": "Invalid input JSON document: Invalid field \"unknown\" in table `city` in JSON input",
+    "status": 400
+}
+OK
+PUT /svc/sakila/city/45 (payload-size:200)
+{
+    "city": "Bahia Blanca",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/city/45"
+        }
+    ],
+    "city_id": 45,
+    "country": {
+        "country": "Argentina",
+        "country_id": 6,
+        "last_update": "2006-02-15 04:44:00.000000"
+    },
+    "country_id": 6,
+    "last_update": "2006-02-15 04:45:25.000000",
+    "_metadata": {
+        "etag":ETAG
+        "gtid":GTID
+    }
+}
+OK
+PUT /svc/sakila/citynocheck/45 (payload-size:2)
+{
+    "message": "Invalid input JSON document: ID for table `city` cannot be changed",
+    "status": 400
+}
+OK
+PUT /svc/sakila/city/45 (payload-size:204)
+{
+    "message": "Invalid input JSON document: Invalid field \"unknown\" in table `city` in JSON input",
+    "status": 400
+}
+OK
+PUT /svc/sakila/citynocheck/45 (payload-size:53)
+{
+    "city": "BAHIA Blanca",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/sakila/citynocheck/45"
+        }
+    ],
+    "city_id": 45,
+    "country_id": 6,
+    "last_update":TIMESTAMP
+    "_metadata": {
+        "etag":ETAG
+        "gtid":GTID
+    }
+}
+OK
+# UR2 - On a PUT request of a resource path without an id, the id must be extracted from the input document
+PUT /svc/sakila/city (payload-size:203)
+{
+    "message": "Missing primary key column value for city_id",
+    "status": 400
+}
+OK
+# UR3 - Any nested objects included in the input document must be inserted, updated, deleted and/or have their references updated in their respective tables as defined by the view
+# UR4 - If an etag is given with the input, a fresh etag must be computed for the corresponding DB object and compared. If they do not match, a 412 Precondition Failed status must be returned and no changes made to the database.
+PUT /svc/sakila/city/45 (payload-size:291)
+{
+    "message": "Precondition failed",
+    "status": 412
+}
+OK
+# UR7 - If the input document contains an '_id' field conflicting with the one given in the request, the request MUST fail with status code 400
+PUT /svc/sakila/city/43 (payload-size:200)
+{
+    "message": "Invalid input JSON document: ID for table `city` cannot be changed",
+    "status": 400
+}
+OK
+insert into sakila.country (country_id, country) values (2222, 'New Country');
+insert into sakila.city (city_id, city, country_id) values (3000, 'Capital City', 2222), (3001, 'Just a City', 2222), (3002, 'Another City', 2222), (3003, 'Deleted City', 2222);
+# DR1 - On a DELETE request with a filterObject, rows corresponding to matching items must be deleted from the target table. The response must be a JSON object and include the number of items deleted and gtid, if appropriate.
+DELETE /svc/sakila/city?q=%7B%22city%22:%7B%22%24eq%22:%22Deleted%20City%22%7D%7D
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid":GTID
+    }
+}
+OK
+DELETE /svc/sakila/city?q=%7B%22city%22:%7B%22=%22:%22Deleted%20City%22%7D%7D
+{
+    "message": "Value used for `FilterObject` is not JSON.",
+    "status": 400
+}
+OK
+# DR2 - Any nested objects in items being deleted must be deleted and/or have their references updated in their respective tables as defined by the view
+# R2 - Requests that fail because of a database error (e.g. foreign key constraint errors) must return status 500
+DELETE /svc/sakila/city?q=%7B%22city_id%22:%7B%22%24eq%22:1%7D%7D
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+insert into sakila.not_auto_inc values (10, ''), (11, ''), (12, ''), (13, ''), (14, ''), (15, '');
+DELETE /svc/sakila/notAutoInc?q=%7B%22id%22:%7B%22%24eq%22:9999999%7D%7D
+{
+    "itemsDeleted": 0
+}
+OK
+DELETE /svc/sakila/notAutoInc?q=%7B%22id%22:%7B%22%24ne%22:9999999%7D%7D
+{
+    "itemsDeleted": 6,
+    "_metadata": {
+        "gtid":GTID
+    }
+}
+OK
+DROP SCHEMA sakila;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

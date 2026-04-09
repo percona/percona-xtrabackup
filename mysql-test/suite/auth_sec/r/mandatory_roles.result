@@ -119,6 +119,8 @@ GRANT INSERT ON *.* TO r2;
 GRANT r2 TO u1@localhost;
 SET GLOBAL mandatory_roles='r1';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SHOW GRANTS FOR u1@localhost USING r1;
 Grants for u1@localhost
 GRANT SELECT ON *.* TO `u1`@`localhost`
@@ -168,8 +170,10 @@ GRANT `r1`@`%`,`r2`@`%`,`r3`@`%`,`r4`@`%`,`r5`@`%` TO `u1`@`localhost`
 CREATE USER u2@localhost IDENTIFIED BY 'foo';
 SET GLOBAL mandatory_roles="rr1";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 DROP ROLE rr1;
-ERROR HY000: Operation DROP ROLE failed for 'rr1'@'%'
+ERROR HY000: Operation DROP ROLE failed for 'rr1'@'%' (User account does not exist)
 # Creating the role will cause mandatory_roles to be reparsed
 CREATE ROLE rr1;
 GRANT SELECT ON test.* TO rr1;

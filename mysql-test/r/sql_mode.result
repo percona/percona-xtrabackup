@@ -389,8 +389,8 @@ set sql_mode=32+(65536*4);
 select @@sql_mode;
 @@sql_mode
 REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI
-set sql_mode=4294967296*2;
-ERROR 42000: Variable 'sql_mode' can't be set to the value of '8589934592'
+set sql_mode=cast(power(2,34) as unsigned);
+ERROR 42000: Variable 'sql_mode' can't be set to the value of '17179869184'
 select @@sql_mode;
 @@sql_mode
 REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE,ONLY_FULL_GROUP_BY,ANSI
@@ -418,11 +418,15 @@ set session sql_mode='PAD_CHAR_TO_FULL_LENGTH';
 Warnings:
 Warning	3090	Changing sql mode 'PAD_CHAR_TO_FULL_LENGTH' is deprecated. It will be removed in a future release.
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 select current_user();
 current_user()
 mysqltest_32753@localhost
 set session sql_mode=@OLD_SQL_MODE;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop user mysqltest_32753@localhost;
 SET @org_mode=@@sql_mode;
 SET @@sql_mode='traditional';
@@ -445,6 +449,8 @@ DROP USER 'user_PCTFL'@'localhost';
 SET SESSION SQL_MODE = @OLD_SQL_MODE;
 DROP USER 'user_no_PCTFL'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT * FROM mysql.db WHERE Host = 'localhost' AND User LIKE 'user_%PCTFL';
 Host	Db	User	Select_priv	Insert_priv	Update_priv	Delete_priv	Create_priv	Drop_priv	Grant_priv	References_priv	Index_priv	Alter_priv	Create_tmp_table_priv	Lock_tables_priv	Create_view_priv	Show_view_priv	Create_routine_priv	Alter_routine_priv	Execute_priv	Event_priv	Trigger_priv
 SELECT * FROM mysql.tables_priv WHERE Host = 'localhost' AND User LIKE 'user_%PCTFL';
@@ -696,39 +702,39 @@ SET @@sql_mode='';
 # USER NAME CONTAINING BACKSLASH IN CREATE USER OPERATION
 CREATE USER 'user\'s_12601974'@'localhost';
 CREATE USER 'user\'s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\'s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\'s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\'s_12601974'@'localhost';
 CREATE USER 'user\"s_12601974'@'localhost';
 CREATE USER 'user\"s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\"s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\"s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\"s_12601974'@'localhost';
 CREATE USER 'user\bs_12601974'@'localhost';
 CREATE USER 'user\bs_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'users_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'users_12601974'@'localhost' (User account already exists)
 DROP USER 'user\bs_12601974'@'localhost';
 CREATE USER 'user\ns_12601974'@'localhost';
 CREATE USER 'user\ns_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\ns_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\ns_12601974'@'localhost' (User account already exists)
 DROP USER 'user\ns_12601974'@'localhost';
 CREATE USER 'user\rs_12601974'@'localhost';
 CREATE USER 'user\rs_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\rs_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\rs_12601974'@'localhost' (User account already exists)
 DROP USER 'user\rs_12601974'@'localhost';
 CREATE USER 'user\ts_12601974'@'localhost';
 CREATE USER 'user\ts_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user	s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user	s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\ts_12601974'@'localhost';
 CREATE USER 'user\\s_12601974'@'localhost';
 CREATE USER 'user\\s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\\s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\\s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\\s_12601974'@'localhost';
 CREATE USER 'user\%s_12601974'@'localhost';
 CREATE USER 'user\%s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\\%s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\\%s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\%s_12601974'@'localhost';
 CREATE USER 'user\_s_12601974'@'localhost';
 CREATE USER 'user\_s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\\_s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\\_s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\_s_12601974'@'localhost';
 
 # END OF CASE - USER NAME CONTAINING BACKSLASH IN CREATE USER OPERATION
@@ -736,39 +742,39 @@ SET @@sql_mode='NO_BACKSLASH_ESCAPES';
 # USER NAME CONTAINING BACKSLASH IN DROP USER OPERATION
 CREATE USER 'user\"s_12601974'@'localhost';
 CREATE USER 'user\"s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\"s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\"s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\"s_12601974'@'localhost';
 CREATE USER 'user\bs_12601974'@'localhost';
 CREATE USER 'user\bs_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\bs_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\bs_12601974'@'localhost' (User account already exists)
 DROP USER 'user\bs_12601974'@'localhost';
 CREATE USER 'user\ns_12601974'@'localhost';
 CREATE USER 'user\ns_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\ns_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\ns_12601974'@'localhost' (User account already exists)
 DROP USER 'user\ns_12601974'@'localhost';
 CREATE USER 'user\rs_12601974'@'localhost';
 CREATE USER 'user\rs_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\rs_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\rs_12601974'@'localhost' (User account already exists)
 DROP USER 'user\rs_12601974'@'localhost';
 CREATE USER 'user\ts_12601974'@'localhost';
 CREATE USER 'user\ts_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\ts_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\ts_12601974'@'localhost' (User account already exists)
 DROP USER 'user\ts_12601974'@'localhost';
 CREATE USER 'user\\s_12601974'@'localhost';
 CREATE USER 'user\\s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\\s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\\s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\\s_12601974'@'localhost';
 CREATE USER 'user\%s_12601974'@'localhost';
 CREATE USER 'user\%s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\%s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\%s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\%s_12601974'@'localhost';
 CREATE USER 'user\%s_12601974'@'localhost';
 CREATE USER 'user\%s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\%s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\%s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\%s_12601974'@'localhost';
 CREATE USER 'user\_s_12601974'@'localhost';
 CREATE USER 'user\_s_12601974'@'localhost';
-ERROR HY000: Operation CREATE USER failed for 'user\_s_12601974'@'localhost'
+ERROR HY000: Operation CREATE USER failed for 'user\_s_12601974'@'localhost' (User account already exists)
 DROP USER 'user\_s_12601974'@'localhost';
 
 # END OF CASE - USER NAME CONTAINING BACKSLASH IN CREATE USER OPERATION
@@ -820,3 +826,30 @@ LENGTH(authentication_string)
 70
 DROP USER 'user1'@'localhost';
 SET sql_mode= DEFAULT;
+#
+# Bug#38235957: failure to DROP TABLE with an invalid CONSTRAINT
+#
+
+call mtr.add_suppression("\\[ERROR\\] .*MY-\\d+.* \\[Server\\] Incorrect information in file: '.frm'");
+SET sql_mode='';
+CREATE TABLE t1 (
+id INT PRIMARY KEY,
+a TIMESTAMP NOT NULL,
+CONSTRAINT `t1_con`
+  CHECK (GET_FORMAT(DATETIME, 'internal') <=> ('0000-00-00 00:00:00' <= a))
+) ENGINE=InnoDB;
+
+# Restart server. Not only do we want sql_mode back to DEFAULT (which we
+# could do manually), we also need for the table not to be cached for
+# this issue to show.
+# restart
+
+# t1_con is not valid, so we can't open the table, and so can't DROP it.
+DROP DATABASE test;
+ERROR HY000: Incorrect TIMESTAMP value: '0000-00-00 00:00:00'
+DROP TABLE t1;
+ERROR HY000: Incorrect TIMESTAMP value: '0000-00-00 00:00:00'
+
+# Change sql_mode so t1_con is valid again, then DROP TABLE t1.
+SET sql_mode='';
+DROP TABLE t1;

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,6 +31,10 @@
  * NOTE
  *
  * When adding a new signal, remember to update MAX_GSN and SignalNames.cpp
+ *
+ * When a signal is no longer sent, add a suffix _vX_Y_Z to indicate the last
+ * version there signal may be sent. The signal number must remain reserved and
+ * handled by receiver until that version is no longer supported.
  */
 const GlobalSignalNumber MAX_GSN = 850;
 
@@ -481,7 +485,7 @@ extern const GlobalSignalNumber NO_OF_SIGNAL_NAMES;
 #define GSN_SCAN_PROCCONF 355
 #define GSN_SCAN_PROCREQ 356
 #define GSN_SEND_PACKED 357
-#define GSN_SET_LOGLEVELORD 358
+#define GSN_SET_LOGLEVELORD_v9_4_0 358
 
 /* 359 used to be LQH_ALLOCREQ, no longer used */
 /* 360 used to be TUP_ALLOCREQ, no longer used */

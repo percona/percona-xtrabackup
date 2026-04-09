@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -40,24 +40,22 @@ bool EventStateTracker::state_changed(
   const Key key{static_cast<size_t>(event_id),
                 std::hash<std::string>{}(additional_tag)};
 
-  std::unique_lock<std::mutex> lock(events_mtx_);
+  std::unique_lock<std::mutex> const lock(events_mtx_);
 
   auto it = events_.find(key);
   if (it == events_.end()) {
     events_.emplace(key, state);
     return true;
-  } else {
-    if (it->second != state) {
-      it->second = state;
-      return true;
-    } else {
-      return false;
-    }
   }
+  if (it->second != state) {
+    it->second = state;
+    return true;
+  }
+  return false;
 }
 
 void EventStateTracker::remove_tag(const std::string &tag) {
-  std::unique_lock<std::mutex> lock(events_mtx_);
+  std::unique_lock<std::mutex> const lock(events_mtx_);
 
   const auto hashed_tag = std::hash<std::string>{}(tag);
   for (auto it = events_.begin(); it != events_.end();) {
@@ -70,7 +68,7 @@ void EventStateTracker::remove_tag(const std::string &tag) {
 }
 
 void EventStateTracker::clear() {
-  std::unique_lock<std::mutex> lock(events_mtx_);
+  std::unique_lock<std::mutex> const lock(events_mtx_);
   events_.clear();
 }
 

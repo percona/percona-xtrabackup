@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1401,7 +1401,7 @@ void NdbImportUtil::Range::copy(const Range &range2) {
  * private rowmap.  The row is likely to go near the end
  * so search is done backwards.
  */
-void NdbImportUtil::RowMap::add(Range range2) {
+void NdbImportUtil::RowMap::add(const Range &range2) {
   RangeList &ranges = m_ranges;
   Range *r2 = alloc_range();
   r2->copy(range2);

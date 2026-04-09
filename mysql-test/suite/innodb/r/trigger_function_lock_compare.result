@@ -2,6 +2,7 @@
 # BUG#32636792: IN THE TRIGGER, INSERT INTO SELECT LOCKS THE SELECTED
 #               ROWS, EVEN READ-COMMITTED
 #
+include/rpl/set_gtid_mode_off.inc
 Warnings:
 Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
 Warnings:
@@ -544,3 +545,4 @@ include/assert.inc [Locks taken in function should always be stronger or equal t
 
 Warnings:
 Warning	1287	'@@binlog_format' is deprecated and will be removed in a future release.
+include/rpl/set_gtid_mode_on.inc

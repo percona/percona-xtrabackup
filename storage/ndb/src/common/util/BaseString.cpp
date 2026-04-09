@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -97,7 +97,7 @@ BaseString::~BaseString() { delete[] m_chr; }
 
 BaseString &BaseString::assign(const char *s) {
   if (s == nullptr) {
-    if (m_chr) delete[] m_chr;
+    delete[] m_chr;
     m_chr = nullptr;
     m_len = 0;
     return *this;
@@ -387,7 +387,7 @@ bool BaseString::starts_with(const char *str) const {
 BaseString BaseString::substr(ssize_t start, ssize_t stop) const {
   if (stop < 0) stop = length();
   ssize_t len = stop - start;
-  if (len <= 0) return BaseString("");
+  if (len <= 0) return {""};
   BaseString s;
   s.assign(m_chr + start, len);
   return s;
@@ -524,10 +524,9 @@ char *BaseString::trim(char *str, const char *delim) {
   if (pos > len) {
     str[0] = 0;
     return nullptr;
-  } else {
-    memmove(str, &str[pos], len - pos + 1);
-    str[len - pos + 1] = 0;
   }
+  memmove(str, &str[pos], len - pos + 1);
+  str[len - pos + 1] = 0;
 
   return str;
 }
@@ -598,7 +597,7 @@ BaseString BaseString::getPrettyTextShort(unsigned size, const Uint32 data[]) {
 }
 
 const void *BaseString_get_key(const void *key, size_t *key_length) {
-  const BaseString *str = (const BaseString *)key;
+  const auto *str = (const BaseString *)key;
   *key_length = str->length();
   return str->c_str();
 }

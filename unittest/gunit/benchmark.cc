@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -21,10 +21,10 @@
    along with this program; if not, write to the Free Software
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
-#include <assert.h>
-#include <math.h>
-#include <stddef.h>
-#include <stdio.h>
+#include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdio>
 
 #include <algorithm>
 #include <chrono>
@@ -89,7 +89,8 @@ void internal_do_microbenchmark(const char *name, void (*func)(size_t)) {
   else
     func(calibration_iterations);
   StopBenchmarkTiming();
-  double seconds_used_per_iteration = seconds_used / calibration_iterations;
+  double const seconds_used_per_iteration =
+      seconds_used / calibration_iterations;
 
   size_t num_iterations;
 
@@ -115,7 +116,7 @@ void internal_do_microbenchmark(const char *name, void (*func)(size_t)) {
          1e9 * seconds_used / double(num_iterations));
 
   if (bytes_processed > 0) {
-    double bytes_per_second = bytes_processed / seconds_used;
+    double const bytes_per_second = bytes_processed / seconds_used;
     if (bytes_per_second > (512 << 20))  // 0.5 GB/sec.
       printf(" %8.2f GB/sec", bytes_per_second / (1 << 30));
     else

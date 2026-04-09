@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -323,12 +323,27 @@ bool migrate_table_to_dd(THD *thd, Ndb_dd_client *dd_client,
                                          schema_name.c_str(),
                                          table_name.c_str(), false);
   if (r != 0) {
-    thd_ndb->push_warning(ER_CANT_CREATE_TABLE_SHARE_FROM_FRM,
-                          "Error in creating TABLE_SHARE from %s.frm file",
-                          table_name.c_str());
-    if (r == -1)
-      ndb_log_error("Error in creating TABLE_SHARE from %s.frm file",
-                    table_name.c_str());
+    if (r == 10) {
+      /*
+       * Old unsupported temporal types in FRM file. Keeping old error message
+       * as done before after check_table_for_old_types call further below.
+       */
+      ndb_log_error(
+          "Table upgrade required. Please do \"REPAIR TABLE `%s`\" "
+          "or dump/reload to fix it",
+          table_name.c_str());
+      thd_ndb->push_warning(
+          ER_TABLE_UPGRADE_REQUIRED,
+          "Table definition contains obsolete data types such "
+          "as old temporal or decimal types");
+    } else {
+      thd_ndb->push_warning(ER_CANT_CREATE_TABLE_SHARE_FROM_FRM,
+                            "Error in creating TABLE_SHARE from %s.frm file",
+                            table_name.c_str());
+      if (r == -1)
+        ndb_log_error("Error in creating TABLE_SHARE from %s.frm file",
+                      table_name.c_str());
+    }
     // Delete frm file
     mysql_file_delete(key_file_frm, index_file, MYF(0));
     return false;

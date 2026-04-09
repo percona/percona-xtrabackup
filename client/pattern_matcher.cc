@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -81,7 +81,7 @@ bool Pattern_matcher::is_matching(const std::string &text,
   DBUG_TRACE;
 
   // traverse all patterns, return true on first match
-  for (auto &pattern : m_patterns) {
+  for (const auto &pattern : m_patterns) {
     if (info->coll->wildcmp(info, text.c_str(), text.c_str() + text.length(),
                             pattern.c_str(), pattern.c_str() + pattern.length(),
                             WILD_ESCAPE, WILD_ONE, WILD_MANY) == 0) {

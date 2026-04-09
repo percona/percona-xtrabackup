@@ -1,7 +1,7 @@
 #ifndef SQL_OPTIMIZER_INCLUDED
 #define SQL_OPTIMIZER_INCLUDED
 
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -235,8 +235,6 @@ class JOIN {
   bool streaming_aggregation{false};
   /// If query contains GROUP BY clause
   bool grouped;
-  /// If true, send produced rows using query_result
-  bool do_send_rows{true};
   /// Set of tables contained in query
   table_map all_table_map{0};
   table_map const_table_map;  ///< Set of tables found to be const
@@ -705,17 +703,16 @@ class JOIN {
   /**
     Return whether the caller should send a row even if the join
     produced no rows if:
-     - there is an aggregate function (sum_func_count!=0), and
-     - the query is not grouped, and
+     - the query is implicitly grouped
+     - OR if the query has ROLLUP and
      - a possible HAVING clause evaluates to TRUE.
 
     @note: if there is a having clause, it must be evaluated before
     returning the row.
   */
   bool send_row_on_empty_set() const {
-    return (do_send_rows && tmp_table_param.sum_func_count != 0 &&
-            group_list.empty() && !group_optimized_away &&
-            query_block->having_value != Item::COND_FALSE);
+    return (implicit_grouping || rollup_state != JOIN::RollupState::NONE) &&
+           query_block->having_value != Item::COND_FALSE;
   }
 
  public:
@@ -1062,7 +1059,8 @@ class JOIN {
 
   /** @{ Helpers for create_access_paths. */
   AccessPath *create_root_access_path_for_join();
-  AccessPath *attach_access_paths_for_having_and_limit(AccessPath *path) const;
+  AccessPath *attach_access_paths_for_having_qualify_limit(
+      AccessPath *path) const;
   AccessPath *attach_access_path_for_update_or_delete(AccessPath *path) const;
   /** @} */
 
@@ -1143,7 +1141,6 @@ ORDER *create_order_from_distinct(THD *thd, Ref_item_array ref_item_array,
                                   ORDER *order_list,
                                   mem_root_deque<Item *> *fields,
                                   bool skip_aggregates,
-                                  bool convert_bit_fields_to_long,
                                   bool *all_order_by_fields_used);
 
 /**
@@ -1308,5 +1305,10 @@ double EstimateRowAccesses(const AccessPath *path, double num_evaluations,
 */
 bool IsHashEquijoinCondition(const Item_eq_base *item, table_map left_side,
                              table_map right_side);
+
+/**
+  Simply counts the ORDER elements.
+*/
+size_t CountOrderElements(const ORDER *order);
 
 #endif /* SQL_OPTIMIZER_INCLUDED */

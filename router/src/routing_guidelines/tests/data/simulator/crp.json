@@ -1,0 +1,75 @@
+{
+  "name": "Current router guidelines",
+  "version": "1.0",
+  "destinations": [
+    {
+      "name": "primary",
+      "match": "$.server.memberRole = PRIMARY"
+    },
+    {
+      "name": "secondary",
+      "match": "$.server.memberRole = SECONDARY OR $.server.memberRole = READ_REPLICA"
+    },
+    {
+      "name": "local",
+      "match": "network($.server.address, 24) = network($.router.bindAddress, 24)"
+    }
+    ],
+  "routes": [
+    {
+      "name": "rw",
+      "match": "$.session.targetPort = $.router.port.rw",
+      "destinations": [{"classes": ["primary"], "strategy": "first-available", "priority": 0}]
+    },
+    {
+      "name": "ro",
+      "match": "$.session.targetPort = $.router.port.ro",
+      "destinations": [{"classes": ["local"], "strategy": "round-robin", "priority": 0},
+                       {"classes": ["secondary"], "strategy": "round-robin", "priority": 1},
+                       {"classes": ["primary"], "strategy": "round-robin", "priority": 2}]
+    }
+  ]
+}
+{
+  "type": "router",
+  "port.rw": 3306,
+  "port.ro": 3307,
+  "port.rw_split": 3308,
+  "address": "123.123.123.1",
+  "localCluster": "clusterA",
+  "hostname": "mysql1",
+  "tags.cat": "tiger"
+}
+{
+  "type": "destination:primary",
+  "memberRole": "PRIMARY",
+  "port": 3306,
+  "label": "No. 1",
+  "address": "123.100.123.12",
+  "uuid": "123e4567-e89b-12d3-a456-426614174000",
+  "version": 80023,
+  "tags.firepower": "12",
+  "tags.shield": "7",
+  "clusterName": "TheCluster",
+  "clusterSetName": "",
+  "clusterRole": "UNDEFINED"
+}
+{
+  "type": "destination:secondary,local",
+  "address": "123.123.123.12",
+  "memberRole": "SECONDARY"
+}
+{
+  "type": "source:rw",
+  "targetPort": 3306,
+  "targetIp": "123.123.123.123",
+  "sourceIp": "7.7.7.7",
+  "user": "youknowwho",
+  "schema": "mystuff",
+  "connectAttrs.client": "shell",
+  "connectAttrs.clientVer": "8.0.25"
+}
+{
+  "type": "source:ro",
+  "targetPort": 3307
+}

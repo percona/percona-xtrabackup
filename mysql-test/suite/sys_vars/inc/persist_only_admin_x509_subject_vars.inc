@@ -74,8 +74,6 @@ SET PERSIST_ONLY innodb_temp_tablespaces_dir = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result
 SET PERSIST_ONLY innodb_undo_directory = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result
-SET PERSIST_ONLY innodb_undo_tablespaces = DEFAULT;
---error $persist_only_admin_x509_subject_vars_result
 SET PERSIST_ONLY sha256_password_auto_generate_rsa_keys = DEFAULT;
 --error $persist_only_admin_x509_subject_vars_result
 SET PERSIST_ONLY sha256_password_private_key_path = DEFAULT;

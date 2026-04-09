@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -68,6 +68,7 @@ static const std::set<String_type> default_valid_option_keys = {
     "checksum",
     "compress",
     "connection_string",
+    "create_external_table",
     "delay_key_write",
     "encrypt_type",
     "explicit_tablespace",
@@ -90,7 +91,9 @@ static const std::set<String_type> default_valid_option_keys = {
     "tablespace",
     "timestamp",
     "view_valid",
-    "gipk"};
+    "gipk",
+    "view_type",
+    "materialization_engine"};
 
 ///////////////////////////////////////////////////////////////////////////
 // Abstract_table_impl implementation.

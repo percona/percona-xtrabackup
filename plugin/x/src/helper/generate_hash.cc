@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +25,22 @@
 
 #include <cstring>
 
+#include <openssl/evp.h>
+#include "my_ssl_algo_cache.h"
+#include "my_sys.h"
 #include "mysql_com.h"  // octet2hex
 #include "plugin/x/src/helper/generate_hash.h"
-#include "sha1.h"  // for SHA1_HASH_SIZE
+
+#define SHA1_HASH_SIZE 20 /* Hash size in bytes */
+
+static void compute_sha1_hash(uint8 *digest, const char *buf, size_t len) {
+  EVP_MD_CTX *sha1_context = EVP_MD_CTX_create();
+  EVP_DigestInit_ex(sha1_context, my_EVP_sha1(), nullptr);
+  EVP_DigestUpdate(sha1_context, buf, len);
+  EVP_DigestFinal_ex(sha1_context, digest, nullptr);
+  EVP_MD_CTX_destroy(sha1_context);
+  sha1_context = nullptr;
+}
 
 static void compute_two_stage_hash(const char *input, size_t input_len,
                                    uint8 *output) {
@@ -53,7 +66,7 @@ namespace xpl {
 
 std::string generate_hash(const std::string &input) {
   std::string hash(2 * SHA1_HASH_SIZE + 2, '\0');
-  ::scrambled_input(&hash[0], input.c_str(), input.length());
+  ::scrambled_input(hash.data(), input.c_str(), input.length());
   hash.resize(2 * SHA1_HASH_SIZE);  // strip the \0
   return hash;
 }

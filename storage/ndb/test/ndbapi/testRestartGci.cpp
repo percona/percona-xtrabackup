@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ struct SavedRecord {
   Uint64 m_gci;
   Uint32 m_author;
   BaseString m_str;
-  SavedRecord(Uint64 _gci, Uint32 _author, BaseString _str) {
+  SavedRecord(Uint64 _gci, Uint32 _author, const BaseString &_str) {
     m_gci = _gci;
     m_author = _author;
     m_str.assign(_str);

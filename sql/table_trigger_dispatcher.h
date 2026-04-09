@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -162,6 +162,7 @@ class Table_trigger_dispatcher : public Table_trigger_field_support {
 
   void enable_fields_temporary_nullability(THD *thd);
   void disable_fields_temporary_nullability();
+  void reset_field_nulls();
 
   void print_upgrade_warnings(THD *thd);
 

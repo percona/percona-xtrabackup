@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,11 +27,10 @@
 
 #include "sql/stateless_allocator.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const Schemata_extensions &Schemata_extensions::instance() {
-  static Schemata_extensions *s_instance = new Schemata_extensions();
+  static auto *s_instance = new Schemata_extensions();
   return *s_instance;
 }
 
@@ -54,5 +53,4 @@ const System_view_definition *Schemata_extensions::view_definition() const {
   return System_view_impl::view_definition();
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

@@ -1,0 +1,22 @@
+CALL sys.ps_trace_thread(THREAD_ID, "OUTFILE", 0, NULL, TRUE, TRUE, TRUE);
+summary
+Disabled THREAD
+Info
+Data collection starting for THREAD_ID = THREAD_ID
+Info
+Stack trace written to OUTFILE
+Convert to PDF
+dot -Tpdf -o /tmp/stack_THREAD_ID.pdf OUTFILE
+Convert to PNG
+dot -Tpng -o /tmp/stack_THREAD_ID.png OUTFILE
+summary
+Enabled THREAD
+CALL sys.ps_trace_thread(THREAD_ID, "OUTFILE", 0, NULL, TRUE, TRUE, TRUE);
+summary
+Disabled THREAD
+Info
+Data collection starting for THREAD_ID = THREAD_ID
+Error while writing stack trace
+ER_FILE_EXISTS_ERROR (HY000): File 'OUTFILE' already exists
+summary
+Enabled THREAD

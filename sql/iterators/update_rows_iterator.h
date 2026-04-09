@@ -1,7 +1,7 @@
 #ifndef SQL_ITERATORS_UPDATE_ROWS_ITERATOR_H_
 #define SQL_ITERATORS_UPDATE_ROWS_ITERATOR_H_
 
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,8 +55,6 @@ class UpdateRowsIterator final : public RowIterator {
                      mem_root_deque<Item *> **values_for_table,
                      table_map tables_with_rowid_in_buffer);
   ~UpdateRowsIterator() override;
-  bool Init() override;
-  int Read() override;
   void StartPSIBatchMode() override { m_source->StartPSIBatchMode(); }
   void EndPSIBatchModeIfStarted() override {
     m_source->EndPSIBatchModeIfStarted();
@@ -107,6 +105,9 @@ class UpdateRowsIterator final : public RowIterator {
   /// handler::position() must be called to get the current row ID from the
   /// underlying scan.
   table_map m_hash_join_tables;
+
+  bool DoInit() override;
+  int DoRead() override;
 
   /// Perform all the immediate updates for the current row returned by the
   /// join, and buffer row IDs for the non-immediate tables.

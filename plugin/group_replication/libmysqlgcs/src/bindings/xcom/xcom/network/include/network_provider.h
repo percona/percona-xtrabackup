@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -209,7 +209,7 @@ struct Network_connection {
         has_error(false) {
   }
 
-  Network_connection(int parameter_fd, void *parameter_ssl_fd)
+  Network_connection(int parameter_fd, void *parameter_ssl_fd [[maybe_unused]])
       : fd(parameter_fd),
 #ifndef XCOM_WITHOUT_OPENSSL
         ssl_fd(static_cast<SSL *>(parameter_ssl_fd)),

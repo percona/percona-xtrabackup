@@ -182,12 +182,11 @@ eval EXPLAIN $query;
 --echo #
 --echo # example unsupported query(correlation not inside WHERE)
 --echo #
-let $query =
+
+--error ER_INVALID_OUTER_REFERENCE
 SELECT a,
        (SELECT SUM(a) OVER w FROM t2 WINDOW w AS(ORDER BY t3.a) LIMIT 1)
 FROM t3;
-eval $query;
-eval EXPLAIN $query;
 
 --echo #
 --echo # example unsupported query(correlation not inside WHERE)
@@ -318,6 +317,7 @@ where p_pkey = l_pkey and
       l_quantity < (select 0.9 * avg(l_quantity)
                     from l where l_pkey = p_pkey);
 
+--sorted_result
 eval $query;
 eval EXPLAIN $query;
 

@@ -1,4 +1,4 @@
--- Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+-- Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License, version 2.0,
@@ -212,8 +212,15 @@ BEGIN
   --
   SELECT /*+SET_VAR(use_secondary_engine=OFF)*/ USER, HOST, DB, COMMAND, INFO FROM INFORMATION_SCHEMA.PROCESSLIST
     WHERE COMMAND NOT IN ('Sleep', 'Daemon', 'Killed')
-      AND USER NOT IN ('unauthenticated user','mysql.session', 'event_scheduler')
+      AND USER NOT IN ('unauthenticated user','mysql.session', 'event_scheduler', 'mysqlrouter')
         ORDER BY COMMAND;
+
+  -- Ensure that libraries are all dropped at the end of test-runs.
+  SELECT * FROM INFORMATION_SCHEMA.LIBRARIES
+  ORDER BY LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME;
+  -- Ensure that stored program imports are also cleared at the end of test-runs.
+  SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+  ORDER BY ROUTINE_CATALOG, ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
 
   -- Checksum system tables to make sure they have been properly
   -- restored after test.

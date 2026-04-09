@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -88,14 +88,7 @@ class NotifyTest : public RestApiComponentTest {
   }
 
   bool wait_signal_handler_ready(ProcessWrapper &router) {
-#ifdef _WIN32
-    UNREFERENCED_PARAMETER(router);
-    return true;
-#else
-    // log_reopen service reports readiness after the signal handler is
-    // initialized in the current implementation
-    return wait_log_contains(router, "ready 'log_reopen'", 5s);
-#endif
+    return wait_log_contains(router, "ready 'signal_handler'", 5s);
   }
 
   std::string create_config_file(

@@ -1,0 +1,34 @@
+#
+# Bug#36808636 System accounts are not converted to non legacy auth plugin during upgrade
+#
+
+# prep a'la 5.7 system accounts
+UPDATE mysql.user SET plugin='mysql_native_password', authentication_string='*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE' WHERE user='mysql.sys';
+UPDATE mysql.user SET plugin='mysql_native_password', authentication_string='*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE' WHERE user='mysql.session';
+
+# check sys-accounts use mysql_native_password
+# expected: mysql_native_password   *THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE  Y
+SELECT user,plugin,authentication_string,account_locked FROM mysql.user WHERE USER='mysql.sys';
+user	plugin	authentication_string	account_locked
+mysql.sys	mysql_native_password	*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE	Y
+SELECT user,plugin,authentication_string,account_locked FROM mysql.user WHERE USER='mysql.session';
+user	plugin	authentication_string	account_locked
+mysql.session	mysql_native_password	*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE	Y
+
+# restart the server and enforce the upgrade
+# restart:--upgrade=FORCE --log-error=MYSQLD_LOG
+
+# check for ERROR pattern in server log
+# expected: pattern not found
+Pattern "\[ERROR\]" not found
+
+# check sys-accounts are upgraded to caching_sha2_password
+# expected: caching_sha2_password   $A$005$THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED  Y
+SELECT user,plugin,authentication_string,account_locked FROM mysql.user WHERE USER='mysql.sys';
+user	plugin	authentication_string	account_locked
+mysql.sys	caching_sha2_password	$A$005$THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED	Y
+SELECT user,plugin,authentication_string,account_locked FROM mysql.user WHERE USER='mysql.session';
+user	plugin	authentication_string	account_locked
+mysql.session	caching_sha2_password	$A$005$THISISACOMBINATIONOFINVALIDSALTANDPASSWORDTHATMUSTNEVERBRBEUSED	Y
+
+# End of tests

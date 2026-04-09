@@ -60,7 +60,7 @@ eval $possible_derived_keys;
 DROP TABLE t1;
 
 CREATE TABLE t1 (a int, b int);
-INSERT INTO t1 VALUES (0,0), (1,2), (2,2), (3,0), (4,1), (5,2);
+INSERT INTO t1 VALUES (0,0), (1,2), (2,2);
 
 ANALYZE TABLE t1 UPDATE HISTOGRAM ON a,b;
 ANALYZE TABLE t1;
@@ -93,5 +93,37 @@ DROP VIEW v1;
 DROP TABLE t1;
 
 SET SESSION OPTIMIZER_TRACE='enabled=off';
+
+--echo #
+--echo # Bug#36990353 mysqld crash - Segmentation fault in PopulationCount
+--echo # at sql/join_optimizer/overflow_bitset.h
+--echo #
+
+SET @optimizer_switch_saved= @@optimizer_switch;
+SET optimizer_switch="subquery_to_derived=on";
+
+CREATE TABLE t1 (f1 INTEGER);
+
+# This query should not trigger an assert.
+SELECT MAX(t1.f1), (SELECT COUNT(f1) FROM t1) FROM
+  (t1 JOIN (SELECT * FROM (SELECT DISTINCT * FROM t1) AS dt) AS t2 ON 1)
+  WHERE ((SELECT f1 FROM t1) IS NULL);
+
+DROP TABLE t1;
+SET @@optimizer_switch=@optimizer_switch_saved;
+
+--echo #
+--echo # Bug#37617852: Assertion `false && "Inconsistent row counts for
+--echo #               different AccessPath objects.
+--echo #
+CREATE TABLE t (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t VALUES (1, 1), (2, 3), (3, 2), (4, 4);
+--sorted_result
+SELECT /*+ NO_MERGE(t3) */ *
+FROM t AS t1,
+     t AS t2,
+     (SELECT * FROM t) AS t3
+WHERE t3.f1 = t1.f1 + 1 AND t3.f1 = t2.f2;
+DROP TABLE t;
 
 --source include/disable_hypergraph.inc

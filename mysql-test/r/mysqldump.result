@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 # Bug#37938 Test "mysqldump" lacks various insert statements
 # Turn off concurrent inserts to avoid random errors
 # NOTE:  We reset the variable back to saved value at the end of test
@@ -549,7 +550,7 @@ CREATE TABLE `t1` (
 
 LOCK TABLES `t1` WRITE;
 /*!40000 ALTER TABLE `t1` DISABLE KEYS */;
-INSERT  IGNORE INTO `t1` VALUES (1),(2),(3),(4),(5),(6);
+INSERT IGNORE INTO `t1` VALUES (1),(2),(3),(4),(5),(6);
 /*!40000 ALTER TABLE `t1` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -3387,6 +3388,8 @@ revoke all privileges on mysqldump_myDB.* from myDB_User@localhost;
 drop user myDB_User@localhost;
 drop database mysqldump_myDB;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Bug#21424 continues from here.
 # Restore. Flush Privileges test ends.
 #
@@ -4301,7 +4304,7 @@ DROP TABLE `comment_table`;
 #
 CREATE DATABASE `test-database`;
 USE `test-database`;
-CREATE TABLE `test` (`c1` VARCHAR(10)) ENGINE=MYISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci;
+CREATE TABLE `test` (`c1` VARCHAR(10)) ENGINE=MYISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 Warning	3778	'utf8mb3_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
@@ -4761,7 +4764,7 @@ SET GLOBAL EVENT_SCHEDULER = ON;
 #
 USE `test`;
 CREATE TABLE t1 (a int, b int);
-CREATE TRIGGER tt1_t1 BEFORE INSERT ON t1 FOR EACH ROW 
+CREATE TRIGGER tt1_t1 BEFORE INSERT ON t1 FOR EACH ROW
 SET NEW.b=NEW.a + 10;
 INSERT INTO t1 (a) VALUES (1),(2),(3);
 
@@ -5162,7 +5165,7 @@ DROP DATABASE dump_generated;
 #
 SELECT COUNT(*) FROM INFORMATION_SCHEMA.routines WHERE routine_schema = 'sys';
 COUNT(*)
-48
+49
 DROP DATABASE sys;
 SELECT COUNT(*) FROM INFORMATION_SCHEMA.routines WHERE routine_schema = 'sys';
 COUNT(*)
@@ -5172,7 +5175,7 @@ COUNT(*)
 0
 SELECT COUNT(*) FROM INFORMATION_SCHEMA.routines WHERE routine_schema = 'sys';
 COUNT(*)
-48
+49
 #
 # WL#8697: Invisible Indexes
 # Test of mysqldump.
@@ -5277,6 +5280,11 @@ JSON_EXTRACT(HISTOGRAM, '$."number-of-buckets-specified"')
 FROM information_schema.COLUMN_STATISTICS;
 SCHEMA_NAME	TABLE_NAME	COLUMN_NAME	JSON_EXTRACT(HISTOGRAM, '$."number-of-buckets-specified"')
 column_statistics_dump	t1	col1	22
+include/assert_grep.inc [Check for ANALYZE TABLE with histogram clause]
+#
+# Bug#35209008: mysqldump --column-statistics has invalid default value
+#   by default the option must be disabled
+#
 include/assert_grep.inc [Check for ANALYZE TABLE with histogram clause]
 # Test XML output for column statistics
 include/assert_grep.inc [Check for ANALYZE TABLE with histogram clause, XML output]
@@ -5839,3 +5847,270 @@ CREATE TABLE `t` (
 INSERT INTO `t` VALUES (1);
 DROP DATABASE skip_views_db;
 DROP DATABASE skip_views_db2;
+#
+# WL#16358 Support for Libraries
+#
+create database mysqldump_test_db;
+create procedure mysqldump_test_db.sp1() select 'hello';
+create library mysqldump_test_db.sp1 LANGUAGE JAVASCRIPT COMMENT 'Library Comment' AS " export function f(n) {  return '$$' } ";
+create library mysqldump_test_db.sp2 LANGUAGE JAVASCRIPT COMMENT 'Library Comment' AS " export function f(n) {  return '$$' + '$JAVASCRIPT$' } ";
+create function mysqldump_test_db.sp1(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (mysqldump_test_db.sp1)
+as " return sp1.f(n) ";
+# Console dump.
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `mysqldump_test_db` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
+
+USE `mysqldump_test_db`;
+DROP LIBRARY IF EXISTS `sp1`;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = '' */ ;
+DELIMITER ;;
+CREATE LIBRARY `sp1`
+    COMMENT 'Library Comment'
+    LANGUAGE JAVASCRIPT
+AS $JAVASCRIPT$ export function f(n) {  return '$$' } $JAVASCRIPT$ ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+DROP LIBRARY IF EXISTS `sp2`;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = '' */ ;
+DELIMITER ;;
+CREATE LIBRARY `sp2`
+    COMMENT 'Library Comment'
+    LANGUAGE JAVASCRIPT
+AS $1665038795$ export function f(n) {  return '$$' + '$JAVASCRIPT$' } $1665038795$ ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 DROP FUNCTION IF EXISTS `sp1` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = '' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` FUNCTION `sp1`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`mysqldump_test_db`.`sp1`)
+AS $$ return sp1.f(n) $$ ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `sp1` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = '' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp1`()
+select 'hello' ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+# Console XML dump.
+<?xml version="1.0"?>
+<mysqldump xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<database name="mysqldump_test_db">
+	<routines>
+		<library Library="sp1" sql_mode="">
+<![CDATA[
+CREATE LIBRARY `sp1`
+    COMMENT 'Library Comment'
+    LANGUAGE JAVASCRIPT
+AS $JAVASCRIPT$ export function f(n) {  return '$$' } $JAVASCRIPT$
+]]>
+		</library>
+		<library Library="sp2" sql_mode="">
+<![CDATA[
+CREATE LIBRARY `sp2`
+    COMMENT 'Library Comment'
+    LANGUAGE JAVASCRIPT
+AS $1665038795$ export function f(n) {  return '$$' + '$JAVASCRIPT$' } $1665038795$
+]]>
+		</library>
+		<routine Function="sp1" sql_mode="" character_set_client="utf8mb4" collation_connection="utf8mb4_0900_ai_ci" Database_Collation="utf8mb4_0900_ai_ci">
+<![CDATA[
+CREATE DEFINER=`root`@`localhost` FUNCTION `sp1`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`mysqldump_test_db`.`sp1`)
+AS $$ return sp1.f(n) $$
+]]>
+		</routine>
+		<routine Procedure="sp1" sql_mode="" character_set_client="utf8mb4" collation_connection="utf8mb4_0900_ai_ci" Database_Collation="utf8mb4_0900_ai_ci">
+<![CDATA[
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp1`()
+select 'hello'
+]]>
+		</routine>
+	</routines>
+</database>
+</mysqldump>
+# Drop the routines and the libraries and confirm they're gone.
+drop procedure mysqldump_test_db.sp1;
+drop function mysqldump_test_db.sp1;
+drop library mysqldump_test_db.sp1;
+drop library mysqldump_test_db.sp2;
+# Import back the exported routines that were just deleted.
+show create procedure mysqldump_test_db.sp1;
+Procedure	sql_mode	Create Procedure	character_set_client	collation_connection	Database Collation
+sp1		CREATE DEFINER=`root`@`localhost` PROCEDURE `sp1`()
+select 'hello'	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+show create function mysqldump_test_db.sp1;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+sp1		CREATE DEFINER=`root`@`localhost` FUNCTION `sp1`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`mysqldump_test_db`.`sp1`)
+AS $$ return sp1.f(n) $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+show create library mysqldump_test_db.sp1;
+Library	sql_mode	Create Library
+sp1		CREATE LIBRARY `sp1`
+    COMMENT 'Library Comment'
+    LANGUAGE JAVASCRIPT
+AS $JAVASCRIPT$ export function f(n) {  return '$$' } $JAVASCRIPT$
+show create library mysqldump_test_db.sp2;
+Library	sql_mode	Create Library
+sp2		CREATE LIBRARY `sp2`
+    COMMENT 'Library Comment'
+    LANGUAGE JAVASCRIPT
+AS $1665038795$ export function f(n) {  return '$$' + '$JAVASCRIPT$' } $1665038795$
+drop database mysqldump_test_db;
+#
+# WL#16358 Support for Libraries: test orphaned stored programs
+#
+create database mysqldump_test_db;
+create library mysqldump_test_db.lib1 LANGUAGE JAVASCRIPT AS " export function f1() {  return 1 } ";
+create library mysqldump_test_db.lib2 LANGUAGE JAVASCRIPT AS " export function f2() {  return 2 } ";
+create library mysqldump_test_db.lib3 LANGUAGE JAVASCRIPT AS " export function f3() {  return 3 } ";
+create function mysqldump_test_db.sp1() RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (mysqldump_test_db.lib1, mysqldump_test_db.lib2, mysqldump_test_db.lib3)
+as " return lib1.f1() + lib2.f2() +  lib3.f3()";
+drop library mysqldump_test_db.lib2;
+show create function mysqldump_test_db.sp1;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+sp1		CREATE DEFINER=`root`@`localhost` FUNCTION `sp1`() RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`mysqldump_test_db`.`lib1`, `mysqldump_test_db`.`lib2`, `mysqldump_test_db`.`lib3`)
+AS $$ return lib1.f1() + lib2.f2() +  lib3.f3()$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+Warnings:
+Warning	6436	The routine 'sp1' references a missing library 'mysqldump_test_db.lib2' or definer/invoker of the routine lack rights to use it.
+# Because of dropped lib2, sp1 cannot be recreated anymore
+# Console dump.
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `mysqldump_test_db` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
+
+USE `mysqldump_test_db`;
+DROP LIBRARY IF EXISTS `lib1`;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = '' */ ;
+DELIMITER ;;
+CREATE LIBRARY `lib1`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f1() {  return 1 } $$ ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+DROP LIBRARY IF EXISTS `lib3`;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = '' */ ;
+DELIMITER ;;
+CREATE LIBRARY `lib3`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f3() {  return 3 } $$ ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+
+-- One or more of the libraries used by mysqldump_test_db.sp1 routine, do not exist. 
+# Console XML dump.
+<?xml version="1.0"?>
+<mysqldump xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<database name="mysqldump_test_db">
+	<routines>
+		<library Library="lib1" sql_mode="">
+<![CDATA[
+CREATE LIBRARY `lib1`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f1() {  return 1 } $$
+]]>
+		</library>
+		<library Library="lib3" sql_mode="">
+<![CDATA[
+CREATE LIBRARY `lib3`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f3() {  return 3 } $$
+]]>
+		</library>
+<!-- 
+- One or more of the libraries used by mysqldump_test_db.sp1 routine, do not exist. 
+ -->
+create library mysqldump_test_db.lib2 LANGUAGE JAVASCRIPT AS " export function f2() {  return 22 } ";
+# Now that lib2 is there again, dump should work
+drop function mysqldump_test_db.sp1;
+drop library mysqldump_test_db.lib1;
+drop library mysqldump_test_db.lib2;
+drop library mysqldump_test_db.lib3;
+# Import back the exported routines that were just deleted.
+show create function mysqldump_test_db.sp1;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+sp1		CREATE DEFINER=`root`@`localhost` FUNCTION `sp1`() RETURNS int
+    LANGUAGE JAVASCRIPT
+    USING (`mysqldump_test_db`.`lib1`, `mysqldump_test_db`.`lib2`, `mysqldump_test_db`.`lib3`)
+AS $$ return lib1.f1() + lib2.f2() +  lib3.f3()$$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+show create library mysqldump_test_db.lib1;
+Library	sql_mode	Create Library
+lib1		CREATE LIBRARY `lib1`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f1() {  return 1 } $$
+show create library mysqldump_test_db.lib2;
+Library	sql_mode	Create Library
+lib2		CREATE LIBRARY `lib2`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f2() {  return 22 } $$
+show create library mysqldump_test_db.lib3;
+Library	sql_mode	Create Library
+lib3		CREATE LIBRARY `lib3`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f3() {  return 3 } $$
+drop database mysqldump_test_db;
+include/rpl/set_gtid_mode_on.inc

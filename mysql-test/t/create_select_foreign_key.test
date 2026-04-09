@@ -60,6 +60,8 @@
 # allowed to be run with ps protocol.
 --source include/no_ps_protocol.inc
 --source include/have_log_bin.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 SET @saved_sql_log_bin = @@SESSION.sql_log_bin;
 
@@ -148,6 +150,25 @@ CREATE TABLE innodb_table1 (m INT, n INT,
   FOREIGN KEY (n) REFERENCES t0(f1)) START TRANSACTION;
 
 --echo #
+--echo # CASE 6 The behavior of CTAS, with sql_log_bin OFF and selecting
+--echo # from a table containing data that fails a foreign key constraint
+--echo #
+
+SET sql_log_bin = OFF;
+CREATE TABLE parent (f1 INT PRIMARY KEY);
+CREATE TABLE child (f1 INT PRIMARY KEY, f2 INT,
+                    FOREIGN KEY (f2) REFERENCES parent(f1));
+INSERT INTO parent VALUES (1), (2);
+INSERT Into child VALUES (1,1);
+SET foreign_key_checks=OFF;
+INSERT Into child VALUES (3,3);
+SET foreign_key_checks=ON;
+--error ER_NO_REFERENCED_ROW_2
+CREATE TABLE newchild (f1 INT PRIMARY KEY, f2 INT, 
+                       FOREIGN KEY (f2) REFERENCES parent(f1))
+                       AS SELECT f1, f2 FROM child;
+
+--echo #
 --echo # Bug#35553557 Table creation with foreign key assertion error
 --echo #
 
@@ -178,3 +199,7 @@ SELECT pk, fk FROM self_referencing_table ORDER BY pk;
 DROP TABLE self_referencing_table;
 SET sql_log_bin = @saved_sql_log_bin;
 DROP TABLE t0;
+DROP TABLE child;
+DROP TABLE parent;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

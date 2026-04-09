@@ -1864,6 +1864,8 @@ Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Pl
 create user 'user_1'@'localhost';
 grant execute on db_storedproc.* to 'user_1'@'localhost';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop table IF EXISTS mysql.t1;
 Warnings:
 Note	1051	Unknown table 'mysql.t1'
@@ -5738,7 +5740,7 @@ CREATE PROCEDURE sp1()
 using:BEGIN
 SELECT @x;
 END//
-ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'using:BEGIN
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ':BEGIN
 SELECT @x;
 END' at line 2
 DROP PROCEDURE IF EXISTS sp1;

@@ -1,7 +1,7 @@
 #ifndef ITEM_SUBSELECT_INCLUDED
 #define ITEM_SUBSELECT_INCLUDED
 
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -83,6 +83,16 @@ class Item_subselect : public Item_result_field {
  public:
   Query_expression *query_expr() const { return m_query_expr; }
 
+  /**
+    For Item_subselect constructor with POS parameter, the contextualized
+    field must be transitioned explicitly.
+  */
+  void set_contextualized() {
+#ifndef NDEBUG
+    assert(!contextualized);
+    contextualized = true;
+#endif  // NDEBUG
+  }
   /**
      If !=NO_PLAN_IDX: this Item is in the condition attached to the JOIN_TAB
      having this index in the parent JOIN.
@@ -272,7 +282,8 @@ class Item_subselect : public Item_result_field {
 
 class Item_singlerow_subselect : public Item_subselect {
  public:
-  Item_singlerow_subselect(Query_block *query_block);
+  explicit Item_singlerow_subselect(Query_block *query_block);
+  Item_singlerow_subselect(const POS &pos, Query_block *query_block);
   Item_singlerow_subselect() : Item_subselect() {}
 
   bool fix_fields(THD *thd, Item **ref) override;
@@ -290,8 +301,9 @@ class Item_singlerow_subselect : public Item_subselect {
   String *val_str(String *) override;
   my_decimal *val_decimal(my_decimal *) override;
   bool val_json(Json_wrapper *result) override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override;
-  bool get_time(MYSQL_TIME *ltime) override;
+  bool val_date(Date_val *date, my_time_flags_t flags) override;
+  bool val_time(Time_val *time) override;
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override;
   bool val_bool() override;
   enum Item_result result_type() const override;
   bool resolve_type(THD *) override;
@@ -453,12 +465,11 @@ class Item_exists_subselect : public Item_subselect {
     Create an Item that represents an EXISTS subquery predicate, or any
     quantified comparison predicate that uses the same base class.
 
+    @param pos         String representing the parsed item
     @param query_block First query block of query expression representing
                        the contained subquery.
   */
-  explicit Item_exists_subselect(Query_block *query_block);
-
-  Item_exists_subselect() : Item_subselect() {}
+  Item_exists_subselect(const POS &pos, Query_block *query_block);
 
   explicit Item_exists_subselect(const POS &pos) : super(pos) {}
 
@@ -533,26 +544,38 @@ class Item_exists_subselect : public Item_subselect {
   /// True if the IS TRUE/FALSE wasn't explicit in the query
   bool implicit_is_op = false;
   Item *truth_transformer(THD *, enum Bool_test test) override;
-  bool translate(bool &null_v, bool v);
+  /**
+    Convert result according to value_transform, null value and supplied value
+
+    @param v boolean value from the primitive subquery predicate
+
+    @returns translated boolean value
+
+    @note Operation will possibly take into account and possibly change null
+          value of the Item.
+  */
+  virtual bool return_value(bool v);
   void apply_is_true() override {
     const bool had_is = with_is_op();
     truth_transformer(nullptr, BOOL_IS_TRUE);
     if (!had_is && value_transform == BOOL_IS_TRUE)
       implicit_is_op = true;  // needn't be written by EXPLAIN
   }
-  /// True if the Item has decided that it can do antijoin
-  bool can_do_aj = false;
-  bool choose_semijoin_or_antijoin();
+  bool allow_table_subquery_transform() const;
+  bool use_anti_join_transform() const;
   bool fix_fields(THD *thd, Item **ref) override;
   longlong val_int() override;
   double val_real() override;
   String *val_str(String *) override;
   my_decimal *val_decimal(my_decimal *) override;
   bool val_bool() override;
-  bool get_date(MYSQL_TIME *ltime, my_time_flags_t fuzzydate) override {
-    return get_date_from_int(ltime, fuzzydate);
+  bool val_date(Date_val *date, my_time_flags_t flags) override {
+    return get_date_from_int(date, flags);
   }
-  bool get_time(MYSQL_TIME *ltime) override { return get_time_from_int(ltime); }
+  bool val_time(Time_val *time) override { return get_time_from_int(time); }
+  bool val_datetime(Datetime_val *dt, my_time_flags_t flags) override {
+    return get_datetime_from_int(dt, flags);
+  }
   bool resolve_type(THD *thd) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
@@ -560,18 +583,11 @@ class Item_exists_subselect : public Item_subselect {
   friend class Query_result_exists_subquery;
 
  protected:
-  bool is_semijoin_candidate(THD *thd);
-  bool is_derived_candidate(THD *thd);
+  bool is_semijoin_candidate(THD *thd) const;
+  bool is_derived_candidate(THD *thd) const;
 
   /// value of this item (boolean: exists/not-exists)
   bool m_value{false};
-
-  /**
-    True if naked IN is allowed to exchange FALSE for UNKNOWN.
-    Because this is about the naked IN, there is no public ignore_unknown(),
-    intentionally, so that callers don't get it wrong.
-  */
-  bool abort_on_null{false};
 };
 
 /**
@@ -593,11 +609,12 @@ class Item_in_subselect : public Item_exists_subselect {
   typedef Item_exists_subselect super;
 
  public:
-  Item_in_subselect(Item *left_expr, Query_block *query_block);
+  Item_in_subselect(const POS &pos, Item *left_expr, Query_block *query_block);
   Item_in_subselect(const POS &pos, Item *left_expr,
                     PT_subquery *pt_subquery_arg);
 
-  Item_in_subselect() : Item_exists_subselect(), pt_subselect(nullptr) {}
+  Item_in_subselect(const POS &pos)
+      : Item_exists_subselect(pos), pt_subselect(nullptr) {}
 
   bool do_itemize(Parse_context *pc, Item **res) override;
 
@@ -609,6 +626,19 @@ class Item_in_subselect : public Item_exists_subselect {
     null_value = false;
     m_was_null = false;
   }
+  // Whether to ignore UNKNOWN result (only return TRUE or FALSE)
+  bool ignore_unknown() const {
+    return value_transform != BOOL_IDENTITY && value_transform != BOOL_NEGATED;
+  }
+  /*
+    @returns true if implementation has to process NULL values.
+             Always true if ignore_unknown() is false.
+             Also true if quantified comparison predicate is ALL.
+             Virtual since IN and ALL/ANY need different checks.
+  */
+  virtual bool process_nulls() const { return value_transform != BOOL_IS_TRUE; }
+  bool return_value(bool v) override;
+
   bool transformer(THD *thd, Item **transformed) override;
   bool quantified_comp_transformer(THD *thd, Comp_creator *func,
                                    Item **transformed);
@@ -759,19 +789,43 @@ class Item_in_subselect : public Item_exists_subselect {
 */
 class Item_allany_subselect final : public Item_in_subselect {
  public:
-  Item_allany_subselect(Item *left_expr, chooser_compare_func_creator fc,
-                        Query_block *select, bool all);
+  Item_allany_subselect(const POS &pos, Item *left_expr,
+                        chooser_compare_func_creator fc, Query_block *select,
+                        bool all);
 
   Subquery_type subquery_type() const override {
-    return m_all ? ALL_SUBQUERY : ANY_SUBQUERY;
+    return m_all_subquery ? ALL_SUBQUERY : ANY_SUBQUERY;
   }
+  Comp_creator *compare_func() const { return m_compare_func; }
+
+  Item *truth_transformer(THD *, enum Bool_test test) override;
+  void apply_is_true() override {
+    implicit_is_op = true;
+    if (value_transform == BOOL_IDENTITY) {
+      value_transform = BOOL_IS_TRUE;
+    } else if (value_transform == BOOL_NEGATED) {
+      value_transform = BOOL_IS_FALSE;
+    }
+  }
+  bool process_nulls() const override {
+    return !ignore_unknown() || m_all_subquery;
+  }
+  bool eqne_op() const;
+  bool return_value(bool v) override;
+
   bool transformer(THD *thd, Item **transformed) override;
   void print(const THD *thd, String *str,
              enum_query_type query_type) const override;
 
+ private:
+  /// The original source for the comparison function
   chooser_compare_func_creator m_func_creator;
-  Comp_creator *m_func;
-  bool m_all;
+  /// The comparison function generator, possibly inverted by NOT
+  Comp_creator *m_compare_func;
+  /// Whether ALL or ANY subquery
+  bool m_all_subquery;
+  /// Used to generate the correct comparison function
+  bool m_inverted{false};
 };
 
 /**
@@ -841,7 +895,7 @@ class subselect_indexsubquery_engine {
   This function is actually defined in sql_parse.cc, but it depends on
   chooser_compare_func_creator defined in this file.
  */
-Item *all_any_subquery_creator(Item *left_expr,
+Item *all_any_subquery_creator(THD *thd, const POS &pos, Item *left_expr,
                                chooser_compare_func_creator cmp, bool all,
                                Query_block *select);
 

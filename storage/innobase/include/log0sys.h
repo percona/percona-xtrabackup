@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -716,6 +716,10 @@ struct alignas(ut::INNODB_CACHE_LINE_SIZE) log_t {
   /** Redo log consumer which is always registered and which is responsible
   for protecting redo log records at lsn >= last_checkpoint_lsn. */
   Log_checkpoint_consumer m_checkpoint_consumer{*this};
+
+  /** Throttles writing to log a message about the user threads not able to
+  reserve space in the redo log. The default value is 10s. */
+  ib::Throttler m_THREADS_WAITING_FOR_REDO_throttler;
 
 #ifdef UNIV_DEBUG
   /** THD used by the log_checkpointer thread. */

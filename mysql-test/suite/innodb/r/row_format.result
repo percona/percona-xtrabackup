@@ -391,3 +391,165 @@ DROP TABLE test.t2;
 # Clean up data dir
 # Restarting server to restore server state
 # restart:
+#
+# Bug#37168132: Unexpected creation of an large index, causing an inaccessible
+#               table
+SET @saved_innodb_default_row_format= @@global.innodb_default_row_format;
+# Case 1: When row format is not mentioned in create table.
+SET GLOBAL innodb_default_row_format='compact';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+# Expect an error to occur during an INPLACE ALTER operation.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+# Coverage test for the remaining options of algorithm clause.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+SET GLOBAL innodb_default_row_format='redundant';
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+# Expect an error to occur during an INPLACE ALTER operation.
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+# Coverage test for the reamining options of algorithm clause.
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+SET GLOBAL innodb_default_row_format='dynamic';
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+# Coverage test for the reamining options of algorithm clause.
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+CREATE TABLE t5(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t5 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+CREATE TABLE t6(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t6 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+# Clean up
+DROP TABLE t1, t2, t3, t4, t5, t6;
+# Case 2: When row format mentioned is default.
+SET GLOBAL innodb_default_row_format='compact';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+# Expect an error to occur during an INPLACE ALTER operation.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+# Coverage test for the remaining options of algorithm clause
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+SET GLOBAL innodb_default_row_format='redundant';
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+# Expect an error to occur during an INPLACE ALTER operation.
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+# Coverage test for the remaining options of algorithm clause
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+SET GLOBAL innodb_default_row_format='dynamic';
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+# Coverage test for the remaining options of algorithm clause
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+CREATE TABLE t5(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t5 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+CREATE TABLE t6(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t6 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+# Clean up
+DROP TABLE t1, t2, t3, t4, t5, t6;
+# Case 3: Changing the 'innodb_default_row_format' before ALTER TABLE operation
+# Switch from COMPACT to DYNAMIC
+SET GLOBAL innodb_default_row_format='compact';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+SET GLOBAL innodb_default_row_format='dynamic';
+# Expect an error to occur during an ALTER operation using INPLACE, DEFAULT
+# algorithm and also when no algorithm clause is specified.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+# ALTER TABLE using COPY algorithm will succeed since it rebuilds table
+# with new row format 'DYNAMIC'
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+# Clean up
+DROP TABLE t1, t2, t3, t4;
+# Switch from DYNAMIC to COMPACT.
+SET GLOBAL innodb_default_row_format='dynamic';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+SET GLOBAL innodb_default_row_format='compact';
+# ALTER TABLE operation succeeds when using INPLACE, DEFAULT algorithm and
+# also when no algorithm is used..
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+# ALTER TABLE operation fails with COPY algorithm, since the table is rebuilt
+# with compact format.
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+# Clean up
+DROP TABLE t1, t2, t3, t4;
+# Case 4: Tables with prefixed indexes.
+# Test where prefixed index exceeds limit.
+SET GLOBAL innodb_default_row_format='compact';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, b VARCHAR(100) CHARACTER
+SET utf8mb4 NOT NULL, KEY (a(10), b));
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, b VARCHAR(100) CHARACTER
+SET utf8mb4 NOT NULL, KEY (a(10), b));
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, b VARCHAR(100) CHARACTER
+SET utf8mb4 NOT NULL, KEY (a(10), b));
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, b VARCHAR(100) CHARACTER
+SET utf8mb4 NOT NULL, KEY (a(10), b));
+# Expect an error to occur during an INPLACE ALTER operation.
+ALTER TABLE t1 MODIFY b VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+# Coverage test for the remaining options of algorithm clause
+ALTER TABLE t2 MODIFY b VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t3 MODIFY b VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+ALTER TABLE t4 MODIFY b VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+ERROR HY000: Index column size too large. The maximum column size is 767 bytes.
+# Clean up
+DROP TABLE t1, t2, t3, t4;
+# Test for coverage, where the prefix index is within limit.
+SET GLOBAL innodb_default_row_format='redundant';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY(a(10)));
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY(a(10)));
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY(a(10)));
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY(a(10)));
+# ALTER TABLE operation using INPLACE, COPY, DEFAULT algorithm and no
+# algorithm clause succeeds.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+# Clean up.
+DROP TABLE t1, t2, t3, t4;
+SET GLOBAL innodb_default_row_format= @saved_innodb_default_row_format;

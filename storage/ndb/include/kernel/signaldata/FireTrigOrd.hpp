@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,9 +26,9 @@
 #ifndef FIRE_TRIG_ORD_HPP
 #define FIRE_TRIG_ORD_HPP
 
-#include <string.h>
 #include <trigger_definitions.h>
 #include <NodeBitmask.hpp>
+#include <cstring>
 #include "SignalData.hpp"
 
 #define JAM_FILE_ID 69

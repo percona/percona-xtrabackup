@@ -155,7 +155,10 @@ SELECT c1 FROM t1 WHERE c2 < 1975;
 SET SQL_MODE=STRICT_ALL_TABLES;
 --error ER_BAD_NULL_ERROR
 UPDATE t1 SET c1=NULL WHERE c2 < 1975;
+# Hypergraph has different warnings
+--disable_warnings
 UPDATE IGNORE t1 SET c1=NULL WHERE c2 < 1975;
+--enable_warnings
 --sorted_result
 SELECT c1 from t1 WHERE c2 < 1975;
 SET sql_mode='NO_ENGINE_SUBSTITUTION';
@@ -164,7 +167,10 @@ SET sql_mode='NO_ENGINE_SUBSTITUTION';
 #UPDATE t2 SET c1='def' WHERE c2=2064;
 #--sorted_result
 #SELECT c1 FROM t2;
+# Hypergraph has different warnings
+--disable_warnings
 UPDATE t4 SET c1=-70 WHERE c2=75;
+--enable_warnings
 --sorted_result
 SELECT c1 FROM t4;
 

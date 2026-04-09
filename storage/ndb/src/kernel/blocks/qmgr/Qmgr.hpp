@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -313,6 +313,8 @@ class Qmgr : public SimulatedBlock {
     Uint16 president;
   };
 
+  enum ApiFailureCause { AFC_Heartbeat, AFC_Disconnect, AFC_Notification };
+
  public:
   Qmgr(Block_context &);
   ~Qmgr() override;
@@ -428,7 +430,8 @@ class Qmgr : public SimulatedBlock {
   void check_readnodes_reply(Signal *signal, Uint32 nodeId, Uint32 gsn);
   Uint32 check_startup(Signal *signal);
 
-  void api_failed(Signal *signal, Uint32 aFailedNode);
+  void api_failed(Signal *signal, Uint32 aFailedNode, ApiFailureCause afc,
+                  Uint32 senderRef);
   void node_failed(Signal *signal, Uint16 aFailedNode);
   void checkStartInterface(Signal *signal, NDB_TICKS now);
   void failReport(Signal *signal, Uint16 aFailedNode, UintR aSendFailRep,
@@ -571,6 +574,7 @@ class Qmgr : public SimulatedBlock {
   Uint32 c_restartFailureTimeout;
   Uint32 c_restartNoNodegroupTimeout;
   NDB_TICKS c_start_election_time;
+  Uint32 c_apiFailureTimeoutSecs;
 
   Uint16 creadyDistCom;
 

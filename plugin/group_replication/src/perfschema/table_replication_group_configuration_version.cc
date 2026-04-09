@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -169,7 +169,7 @@ PSI_table_handle *Pfs_table_replication_group_configuration_version::open_table(
       struct Replication_group_configuration_version row;
 
       table->field[0]->val_str(&string);
-      row.name.assign(string.c_ptr_safe(), string.length());
+      row.name.assign(to_string_view(string));
 
       row.version = table->field[1]->val_int();
 

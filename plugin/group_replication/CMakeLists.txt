@@ -1,4 +1,4 @@
-# Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -36,6 +36,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/compatibility_module.cc
   src/consistency_manager.cc
   src/delayed_plugin_initialization.cc
+  src/mysql_gcs_timestamp_provider.cc
   src/gcs_event_handlers.cc
   src/gcs_logger.cc
   src/gcs_mysql_network_provider.cc
@@ -62,6 +63,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/observer_server_channels.cc
   src/observer_server_state.cc
   src/observer_trans.cc
+  src/opt_tracker.cc
   src/perfschema/pfs.cc
   src/perfschema/table_replication_group_configuration_version.cc
   src/perfschema/table_replication_group_member_actions.cc
@@ -76,6 +78,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/plugin_handlers/metrics_handler.cc
   src/plugin_handlers/offline_mode_handler.cc
   src/plugin_handlers/primary_election_invocation_handler.cc
+  src/plugin_handlers/primary_election_most_uptodate.cc
   src/plugin_handlers/primary_election_primary_process.cc
   src/plugin_handlers/primary_election_secondary_process.cc
   src/plugin_handlers/primary_election_utils.cc
@@ -110,6 +113,7 @@ SET(GROUP_REPLICATION_SOURCES
   src/recovery_channel_state_observer.cc
   src/recovery_state_transfer.cc
   src/replication_threads_api.cc
+  src/services/management/management.cc
   src/services/message_service/message_service.cc
   src/services/notification/notification.cc
   src/services/status_service/status_service.cc
@@ -212,6 +216,7 @@ MYSQL_ADD_PLUGIN(group_replication
   ${GR_PROTOBUF_LITE_LIB}
   mysqlgcs
   extra::rapidjson
+  library_mysys
   mysql_containers
   mysql_gtid
   MODULE_ONLY

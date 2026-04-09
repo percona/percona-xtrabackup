@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -144,11 +144,11 @@ int NdbInfoScanNodes::execute() {
   DBUG_RETURN(ret);
 }
 
-int NdbInfoScanNodes::sendDBINFO_SCANREQ(void) {
+int NdbInfoScanNodes::sendDBINFO_SCANREQ() {
   DBUG_ENTER("NdbInfoScanNodes::sendDBINFO_SCANREQ");
 
   SimpleSignal ss;
-  DbinfoScanReq *req = CAST_PTR(DbinfoScanReq, ss.getDataPtrSend());
+  auto *req = CAST_PTR(DbinfoScanReq, ss.getDataPtrSend());
 
   // API Identifiers
   req->resultData = m_result_data;
@@ -198,7 +198,7 @@ int NdbInfoScanNodes::sendDBINFO_SCANREQ(void) {
   DBUG_RETURN(0);
 }
 
-int NdbInfoScanNodes::receive(void) {
+int NdbInfoScanNodes::receive() {
   DBUG_ENTER("NdbInfoScanNodes::receive");
   while (true) {
     const SimpleSignal *sig = m_signal_sender->waitFor();
@@ -272,8 +272,7 @@ int NdbInfoScanNodes::receive(void) {
       }
 
       case GSN_NODE_FAILREP: {
-        const NodeFailRep *const rep =
-            CAST_CONSTPTR(NodeFailRep, sig->getDataPtr());
+        const auto *const rep = CAST_CONSTPTR(NodeFailRep, sig->getDataPtr());
         Uint32 len = NodeFailRep::getNodeMaskLength(sig->getLength());
         const Uint32 *nbm;
         if (sig->header.m_noOfSections >= 1) {
@@ -341,7 +340,7 @@ bool NdbInfoScanNodes::seek(NdbInfoScanOperation::Seek, int) {
 
 bool NdbInfoScanNodes::execDBINFO_TRANSID_AI(const SimpleSignal *signal) {
   DBUG_ENTER("NdbInfoScanNodes::execDBINFO_TRANSID_AI");
-  const TransIdAI *transid = CAST_CONSTPTR(TransIdAI, signal->getDataPtr());
+  const auto *transid = CAST_CONSTPTR(TransIdAI, signal->getDataPtr());
   if (transid->connectPtr != m_result_data ||
       transid->transId[0] != m_transid0 || transid->transId[1] != m_transid1) {
     // Drop signal that belongs to previous scan
@@ -355,8 +354,8 @@ bool NdbInfoScanNodes::execDBINFO_TRANSID_AI(const SimpleSignal *signal) {
   m_recAttrs.reset_recattrs();
 
   // Read attributes from long signal section
-  const AttributeHeader *attr = (const AttributeHeader *)signal->ptr[0].p;
-  const AttributeHeader *last =
+  const auto *attr = (const AttributeHeader *)signal->ptr[0].p;
+  const auto *last =
       (const AttributeHeader *)(signal->ptr[0].p + signal->ptr[0].sz);
   while (attr < last) {
     const Uint32 col = attr->getAttributeId();
@@ -377,7 +376,7 @@ bool NdbInfoScanNodes::execDBINFO_TRANSID_AI(const SimpleSignal *signal) {
 
 bool NdbInfoScanNodes::execDBINFO_SCANCONF(const SimpleSignal *sig) {
   DBUG_ENTER("NdbInfoScanNodes::execDBINFO_SCANCONF");
-  const DbinfoScanConf *conf = CAST_CONSTPTR(DbinfoScanConf, sig->getDataPtr());
+  const auto *conf = CAST_CONSTPTR(DbinfoScanConf, sig->getDataPtr());
   if (conf->resultData != m_result_data || conf->transId[0] != m_transid0 ||
       conf->transId[1] != m_transid1 || conf->resultRef != m_result_ref) {
     // Drop signal that belongs to previous scan
@@ -419,7 +418,7 @@ bool NdbInfoScanNodes::execDBINFO_SCANCONF(const SimpleSignal *sig) {
 bool NdbInfoScanNodes::execDBINFO_SCANREF(const SimpleSignal *signal,
                                           int &error_code) {
   DBUG_ENTER("NdbInfoScanNodes::execDBINFO_SCANREF");
-  const DbinfoScanRef *ref = CAST_CONSTPTR(DbinfoScanRef, signal->getDataPtr());
+  const auto *ref = CAST_CONSTPTR(DbinfoScanRef, signal->getDataPtr());
 
   if (ref->resultData != m_result_data || ref->transId[0] != m_transid0 ||
       ref->transId[1] != m_transid1 || ref->resultRef != m_result_ref) {

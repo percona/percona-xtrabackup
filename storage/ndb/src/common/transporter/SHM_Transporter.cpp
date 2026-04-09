@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,7 +26,7 @@
 #include <ndb_global.h>
 #include "util/require.h"
 
-#include <time.h>
+#include <ctime>
 
 #include <NdbMutex.h>
 #include <NdbSleep.h>
@@ -143,7 +143,7 @@ bool SHM_Transporter::setupBuffers() {
   sizeOfBuffer -= 2 * sharedSize;
   sizeOfBuffer /= 2;
 
-  Uint32 *base1 = (Uint32 *)shmBuf;
+  auto *base1 = (Uint32 *)shmBuf;
 
   Uint32 *sharedReadIndex1 = base1;
   Uint32 *sharedWriteIndex1 = base1 + 1;
@@ -153,7 +153,7 @@ bool SHM_Transporter::setupBuffers() {
   serverMutex = (NdbMutex *)(base1 + 16);
   char *startOfBuf1 = shmBuf + sharedSize;
 
-  Uint32 *base2 = (Uint32 *)(shmBuf + sizeOfBuffer + sharedSize);
+  auto *base2 = (Uint32 *)(shmBuf + sizeOfBuffer + sharedSize);
   Uint32 *sharedReadIndex2 = base2;
   Uint32 *sharedWriteIndex2 = base2 + 1;
   clientStatusFlag = base2 + 4;
@@ -300,7 +300,10 @@ bool SHM_Transporter::connect_server_impl(NdbSocket &&sockfd) {
       DEBUG_FPRINTF((stderr, "(%u)setupBuffers(%u) Line:%d\n", localNodeId,
                      remoteNodeId, __LINE__));
       if (setupBuffers()) {
-        g_eventLogger->info("Shared memory not supported on this platform");
+        g_eventLogger->info(
+            "Node %u transporter to node %u: SHM not supported on this "
+            "platform; disconnecting",
+            localNodeId, remoteNodeId);
         detach_shm(false);
         break;
       }
@@ -366,7 +369,7 @@ bool SHM_Transporter::connect_server_impl(NdbSocket &&sockfd) {
         (stderr, "(%u)set_socket()(%u)\n", localNodeId, remoteNodeId));
     set_socket(std::move(sockfd));
     DBUG_RETURN(true);
-  } while (0);
+  } while (false);
 
   /* Error occurred */
 
@@ -454,7 +457,10 @@ bool SHM_Transporter::connect_client_impl(NdbSocket &&sockfd) {
       DEBUG_FPRINTF((stderr, "(%u)setupBuffers(%u) Line:%d\n", localNodeId,
                      remoteNodeId, __LINE__));
       if (setupBuffers()) {
-        g_eventLogger->info("Shared memory not supported on this platform");
+        g_eventLogger->info(
+            "Node %u transporter to node %u: SHM not supported on this "
+            "platform; disconnecting",
+            localNodeId, remoteNodeId);
         detach_shm(false);
         break;
       }
@@ -497,7 +503,7 @@ bool SHM_Transporter::connect_client_impl(NdbSocket &&sockfd) {
     set_socket(std::move(sockfd));
     DEBUG_FPRINTF((stderr, "(%u)set_socket(%u)\n", localNodeId, remoteNodeId));
     DBUG_RETURN(true);
-  } while (0);
+  } while (false);
 
   /* Error occurred */
 
@@ -780,21 +786,17 @@ bool SHM_Transporter::handle_reverse_awake_state() {
     if (isServer) {
       if (*clientStatusFlag == 1 || *clientAwakenedFlag == 1) {
         return true;
-      } else {
-        *clientAwakenedFlag = 1;
-        return false;
       }
-    } else {
-      if (*serverStatusFlag == 1 || *serverAwakenedFlag == 1) {
-        return true;
-      } else {
-        *serverAwakenedFlag = 1;
-        return false;
-      }
+      *clientAwakenedFlag = 1;
+      return false;
     }
-  } else {
-    return true;
+    if (*serverStatusFlag == 1 || *serverAwakenedFlag == 1) {
+      return true;
+    }
+    *serverAwakenedFlag = 1;
+    return false;
   }
+  return true;
 }
 
 void SHM_Transporter::updateReceivePtr(TransporterReceiveHandle &recvdata,
@@ -845,9 +847,9 @@ bool SHM_Transporter::send_is_possible(int timeout_millisec) const {
       }
       DEBUG_FPRINTF((stderr, "send_is_possible, timed out\n"));
       return false;
-    } else {
-      break;
     }
-  } while (1);
+    break;
+
+  } while (true);
   return true;
 }

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -88,7 +88,7 @@ inline void *RWPool<T>::getPtr(Uint32 i) const {
     return record;
   }
   handle_invalid_get_ptr(i);
-  return 0; /* purify: deadcode */
+  return nullptr; /* purify: deadcode */
 }
 
 template <typename T>
@@ -102,7 +102,7 @@ inline void *RWPool<T>::getPtr(const Record_info &ri, Uint32 i) const {
     return record;
   }
   handle_invalid_get_ptr(i);
-  return 0; /* purify: deadcode */
+  return nullptr; /* purify: deadcode */
 }
 
 #define REC_NIL GLOBAL_PAGE_SIZE_WORDS
@@ -146,7 +146,8 @@ bool RWPool<T>::seize(Ptr<T> &ptr) {
     m_current_first_free =
         pageP->m_data[pos + m_record_info.m_offset_next_pool];
     return true;
-  } else if (pos + size < RWPage::RWPAGE_WORDS) {
+  }
+  if (pos + size < RWPage::RWPAGE_WORDS) {
   seize_first:
     ptr.i = (m_current_page_no << POOL_RECORD_BITS) + pos;
     Uint32 *const p = pageP->m_data + pos;
@@ -192,7 +193,7 @@ bool RWPool<T>::seize(Ptr<T> &ptr) {
     goto seize_first;
   }
 
-  m_current_page = 0;
+  m_current_page = nullptr;
   m_current_page_no = RNIL;
   m_current_pos = RWPage::RWPAGE_WORDS;
   m_current_first_free = REC_NIL;
@@ -204,7 +205,7 @@ template <typename T>
 void RWPool<T>::release(Ptr<T> ptr) {
   Uint32 cur_page = m_current_page_no;
   Uint32 ptr_page = ptr.i >> POOL_RECORD_BITS;
-  Uint32 *record_ptr = (Uint32 *)ptr.p;
+  auto *record_ptr = (Uint32 *)ptr.p;
   Uint32 magic_val = *(record_ptr + m_record_info.m_offset_magic);
 
   if (likely(magic_val == ~(Uint32)m_record_info.m_type_id)) {
@@ -240,7 +241,8 @@ void RWPool<T>::release(Ptr<T> ptr) {
       page->m_prev_page = RNIL;
       m_first_free_page = ptr_page;
       return;
-    } else if (ref_cnt == 1) {
+    }
+    if (ref_cnt == 1) {
       /**
        * It's now empty...release it
        */
@@ -270,7 +272,7 @@ void RWPool<T>::handle_invalid_release(Ptr<T> ptr) {
 
   Uint32 pos = ptr.i & POOL_RECORD_MASK;
   Uint32 pageI = ptr.i >> POOL_RECORD_BITS;
-  Uint32 *record_ptr_p = (Uint32 *)ptr.p;
+  auto *record_ptr_p = (Uint32 *)ptr.p;
   Uint32 *record_ptr_i = (m_memroot + pageI)->m_data + pos;
 
   Uint32 magic = *(record_ptr_p + m_record_info.m_offset_magic);

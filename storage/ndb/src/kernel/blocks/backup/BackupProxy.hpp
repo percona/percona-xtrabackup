@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -124,6 +124,8 @@ class BackupProxy : public LocalProxy {
       return ((BackupProxy *)proxy)->c_ss_STOP_BACKUP_REQ;
     }
     Uint32 masterRef;
+    Uint64 logRecords;
+    Uint64 logBytes;
   };
   SsPool<Ss_STOP_BACKUP_REQ> c_ss_STOP_BACKUP_REQ;
   void execSTOP_BACKUP_REQ(Signal *);

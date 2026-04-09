@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 #
 
 # ==== Purpose ====
@@ -73,7 +73,7 @@ if ($tmp) {
   --echo Until_Condition	#
   --echo Until_Log_File	#
   --echo Until_Log_Pos	#
-  --echo Source_SSL_Allowed	No
+  --echo Source_SSL_Allowed	Yes
   --echo Source_SSL_CA_File	
   --echo Source_SSL_CA_Path	
   --echo Source_SSL_Cert	
@@ -272,13 +272,15 @@ EOF
       --enable_abort_on_error
     }
 
+    # TODO : Bug#37928880 Cleanup Coverage Files in MySQL AI MTRs
     SELECT /*+SET_VAR(use_secondary_engine=OFF)*/ filename FROM file_tbl
       WHERE filename NOT LIKE 'check-mysqld_%'
       AND filename NOT LIKE 'mysql%.sock%'
       AND filename NOT LIKE 'file_list_%.flist'
       AND filename NOT LIKE 'mysqld%.expect'
       AND filename NOT LIKE 'bootstrap.log'
-      AND filename NOT LIKE 'test_%.log';
+      AND filename NOT LIKE 'test_%.log'
+      AND filename NOT LIKE '%.coverage.%';
 
     DROP TABLE test.file_tbl;
     --remove_file $infile

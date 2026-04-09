@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -117,7 +117,8 @@ bool Loopback_Transporter::doSend(bool need_wakeup) {
       assert(sum >= sum_sent);
       remain = sum - sum_sent;
       break;
-    } else if (nBytesSent > 0)  // Sent some, more pending
+    }
+    if (nBytesSent > 0)  // Sent some, more pending
     {
       sum_sent += nBytesSent;
       remain -= nBytesSent;

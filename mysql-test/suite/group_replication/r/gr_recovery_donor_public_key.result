@@ -10,6 +10,8 @@ Note	####	Storing MySQL user name or password information in the connection meta
 CREATE USER 'u1_caching_sha2_password'@'127.0.0.1' IDENTIFIED WITH 'caching_sha2_password' BY 'pwd';
 GRANT REPLICATION SLAVE ON *.* TO 'u1_caching_sha2_password'@'127.0.0.1';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/start_and_bootstrap_group_replication.inc
 
 ############################################################

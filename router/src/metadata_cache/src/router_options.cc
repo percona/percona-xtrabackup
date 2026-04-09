@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -42,6 +42,8 @@ using mysql_harness::logging::LogLevel;
 using mysqlrouter::MySQLSession;
 
 IMPORT_LOG_FUNCTIONS()
+
+using namespace std::string_literals;
 
 namespace {
 class MetadataJsonOptions {
@@ -200,39 +202,61 @@ std::optional<std::chrono::seconds> RouterOptions::get_stats_updates_frequency()
       cluster_type_ == mysqlrouter::ClusterType::GR_CS
           ? UintOptional{0}
           : UintOptional{std::nullopt};
+  const SecOptional default_value_sec =
+      cluster_type_ == mysqlrouter::ClusterType::GR_CS
+          ? SecOptional{0s}
+          : SecOptional{std::nullopt};
+
+  auto result = default_value_sec;
+
   const auto stats_updates_frequency_op =
       MetadataJsonOptions::get_router_option_uint(
           options_str_, "stats_updates_frequency", default_value_uint);
 
+  std::string message;
+
   if (!stats_updates_frequency_op) {
-    const SecOptional default_value_sec =
-        cluster_type_ == mysqlrouter::ClusterType::GR_CS
-            ? SecOptional{0s}
-            : SecOptional{std::nullopt};
-    log_warning(
-        "Error parsing stats_updates_frequency from the router_options: %s. "
-        "Using default value",
-        stats_updates_frequency_op.error().c_str());
-    return default_value_sec;
+    message =
+        "Error parsing stats_updates_frequency from the router_options: " +
+        stats_updates_frequency_op.error() + ". Using default value";
+  } else {
+    if (stats_updates_frequency_op.value()) {
+      result = SecOptional{
+          std::chrono::seconds(*stats_updates_frequency_op.value())};
+    }
+    message = "Using stats_updates_frequency=" +
+              ((result) ? std::to_string((*result).count()) : "default");
   }
 
-  if (!stats_updates_frequency_op.value()) {
-    return SecOptional{std::nullopt};
-  }
+  LogSuppressor::instance().log_message(
+      LogSuppressor::MessageId::kRouterOption, "stats_updates_frequency",
+      message, !stats_updates_frequency_op,
+      mysql_harness::logging::LogLevel::kWarning,
+      mysql_harness::logging::LogLevel::kInfo, true);
 
-  return SecOptional{std::chrono::seconds(*stats_updates_frequency_op.value())};
+  return result;
 }
 
 bool RouterOptions::get_use_replica_primary_as_rw() const {
   auto result = MetadataJsonOptions::get_router_option_bool(
       options_str_, "use_replica_primary_as_rw", false);
+  std::string message;
+  bool parsing_error{false};
   if (!result) {
-    log_warning(
-        "Error parsing use_replica_primary_as_rw from the router_options: "
-        "%s. Using default value 'false'",
-        result.error().c_str());
-    return false;
+    message =
+        "Error parsing use_replica_primary_as_rw from the router_options: " +
+        result.error() + ". Using default value 'false'";
+    result = false;
+    parsing_error = true;
+  } else {
+    message = "Using use_replica_primary_as_rw="s +
+              (result.value() ? "true" : "false");
   }
+
+  LogSuppressor::instance().log_message(
+      LogSuppressor::MessageId::kRouterOption, "use_replica_primary_as_rw",
+      message, parsing_error, mysql_harness::logging::LogLevel::kWarning,
+      mysql_harness::logging::LogLevel::kInfo, true);
 
   return result.value();
 }
@@ -285,7 +309,6 @@ bool RouterOptions::read_from_metadata(
 
 ReadOnlyTargets RouterOptions::get_read_only_targets() const {
   ReadOnlyTargets result = kDefaultReadOnlyTargets;
-  auto &log_suppressor = LogSuppressor::instance();
   std::string warning;
   const auto mode_op = MetadataJsonOptions::get_router_option_str(
       options_str_, "read_only_targets");
@@ -319,10 +342,10 @@ ReadOnlyTargets RouterOptions::get_read_only_targets() const {
     message = "Using read_only_targets='" + to_string(result) + "'";
   }
 
-  log_suppressor.log_message(LogSuppressor::MessageId::kReadOnlyTargets, "",
-                             message, !warning.empty(),
-                             mysql_harness::logging::LogLevel::kWarning,
-                             mysql_harness::logging::LogLevel::kInfo, true);
+  LogSuppressor::instance().log_message(
+      LogSuppressor::MessageId::kRouterOption, "read_only_targets", message,
+      !warning.empty(), mysql_harness::logging::LogLevel::kWarning,
+      mysql_harness::logging::LogLevel::kInfo, true);
   return result;
 }
 
@@ -341,7 +364,6 @@ QuorumConnectionLostAllowTraffic
 RouterOptions::get_unreachable_quorum_allowed_traffic() const {
   QuorumConnectionLostAllowTraffic result =
       kDefaultQuorumConnectionLostAllowTraffic;
-  auto &log_suppressor = LogSuppressor::instance();
   std::string warning;
   const auto mode_op = MetadataJsonOptions::get_router_option_str(
       options_str_, "unreachable_quorum_allowed_traffic");
@@ -380,9 +402,10 @@ RouterOptions::get_unreachable_quorum_allowed_traffic() const {
         "Using unreachable_quorum_allowed_traffic='" + to_string(result) + "'";
   }
 
-  log_suppressor.log_message(
-      LogSuppressor::MessageId::kUnreachableQuorumAllowedTraffic, "", message,
-      !warning.empty(), mysql_harness::logging::LogLevel::kWarning,
+  LogSuppressor::instance().log_message(
+      LogSuppressor::MessageId::kRouterOption,
+      "unreachable_quorum_allowed_traffic", message, !warning.empty(),
+      mysql_harness::logging::LogLevel::kWarning,
       mysql_harness::logging::LogLevel::kInfo, true);
   return result;
 }

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -132,16 +132,17 @@ bool Regexp_facade::SetPattern(Item *pattern_expr, uint32_t flags) {
     m_engine = nullptr;
     return true;
   }
-  if (m_engine == nullptr)
-    // Called for the first time.
-    return SetupEngine(pattern_expr, flags);
-
   /*
-    We don't need to recompile the regular expression if the pattern is
-    a constant in the query and the flags are the same.
+    Compile the regular expression if
+    - this is the first call, or
+    - the pattern varies for each row, or
+    - flags have changed
   */
-  if (pattern_expr->const_item() && flags == m_engine->flags()) return false;
-  return SetupEngine(pattern_expr, flags);
+  if (m_engine == nullptr || !pattern_expr->const_for_execution() ||
+      flags != m_engine->flags()) {
+    return SetupEngine(pattern_expr, flags);
+  }
+  return false;
 }
 
 bool Regexp_facade::Reset(Item *subject_expr, int start) {

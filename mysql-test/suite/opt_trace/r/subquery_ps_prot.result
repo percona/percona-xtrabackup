@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET optimizer_trace_max_mem_size=1048576;
 SET end_markers_in_json=on;
 SET optimizer_trace="enabled=on,one_line=off";
@@ -475,19 +476,19 @@ WHERE NOT EXISTS
           {
             "condition_processing": {
               "condition": "WHERE",
-              "original_condition": "exists(/* select#2 */ select 1 from `t2` where ((`t2`.`a` = 50) and (`t2`.`b` = 3))) is false",
+              "original_condition": "(not exists(/* select#2 */ select 1 from `t2` where ((`t2`.`a` = 50) and (`t2`.`b` = 3))))",
               "steps": [
                 {
                   "transformation": "equality_propagation",
                   "subselect_evaluation": [
                   ] /* subselect_evaluation */,
-                  "resulting_condition": "exists(/* select#2 */ select 1 from `t2` where ((`t2`.`a` = 50) and (`t2`.`b` = 3))) is false"
+                  "resulting_condition": "(not exists(/* select#2 */ select 1 from `t2` where ((`t2`.`a` = 50) and (`t2`.`b` = 3))))"
                 },
                 {
                   "transformation": "constant_propagation",
                   "subselect_evaluation": [
                   ] /* subselect_evaluation */,
-                  "resulting_condition": "exists(/* select#2 */ select 1 from `t2` where ((`t2`.`a` = 50) and (`t2`.`b` = 3))) is false"
+                  "resulting_condition": "(not exists(/* select#2 */ select 1 from `t2` where ((`t2`.`a` = 50) and (`t2`.`b` = 3))))"
                 },
                 {
                   "transformation": "trivial_condition_removal",
@@ -570,19 +571,19 @@ SELECT 1 FROM DUAL WHERE NOT EXISTS (SELECT DISTINCT(a) FROM t2 GROUP BY a ORDER
           {
             "condition_processing": {
               "condition": "WHERE",
-              "original_condition": "exists(/* select#2 */ select `t2`.`a` from `t2`) is false",
+              "original_condition": "(not exists(/* select#2 */ select `t2`.`a` from `t2`))",
               "steps": [
                 {
                   "transformation": "equality_propagation",
                   "subselect_evaluation": [
                   ] /* subselect_evaluation */,
-                  "resulting_condition": "exists(/* select#2 */ select `t2`.`a` from `t2`) is false"
+                  "resulting_condition": "(not exists(/* select#2 */ select `t2`.`a` from `t2`))"
                 },
                 {
                   "transformation": "constant_propagation",
                   "subselect_evaluation": [
                   ] /* subselect_evaluation */,
-                  "resulting_condition": "exists(/* select#2 */ select `t2`.`a` from `t2`) is false"
+                  "resulting_condition": "(not exists(/* select#2 */ select `t2`.`a` from `t2`))"
                 },
                 {
                   "transformation": "trivial_condition_removal",
@@ -1033,25 +1034,25 @@ table2.`col_int_nokey` <> any ( select 5 from t2 ) ) and table1.`pk` in
           {
             "condition_processing": {
               "condition": "WHERE",
-              "original_condition": "(<nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where <if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)))) and (`table1`.`pk` in (192,18)) and (`table2`.`col_varchar_key` = `table1`.`col_varchar_key`))",
+              "original_condition": "(<nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where (<cache>(`table2`.`col_int_nokey`) <> 5)))) and (`table1`.`pk` in (192,18)) and (`table2`.`col_varchar_key` = `table1`.`col_varchar_key`))",
               "steps": [
                 {
                   "transformation": "equality_propagation",
                   "subselect_evaluation": [
                   ] /* subselect_evaluation */,
-                  "resulting_condition": "(<nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where <if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)))) and (`table1`.`pk` in (192,18)) and multiple equal(`table2`.`col_varchar_key`, `table1`.`col_varchar_key`))"
+                  "resulting_condition": "(<nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where (<cache>(`table2`.`col_int_nokey`) <> 5)))) and (`table1`.`pk` in (192,18)) and multiple equal(`table2`.`col_varchar_key`, `table1`.`col_varchar_key`))"
                 },
                 {
                   "transformation": "constant_propagation",
                   "subselect_evaluation": [
                   ] /* subselect_evaluation */,
-                  "resulting_condition": "(<nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where <if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)))) and (`table1`.`pk` in (192,18)) and multiple equal(`table2`.`col_varchar_key`, `table1`.`col_varchar_key`))"
+                  "resulting_condition": "(<nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where (<cache>(`table2`.`col_int_nokey`) <> 5)))) and (`table1`.`pk` in (192,18)) and multiple equal(`table2`.`col_varchar_key`, `table1`.`col_varchar_key`))"
                 },
                 {
                   "transformation": "trivial_condition_removal",
                   "subselect_evaluation": [
                   ] /* subselect_evaluation */,
-                  "resulting_condition": "(<nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where <if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)))) and (`table1`.`pk` in (192,18)) and multiple equal(`table2`.`col_varchar_key`, `table1`.`col_varchar_key`))"
+                  "resulting_condition": "(<nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where (<cache>(`table2`.`col_int_nokey`) <> 5)))) and (`table1`.`pk` in (192,18)) and multiple equal(`table2`.`col_varchar_key`, `table1`.`col_varchar_key`))"
                 }
               ] /* steps */
             } /* condition_processing */
@@ -1248,7 +1249,7 @@ table2.`col_int_nokey` <> any ( select 5 from t2 ) ) and table1.`pk` in
           },
           {
             "attaching_conditions_to_tables": {
-              "original_condition": "((`table2`.`col_varchar_key` = `table1`.`col_varchar_key`) and <nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where <if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)))) and (`table1`.`pk` in (192,18)))",
+              "original_condition": "((`table2`.`col_varchar_key` = `table1`.`col_varchar_key`) and <nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where (<cache>(`table2`.`col_int_nokey`) <> 5)))) and (`table1`.`pk` in (192,18)))",
               "attached_conditions_computation": [
                 {
                   "table": "`t1` `table2`",
@@ -1308,7 +1309,7 @@ table2.`col_int_nokey` <> any ( select 5 from t2 ) ) and table1.`pk` in
                 },
                 {
                   "table": "`t1` `table2`",
-                  "attached": "((`table2`.`col_varchar_key` = `table1`.`col_varchar_key`) and <nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where <if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)))))"
+                  "attached": "((`table2`.`col_varchar_key` = `table1`.`col_varchar_key`) and <nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where (<cache>(`table2`.`col_int_nokey`) <> 5)))))"
                 }
               ] /* attached_conditions_summary */
             } /* attaching_conditions_to_tables */
@@ -1438,8 +1439,8 @@ table2.`col_int_nokey` <> any ( select 5 from t2 ) ) and table1.`pk` in
               },
               {
                 "table": "`t1` `table2`",
-                "original_table_condition": "((`table2`.`col_varchar_key` = `table1`.`col_varchar_key`) and <nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where <if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)))))",
-                "final_table_condition   ": "((`table2`.`col_varchar_key` = `table1`.`col_varchar_key`) and <nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where <if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)))))"
+                "original_table_condition": "((`table2`.`col_varchar_key` = `table1`.`col_varchar_key`) and <nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where (<cache>(`table2`.`col_int_nokey`) <> 5)))))",
+                "final_table_condition   ": "((`table2`.`col_varchar_key` = `table1`.`col_varchar_key`) and <nop>(<in_optimizer>(`table2`.`col_int_nokey`,<exists>(/* select#3 */ select 5 from `t2` where (<cache>(`table2`.`col_int_nokey`) <> 5)))))"
               }
             ] /* finalizing_table_conditions */
           },
@@ -1465,19 +1466,19 @@ table2.`col_int_nokey` <> any ( select 5 from t2 ) ) and table1.`pk` in
           {
             "condition_processing": {
               "condition": "WHERE",
-              "original_condition": "<if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)",
+              "original_condition": "(<cache>(`table2`.`col_int_nokey`) <> 5)",
               "steps": [
                 {
                   "transformation": "equality_propagation",
-                  "resulting_condition": "<if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)"
+                  "resulting_condition": "(<cache>(`table2`.`col_int_nokey`) <> 5)"
                 },
                 {
                   "transformation": "constant_propagation",
-                  "resulting_condition": "<if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)"
+                  "resulting_condition": "(<cache>(`table2`.`col_int_nokey`) <> 5)"
                 },
                 {
                   "transformation": "trivial_condition_removal",
-                  "resulting_condition": "<if>(outer_field_is_not_null, (<cache>(`table2`.`col_int_nokey`) <> 5), true)"
+                  "resulting_condition": "(<cache>(`table2`.`col_int_nokey`) <> 5)"
                 }
               ] /* steps */
             } /* condition_processing */
@@ -3408,3 +3409,4 @@ SELECT 1 FROM t1 WHERE 1 LIKE
 DROP TABLE t1;
 SET @@optimizer_trace_features=default;
 drop function show_json_object;
+include/rpl/set_gtid_mode_on.inc

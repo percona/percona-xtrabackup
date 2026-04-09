@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,7 @@ bool ndb_socket_poller::set_max_count(unsigned count) {
     // Ignore decrease or setting same value
     return true;
   }
-  posix_poll_fd *pfds = new posix_poll_fd[count];
+  auto *pfds = new posix_poll_fd[count];
   if (pfds == nullptr) return false;
   if (m_pfds != &m_one_pfd) delete[] m_pfds;
   m_pfds = pfds;

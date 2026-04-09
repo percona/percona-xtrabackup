@@ -58,16 +58,24 @@ insert into t2 values(@v5, 'abcdefgh', @v6, 2, 'zz3', 'v');
 # select TABLE_NAME,ENGINE from INFORMATION_SCHEMA.TABLES
 # where TABLE_SCHEMA = 'test' and TABLE_NAME in ('t1','t2');
 
-select a, sha1(b) from t1 order by a;
-select sha1(a), sha1(c), e from t2 order by b, d, f;
+select a, sha2(b,256) from t1 order by a;
+select sha2(a,256), sha2(c,256), e from t2 order by b, d, f;
 
 --source include/ndb_backup.inc
 drop table t1, t2;
 --exec $NDB_RESTORE -b $the_backup_id -n 1 -m -r --print --print_meta $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 --exec $NDB_RESTORE -b $the_backup_id -n 2 -r --print --print_meta $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
-select a, sha1(b) from t1 order by a;
-select sha1(a), sha1(c), e from t2 order by b, d, f;
+# Force table discovery now
+--disable_query_log
+--disable_result_log
+select count(1) from t1;
+select count(1) from t2;
+--enable_query_log
+--enable_result_log
+
+select a, sha2(b,256) from t1 order by a;
+select sha2(a,256), sha2(c,256), e from t2 order by b, d, f;
 
 drop table t1,t2;
 
@@ -116,16 +124,24 @@ insert into t2 values(@v5, 'abcdefgh', @v6, 2, 'zz3', 'v');
 # select TABLE_NAME,ENGINE from INFORMATION_SCHEMA.TABLES
 # where TABLE_SCHEMA = 'test' and TABLE_NAME in ('t1','t2');
 
-select a, sha1(b) from t1 order by a;
-select sha1(a), sha1(c), e from t2 order by b, d, f;
+select a, sha2(b,256) from t1 order by a;
+select sha2(a,256), sha2(c,256), e from t2 order by b, d, f;
 
 --source include/ndb_backup.inc
 drop table t1, t2;
 --exec $NDB_RESTORE -d -b $the_backup_id -n 1 -m -r --print --print_meta $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 --exec $NDB_RESTORE -d -b $the_backup_id -n 2 -r --print --print_meta $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
 
-select a, sha1(b) from t1 order by a;
-select sha1(a), sha1(c), e from t2 order by b, d, f;
+# Force table discovery now
+--disable_query_log
+--disable_result_log
+select count(1) from t1;
+select count(1) from t2;
+--enable_query_log
+--enable_result_log
+
+select a, sha2(b,256) from t1 order by a;
+select sha2(a,256), sha2(c,256), e from t2 order by b, d, f;
 
 drop table t1,t2;
 

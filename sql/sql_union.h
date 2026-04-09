@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -68,8 +68,8 @@ class Query_result_union : public Query_result_interceptor {
   bool reset() override;
   bool create_result_table(THD *thd, const mem_root_deque<Item *> &column_types,
                            bool is_distinct, ulonglong options,
-                           const char *alias, bool bit_fields_as_long,
-                           bool create_table, Query_term_set_op *op = nullptr);
+                           const char *alias, bool create_table,
+                           Query_term_set_op *op = nullptr);
   friend bool Table_ref::create_materialized_table(THD *thd);
   friend bool Table_ref::optimize_derived(THD *thd);
   uint get_hidden_field_count() const {

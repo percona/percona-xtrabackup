@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,7 @@
 
 #include "plugin/x/src/json_utils.h"
 
-namespace xpl {
-namespace test {
+namespace xpl::test {
 
 struct Param_is_id_in_json {
   bool expect;
@@ -62,5 +61,4 @@ Param_is_id_in_json is_id_in_json_param[] = {
 INSTANTIATE_TEST_SUITE_P(is_id_in_json, Is_id_in_json_test,
                          testing::ValuesIn(is_id_in_json_param));
 
-}  // namespace test
-}  // namespace xpl
+}  // namespace xpl::test

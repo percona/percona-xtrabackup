@@ -1,0 +1,57 @@
+include/group_replication.inc [rpl_server_count=3]
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection server1]
+[connection server1]
+include/start_and_bootstrap_group_replication.inc
+[connection server2]
+include/start_group_replication.inc
+[connection server3]
+include/start_group_replication.inc
+[connection server1]
+# MySQL InnoDB Cluster schema created.
+# MySQL Router metadata user created.
+# * insert three R/W nodes into MySQL InnoDB Cluster.
+include/rpl/sync.inc
+CREATE USER mrs_bootstrap_user IDENTIFIED BY 'pass';
+GRANT ALL PRIVILEGES ON *.* TO 'mrs_bootstrap_user'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
+include/rpl/sync.inc
+FATAL ERROR ENCOUNTERED, attempting to undo new accounts that were created
+- New accounts cleaned up successfully
+# Bootstrapping MySQL Router instance at 'DIRECTORY'
+
+- Creating account(s) (only those that are needed, if any)
+- Verifying account (using it to run SQL queries that would be run by Router)
+- Storing account in keyring
+- Creating configuration .../mysqlrouter.conf
+
+# MySQL Router configured for the InnoDB Cluster 'my_cluster'
+
+After this, MySQL Router can be started with the generated configuration with:
+
+$ mysqlrouter -c .../mysqlrouter.conf
+
+InnoDB Cluster 'my_cluster' can be reached by connecting to:
+
+## MySQL Classic protocol
+
+- Read/Write Connections: localhost:6446
+- Read/Only Connections:  localhost:6447
+- Read/Write Split Connections: localhost:6450
+
+## MySQL X protocol
+
+- Read/Write Connections: localhost:6448
+- Read/Only Connections:  localhost:6449
+
+MySQL REST Service metadata was not found at the target MySQL server. Please deploy it before bootstrapping MRS.
+Error: MRS metadata not found
+DROP USER 'mrs_bootstrap_user'@'%';
+DROP SCHEMA mysql_innodb_cluster_metadata;
+DROP USER IF EXISTS 'mysqlrouter'@'%';
+include/rpl/sync.inc
+include/group_replication_end.inc

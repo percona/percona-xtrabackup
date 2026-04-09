@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 select * from (select 2 from DUAL) AS b;
 2
 2
@@ -1080,42 +1081,6 @@ f1	f11	f1	f11	f1	f11
 5	5	5	5	5	5
 5	5	5	5	5	5
 5	5	5	5	5	5
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
-9	9	9	9	9	9
 7	7	7	7	7	7
 7	7	7	7	7	7
 7	7	7	7	7	7
@@ -1152,6 +1117,42 @@ f1	f11	f1	f11	f1	f11
 7	7	7	7	7	7
 7	7	7	7	7	7
 7	7	7	7	7	7
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
+9	9	9	9	9	9
 SHOW STATUS LIKE 'Handler_read%';
 Variable_name	Value
 Handler_read_first	0
@@ -3001,15 +3002,15 @@ CREATE TABLE t2 (
 pk INTEGER PRIMARY KEY
 );
 INSERT INTO t2 VALUES (0),(1),(2);
-explain SELECT SHA(pk) IN (SELECT * FROM (SELECT '' FROM t2) a) FROM t1;
+explain SELECT SHA2(pk,256) IN (SELECT * FROM (SELECT '' FROM t2) a) FROM t1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	t1	NULL	index	NULL	PRIMARY	4	NULL	3	100.00	Using index
 2	SUBQUERY	<derived3>	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
 3	DERIVED	t2	NULL	index	NULL	PRIMARY	4	NULL	3	100.00	Using index
 Warnings:
-Note	1003	/* select#1 */ select <in_optimizer>(sha(`test`.`t1`.`pk`),sha(`test`.`t1`.`pk`) in ( <materialize> (/* select#2 */ select `` from (/* select#3 */ select '' AS `` from `test`.`t2`) `a` where true ), <primary_index_lookup>(sha(`test`.`t1`.`pk`) in <temporary table> on <auto_distinct_key> where ((sha(`test`.`t1`.`pk`) = ``))))) AS `SHA(pk) IN (SELECT * FROM (SELECT '' FROM t2) a)` from `test`.`t1`
-SELECT SHA(pk) IN (SELECT * FROM (SELECT '' FROM t2) a) FROM t1;
-SHA(pk) IN (SELECT * FROM (SELECT '' FROM t2) a)
+Note	1003	/* select#1 */ select <in_optimizer>(sha2(`test`.`t1`.`pk`,256),sha2(`test`.`t1`.`pk`,256) in ( <materialize> (/* select#2 */ select `` from (/* select#3 */ select '' AS `` from `test`.`t2`) `a` where true ), <primary_index_lookup>(sha2(`test`.`t1`.`pk`,256) in <temporary table> on <auto_distinct_key> where ((sha2(`test`.`t1`.`pk`,256) = ``))))) AS `SHA2(pk,256) IN (SELECT * FROM (SELECT '' FROM t2) a)` from `test`.`t1`
+SELECT SHA2(pk,256) IN (SELECT * FROM (SELECT '' FROM t2) a) FROM t1;
+SHA2(pk,256) IN (SELECT * FROM (SELECT '' FROM t2) a)
 0
 0
 0
@@ -4791,7 +4792,7 @@ SELECT * FROM (SELECT _utf8mb4 'a' AS a) AS dt UNION SELECT c FROM t;
 a
 a
 SELECT _utf8mb4 'Â±' AS a UNION SELECT c FROM t;
-ERROR HY000: Cannot convert string '\xC2\xB1' from utf8mb4 to latin2
+ERROR HY000: Cannot convert string '\xC3\x82\xC2\xB1' from utf8mb4 to latin2
 SELECT * FROM (SELECT _utf8mb4 'Â±' AS a) AS dt UNION SELECT c FROM t;
 ERROR HY000: Cannot convert string '\xC2\xB1' from utf8mb4 to latin2
 SELECT _utf8mb4 'a' AS a UNION SELECT d FROM t;
@@ -4821,3 +4822,4 @@ ERROR HY000: Cannot convert string '\xC3\x83\xC2\xA5' from latin1 to latin2
 SELECT * FROM (SELECT _latin1 'Ã¥' AS a) AS dt UNION SELECT c FROM t;
 ERROR HY000: Cannot convert string '\xC3\x83\xC2\xA5' from latin1 to latin2
 DROP TABLE t;
+include/rpl/set_gtid_mode_on.inc

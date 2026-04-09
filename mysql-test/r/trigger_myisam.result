@@ -39,7 +39,7 @@ i	k
 1	1
 1	2
 3	3
-update t1, t2 set k = k + 10 where t1.i = t2.i;
+update /*+ JOIN_ORDER(t2,t1) */ t1, t2 set k = k + 10 where t1.i = t2.i;
 ERROR 42S22: Unknown column 'at' in 'NEW'
 select * from t1;
 i	k

@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -27,20 +27,19 @@ ELSE()
   SET(RPATH_ORIGIN "\$ORIGIN")
 ENDIF()
 
-SET(CMAKE_INSTALL_RPATH)
 IF(INSTALL_LAYOUT STREQUAL "STANDALONE"
     OR INSTALL_LAYOUT STREQUAL "SVR4")
   # rpath for lib/mysqlrouter/ plugins that want to find lib/
   IF(LINUX)
     SET(RPATH_PLUGIN_TO_LIB "${RPATH_ORIGIN}/private")
   ELSE()
-    SET(RPATH_PLUGIN_TO_LIB "${RPATH_ORIGIN}/../")
+    SET(RPATH_PLUGIN_TO_LIB "${RPATH_ORIGIN}/..")
   ENDIF()
-  SET(RPATH_PLUGIN_TO_PLUGIN "${RPATH_ORIGIN}/")
+  SET(RPATH_PLUGIN_TO_PLUGIN "${RPATH_ORIGIN}")
   # rpath for lib/ libraries that want to find other libs in lib/
-  SET(RPATH_LIBRARY_TO_LIB "${RPATH_ORIGIN}/")
+  SET(RPATH_LIBRARY_TO_LIB "${RPATH_ORIGIN}")
   # rpath for bin/ binaries that want to find other libs in lib/
-  SET(RPATH_BINARY_TO_LIB "${RPATH_ORIGIN}/../${ROUTER_INSTALL_LIBDIR}/")
+  SET(RPATH_BINARY_TO_LIB "${RPATH_ORIGIN}/../${ROUTER_INSTALL_LIBDIR}")
 
 ELSE()
   SET(_dest_dir "${CMAKE_INSTALL_PREFIX}")
@@ -48,49 +47,53 @@ ELSE()
   IF(LINUX)
     SET(PLUGIN_TO_LIB_ORIG "${RPATH_ORIGIN}/private")
   ELSE()
-    SET(PLUGIN_TO_LIB_ORIG "${RPATH_ORIGIN}/../")
+    SET(PLUGIN_TO_LIB_ORIG "${RPATH_ORIGIN}/..")
   ENDIF()
-  SET(RPATH_PLUGIN_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR}/;"
-                          "${PLUGIN_TO_LIB_ORIG}")
-  SET(RPATH_PLUGIN_TO_PLUGIN "${_dest_dir}/${ROUTER_INSTALL_PLUGINDIR}/;"
-                             "${RPATH_ORIGIN}/")
+  SET(RPATH_PLUGIN_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR};"
+    "${PLUGIN_TO_LIB_ORIG}")
+  SET(RPATH_PLUGIN_TO_PLUGIN "${_dest_dir}/${ROUTER_INSTALL_PLUGINDIR};"
+    "${RPATH_ORIGIN}")
   # rpath for lib/ libraries that want to find other libs in lib/
   SET(RPATH_LIBRARY_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR};"
-                           "${RPATH_ORIGIN}/")
+    "${RPATH_ORIGIN}")
   # rpath for bin/ binaries that want to find other libs in lib/
   SET(RPATH_BINARY_TO_LIB "${_dest_dir}/${ROUTER_INSTALL_LIBDIR};"
-                          "${RPATH_ORIGIN}/../${ROUTER_INSTALL_LIBDIR}/")
+    "${RPATH_ORIGIN}/../${ROUTER_INSTALL_LIBDIR}")
 
 ENDIF()
 
 # plugins may depend on other plugins
 # plugins may depend on libs in lib/
 # executables may depend on libs in lib/
-SET(ROUTER_INSTALL_RPATH
+SET(CMAKE_INSTALL_RPATH
   ${RPATH_PLUGIN_TO_LIB}
   ${RPATH_PLUGIN_TO_PLUGIN}
   ${RPATH_LIBRARY_TO_LIB}
   ${RPATH_BINARY_TO_LIB}
-  )
-LIST(APPEND CMAKE_INSTALL_RPATH
-  ${RPATH_PLUGIN_TO_LIB}
-  ${RPATH_PLUGIN_TO_PLUGIN}
-  ${RPATH_LIBRARY_TO_LIB}
-  ${RPATH_BINARY_TO_LIB}
-  )
+)
 
-IF(LINUX_INSTALL_RPATH_ORIGIN)
-  LIST(APPEND ROUTER_INSTALL_RPATH "\$ORIGIN/../private")
+IF(LINUX)
   LIST(APPEND CMAKE_INSTALL_RPATH "\$ORIGIN/../private")
 ENDIF()
 
 LIST(REMOVE_DUPLICATES CMAKE_INSTALL_RPATH)
 
+# We want all $ORIGIN/... before any /usr/bin or /usr/lib64
+IF(LINUX)
+  LIST(SORT CMAKE_INSTALL_RPATH)
+ENDIF()
+
+# If this variable is set to true then the software is always built with the
+# install path for the RPATH and does not need to be relinked when installed.
 SET(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+
+# Append to the runtime search path (rpath) of installed binaries any
+# directories outside the project that are in the linker search path or
+# contain linked library files. 
 SET(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 #MESSAGE(STATUS "Router install directories:")
-#MESSAGE(STATUS "ROUTER_INSTALL_RPATH ${ROUTER_INSTALL_RPATH}")
+#MESSAGE(STATUS "CMAKE_INSTALL_RPATH ${CMAKE_INSTALL_RPATH}")
 #MESSAGE(STATUS "- bindir: ${ROUTER_INSTALL_BINDIR}")
 #MESSAGE(STATUS "- configdir: ${ROUTER_INSTALL_CONFIGDIR}")
 #MESSAGE(STATUS "- docdir: ${ROUTER_INSTALL_DOCDIR}")

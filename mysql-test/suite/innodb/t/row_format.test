@@ -339,3 +339,202 @@ DROP TABLE test.t2;
 --echo # Restarting server to restore server state
 --let $restart_parameters = "restart:"
 --source include/start_mysqld.inc
+
+--echo #
+--echo # Bug#37168132: Unexpected creation of an large index, causing an inaccessible
+--echo #               table
+
+SET @saved_innodb_default_row_format= @@global.innodb_default_row_format;
+
+--echo # Case 1: When row format is not mentioned in create table.
+SET GLOBAL innodb_default_row_format='compact';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+
+--echo # Expect an error to occur during an INPLACE ALTER operation.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+--echo # Coverage test for the remaining options of algorithm clause.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+SET GLOBAL innodb_default_row_format='redundant';
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+
+--echo # Expect an error to occur during an INPLACE ALTER operation.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+--echo # Coverage test for the reamining options of algorithm clause.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+SET GLOBAL innodb_default_row_format='dynamic';
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+
+--echo # Coverage test for the reamining options of algorithm clause.
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+
+CREATE TABLE t5(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t5 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+
+CREATE TABLE t6(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t6 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+--echo # Clean up
+DROP TABLE t1, t2, t3, t4, t5, t6;
+
+--echo # Case 2: When row format mentioned is default.
+SET GLOBAL innodb_default_row_format='compact';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+
+--echo # Expect an error to occur during an INPLACE ALTER operation.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+--echo # Coverage test for the remaining options of algorithm clause
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+SET GLOBAL innodb_default_row_format='redundant';
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+
+--echo # Expect an error to occur during an INPLACE ALTER operation.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+--echo # Coverage test for the remaining options of algorithm clause
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+SET GLOBAL innodb_default_row_format='dynamic';
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+--echo # Coverage test for the remaining options of algorithm clause
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+
+CREATE TABLE t5(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t5 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+
+CREATE TABLE t6(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+ALTER TABLE t6 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+--echo # Clean up
+DROP TABLE t1, t2, t3, t4, t5, t6;
+
+--echo # Case 3: Changing the 'innodb_default_row_format' before ALTER TABLE operation
+
+--echo # Switch from COMPACT to DYNAMIC
+SET GLOBAL innodb_default_row_format='compact';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY (a))
+ROW_FORMAT=DEFAULT;
+
+SET GLOBAL innodb_default_row_format='dynamic';
+--echo # Expect an error to occur during an ALTER operation using INPLACE, DEFAULT
+--echo # algorithm and also when no algorithm clause is specified.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+--echo # ALTER TABLE using COPY algorithm will succeed since it rebuilds table
+--echo # with new row format 'DYNAMIC'
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+
+--echo # Clean up
+DROP TABLE t1, t2, t3, t4;
+
+--echo # Switch from DYNAMIC to COMPACT.
+SET GLOBAL innodb_default_row_format='dynamic';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, PRIMARY KEY (a));
+
+SET GLOBAL innodb_default_row_format='compact';
+--echo # ALTER TABLE operation succeeds when using INPLACE, DEFAULT algorithm and
+--echo # also when no algorithm is used..
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+--echo # ALTER TABLE operation fails with COPY algorithm, since the table is rebuilt
+--echo # with compact format.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+
+--echo # Clean up
+DROP TABLE t1, t2, t3, t4;
+
+--echo # Case 4: Tables with prefixed indexes.
+
+--echo # Test where prefixed index exceeds limit.
+SET GLOBAL innodb_default_row_format='compact';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, b VARCHAR(100) CHARACTER
+SET utf8mb4 NOT NULL, KEY (a(10), b));
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, b VARCHAR(100) CHARACTER
+SET utf8mb4 NOT NULL, KEY (a(10), b));
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, b VARCHAR(100) CHARACTER
+SET utf8mb4 NOT NULL, KEY (a(10), b));
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, b VARCHAR(100) CHARACTER
+SET utf8mb4 NOT NULL, KEY (a(10), b));
+
+--echo # Expect an error to occur during an INPLACE ALTER operation.
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t1 MODIFY b VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+
+--echo # Coverage test for the remaining options of algorithm clause
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t2 MODIFY b VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t3 MODIFY b VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+--error ER_INDEX_COLUMN_TOO_LONG
+ALTER TABLE t4 MODIFY b VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+--echo # Clean up
+DROP TABLE t1, t2, t3, t4;
+
+--echo # Test for coverage, where the prefix index is within limit.
+SET GLOBAL innodb_default_row_format='redundant';
+CREATE TABLE t1(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY(a(10)));
+CREATE TABLE t2(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY(a(10)));
+CREATE TABLE t3(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY(a(10)));
+CREATE TABLE t4(a VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL, KEY(a(10)));
+
+--echo # ALTER TABLE operation using INPLACE, COPY, DEFAULT algorithm and no
+--echo # algorithm clause succeeds.
+ALTER TABLE t1 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=INPLACE;
+ALTER TABLE t2 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=COPY;
+ALTER TABLE t3 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL, ALGORITHM=DEFAULT;
+ALTER TABLE t4 MODIFY a VARCHAR(500) CHARACTER SET utf8mb4 NOT NULL;
+
+--echo # Clean up.
+DROP TABLE t1, t2, t3, t4;
+SET GLOBAL innodb_default_row_format= @saved_innodb_default_row_format;

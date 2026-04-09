@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -900,11 +900,13 @@ class Rows_event : public Binary_log_event {
       values for all columns of the table.
     */
     COMPLETE_ROWS_F = (1U << 3),
+    /** Value which represents DISABLE_INNODB_CHECK */
+    USE_SQL_FOREIGN_KEY_F = (1U << 4),
     /**
       Flags for everything. Please update when you add new flags.
      */
     ALL_FLAGS = STMT_END_F | NO_FOREIGN_KEY_CHECKS_F | RELAXED_UNIQUE_CHECKS_F |
-                COMPLETE_ROWS_F
+                COMPLETE_ROWS_F | USE_SQL_FOREIGN_KEY_F
   };
 
   /**
@@ -1046,13 +1048,14 @@ class Rows_event : public Binary_log_event {
    */
   std::string get_enum_flag_string() const {
     assert((STMT_END_F | NO_FOREIGN_KEY_CHECKS_F | RELAXED_UNIQUE_CHECKS_F |
-            COMPLETE_ROWS_F) == ALL_FLAGS);
+            COMPLETE_ROWS_F | USE_SQL_FOREIGN_KEY_F) == ALL_FLAGS);
     if (!m_flags) return "";
     std::stringstream ss;
     ss << " flags:";
     if (m_flags & STMT_END_F) ss << " STMT_END_F";
     if (m_flags & NO_FOREIGN_KEY_CHECKS_F) ss << " NO_FOREIGN_KEY_CHECKS_F";
     if (m_flags & RELAXED_UNIQUE_CHECKS_F) ss << " RELAXED_UNIQUE_CHECKS_F";
+    if (m_flags & USE_SQL_FOREIGN_KEY_F) ss << " USE_SQL_FOREIGN_KEY_F";
     if (m_flags & COMPLETE_ROWS_F) ss << " COMPLETE_ROWS_F";
     if (m_flags & ~ALL_FLAGS) {
       assert(false);
@@ -1070,11 +1073,13 @@ class Rows_event : public Binary_log_event {
   */
   static std::string get_flag_string(enum_flag flag) {
     assert((STMT_END_F | NO_FOREIGN_KEY_CHECKS_F | RELAXED_UNIQUE_CHECKS_F |
-            COMPLETE_ROWS_F) == ALL_FLAGS);
+            COMPLETE_ROWS_F | USE_SQL_FOREIGN_KEY_F) == ALL_FLAGS);
     std::string str = "";
     if (flag & STMT_END_F) str.append(" Last event of the statement");
     if (flag & NO_FOREIGN_KEY_CHECKS_F) str.append(" No foreign Key checks");
     if (flag & RELAXED_UNIQUE_CHECKS_F) str.append(" No unique key checks");
+    if (flag & USE_SQL_FOREIGN_KEY_F)
+      str.append(" Use SQL Foreign Key handling");
     if (flag & COMPLETE_ROWS_F) str.append(" Complete Rows");
     if (flag & ~ALL_FLAGS) str.append(" Unknown Flag");
     return str;

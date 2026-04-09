@@ -4,6 +4,7 @@
 
 --source suite/query_rewrite_plugins/include/have_ddl_rewriter.inc
 --source include/have_log_bin.inc
+--source include/rpl/set_gtid_mode_off.inc
 
 
 --echo #
@@ -248,3 +249,6 @@ UNINSTALL PLUGIN ddl_rewriter;
 
 CREATE TABLE t(i int) /* data directory = 'x' */ ;
 DROP TABLE t;
+
+# Restore the default for gtid which is ON
+--source include/rpl/set_gtid_mode_on.inc

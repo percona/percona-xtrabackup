@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -70,14 +70,21 @@ SET(TESTS
   test_vt100.cc
   test_string_utils.cc
   test_process_launcher.cc
-  test_tcp_address.cc
   test_config_builder.cc
   test_event_state_tracker.cc
   test_config_option.cc
   test_hexify.cc
   test_configuration_update_schema.cc
   test_dynamic_config.cc
+  test_destination.cc
+  test_plugin_state.cc
 )
+
+IF(NOT SOLARIS)
+  LIST(APPEND TESTS
+    test_secure_memory_pool.cc
+  )
+ENDIF()
 
 FOREACH(TEST ${TESTS})
   ADD_HARNESS_TEST_FILE(${TEST} MODULE ${TEST_MODULE}
@@ -86,11 +93,18 @@ FOREACH(TEST ${TESTS})
     INCLUDE_DIRS ${MySQLRouter_SOURCE_DIR}/src/harness/tests/include/
     INCLUDE_DIRS ${MySQLRouter_SOURCE_DIR}/tests/
     LIB_DEPENDS test-helpers;harness_stdx)
+  # Warning at googletest-1.14.0/googletest/include/gtest/gtest.h:1379
+  IF(MY_COMPILER_IS_GNU AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
+    ROUTERTEST_GET_TARGET(T ${TEST} "${TEST_MODULE}")
+    TARGET_COMPILE_OPTIONS(${T} PRIVATE "-Wno-error=free-nonheap-object")
+    TARGET_LINK_OPTIONS(${T} PRIVATE "-Wno-error=free-nonheap-object")
+  ENDIF()
 ENDFOREACH()
 
 SET(TESTS
   test_keyring.cc
   test_keyring_manager.cc
+  test_secure_string.cc
 )
 
 FOREACH(TEST ${TESTS})

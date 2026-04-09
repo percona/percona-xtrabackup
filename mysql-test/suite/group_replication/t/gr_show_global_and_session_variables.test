@@ -30,7 +30,7 @@
 --source include/start_and_bootstrap_group_replication.inc
 --source include/stop_group_replication.inc
 
---let $gr_var_count= 61
+--let $gr_var_count= 60
 --echo
 --echo # Test#1: Basic check that there are $gr_var_count GR variables.
 
@@ -42,7 +42,6 @@
 
 # Take backup of GR variables
 --disable_query_log
---let $saved_gr_allow_local_lower_version_join = `SELECT @@GLOBAL.group_replication_allow_local_lower_version_join;`
 --let $saved_gr_auto_increment_increment = `SELECT @@GLOBAL.group_replication_auto_increment_increment;`
 --let $saved_gr_bootstrap_group = `SELECT @@GLOBAL.group_replication_bootstrap_group;`
 --let $saved_gr_components_stop_timeout = `SELECT @@GLOBAL.group_replication_components_stop_timeout;`
@@ -95,8 +94,6 @@
 --echo # Test#2: Verify group replication related variables at GLOBAL scope.
 
 # Following GR variables cannot be set at SESSION level.
---error ER_GLOBAL_VARIABLE
-SET @@SESSION.group_replication_allow_local_lower_version_join= 1;
 --error ER_GLOBAL_VARIABLE
 SET @@SESSION.group_replication_auto_increment_increment= 7;
 --error ER_GLOBAL_VARIABLE
@@ -188,7 +185,6 @@ SET @@SESSION.group_replication_preemptive_garbage_collection_rows_threshold= 10
 
 # Set values to GLOBAL GR variables to test further.
 --disable_query_log
-SET GLOBAL group_replication_allow_local_lower_version_join= ON;
 SET GLOBAL group_replication_auto_increment_increment= 5;
 SET GLOBAL group_replication_bootstrap_group= ON;
 SET GLOBAL group_replication_components_stop_timeout= 10;
@@ -254,24 +250,6 @@ SET @@SESSION.group_replication_consistency= DEFAULT;
 # Setting this value after start to avoid conflixts when using MySQL stack.
 SET GLOBAL group_replication_recovery_ssl_crl= 'crl-client-revoked.crl';
 SET GLOBAL group_replication_recovery_tls_ciphersuites= "";
-
-# Assert the values of the variables set
-# group_replication_allow_local_lower_version_join
---let $assert_text= Verify GLOBAL value of group_replication_allow_local_lower_version_join
---let $assert_cond= "[SHOW GLOBAL VARIABLES LIKE \'group_replication_allow_local_lower_version_join\', Value, 1]" = "ON"
---source include/assert.inc
-
---let $assert_text= Verify GLOBAL value of group_replication_allow_local_lower_version_join
---let $assert_cond= "[SELECT * FROM performance_schema.global_variables WHERE VARIABLE_NAME=\'group_replication_allow_local_lower_version_join\', VARIABLE_VALUE, 1]" = "ON"
---source include/assert.inc
-
---let $assert_text= Verify SESSION value of group_replication_allow_local_lower_version_join
---let $assert_cond= "[SHOW SESSION VARIABLES LIKE \'group_replication_allow_local_lower_version_join\', Value, 1]" = "ON"
---source include/assert.inc
-
---let $assert_text= Verify SESSION value of group_replication_allow_local_lower_version_join
---let $assert_cond= "[SELECT * FROM performance_schema.session_variables WHERE VARIABLE_NAME=\'group_replication_allow_local_lower_version_join\', VARIABLE_VALUE, 1]" = "ON"
---source include/assert.inc
 
 # group_replication_auto_increment_increment
 --let $assert_text= Verify GLOBAL value of group_replication_auto_increment_increment
@@ -1031,7 +1009,6 @@ SET GLOBAL group_replication_recovery_tls_ciphersuites= "";
 
 # No need to print this into result file.
 --disable_query_log
---eval SET @@GLOBAL.group_replication_allow_local_lower_version_join= $saved_gr_allow_local_lower_version_join
 --eval SET @@GLOBAL.group_replication_auto_increment_increment= $saved_gr_auto_increment_increment
 --eval SET @@GLOBAL.group_replication_bootstrap_group= $saved_gr_bootstrap_group
 --eval SET @@GLOBAL.group_replication_components_stop_timeout= $saved_gr_components_stop_timeout

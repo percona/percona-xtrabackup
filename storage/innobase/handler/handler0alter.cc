@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -44,6 +44,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <sql_table.h>
 #include <sql_thd_internal_api.h>
 #include <sys/types.h>
+#include "btr0btr.h"
 #include "ha_prototypes.h"
 
 #include "db0err.h"
@@ -76,31 +77,31 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "fts0plugin.h"
 #include "fts0priv.h"
 #include "ha_innodb.h"
-#include "ha_innopart.h"
-#include "ha_prototypes.h"
 #include "handler0alter.h"
 #include "lex_string.h"
 #include "log0buf.h"
 #include "log0chkp.h"
 
 #include "log0ddl.h"
+#include "mem0mem.h"
+#include "mtr0mtr.h"
 #include "my_dbug.h"
 #include "my_io.h"
+#include "mysql/components/services/bulk_data_service.h"
 #include "mysql/strings/m_ctype.h"
 
+#include "api0api.h"
+#include "btr0cur.h"
 #include "clone0api.h"
 #include "ddl0ddl.h"
-#include "dict0dd.h"
-#include "fts0plugin.h"
-#include "fts0priv.h"
-#include "handler0alter.h"
 #include "lock0lock.h"
 #include "mysqld_error.h"
 #include "pars0pars.h"
-#include "partition_info.h"
+#include "rem/rec.h"
 #include "rem0types.h"
 #include "row0ins.h"
 #include "row0log.h"
+#include "row0mysql.h"
 #include "row0sel.h"
 #include "sql/create_field.h"
 #include "srv0mon.h"
@@ -795,9 +796,9 @@ static bool ok_to_rename_column(const Alter_inplace_info *ha_alter_info,
         for (dict_foreign_set::iterator it = dict_table->referenced_set.begin();
              it != dict_table->referenced_set.end(); ++it) {
           dict_foreign_t *foreign = *it;
-          const char *r_name = foreign->referenced_col_names[0];
 
           for (size_t i = 0; i < foreign->n_fields; ++i) {
+            const char *r_name = foreign->referenced_col_names[i];
             if (!my_strcasecmp(system_charset_info, r_name, col_name)) {
               if (report_error) {
                 my_error(ER_ALTER_OPERATION_NOT_SUPPORTED_REASON, MYF(0),
@@ -808,7 +809,6 @@ static bool ok_to_rename_column(const Alter_inplace_info *ha_alter_info,
               }
               return false;
             }
-            r_name = foreign->referenced_col_names[i];
           } /* each column in reference element */
         }   /* each element in reference set */
       }     /* each column being renamed */
@@ -1039,6 +1039,10 @@ enum_alter_inplace_result ha_innobase::check_if_supported_inplace_alter(
   ha_alter_info->handler_trivial_ctx =
       instant_type_to_int(Instant_Type::INSTANT_IMPOSSIBLE);
 
+  const bool is_instant_requested =
+      ha_alter_info->alter_info->requested_algorithm ==
+      Alter_info::ALTER_TABLE_ALGORITHM_INSTANT;
+
   if (!dict_table_is_partition(m_prebuilt->table)) {
     switch (instant_type) {
       case Instant_Type::INSTANT_IMPOSSIBLE:
@@ -1048,10 +1052,16 @@ enum_alter_inplace_result ha_innobase::check_if_supported_inplace_alter(
             Alter_info::ALTER_TABLE_ALGORITHM_INPLACE) {
           /* Still fall back to INPLACE since the behaviour is different */
           break;
+        } else if ((ha_alter_info->alter_info->requested_algorithm ==
+                    Alter_info::ALTER_TABLE_ALGORITHM_DEFAULT) &&
+                   !dict_table_is_discarded(m_prebuilt->table) &&
+                   btr_is_index_empty(m_prebuilt->table->first_index())) {
+          /* No records: prefer INPLACE to prevent bumping row version */
+          break;
         } else if (!((m_prebuilt->table->n_def +
-                      get_num_cols_added(ha_alter_info)) < REC_MAX_N_FIELDS)) {
-          if (ha_alter_info->alter_info->requested_algorithm ==
-              Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+                      get_num_cols_added(ha_alter_info)) <=
+                     REC_MAX_N_USER_FIELDS + DATA_N_SYS_COLS)) {
+          if (is_instant_requested) {
             my_error(ER_INNODB_INSTANT_ADD_NOT_SUPPORTED_MAX_FIELDS, MYF(0),
                      m_prebuilt->table->name.m_name);
             return HA_ALTER_ERROR;
@@ -1061,8 +1071,7 @@ enum_alter_inplace_result ha_innobase::check_if_supported_inplace_alter(
         } else if (!is_valid_row_version(
                        m_prebuilt->table->current_row_version + 1)) {
           ut_ad(is_valid_row_version(m_prebuilt->table->current_row_version));
-          if (ha_alter_info->alter_info->requested_algorithm ==
-              Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+          if (is_instant_requested) {
             my_error(ER_INNODB_MAX_ROW_VERSION, MYF(0),
                      m_prebuilt->table->name.m_name);
             return HA_ALTER_ERROR;
@@ -1073,8 +1082,7 @@ enum_alter_inplace_result ha_innobase::check_if_supported_inplace_alter(
         } else if (!Instant_ddl_impl<dd::Table>::is_instant_add_drop_possible(
                        ha_alter_info, table, altered_table,
                        m_prebuilt->table)) {
-          if (ha_alter_info->alter_info->requested_algorithm ==
-              Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+          if (is_instant_requested) {
             /* Return error if either max possible row size already crosses max
             permissible row size or may cross it after add. */
             my_error(ER_INNODB_INSTANT_ADD_DROP_NOT_SUPPORTED_MAX_SIZE, MYF(0));
@@ -3564,7 +3572,8 @@ static inline bool innobase_pk_col_is_existing(const ulint new_col_no,
 }
 
 /** Determine whether both the indexes have same set of primary key
-fields arranged in the same order.
+fields arranged in the same order. If so, there is no need to do the
+external sorting of primary key fields.
 
 Rules when we cannot skip sorting:
 (1) Removing existing PK columns somewhere else than at the end of the PK;
@@ -3575,14 +3584,16 @@ columns are removed from the PK;
 follows rule(1), Increasing the prefix length just like adding existing
 PK columns follows rule(2);
 (5) Changing the ascending order of the existing PK columns.
+(6) Adding a new auto increment column with descending order in PK.
 @param[in]      col_map         mapping of old column numbers to new ones
 @param[in]      old_clust_index index to be compared
 @param[in]      new_clust_index index to be compared
+@param[in]      add_autoinc     added AUTO_INCREMENT column position
 @retval true if both indexes have same order.
 @retval false . */
 [[nodiscard]] static bool innobase_pk_order_preserved(
     const ulint *col_map, const dict_index_t *old_clust_index,
-    const dict_index_t *new_clust_index) {
+    const dict_index_t *new_clust_index, ulint add_autoinc) {
   ulint old_n_uniq = dict_index_get_n_ordering_defined_by_user(old_clust_index);
   ulint new_n_uniq = dict_index_get_n_ordering_defined_by_user(new_clust_index);
 
@@ -3634,7 +3645,13 @@ PK columns follows rule(2);
     } else if (innobase_pk_col_is_existing(new_col_no, col_map, old_n_cols)) {
       new_field_order = old_n_uniq + existing_field_count++;
     } else {
-      /* Skip newly added column. */
+      /* Skip newly added column except descending auto increment column */
+      if (add_autoinc == new_col_no &&
+          !new_clust_index->fields[new_field].is_ascending) {
+        /* Descending needs sort */
+        return (false);
+      }
+
       continue;
     }
 
@@ -4911,6 +4928,12 @@ template <typename Table>
     if (!ctx->add_index[a]) {
       error = ctx->trx->error_state;
       assert(error != DB_SUCCESS);
+      if (error == DB_TOO_BIG_RECORD) {
+        ib::error() << "Cannot alter the table " << user_table->name
+                    << " because the record size will exceed the maximum "
+                       "allowed size for a record on the index '"
+                    << index_defs[a].m_name << "'.";
+      }
       goto error_handling;
     }
 
@@ -4960,8 +4983,8 @@ template <typename Table>
   if (new_clustered) {
     dict_index_t *clust_index = user_table->first_index();
     dict_index_t *new_clust_index = ctx->new_table->first_index();
-    ctx->skip_pk_sort =
-        innobase_pk_order_preserved(ctx->col_map, clust_index, new_clust_index);
+    ctx->skip_pk_sort = innobase_pk_order_preserved(
+        ctx->col_map, clust_index, new_clust_index, ctx->add_autoinc);
 
     DBUG_EXECUTE_IF("innodb_alter_table_pk_assert_no_sort",
                     assert(ctx->skip_pk_sort););
@@ -5429,7 +5452,6 @@ bool ha_innobase::prepare_inplace_alter_table_impl(
   mem_heap_t *heap;
   const char **col_names;
   int error;
-  ulint max_col_len;
   ulint add_autoinc_col_no = ULINT_UNDEFINED;
   ulonglong autoinc_col_max_value = 0;
   ulint fts_doc_col_no = ULINT_UNDEFINED;
@@ -5585,7 +5607,7 @@ bool ha_innobase::prepare_inplace_alter_table_impl(
     goto err_exit_no_heap;
   }
 
-  max_col_len = DICT_MAX_FIELD_LEN_BY_FORMAT_FLAG(info.flags());
+  const uint32_t max_col_len = DICT_MAX_FIELD_LEN_BY_FORMAT_FLAG(info.flags());
 
   /* Check each index's column length to make sure they do not
   exceed limit */
@@ -5610,16 +5632,19 @@ bool ha_innobase::prepare_inplace_alter_table_impl(
     }
   }
 
-  /* Check existing index definitions for too-long column
-  prefixes as well, in case max_col_len shrunk. */
-  for (const dict_index_t *index = indexed_table->first_index(); index;
-       index = index->next()) {
-    if (index->type & DICT_FTS) {
+  /* Handle corrupted full-text search indexes before adding a new one */
+  if (add_fts_idx) {
+    for (const dict_index_t *index = indexed_table->first_index(); index;
+         index = index->next()) {
+      if (!(index->type & DICT_FTS)) {
+        continue;
+      }
+
       assert(index->type == DICT_FTS || index->is_corrupted());
 
       /* We need to drop any corrupted fts indexes
       before we add a new fts index. */
-      if (add_fts_idx && index->type & DICT_CORRUPT) {
+      if (index->is_corrupted()) {
         ib_errf(m_user_thd, IB_LOG_LEVEL_ERROR, ER_INNODB_INDEX_CORRUPT,
                 "Fulltext index '%s' is corrupt. "
                 "you should drop this index first.",
@@ -5627,17 +5652,14 @@ bool ha_innobase::prepare_inplace_alter_table_impl(
 
         goto err_exit_no_heap;
       }
-
-      continue;
     }
+  }
 
-    for (ulint i = 0; i < dict_index_get_n_fields(index); i++) {
-      const dict_field_t *field = index->get_field(i);
-      if (field->prefix_len > max_col_len) {
-        my_error(ER_INDEX_COLUMN_TOO_LONG, MYF(0), max_col_len);
-        goto err_exit_no_heap;
-      }
-    }
+  /* Check if existing index definitions of table will exceed the index
+  limit based on the table format */
+  if (!innobase_check_index_len(altered_table, max_col_len)) {
+    my_error(ER_INDEX_COLUMN_TOO_LONG, MYF(0), max_col_len);
+    goto err_exit_no_heap;
   }
 
   n_drop_index = 0;
@@ -6714,14 +6736,11 @@ but do not touch the data dictionary cache.
       }
     }
 
-    /* During upgrade, inserts into SYS_* should be avoided. */
-    if (!srv_is_upgrade_mode) {
-      DBUG_EXECUTE_IF("innodb_test_cannot_add_fk_system", error = DB_ERROR;);
+    DBUG_EXECUTE_IF("innodb_test_cannot_add_fk_system", error = DB_ERROR;);
 
-      if (error != DB_SUCCESS) {
-        my_error(ER_FK_FAIL_ADD_SYSTEM, MYF(0), fk->id);
-        return true;
-      }
+    if (error != DB_SUCCESS) {
+      my_error(ER_FK_FAIL_ADD_SYSTEM, MYF(0), fk->id);
+      return true;
     }
   }
   DBUG_EXECUTE_IF("ib_drop_foreign_error",
@@ -9606,6 +9625,7 @@ bool alter_part_factory::create_for_reorg(alter_part_array &to_drop,
 
       case PART_NORMAL:
 
+        ut_ad(old_part_elem != nullptr);
         ut_ad(strcmp(part_elem->partition_name,
                      old_part_elem->partition_name) == 0);
 
@@ -10182,8 +10202,13 @@ enum_alter_inplace_result ha_innopart::check_if_supported_inplace_alter(
 
   Instant_Type instant_type = innopart_support_instant(
       ha_alter_info, m_tot_parts, m_part_share, this->table, altered_table);
+
   ha_alter_info->handler_trivial_ctx =
       instant_type_to_int(Instant_Type::INSTANT_IMPOSSIBLE);
+
+  const bool is_instant_requested =
+      ha_alter_info->alter_info->requested_algorithm ==
+      Alter_info::ALTER_TABLE_ALGORITHM_INSTANT;
 
   switch (instant_type) {
     case Instant_Type::INSTANT_IMPOSSIBLE:
@@ -10193,19 +10218,30 @@ enum_alter_inplace_result ha_innopart::check_if_supported_inplace_alter(
           Alter_info::ALTER_TABLE_ALGORITHM_INPLACE) {
         break;
       } else if (!((m_prebuilt->table->n_def +
-                    get_num_cols_added(ha_alter_info)) < REC_MAX_N_FIELDS)) {
-        if (ha_alter_info->alter_info->requested_algorithm ==
-            Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+                    get_num_cols_added(ha_alter_info)) <=
+                   REC_MAX_N_USER_FIELDS + DATA_N_SYS_COLS)) {
+        if (is_instant_requested) {
+          /* Following is the case when no more columns can be added to the
+          table becuase it has reached maximum allowed user columns */
+          if (altered_table->s->fields > REC_MAX_N_USER_FIELDS) {
+            ha_alter_info->unsupported_reason =
+                innobase_get_err_msg(ER_TOO_MANY_FIELDS);
+            return HA_ALTER_INPLACE_NOT_SUPPORTED;
+          }
+
+          /* In followin case, columns can't be added with INSTANT but if tried
+          with INPLACE/COPY, it is possible to add more columns */
           my_error(ER_INNODB_INSTANT_ADD_NOT_SUPPORTED_MAX_FIELDS, MYF(0),
                    m_prebuilt->table->name.m_name);
           return HA_ALTER_ERROR;
         }
         /* INSTANT can't be done any more. Fall back to INPLACE. */
         break;
-      } else if (std::cmp_equal(m_prebuilt->table->current_row_version,
-                                MAX_ROW_VERSION)) {
-        if (ha_alter_info->alter_info->requested_algorithm ==
-            Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+      } else if (!is_valid_row_version(m_prebuilt->table->current_row_version +
+                                       1)) {
+        ut_ad(is_valid_row_version(m_prebuilt->table->current_row_version));
+
+        if (is_instant_requested) {
           my_error(ER_INNODB_MAX_ROW_VERSION, MYF(0),
                    m_prebuilt->table->name.m_name);
           return HA_ALTER_ERROR;
@@ -10214,8 +10250,7 @@ enum_alter_inplace_result ha_innopart::check_if_supported_inplace_alter(
         break;
       } else if (!Instant_ddl_impl<dd::Table>::is_instant_add_drop_possible(
                      ha_alter_info, table, altered_table, m_prebuilt->table)) {
-        if (ha_alter_info->alter_info->requested_algorithm ==
-            Alter_info::ALTER_TABLE_ALGORITHM_INSTANT) {
+        if (is_instant_requested) {
           /* Return error if either max possible row size already crosses max
           permissible row size or may cross it after add. */
           my_error(ER_INNODB_INSTANT_ADD_DROP_NOT_SUPPORTED_MAX_SIZE, MYF(0));
@@ -11094,14 +11129,9 @@ bool ha_innobase::bulk_load_check(THD *) const {
     return false;
   }
 
-  if (!table->has_pk()) {
-    my_error(ER_TABLE_NO_PRIMARY_KEY, MYF(0), table->name.m_name);
-    return false;
-  }
-
-  /* Table should not have indexes other than clustered index. */
-  if (table->get_index_count() > 1) {
-    my_error(ER_INDEX_OTHER_THAN_PK, MYF(0), table->name.m_name);
+  if (dict_table_has_fts_index(table) || table->fts_doc_id_index != nullptr) {
+    my_error(ER_FEATURE_UNSUPPORTED, MYF(0), "Full-Text Index",
+             "LOAD DATA ALGORITHM = BULK");
     return false;
   }
 
@@ -11115,12 +11145,52 @@ bool ha_innobase::bulk_load_check(THD *) const {
     return false;
   }
 
-  if (!btr_is_index_empty(table->first_index())) {
-    my_error(ER_TABLE_NOT_EMPTY, MYF(0), table->name.m_name);
+  if (!table->foreign_set.empty()) {
+    my_error(ER_FEATURE_UNSUPPORTED, MYF(0), "TABLE WITH FOREIGN KEYS",
+             "LOAD DATA ALGORITHM = BULK");
     return false;
   }
 
   return true;
+}
+
+int ha_innobase::bulk_load_copy_existing_data(
+    void *load_ctx, size_t thread_idx,
+    Bulk_load::Stat_callbacks &wait_cbk) const {
+  ut_d(auto trx = m_prebuilt->trx);
+  ut_ad(trx_is_started(trx));
+
+  auto *loader = static_cast<ddl_bulk::Loader *>(load_ctx);
+
+  auto db_err = loader->copy_existing_data(m_prebuilt, thread_idx, wait_cbk);
+
+  ut_ad(trx_is_started(trx));
+
+  /* Avoid convert_error_code_to_mysql here as it raises my_error(). This
+  interface is not called on main session thread. We raise the saved error
+  later in main thread when bulk_load_end() is called. Any non zero error
+  code is fine here. */
+  return (db_err == DB_SUCCESS) ? 0 : HA_ERR_GENERIC;
+}
+
+std::string ha_innobase::bulk_load_generate_temporary_table_name() const {
+  mem_heap_t *heap = mem_heap_create(FN_REFLEN, UT_LOCATION_HERE);
+  std::string retval = dict_mem_create_temporary_tablename(
+      heap, m_prebuilt->table->name.m_name, m_prebuilt->table->id);
+  mem_heap_free(heap);
+  return retval;
+}
+
+bool ha_innobase::bulk_load_set_source_table_data(
+    void *load_ctx,
+    const std::vector<Bulk_load::Source_table_data> &source_table_data) const {
+  auto *loader = static_cast<ddl_bulk::Loader *>(load_ctx);
+  return loader->set_source_table_data(m_prebuilt, source_table_data);
+}
+
+bool ha_innobase::is_table_empty() const {
+  dict_table_t *table = m_prebuilt->table;
+  return btr_is_index_empty(table->first_index());
 }
 
 size_t ha_innobase::bulk_load_available_memory(THD *) const {
@@ -11129,16 +11199,84 @@ size_t ha_innobase::bulk_load_available_memory(THD *) const {
   return max_memory;
 }
 
-void *ha_innobase::bulk_load_begin(THD *thd, size_t data_size, size_t memory,
-                                   size_t num_threads) {
+bool ha_innobase::bulk_load_get_row_id_range(size_t &min, size_t &max) const {
+  auto *table = m_prebuilt->table;
+
+  if (!row_table_got_default_clust_index(table)) {
+    return false;
+  }
+
+  auto *clust = table->first_index();
+
+  ut_a(clust && clust->is_clustered());
+
+  const ulint rowid_pos = clust->get_sys_col_pos(DATA_ROW_ID);
+  ut_a(rowid_pos != ULINT_UNDEFINED);
+
+  mtr_t mtr;
+  mtr_start(&mtr);
+
+  btr_pcur_t min_pcur;
+  min_pcur.open_at_side(true, clust, BTR_SEARCH_LEAF, true, 0, &mtr);
+  min_pcur.move_to_next_on_page();
+
+  const rec_t *min_rec = min_pcur.get_rec();
+
+  if (page_rec_is_supremum(min_rec)) {
+    /* Empty table, use [0,0> to represent empty range. */
+    min = 0;
+    max = 0;
+    mtr_commit(&mtr);
+    return true;
+  }
+
+  ulint len;
+  const byte *field;
+  mem_heap_t *heap = nullptr;
+  ulint *offsets;
+
+  offsets = rec_get_offsets(min_rec, clust, nullptr, ULINT_UNDEFINED,
+                            UT_LOCATION_HERE, &heap);
+  field = rec_get_nth_field(clust, min_rec, offsets, rowid_pos, &len);
+  min = mach_read_from_6(field);
+
+  min_pcur.close();
+  mtr_commit(&mtr);
+  mtr_start(&mtr);
+
+  btr_pcur_t max_pcur;
+  max_pcur.open_at_side(false, clust, BTR_SEARCH_LEAF, true, 0, &mtr);
+  max_pcur.move_to_prev_on_page();
+  /* Step left to last user record, skip supremum */
+  const rec_t *max_rec = max_pcur.get_rec();
+
+  offsets = rec_get_offsets(max_rec, clust, nullptr, ULINT_UNDEFINED,
+                            UT_LOCATION_HERE, &heap);
+  field = rec_get_nth_field(clust, max_rec, offsets, rowid_pos, &len);
+  max = mach_read_from_6(field) + 1;
+
+  if (heap != nullptr) {
+    mem_heap_free(heap);
+  }
+
+  mtr_commit(&mtr);
+  return true;
+}
+
+void *ha_innobase::bulk_load_begin(THD *thd, size_t keynr, size_t data_size,
+                                   size_t memory, size_t num_threads) {
   DEBUG_SYNC_C("innodb_bulk_load_begin");
 
-  if (!bulk_load_check(thd)) {
+  if (keynr == 0 && !bulk_load_check(thd)) {
     return nullptr;
   }
 
-  /* Check if the buffer pool size is enough for the threads requested. */
+  /* Update user_thd and allocates Innodb transaction if not there. */
+  update_thd(thd);
+
   dict_table_t *table = m_prebuilt->table;
+  auto trx = m_prebuilt->trx;
+  m_prebuilt->m_thd = thd;
 
   /* Build the template to convert between the two database formats */
   if (m_prebuilt->mysql_template == nullptr ||
@@ -11146,20 +11284,29 @@ void *ha_innobase::bulk_load_begin(THD *thd, size_t data_size, size_t memory,
     build_template(true);
   }
 
-  /* Update user_thd and allocates Innodb transaction if not there. */
-  update_thd(thd);
+  size_t real_keynr = keynr;
+  if (m_prebuilt->clust_index_was_generated) {
+    if (keynr == 0) {
+      real_keynr = MAX_KEY;
+    } else {
+      real_keynr--;
+    }
+  }
 
-  auto trx = m_prebuilt->trx;
-  innobase_register_trx(ht, ha_thd(), trx);
-  trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
+  index_init(real_keynr, false);
 
-  auto observer = ut::new_withkey<Flush_observer>(
-      ut::make_psi_memory_key(mem_key_ddl), table->space, trx, nullptr);
+  if (trx->flush_observer == nullptr) {
+    innobase_register_trx(ht, ha_thd(), trx);
+    trx_start_if_not_started_xa(trx, true, UT_LOCATION_HERE);
 
-  trx_set_flush_observer(trx, observer);
+    auto observer = ut::new_withkey<Flush_observer>(
+        ut::make_psi_memory_key(mem_key_ddl), table->space, trx, nullptr);
+
+    trx_set_flush_observer(trx, observer);
+  }
 
   auto loader = ut::new_withkey<ddl_bulk::Loader>(
-      ut::make_psi_memory_key(mem_key_ddl), num_threads);
+      ut::make_psi_memory_key(mem_key_ddl), num_threads, keynr, trx);
 
   auto db_err = loader->begin(m_prebuilt, data_size, memory);
 
@@ -11180,6 +11327,8 @@ int ha_innobase::bulk_load_execute(THD *thd, void *load_ctx, size_t thread_idx,
 
   /* Use with bulk_loader.concurrency = 1 to avoid getting hit concurrently. */
   DEBUG_SYNC(thd, "innodb_bulk_load_exec");
+
+  current_thd = thd;
 
   auto loader = static_cast<ddl_bulk::Loader *>(load_ctx);
 
@@ -11285,23 +11434,31 @@ int ha_innobase::bulk_load_end(THD *thd, void *load_ctx, bool is_error) {
     is_error = true;
   }
 
-  auto db_err = loader->end(m_prebuilt, is_error);
+  auto db_err = loader->end(is_error);
+
+  auto is_last_index = [this, loader]() {
+    return loader->get_keynr() ==
+           this->table->s->keys -
+               (table_share->is_missing_primary_key() ? 0 : 1);
+  };
 
   report_error(loader, db_err, 0);
   if (db_err != DB_SUCCESS) {
     is_error = true;
   }
 
-  auto observer = trx->flush_observer;
-  ut_a(observer != nullptr);
+  if (is_last_index() || is_error) {
+    auto observer = trx->flush_observer;
+    ut_a(observer != nullptr);
 
-  if (is_error) {
-    observer->interrupted();
+    if (is_error) {
+      observer->interrupted();
+    }
+    observer->flush();
+    trx->flush_observer = nullptr;
+
+    ut::delete_(observer);
   }
-  observer->flush();
-  trx->flush_observer = nullptr;
-
-  ut::delete_(observer);
 
   if (!is_error) {
     DBUG_EXECUTE_IF("crash_load_bulk_before_trx_commit", DBUG_SUICIDE(););
@@ -11309,7 +11466,66 @@ int ha_innobase::bulk_load_end(THD *thd, void *load_ctx, bool is_error) {
     auto table = m_prebuilt->table;
     fil_flush(table->space);
   }
+
+  /* Update the statistics. */
+  if (is_last_index()) {
+    auto innodb_table = m_prebuilt->table;
+    if (db_err == DB_SUCCESS) {
+      const dict_stats_upd_option_t option =
+          dict_stats_is_persistent_enabled(innodb_table)
+              ? DICT_STATS_RECALC_PERSISTENT
+              : DICT_STATS_RECALC_TRANSIENT;
+
+      const size_t MAX_RETRY = 5;
+      dberr_t updated{DB_SUCCESS};
+
+      for (size_t retry = 0; retry < MAX_RETRY; ++retry) {
+        if (trx->error_state != DB_SUCCESS) {
+          LogErr(INFORMATION_LEVEL, ER_IB_BULK_LOAD_STATS_WARN,
+                 "ddl_bulk::Loader::end()", innodb_table->name.m_name,
+                 (size_t)updated, (size_t)trx->error_state);
+          break;
+        }
+
+        auto savept = trx_savept_take(trx);
+        const bool silent = true;
+        updated = dict_stats_update(innodb_table, option, nullptr, silent);
+
+        if (updated != DB_SUCCESS) {
+          LogErr(INFORMATION_LEVEL, ER_IB_BULK_LOAD_STATS_WARN,
+                 "ddl_bulk::Loader::end()", innodb_table->name.m_name,
+                 (size_t)updated, (size_t)trx->error_state);
+
+          if (updated == DB_LOCK_WAIT_TIMEOUT) {
+            trx_rollback_to_savepoint(trx, &savept);
+            const auto ms = std::chrono::milliseconds{20 * (1 + retry)};
+            std::this_thread::sleep_for(ms);
+            LogErr(INFORMATION_LEVEL, ER_IB_BULK_LOAD_STATS_INFO,
+                   "ddl_bulk::Loader::end()", "Retrying",
+                   innodb_table->name.m_name, (size_t)updated,
+                   (size_t)trx->error_state);
+            continue;
+          }
+        }
+
+        break;
+      }
+      if (updated != DB_SUCCESS || trx->error_state != DB_SUCCESS) {
+        LogErr(WARNING_LEVEL, ER_IB_BULK_LOAD_STATS_WARN,
+               "ddl_bulk::Loader::end()", innodb_table->name.m_name,
+               (size_t)updated, (size_t)trx->error_state);
+      } else {
+        LogErr(INFORMATION_LEVEL, ER_IB_BULK_LOAD_STATS_INFO,
+               "ddl_bulk::Loader::end()", "PASS", innodb_table->name.m_name,
+               (size_t)updated, (size_t)trx->error_state);
+      }
+    }
+    DBUG_EXECUTE_IF("crash_bulk_load_after_stats", DBUG_SUICIDE(););
+  }
+
   ut::delete_(loader);
+
   /* We raise the error in report_error. */
-  return (db_err == DB_SUCCESS) ? 0 : HA_ERR_GENERIC;
+  bool any_error = is_error || db_err != DB_SUCCESS;
+  return any_error ? HA_ERR_GENERIC : 0;
 }

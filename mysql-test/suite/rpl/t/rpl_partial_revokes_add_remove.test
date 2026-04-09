@@ -13,6 +13,9 @@
 #                                                                             #
 ###############################################################################
 
+SET @saved_mandatory_roles = @@global.mandatory_roles;
+SET GLOBAL mandatory_roles = '';
+
 --source include/rpl/set_privilege_checks_user_as_system_user.inc
 --let $rpl_privilege_checks_user_grant_option = 1
 --source include/rpl/init_source_replica.inc
@@ -29,3 +32,5 @@ CALL mtr.add_suppression("Unsafe statement written to the binary log using state
 --let $TEST_MODE=RPL
 --source ../../auth_sec/include/partial_revokes_add_remove.inc
 --source include/rpl/deinit.inc
+
+SET global mandatory_roles = @saved_mandatory_roles;

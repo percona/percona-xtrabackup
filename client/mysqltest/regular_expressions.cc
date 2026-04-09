@@ -1,4 +1,4 @@
-/* Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -166,12 +166,12 @@ int multi_reg_replace(struct st_replace_regex *r, char *val, size_t *len) {
   if (*len > 0) {
     for (i = 0; i < r->regex_arr.size(); i++) {
       try {
-        struct st_regex re(r->regex_arr[i]);
+        struct st_regex const re(r->regex_arr[i]);
         char *save_out_buf = out_buf;
 
-        std::regex rpat(re.pattern, (re.icase == 0)
-                                        ? std::regex_constants::ECMAScript
-                                        : std::regex_constants::icase);
+        std::regex const rpat(re.pattern, (re.icase == 0)
+                                              ? std::regex_constants::ECMAScript
+                                              : std::regex_constants::icase);
 
         std::string sin = std::string(in_buf, *len);
         std::string sout;
@@ -189,10 +189,10 @@ int multi_reg_replace(struct st_replace_regex *r, char *val, size_t *len) {
           If some replacement is performed, write the replaced string into the
           output buffer.
         */
-        if (sout.compare(sin) != 0) {
+        if (sout != sin) {
           *len = sout.length();
           if (*len >= (uint)*buf_len_p) {
-            uint need_buf_len = (*len) + 1;
+            uint const need_buf_len = (*len) + 1;
             out_buf = (char *)my_realloc(PSI_NOT_INSTRUMENTED, out_buf,
                                          need_buf_len, MYF(MY_WME + MY_FAE));
             *buf_len_p = need_buf_len;
@@ -258,7 +258,6 @@ int search_protocol_re(std::regex *re, const char *str) {
 
     // Match found
     return 1;
-  } else {
-    return 0;
   }
+  return 0;
 }

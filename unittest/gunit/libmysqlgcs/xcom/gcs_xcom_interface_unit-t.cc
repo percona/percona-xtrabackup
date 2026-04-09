@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -66,7 +66,7 @@ TEST_F(GcsInterfaceTest, DoubleInitFinalizeTest) {
   gcs->finalize();
 
   // fake factory cleanup member function
-  static_cast<Gcs_xcom_interface *>(gcs)->cleanup();
+  Gcs_xcom_interface::cleanup();
 }
 
 TEST_F(GcsInterfaceTest, ReceiveEmptyMessageTest) {
@@ -89,7 +89,7 @@ TEST_F(GcsInterfaceTest, ReceiveEmptyMessageTest) {
   gcs->finalize();
 
   // fake factory cleanup member function
-  static_cast<Gcs_xcom_interface *>(gcs)->cleanup();
+  Gcs_xcom_interface::cleanup();
 }
 
 TEST_F(GcsInterfaceTest, InvalidCacheSize) {
@@ -133,7 +133,7 @@ TEST_F(GcsInterfaceTest, InvalidCacheSize) {
   gcs->finalize();
 
   // Fake factory cleanup member function.
-  static_cast<Gcs_xcom_interface *>(gcs)->cleanup();
+  Gcs_xcom_interface::cleanup();
 }
 
 }  // namespace gcs_interface_unittest

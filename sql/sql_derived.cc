@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -601,23 +601,8 @@ bool copy_field_info(THD *thd, Item *orig_expr, Item *cloned_expr) {
   return false;
 }
 
-/**
-  Given an item and a query block, this function creates a clone of the
-  item (unresolved) by reparsing the item. Used during condition pushdown
-  to derived tables.
-
-  @param thd            Current thread.
-  @param item           Item to be reparsed to get a clone.
-  @param query_block    query block where expression is being parsed
-  @param derived_table  derived table to which the item belongs to.
-                        "nullptr" when cloning to make a copy of the
-                        original condition to be pushed down
-                        to a derived table that has SET operations.
-
-  @returns A copy of the original item (unresolved) on success else nullptr.
-*/
-static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
-                              Table_ref *derived_table) {
+Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
+                       Table_ref *derived_table) {
   // Set up for parsing item
   LEX *const old_lex = thd->lex;
   LEX new_lex;
@@ -627,11 +612,20 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
     thd->lex = old_lex;
     return nullptr;  // OOM
   }
+  View_creation_ctx *view_creation_ctx =
+      derived_table != nullptr ? derived_table->view_creation_ctx : nullptr;
+
+  const CHARSET_INFO *charset = view_creation_ctx != nullptr
+                                    ? view_creation_ctx->get_client_cs()
+                                    : thd->charset();
+
   // Take care not to print the variable index for stored procedure variables.
   // Also do not write a cloned stored procedure variable to query logs.
   thd->lex->reparse_derived_table_condition = true;
+
   // Get the printout of the expression
-  StringBuffer<1024> str_buf(thd->charset());
+  StringBuffer<1024> str_buf(charset);
+
   // For printing parameters we need to specify the flag QT_NO_DATA_EXPANSION
   // because for a case when statement gets reprepared during execution, we
   // still need Item_param::print() to print the '?' rather than the actual data
@@ -687,8 +681,6 @@ static Item *parse_expression(THD *thd, Item *item, Query_block *query_block,
 
   // Get a newly created item from parser. Use the view creation
   // context if the item being parsed is part of a view.
-  View_creation_ctx *view_creation_ctx =
-      derived_table != nullptr ? derived_table->view_creation_ctx : nullptr;
   const bool result = parse_sql(thd, &parser_state, view_creation_ctx);
 
   // If a statement is being re-prepared, then all the parameters
@@ -926,7 +918,7 @@ bool Table_ref::setup_materialized_derived_tmp_table(THD *thd)
 
     const bool rc = derived_result->create_result_table(
         thd, *derived->get_unit_column_types(), is_distinct, create_options,
-        alias, false, false);
+        alias, false);
 
     if (m_derived_column_names)  // Restore names
       swap_column_names_of_unit_and_tmp_table(*derived->get_unit_column_types(),
@@ -1212,9 +1204,11 @@ bool Condition_pushdown::make_cond_for_derived() {
 
 Item *Condition_pushdown::extract_cond_for_table(Item *cond) {
   cond->marker = Item::MARKER_NONE;
-  if ((m_checking_purpose == CHECK_FOR_DERIVED) && cond->const_item()) {
+  if ((m_checking_purpose == CHECK_FOR_DERIVED) &&
+      (cond->const_item() || cond->has_aggregation())) {
     // There is no benefit in pushing a constant condition, we can as well
     // evaluate it at the top query's level.
+    // We do not pushdown conditions with aggregate functions.
     return nullptr;
   }
   // Make a new condition
@@ -1657,17 +1651,19 @@ bool Table_ref::optimize_derived(THD *thd) {
     }
   }
 
-  if (unit->optimize(thd, table,
+  TABLE *materialization_destination = is_mv_se_available() ? nullptr : table;
+  if (unit->optimize(thd, materialization_destination,
                      /*finalize_access_paths=*/true) ||
-      thd->is_error())
+      thd->is_error()) {
     return true;
+  }
 
   // If the table is const, materialize it now. The hypergraph optimizer
   // doesn't care about const tables, though, so it prefers to do this
   // at execution time (in fact, it will get confused and crash if it has
   // already been materialized).
   if (!thd->lex->using_hypergraph_optimizer()) {
-    if (materializable_is_const() &&
+    if (materializable_is_const(thd) &&
         (create_materialized_table(thd) || materialize_derived(thd)))
       return true;
   }

@@ -803,10 +803,6 @@ SELECT ST_ASTEXT(ST_DIFFERENCE(ST_GEOMFROMTEXT(@star_of_elems),));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '))' at line 1
 SELECT ST_ASTEXT(ST_DIFFERENCE(,ST_GEOMFROMTEXT(@star_top)));
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ',ST_GEOMFROMTEXT(@star_top)))' at line 1
-# Invalid geometry in input
-SELECT ST_ASTEXT(ST_DIFFERENCE(ST_GEOMFROMTEXT(@star_elem_vertical),ST_GEOMFROMTEXT(@star_of_elems)));
-ST_ASTEXT(ST_DIFFERENCE(ST_GEOMFROMTEXT(@star_elem_vertical),ST_GEOMFROMTEXT(@star_of_elems)))
-GEOMETRYCOLLECTION EMPTY
 SELECT ST_ASTEXT(ST_DIFFERENCE(ST_GEOMFROMTEXT(@star_elem_vertical),ST_GEOMFROMTEXT(@star_collection_elems)));
 ST_ASTEXT(ST_DIFFERENCE(ST_GEOMFROMTEXT(@star_elem_vertical),ST_GEOMFROMTEXT(@star_collection_elems)))
 GEOMETRYCOLLECTION EMPTY

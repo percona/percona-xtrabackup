@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -140,6 +140,11 @@ MYSQL_ADD_COMPONENT(test_mysql_runtime_error
   MODULE_ONLY
   TEST_ONLY
   )
+MYSQL_ADD_COMPONENT(test_udf_aggregate
+  test_udf_aggregate.cc
+  MODULE_ONLY
+  TEST_ONLY
+  )
 MYSQL_ADD_COMPONENT(test_mysql_current_thread_reader
   test_mysql_current_thread_reader.cc
   MODULE_ONLY
@@ -150,6 +155,21 @@ MYSQL_ADD_COMPONENT(test_component_deinit
   MODULE_ONLY
   TEST_ONLY
   LINK_LIBRARIES mysys
+  )
+MYSQL_ADD_COMPONENT(test_component_init_then_register
+  test_component_init_then_register.cc
+  MODULE_ONLY
+  TEST_ONLY
+  )
+MYSQL_ADD_COMPONENT(test_component_init_fail
+  test_component_init_fail.cc
+  MODULE_ONLY
+  TEST_ONLY
+  )
+MYSQL_ADD_COMPONENT(test_component_deinit_no_deadlock
+  test_component_deinit_no_deadlock.cc
+  MODULE_ONLY
+  TEST_ONLY
   )
 MYSQL_ADD_COMPONENT(test_mysql_system_variable_set
   test_mysql_system_variable_set.cc
@@ -188,6 +208,11 @@ MYSQL_ADD_COMPONENT(test_mysql_signal_handler
   )
 MYSQL_ADD_COMPONENT(test_session_var_service
   test_session_var_service.cc
+  MODULE_ONLY
+  TEST_ONLY
+  )
+MYSQL_ADD_COMPONENT(test_mysql_file_service
+  test_mysql_file_service.cc
   MODULE_ONLY
   TEST_ONLY
   )

@@ -1442,7 +1442,7 @@ RETURNS CHAR(50) DETERMINISTIC RETURN CONCAT('Hello, ',s,'!');
 ERROR HY000: Too long enumeration/set value for column s.
 # Bug#32745294: my_well_formed_len_utf32: assertion `(length % 4) == 0'
 #               failed.
-DO REPLACE(CONVERT(1 USING utf32),BIT_XOR(1),SHA1(@d));
+DO REPLACE(CONVERT(1 USING utf32),BIT_XOR(1),SHA2(@d,256));
 ERROR HY000: Cannot convert string '1' from binary to utf32
 #
 # Bug #33810558 Invalid Unicode characters can be inserted in

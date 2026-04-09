@@ -12,6 +12,9 @@
 # All the queries use EXPLAIN FOR CONNECTION. There will be no change in
 # EXPLAIN output.
 
+SET GLOBAL explain_json_format_version = 1;
+SET SESSION explain_json_format_version = 1;
+
 CREATE TABLE t1 (
   pk_col1 INT NOT NULL,
   a1 CHAR(64),
@@ -101,6 +104,9 @@ let $query= $query9;
 --source include/skip_records_in_range.inc
 
 DROP TABLE t1, t2;
+
+SET GLOBAL explain_json_format_version = DEFAULT;
+SET SESSION explain_json_format_version = DEFAULT;
 
 --echo #
 --echo # Bug #26627136: WL#6526: ASSERTION

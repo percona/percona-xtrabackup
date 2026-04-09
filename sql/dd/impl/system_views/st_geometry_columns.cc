@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,11 +23,10 @@
 
 #include "sql/dd/impl/system_views/st_geometry_columns.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 const St_geometry_columns &St_geometry_columns::instance() {
-  static St_geometry_columns *s_instance = new St_geometry_columns();
+  static auto *s_instance = new St_geometry_columns();
   return *s_instance;
 }
 
@@ -56,5 +55,4 @@ St_geometry_columns::St_geometry_columns() {
       "              'multilinestring', 'multipolygon','geomcollection')");
 }
 
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

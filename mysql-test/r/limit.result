@@ -773,3 +773,33 @@ id	c1	c2	c3
 6	1	2	888
 DEALLOCATE PREPARE stmt;
 DROP TABLE t1;
+#
+# Bug#37293822: Wrong result with OFFSET in table-less subquery
+#
+SELECT (SELECT 1 LIMIT 10 OFFSET 1) AS res;
+res
+NULL
+SELECT (SELECT 1 LIMIT 0) AS res;
+res
+NULL
+SELECT (SELECT 1 LIMIT 10 OFFSET 0) AS res;
+res
+1
+SELECT (SELECT 1 LIMIT 1) AS res;
+res
+1
+PREPARE ps FROM 'SELECT (SELECT 1 LIMIT ? OFFSET ?) AS res';
+SET @zero = 0, @one = 1;
+EXECUTE ps USING @zero, @zero;
+res
+NULL
+EXECUTE ps USING @zero, @one;
+res
+NULL
+EXECUTE ps USING @one, @zero;
+res
+1
+EXECUTE ps USING @one, @one;
+res
+NULL
+DEALLOCATE PREPARE ps;

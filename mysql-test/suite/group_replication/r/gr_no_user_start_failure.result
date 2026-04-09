@@ -29,6 +29,8 @@ include/assert.inc [Member 1 is OFFLINE]
 # Restore the user
 #
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 #
 # Suppress errors
 #

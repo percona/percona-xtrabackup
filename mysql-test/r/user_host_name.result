@@ -1,0 +1,73 @@
+Leading and trailing white spaces must be removed from user and host.
+The statements must succeed with warnings.
+CREATE USER '   user1'@'     host.org';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user1'@'host.org'.
+CREATE USER 'user2 '@'host.org		';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user2'@'host.org'.
+CREATE USER '		user3		'@' host.org   ';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user3'@'host.org'.
+CREATE USER ' u s e r 4 ';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'u s e r 4'@'%'.
+CREATE USER '   '@host.org;
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: ''@'host.org'.
+CREATE ROLE ' role1 '@' host.com ', 'role2			';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'role1'@'host.com'.
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'role2'@'%'.
+SELECT user, length(user), host, length(host) FROM mysql.user;
+user	length(user)	host	length(host)
+role2	5	%	1
+u s e r 4	9	%	1
+role1	5	host.com	8
+	0	host.org	8
+user1	5	host.org	8
+user2	5	host.org	8
+user3	5	host.org	8
+mysql.infoschema	16	localhost	9
+mysql.session	13	localhost	9
+mysql.sys	9	localhost	9
+root	4	localhost	9
+GRANT ' role2' TO '  user2'@' host.org';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user2'@'host.org'.
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'role2'@'%'.
+SET DEFAULT ROLE '     role2' TO ' user2 '@host.org;
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'role2'@'%'.
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user2'@'host.org'.
+REVOKE ' role2   ' FROM ' user2 '@'	host.org  ';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user2'@'host.org'.
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'role2'@'%'.
+ALTER USER 'user3 '@host.org ACCOUNT LOCK;
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user3'@'host.org'.
+RENAME USER '	u s e r 4'  TO '  user4 ';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'u s e r 4'@'%'.
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user4'@'%'.
+SET PASSWORD FOR user1@'  host.org' = '123';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user1'@'host.org'.
+DROP USER ' user1 '@' host.org ', '   user2'@'  host.org';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user1'@'host.org'.
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user2'@'host.org'.
+DROP USER 'user3	'@'host.org   ', 'user4		';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user3'@'host.org'.
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'user4'@'%'.
+DROP USER '				'@' host.org ';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: ''@'host.org'.
+DROP ROLE 'role1  '@host.com;
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'role1'@'host.com'.
+DROP ROLE ' role2 ';
+Warnings:
+Warning	6524	Leading or trailing spaces have been trimmed from user or host, account: 'role2'@'%'.

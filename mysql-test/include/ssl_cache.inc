@@ -34,7 +34,7 @@ connect;
 status;
 EOF
 
-exec $MYSQL --tls-version=$tls_version --ssl-mode=required < $sql_file > $out_file 2>&1;
+exec $MYSQL --commands --tls-version=$tls_version --ssl-mode=required < $sql_file > $out_file 2>&1;
 
 --let $assert_file=$out_file
 --let $assert_text=Checking if session was reused post-connect
@@ -49,7 +49,7 @@ remove_file $out_file;
 SET GLOBAL ssl_session_cache_mode=off;
 ALTER INSTANCE RELOAD TLS;
 --echo # try to see if a session ticket is sent
-exec $MYSQL --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print" 2>&1 > $out_file;
+exec $MYSQL --commands --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print" 2>&1 > $out_file;
 SELECT VARIABLE_NAME,VARIABLE_VALUE FROM performance_schema.global_status
   WHERE VARIABLE_NAME LIKE 'ssl_session%' ORDER BY 1;
 --let $assert_file=$out_file
@@ -65,7 +65,7 @@ if (`SELECT @@GLOBAL.tls_version NOT LIKE '%TLSv1.3'`) {
 source include/assert_grep.inc;
 
 --echo # store a ticket to a file
-exec $MYSQL --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print $session_file" 2>&1 > $out_file;
+exec $MYSQL --commands --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print $session_file" 2>&1 > $out_file;
 --echo # reuse: should fail
 --error 1
 exec $MYSQL --tls-version=$tls_version --ssl-mode=required --ssl-session-data=$session_file -e "SELECT 'dead' as the_server_is" 2>&1;
@@ -80,7 +80,7 @@ ALTER INSTANCE RELOAD TLS;
 SET GLOBAL ssl_session_cache_timeout = 5; # seconds
 ALTER INSTANCE RELOAD TLS;
 --echo # store session data
-exec $MYSQL --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print $session_file" 2>&1;
+exec $MYSQL --commands --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print $session_file" 2>&1;
 --echo # try the stored data pre- timeout
 exec $MYSQL --tls-version=$tls_version --ssl-mode=required --ssl-session-data=$session_file -e "SELECT 'alive' as the_server_is" 2>&1;
 --echo # sleep 10 secs
@@ -93,7 +93,7 @@ ALTER INSTANCE RELOAD TLS;
 remove_file $session_file;
 
 --echo # FR11: store ssl session data into a file and check format
-exec $MYSQL --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print $session_file" 2>&1;
+exec $MYSQL --commands --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print $session_file" 2>&1;
 --let $assert_file=$session_file
 --let $assert_text=FR11: Checking if session data file was populated
 --let $assert_select=-*BEGIN SSL SESSION PARAMETERS
@@ -113,7 +113,7 @@ remove_file $out_file;
 --echo # try mysqladmin
 exec $MYSQLADMIN --no-defaults -u root -S $MASTER_MYSOCK -P $MASTER_MYPORT --tls-version=$tls_version --ssl-mode=required --ssl-session-data=$session_file ping 2>&1;
 --echo # try mysql command line
-exec $MYSQL --tls-version=$tls_version --ssl-mode=required --ssl-session-data=$session_file -e "status" > $out_file 2>&1;
+exec $MYSQL --commands --tls-version=$tls_version --ssl-mode=required --ssl-session-data=$session_file -e "status" > $out_file 2>&1;
 
 --let $assert_file=$out_file
 --let $assert_text=Checking if file session was reused
@@ -127,7 +127,7 @@ ALTER INSTANCE RELOAD TLS;
 --let $copts=-u root --protocol=tcp -S $MASTER_MYSOCK -P $MASTER_MYPORT --tls-version=$tls_version --ssl-mode=required --ssl-session-data=$session_file
 --echo # try mysql
 --error 1
-exec $MYSQL $copts -e "status" 2>&1;
+exec $MYSQL --commands $copts -e "status" 2>&1;
 --echo # try mysqladmin
 --error 1
 exec $MYSQLADMIN $copts version 2>&1;
@@ -150,7 +150,7 @@ exec $MYSQL_TEST $copts 2>&1;
 --echo # FR12.1: make sure --ssl-session-data-continue-on-failed-reuse works
 --let $copts=-u root --protocol=tcp -S $MASTER_MYSOCK -P $MASTER_MYPORT --tls-version=$tls_version --ssl-mode=required --ssl-session-data=$session_file --ssl-session-data-continue-on-failed-reuse
 --echo # try mysql
-exec $MYSQL $copts -e "status" > $out_file 2>&1;
+exec $MYSQL --commands $copts -e "status" > $out_file 2>&1;
 --echo # try mysqladmin
 exec $MYSQLADMIN $copts version > $out_file 2>&1;
 --echo # try mysqldump
@@ -169,6 +169,6 @@ SELECT VARIABLE_NAME,VARIABLE_VALUE FROM performance_schema.global_status
 
 --echo # FR13: print session data to stdout
 --replace_regex /^[^-]*($)//
-exec $MYSQL --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print";
+exec $MYSQL --commands --tls-version=$tls_version --ssl-mode=required -e "ssl_session_data_print";
 
 --echo # end of WL#13075: Support TLS session reuse in the C API version independent part

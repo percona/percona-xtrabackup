@@ -1,0 +1,111 @@
+
+# Test enable_secondary_engine_statistics system variable.
+
+SET @my_enable_secondary_engine_statistics =
+@@session.enable_secondary_engine_statistics;
+SET @global_enable_secondary_engine_statistics =
+@@global.enable_secondary_engine_statistics;
+SELECT @global_enable_secondary_engine_statistics;
+@global_enable_secondary_engine_statistics
+1
+# Test with an invalid argument.
+SET @@enable_secondary_engine_statistics = INVALID;
+ERROR 42000: Variable 'enable_secondary_engine_statistics' can't be set to the value of 'INVALID'
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+1
+SET @@enable_secondary_engine_statistics = "INVALID";
+ERROR 42000: Variable 'enable_secondary_engine_statistics' can't be set to the value of 'INVALID'
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+1
+SET @@enable_secondary_engine_statistics = 12.45;
+ERROR 42000: Incorrect argument type to variable 'enable_secondary_engine_statistics'
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+1
+# Test with integer arguments.
+SET @@enable_secondary_engine_statistics = 0;
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+0
+SET @@enable_secondary_engine_statistics = 1;
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+1
+SET @@enable_secondary_engine_statistics = 2;
+ERROR 42000: Variable 'enable_secondary_engine_statistics' can't be set to the value of '2'
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+1
+SET @@enable_secondary_engine_statistics = "OFF";
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+0
+SET @@enable_secondary_engine_statistics = "ON";
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+1
+SET @@enable_secondary_engine_statistics = OFF;
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+0
+SET @@enable_secondary_engine_statistics = ON;
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+1
+SET @@enable_secondary_engine_statistics = DEFAULT;
+SELECT @@enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics
+1
+SELECT @@global.enable_secondary_engine_statistics,
+@@session.enable_secondary_engine_statistics;
+@@global.enable_secondary_engine_statistics	@@session.enable_secondary_engine_statistics
+1	1
+SET @@global.enable_secondary_engine_statistics = OFF;
+SELECT @@global.enable_secondary_engine_statistics,
+@@session.enable_secondary_engine_statistics;
+@@global.enable_secondary_engine_statistics	@@session.enable_secondary_engine_statistics
+0	1
+SELECT @@session.enable_secondary_engine_statistics, VARIABLE_VALUE
+FROM performance_schema.session_variables
+WHERE VARIABLE_NAME='enable_secondary_engine_statistics';
+@@session.enable_secondary_engine_statistics	VARIABLE_VALUE
+1	ON
+SELECT @@global.enable_secondary_engine_statistics, VARIABLE_VALUE
+FROM performance_schema.global_variables
+WHERE VARIABLE_NAME='enable_secondary_engine_statistics';
+@@global.enable_secondary_engine_statistics	VARIABLE_VALUE
+0	OFF
+SET @@session.enable_secondary_engine_statistics = OFF;
+SELECT @@enable_secondary_engine_statistics =
+@@session.enable_secondary_engine_statistics;
+@@enable_secondary_engine_statistics =
+@@session.enable_secondary_engine_statistics
+1
+SET local.enable_secondary_engine_statistics = OFF;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'local.enable_secondary_engine_statistics = OFF' at line 1
+SELECT local.enable_secondary_engine_statistics;
+ERROR 42S02: Unknown table 'local' in field list
+SET session.enable_secondary_engine_statistics = OFF;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'session.enable_secondary_engine_statistics = OFF' at line 1
+SELECT session.enable_secondary_engine_statistics;
+ERROR 42S02: Unknown table 'session' in field list
+SELECT enable_secondary_engine_statistics;
+ERROR 42S22: Unknown column 'enable_secondary_engine_statistics' in 'field list'
+SET @@session.enable_secondary_engine_statistics =
+@my_enable_secondary_engine_statistics;
+SET @@global.enable_secondary_engine_statistics =
+@global_enable_secondary_engine_statistics;
+SET @orig = @@global.enable_secondary_engine_statistics;
+SELECT @orig;
+@orig
+1
+SET GLOBAL enable_secondary_engine_statistics = FALSE;
+SELECT @@global.enable_secondary_engine_statistics;
+@@global.enable_secondary_engine_statistics
+0
+SET GLOBAL enable_secondary_engine_statistics = TRUE;
+SELECT @@global.enable_secondary_engine_statistics;
+@@global.enable_secondary_engine_statistics
+1

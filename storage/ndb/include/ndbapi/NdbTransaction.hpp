@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1162,9 +1162,10 @@ class NdbTransaction {
     InCompletedList
   } theListState;
 
-  Uint32 theDBnode;        // The database node we are connected to
-  Uint32 theNodeSequence;  // The sequence no of the db node
-  bool theReleaseOnClose;
+  Uint32 theDBnode;             // The database node we are connected to
+  Uint32 theNodeSequence;       // The sequence no of the db node
+  bool theReleaseOnClose;       // Data node gone, recycle API object
+  bool theForceReleaseOnClose;  // Data node out of sync, force TC release
 
   /**
    * handle transaction spanning
@@ -1253,7 +1254,6 @@ inline Uint32 NdbTransaction::get_send_size() { return 0; }
 
 inline void NdbTransaction::set_send_size(Uint32 send_size) {
   (void)send_size;  // unused
-  return;
 }
 
 #ifdef NDB_NO_DROPPED_SIGNAL
@@ -1265,14 +1265,11 @@ inline Uint32 NdbTransaction::getMagicNumberFromObject() const {
 }
 
 inline int NdbTransaction::checkMagicNumber() {
-  if (theMagicNumber == getMagicNumber())
-    return 0;
-  else {
+  if (theMagicNumber == getMagicNumber()) return 0;
 #ifdef NDB_NO_DROPPED_SIGNAL
-    abort();
+  abort();
 #endif
-    return -1;
-  }
+  return -1;
 }
 
 inline bool NdbTransaction::checkState_TransId(const Uint32 *transId) const {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,8 @@
 #include "plugin/group_replication/include/compatibility_module.h"
 #include "plugin/group_replication/include/plugin_constants.h"
 
-#include <assert.h>
-#include <stddef.h>
+#include <cassert>
+#include <cstddef>
 
 Compatibility_module::Compatibility_module() : local_version(nullptr) {}
 
@@ -66,22 +66,22 @@ Compatibility_type Compatibility_module::check_local_incompatibility(
 
 bool Compatibility_module::check_version_range_incompatibility(
     Member_version &from, unsigned int to_min, unsigned int to_max) {
-  unsigned int to_max_major_version = to_max >> 16;
-  unsigned int to_min_major_version = to_min >> 16;
+  unsigned int const to_max_major_version = to_max >> 16;
+  unsigned int const to_min_major_version = to_min >> 16;
   // if it is outside the range of the major version
   if (from.get_major_version() > to_max_major_version ||
       from.get_major_version() < to_min_major_version)
     return false;
 
-  unsigned int to_max_minor_version = (to_max >> 8) & 0xff;
-  unsigned int to_min_minor_version = (to_min >> 8) & 0xff;
+  unsigned int const to_max_minor_version = (to_max >> 8) & 0xff;
+  unsigned int const to_min_minor_version = (to_min >> 8) & 0xff;
   // if it is outside the range of the minor version
   if (from.get_minor_version() > to_max_minor_version ||
       from.get_minor_version() < to_min_minor_version)
     return false; /* purecov: inspected */
 
-  unsigned int to_max_patch_version = to_max & 0xff;
-  unsigned int to_min_patch_version = to_min & 0xff;
+  unsigned int const to_max_patch_version = to_max & 0xff;
+  unsigned int const to_min_patch_version = to_min & 0xff;
   // if it is outside the range of the patch version
   if (from.get_patch_version() > to_max_patch_version ||
       from.get_patch_version() < to_min_patch_version)
@@ -103,10 +103,7 @@ Compatibility_type Compatibility_module::check_incompatibility(
       search_its;
 
   search_its = this->incompatibilities.equal_range(from.get_version());
-  for (std::multimap<unsigned int,
-                     std::pair<unsigned int, unsigned int>>::iterator it =
-           search_its.first;
-       it != search_its.second; ++it) {
+  for (auto it = search_its.first; it != search_its.second; ++it) {
     if (check_version_range_incompatibility(to, it->second.first,
                                             it->second.second)) {
       return INCOMPATIBLE;

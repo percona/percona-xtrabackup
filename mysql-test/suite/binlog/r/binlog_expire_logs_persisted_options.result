@@ -1,0 +1,37 @@
+RESET BINARY LOGS AND GTIDS;
+SET PERSIST binlog_expire_logs_auto_purge = 0;
+FLUSH BINARY LOGS;
+FLUSH BINARY LOGS;
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	#	#
+binlog.000002	#	#
+binlog.000003	#	#
+include/stop_mysqld.inc [server 1]
+# restart
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	#	#
+binlog.000002	#	#
+binlog.000003	#	#
+binlog.000004	#	#
+RESET PERSIST;
+RESET BINARY LOGS AND GTIDS;
+SET PERSIST binlog_expire_logs_seconds = 1000000;
+FLUSH BINARY LOGS;
+FLUSH BINARY LOGS;
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	#	#
+binlog.000002	#	#
+binlog.000003	#	#
+include/stop_mysqld.inc [server 1]
+# restart
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	#	#
+binlog.000002	#	#
+binlog.000003	#	#
+binlog.000004	#	#
+RESET PERSIST;
+SET GLOBAL binlog_expire_logs_seconds = 1;

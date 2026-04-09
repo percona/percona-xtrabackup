@@ -194,3 +194,20 @@ p1	p1sp1	0
 p2	p2sp0	0
 p2	p2sp1	0
 DROP TABLE t1;
+# Test redefinition of secondary engine plugin
+CREATE TABLE t1 (C1 INT PRIMARY KEY) SECONDARY_ENGINE = MOCK;
+ALTER TABLE t1 SECONDARY_ENGINE = NULL;
+ALTER TABLE t1 SECONDARY_ENGINE = NULL;
+ALTER TABLE t1 SECONDARY_ENGINE = MOCK;
+ALTER TABLE t1 SECONDARY_ENGINE = MOCK;
+Warnings:
+Warning	3877	Table already has the same secondary engine defined.
+ALTER TABLE t1 SECONDARY_ENGINE = MOCK2;
+ERROR HY000: Secondary engine operation failed. Table already has a secondary engine defined.
+ALTER TABLE t1 SECONDARY_ENGINE = mock;
+Warnings:
+Warning	3877	Table already has the same secondary engine defined.
+ALTER TABLE t1 SECONDARY_ENGINE = MoCk;
+Warnings:
+Warning	3877	Table already has the same secondary engine defined.
+DROP TABLE t1;

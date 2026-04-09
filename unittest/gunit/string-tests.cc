@@ -1,4 +1,4 @@
-/* Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,7 +32,7 @@ struct CHARSET_INFO;
 extern CHARSET_INFO *system_charset_info;
 
 TEST(StringTest, EmptyString) {
-  String s;
+  String const s;
   const uint32 len = 0;
   EXPECT_EQ(len, s.length());
   EXPECT_EQ(len, s.alloced_length());
@@ -66,5 +66,5 @@ TEST(StringTest, StringBuffer) {
   StringBuffer<3> sb("abc", 3, &my_charset_bin);
   sb.append("def");
   EXPECT_STREQ("abcdef", sb.c_ptr());
-  EXPECT_EQ(6u, sb.length());
+  EXPECT_EQ(6U, sb.length());
 }

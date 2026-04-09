@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,8 +28,8 @@
 #ifndef MYSQL_ALLOCATORS_MEMORY_RESOURCE_H
 #define MYSQL_ALLOCATORS_MEMORY_RESOURCE_H
 
-#include <cstdlib>
-#include <functional>
+#include <cstdlib>     // malloc
+#include <functional>  // function
 
 /// @addtogroup GroupLibsMysqlAllocators
 /// @{
@@ -110,7 +110,7 @@ class Memory_resource {
   /// @param n The size.
   ///
   /// @return The new memory.
-  void *allocate(Size_t n) const { return m_allocator(n); }
+  [[nodiscard]] void *allocate(Size_t n) const { return m_allocator(n); }
 
   /// Deallocate memory using the provided deallocator.
   ///
@@ -118,15 +118,38 @@ class Memory_resource {
   void deallocate(Ptr_t p) const { m_deallocator(p); }
 
   /// Return the deallocator.
-  Deallocator_t get_deallocator() const { return m_deallocator; }
+  [[nodiscard]] Deallocator_t get_deallocator() const { return m_deallocator; }
+
+  /// Return const reference to a defult-constructed Memory_resource.
+  ///
+  /// This memory resource is live until program termination.
+  [[nodiscard]] static const Memory_resource &get_default() {
+    static Memory_resource instance;
+    return instance;
+  }
 
  private:
   /// The allocator object.
-  const Allocator_t m_allocator;
+  Allocator_t m_allocator;
 
   /// The deallocator object.
-  const Deallocator_t m_deallocator;
-};
+  Deallocator_t m_deallocator;
+};  // class Memory_resource
+
+/// Return object.get_memory_resource(), if that function exists. Otherwise,
+/// returns a default-constructed Memory_resource.
+///
+/// This may be useful to implement get_memory_resource() in class templates,
+/// when the returned object is retrieved from a member object of a template
+/// type that may or may not have a get_memory_resource() member function.
+[[nodiscard]] decltype(auto) get_memory_resource_or_default(
+    const auto &object) {
+  if constexpr (requires { object.get_memory_resource(); }) {
+    return object.get_memory_resource();
+  } else {
+    return Memory_resource::get_default();
+  }
+}
 
 }  // namespace mysql::allocators
 

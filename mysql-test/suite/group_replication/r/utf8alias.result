@@ -1,0 +1,120 @@
+include/group_replication.inc [rpl_server_count=3]
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the connection metadata repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START REPLICA; see the 'START REPLICA Syntax' in the MySQL Manual for more information.
+[connection server1]
+[connection server1]
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+include/start_and_bootstrap_group_replication.inc
+[connection server2]
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+include/start_group_replication.inc
+[connection server3]
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+include/start_group_replication.inc
+include/assert.inc [Verify server1 is primary]
+
+# 1. Validate that UTF8 is mapped into utf8mb4.
+[connection server1]
+CREATE TABLE t1(
+a CHAR(42) CHARACTER SET UTF8 NOT NULL PRIMARY KEY,
+b CHAR(42) CHARACTER SET UTF8
+GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+);
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `b` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb4'^[a-z0-9-]+$')) VIRTUAL,
+  PRIMARY KEY (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+INSERT INTO t1(a) VALUES(_utf8 x'F09F8DA3');
+SELECT * FROM t1;
+a	b
+🍣	0
+include/rpl/sync.inc
+[connection server2]
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `b` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb4'^[a-z0-9-]+$')) VIRTUAL,
+  PRIMARY KEY (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+SELECT * FROM t1;
+a	b
+🍣	0
+[connection server3]
+SHOW CREATE TABLE t1;
+Table	Create Table
+t1	CREATE TABLE `t1` (
+  `a` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `b` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb4'^[a-z0-9-]+$')) VIRTUAL,
+  PRIMARY KEY (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+SELECT * FROM t1;
+a	b
+🍣	0
+
+# 2. SET server2 as PRIMARY
+#    Validate that UTF8 is mapped into utf8mb4.
+[connection server2]
+SELECT group_replication_set_as_primary("SERVER2_UUID");
+group_replication_set_as_primary("SERVER2_UUID")
+Primary server switched to: SERVER2_UUID
+include/gr_assert_primary_member.inc
+CREATE TABLE t2(
+a CHAR(42) CHARACTER SET UTF8 NOT NULL PRIMARY KEY,
+b CHAR(42) CHARACTER SET UTF8
+GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+);
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `b` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb4'^[a-z0-9-]+$')) VIRTUAL,
+  PRIMARY KEY (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+INSERT INTO t2(a) VALUES(_utf8 x'F09F8DA3');
+SELECT * FROM t2;
+a	b
+🍣	0
+include/rpl/sync.inc
+[connection server1]
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `b` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb4'^[a-z0-9-]+$')) VIRTUAL,
+  PRIMARY KEY (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+SELECT * FROM t2;
+a	b
+🍣	0
+[connection server3]
+SHOW CREATE TABLE t2;
+Table	Create Table
+t2	CREATE TABLE `t2` (
+  `a` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `b` char(42) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci GENERATED ALWAYS AS (regexp_like(`a`,_utf8mb4'^[a-z0-9-]+$')) VIRTUAL,
+  PRIMARY KEY (`a`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+SELECT * FROM t2;
+a	b
+🍣	0
+
+# 3. Cleanup.
+[connection server2]
+DROP TABLE t1;
+DROP TABLE t2;
+include/rpl/sync.inc
+[connection server1]
+include/stop_group_replication.inc
+SET @@sql_mode=default;
+[connection server3]
+include/stop_group_replication.inc
+SET @@sql_mode=default;
+[connection server2]
+include/stop_group_replication.inc
+SET @@sql_mode=default;
+include/group_replication_end.inc

@@ -139,9 +139,7 @@ ADDTIME(TIME'00:00:00', TIME'01:01:01')
 01:01:01
 SELECT ADDTIME('2021-01-01', '01:01:01');
 ADDTIME('2021-01-01', '01:01:01')
-01:21:22
-Warnings:
-Warning	1292	Truncated incorrect time value: '2021-01-01'
+2021-01-01 01:01:01
 SELECT ADDTIME('2021-01-01 00:00:00', TIME'01:01:01');
 ADDTIME('2021-01-01 00:00:00', TIME'01:01:01')
 2021-01-01 01:01:01
@@ -162,3 +160,52 @@ prepare s from "SELECT ADDTIME(?, TIME'01:01:01')";
 execute s using @t;
 ADDTIME(?, TIME'01:01:01')
 01:01:01.000000
+CREATE TABLE t1(t TIME, d DATE);
+INSERT INTO t1 VALUES(TIME'11:59:59', DATE'2025-04-11');
+SELECT COALESCE(ADDTIME(t, DATE(d)), '00:00:00') AS c1 FROM t1;
+c1
+11:59:59
+DROP TABLE t1;
+#
+# Bug#37864407: Assertion mt.time_type == MYSQL_TIMESTAMP_DATETIME
+#
+SELECT TIME(ADDTIME(241, 241));
+TIME(ADDTIME(241, 241))
+00:05:22
+#
+# Bug#37946872: Assertion 'null_value' failed at sql/item.cc
+#
+SELECT ADDTIME(TIME'00:20:08',
+LEAST(DATEDIFF(TIMESTAMP'2004-07-15 19:35:20.060', '2005-07-21'),
+'0000-00-00 00:00:00', TIME'00:20:08'
+                    )
+) AS c1;
+c1
+NULL
+Warnings:
+Warning	1292	Truncated incorrect time value: '-371'
+#
+# Bug#37953309: Assertion 'date.time_type == time.time.type' failed
+#
+SELECT ADDTIME(FROM_UNIXTIME(2985951232, "%y-%r-%i-%b-%x"), DATE('0000-00-00'));
+ADDTIME(FROM_UNIXTIME(2985951232, "%y-%r-%i-%b-%x"), DATE('0000-00-00'))
+NULL
+Warnings:
+Warning	1292	Incorrect datetime value: '64-05:53:52 PM-53-Aug-2064'
+#
+# Bug#38487675: Assertion failed: is_valid() && iv.year == 0 &&
+#               iv.month == 0 && iv.day == 0
+#
+SET TIMESTAMP = UNIX_TIMESTAMP('2025-10-11 00:00:00');
+SELECT INTERVAL '{"a":[1,2,3,4,5]}' DAY_MICROSECOND + TIME'11:22:33';
+INTERVAL '{"a":[1,2,3,4,5]}' DAY_MICROSECOND + TIME'11:22:33'
+2025-10-12 13:25:37.500000
+SET TIMESTAMP = DEFAULT;
+#
+# Bug#38487373: Assertion failed: time.time_type == MYSQL_TIMESTAMP_TIME
+#
+SET TIMESTAMP = UNIX_TIMESTAMP('2025-10-11 00:00:00');
+DO ADDTIME(TIME_FORMAT('-250:07:38.935647', '1974-10-18 08:57:35.681107'), 1);
+Warnings:
+Warning	1292	Incorrect datetime value: '-1974-10-18 08:57:35.681107'
+SET TIMESTAMP = DEFAULT;

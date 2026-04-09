@@ -87,6 +87,13 @@ test_mysql_command_services_udf("INSERT INTO test.t6(c2) VALUES('BAR')")
 SELECT test_mysql_command_services_udf("SELECT c1,c2 FROM test.t6");
 test_mysql_command_services_udf("SELECT c1,c2 FROM test.t6")
 1FOONULLBAR
+# Test: reusing the same connection to run several queries should not crash
+SELECT test_mysql_command_services_udf("SELECT 1");
+test_mysql_command_services_udf("SELECT 1")
+1
+SELECT test_mysql_command_services_udf("SELECT 1", 2);
+test_mysql_command_services_udf("SELECT 1", 2)
+1
 SELECT test_mysql_command_services_apis_udf();
 test_mysql_command_services_apis_udf()
 10mysql-1
@@ -101,4 +108,14 @@ DROP TABLE t3;
 DROP TABLE t4;
 DROP TABLE t5;
 DROP TABLE t6;
+# Test : sql_errno() should get the error code (1146) BUG#38178087
+SET @@GLOBAL.DEBUG = '+d, mysql_command_services_component_test_errno';
+SELECT test_mysql_command_services_error_code_udf("SELECT * FROM test.no_such_table");
+test_mysql_command_services_error_code_udf("SELECT * FROM test.no_such_table")
+1146
+SET @@GLOBAL.DEBUG = '-d, mysql_command_services_component_test_errno';
+# Test : failing connect() when running in an initialized thread; cleanup (cmd_factory->close() + cmd_thread->end()) must not leak the session
+SELECT test_mysql_command_services_explicit_connect_fail_cleanup_udf();
+test_mysql_command_services_explicit_connect_fail_cleanup_udf()
+1
 UNINSTALL COMPONENT "file://component_test_mysql_command_services";

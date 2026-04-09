@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
 
 #include "mysql/harness/config_option.h"
 
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 
@@ -39,7 +40,7 @@ double option_as_double(const std::string &value,
   ss.imbue(std::locale("C"));
   double result = 0.0;
   if (!(ss >> result) || !ss.eof() || (result < min_value - 0.0001) ||
-      (result > max_value + 0.0001)) {
+      (result > max_value + 0.0001) || std::isnan(result)) {
     std::stringstream os;
     os << option_name << " needs value between " << min_value << " and "
        << max_value << " inclusive";

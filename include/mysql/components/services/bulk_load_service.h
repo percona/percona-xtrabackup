@@ -1,4 +1,4 @@
-/* Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -352,8 +352,10 @@ enum class Bulk_compression_algorithm { NONE, ZSTD };
 enum class Bulk_string {
   /** Schema name */
   SCHEMA_NAME,
-  /* Table name */
-  TABLE_NAME,
+  /* SQL table name */
+  SQL_TABLE_NAME,
+  /* Duplicate table name */
+  DUPLICATE_TABLE_NAME,
   /* File prefix URL */
   FILE_PREFIX,
   /* File suffix */
@@ -375,7 +377,9 @@ enum class Bulk_condition {
   OPTIONAL_ENCLOSE,
   /** If true, the current execution is only a dry run.  No need to load data
   into the table. */
-  DRYRUN
+  DRYRUN,
+  /** If true, we are loading data into a non-empty table. */
+  NON_EMPTY_TABLE
 };
 
 /** Bulk loader size attributes. */
@@ -408,14 +412,16 @@ BEGIN_SERVICE_DEFINITION(bulk_load_driver)
 /**
   Create bulk loader.
   @param[in]  thd     mysql THD
-  @param[in]  table   mysql TABLE object
+  @param[in]  sql_table   mysql TABLE object
+  @param[in]  duplicate_table   mysql TABLE object
   @param[in]  src     bulk loader source
   @param[in]  charset source data character set
   @return bulk loader object, opaque type.
 */
 DECLARE_METHOD(Bulk_loader *, create_bulk_loader,
-               (THD * thd, my_thread_id connection_id, const TABLE *table,
-                Bulk_source src, const CHARSET_INFO *charset));
+               (THD * thd, my_thread_id connection_id, const TABLE *sql_table,
+                const TABLE *duplicate_table, Bulk_source src,
+                const CHARSET_INFO *charset));
 /**
   Set string attribute for loading data.
   @param[in,out]  loader  bulk loader

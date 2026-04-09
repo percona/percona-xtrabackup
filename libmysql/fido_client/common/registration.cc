@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -66,7 +66,7 @@ bool registration::make_credentials(const char *challenge) {
 
   @param [in] user   buffer holding user name
 */
-void registration::set_user(std::string user) {
+void registration::set_user(const std::string &user) {
   /*
     1, 2 parameters refer to user ID/len, which should be unique for
     a given user, else same credentials is re used in authenticator.
@@ -81,7 +81,7 @@ void registration::set_user(std::string user) {
 
   @param [in] rp_id   buffer holding relying party name
 */
-void registration::set_rp_id(std::string rp_id) {
+void registration::set_rp_id(const std::string &rp_id) {
   fido_cred_set_rp(m_cred, rp_id.c_str(), nullptr);
 }
 

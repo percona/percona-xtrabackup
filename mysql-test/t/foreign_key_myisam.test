@@ -1,6 +1,9 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 # Use MyISAM for this table since we are only interested in checking syntax.
 --error ER_WRONG_FK_DEF
 create table t1 (
@@ -214,3 +217,5 @@ CREATE TABLE myisam_table (fk INT) ENGINE=MyISAM;
 ALTER TABLE myisam_table DROP FOREIGN KEY no_such_fk;
 ALTER TABLE myisam_table DROP FOREIGN KEY c;
 DROP TABLES myisam_table, child, parent;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

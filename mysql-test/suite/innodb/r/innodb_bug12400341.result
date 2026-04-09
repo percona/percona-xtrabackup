@@ -1,4 +1,5 @@
 # Test for bug #12400341: INNODB CAN LEAVE ORPHAN IBD FILES AROUND
+include/rpl/set_gtid_mode_off.inc
 set @old_innodb_rollback_segments = @@innodb_rollback_segments;
 set global innodb_rollback_segments=1;
 show variables like "max_connections";
@@ -38,3 +39,4 @@ Warnings:
 Warning	1287	'INFORMATION_SCHEMA.PROCESSLIST' is deprecated and will be removed in a future release. Please use performance_schema.processlist instead
 drop database mysqltest;
 set global innodb_rollback_segments = @old_innodb_rollback_segments;
+include/rpl/set_gtid_mode_on.inc

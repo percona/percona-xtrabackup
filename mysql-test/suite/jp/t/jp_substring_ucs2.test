@@ -57,19 +57,33 @@ INSERT INTO `£Τ£Ή` VALUES ('νάνένήνίνΰ'),('νάνένήνί'),('νάνένή'),('
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£±`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£±`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£±`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£±`;
 
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,0) FROM `£Τ£²`;
@@ -86,20 +100,35 @@ SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£±`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£²`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£²`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£²`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£²`;
+--sorted_result
 
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,0) FROM `£Τ£³`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1) FROM `£Τ£³`;
@@ -115,19 +144,33 @@ SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£²`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£³`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£³`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£³`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£³`;
 
 #MyISAM
@@ -145,19 +188,33 @@ SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£³`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£΄`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£΄`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£΄`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£΄`;
 
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,0) FROM `£Τ£µ`;
@@ -174,19 +231,33 @@ SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£΄`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£µ`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£µ`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£µ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£µ`;
 
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,0) FROM `£Τ£¶`;
@@ -203,19 +274,33 @@ SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£µ`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£¶`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£¶`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£¶`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£¶`;
 
 #MEMORY
@@ -233,19 +318,33 @@ SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£¶`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£·`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£·`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£·`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£·`;
 
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,0) FROM `£Τ£Έ`;
@@ -262,19 +361,33 @@ SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£·`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£Έ`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£Έ`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£Έ`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£Έ`;
 
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,0) FROM `£Τ£Ή`;
@@ -291,19 +404,33 @@ SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£Έ`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 4) FROM `£Τ£Ή`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 5) FROM `£Τ£Ή`;
 #SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 6) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,0) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,1) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,2) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,3) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,4) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,5) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±`,1,6) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 0) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 1) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 2) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 3) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 4) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 5) FROM `£Τ£Ή`;
+--sorted_result
 SELECT `£Γ£±`, SUBSTRING(`£Γ£±` FROM 1 FOR 6) FROM `£Τ£Ή`;
 
 DROP TABLE `£Τ£±`;

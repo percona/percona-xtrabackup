@@ -40,26 +40,38 @@
 --let $rpl_connection_name= srv_master
 --let $rpl_server_number= 1
 --source include/rpl/connect.inc
+--connect srv_master
+--source include/ndb_not_readonly.inc
 
 --let $rpl_connection_name= srv_master1
 --let $rpl_server_number= 2
 --source include/rpl/connect.inc
+--connect srv_master1
+--source include/ndb_not_readonly.inc
 
 --let $rpl_connection_name= srv_master2
 --let $rpl_server_number= 3
 --source include/rpl/connect.inc
+--connect srv_master2
+--source include/ndb_not_readonly.inc
 
 --let $rpl_connection_name= srv_slave
 --let $rpl_server_number= 4
 --source include/rpl/connect.inc
+--connect srv_slave
+--source include/ndb_not_readonly.inc
 
 --let $rpl_connection_name= srv_slave1
 --let $rpl_server_number= 5
 --source include/rpl/connect.inc
+--connect srv_slave1
+--source include/ndb_not_readonly.inc
 
 --let $rpl_connection_name= srv_slave2
 --let $rpl_server_number= 6
 --source include/rpl/connect.inc
+--connect srv_slave2
+--source include/ndb_not_readonly.inc
 
 --echo *** Waiting for each cluster to startup ***
 

@@ -1,0 +1,66 @@
+CREATE PROCEDURE populate_table(IN table_name VARCHAR(2), IN num_records INT)
+BEGIN
+DECLARE row_value INT DEFAULT 0;
+DECLARE value_list VARCHAR(10000) DEFAULT "";
+WHILE row_value < num_records - 1 DO
+SET value_list = CONCAT(value_list, "(", row_value, "),");
+SET row_value = row_value + 1;
+END WHILE;
+SET value_list = CONCAT(value_list, "(", row_value, ")");
+SET @sql = CONCAT("INSERT INTO ", table_name, " VALUES ", value_list);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+END//
+# Case 1: Sequential generation of row id
+CREATE TABLE t1 (c1 INT);
+CALL populate_table("t1", 100);
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+100
+CHECK TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	check	status	OK
+DROP TABLE t1;
+# Case 2: Parallel generation of row id
+# Case 2.1: 1 table
+CREATE TABLE t1 (c1 INT);
+CALL populate_table("t1", 100);
+CALL populate_table("t1", 100);
+CALL populate_table("t1", 100);
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+300
+CHECK TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	check	status	OK
+DROP TABLE t1;
+# Case 2.2: 3 tables
+CREATE TABLE t1 (c1 INT);
+CREATE TABLE t2 (c1 INT);
+CREATE TABLE t3 (c1 INT);
+CALL populate_table("t1", 100);
+CALL populate_table("t2", 100);
+CALL populate_table("t3", 100);
+SELECT COUNT(*) FROM t1;
+COUNT(*)
+100
+CHECK TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	check	status	OK
+SELECT COUNT(*) FROM t2;
+COUNT(*)
+100
+CHECK TABLE t2;
+Table	Op	Msg_type	Msg_text
+test.t2	check	status	OK
+SELECT COUNT(*) FROM t3;
+COUNT(*)
+100
+CHECK TABLE t3;
+Table	Op	Msg_type	Msg_text
+test.t3	check	status	OK
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
+DROP PROCEDURE populate_table;

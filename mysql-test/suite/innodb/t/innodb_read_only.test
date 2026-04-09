@@ -2,6 +2,12 @@
 # Don't test this under valgrind, memory leaks will occur due restart
 --source include/not_valgrind.inc
 
+let $messages =
+Failed to compress the gtid_executed table
+;
+--let $suppress_on_current_connection = 1
+--source include/suppress_messages.inc
+
 CREATE DATABASE WL6445;
 
 CREATE TABLE WL6445.t1(c1 INT, c2 INT, INDEX sec_idx(c2)) ENGINE=InnoDB;

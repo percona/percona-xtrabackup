@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -22,7 +22,9 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 usr/bin/mysqlrouter
+usr/bin/mysqlrouter_bootstrap
 usr/bin/mysqlrouter_keyring
+usr/bin/mysqlrouter_mrs_client
 usr/bin/mysqlrouter_plugin_info
 usr/bin/mysqlrouter_passwd
 usr/lib/mysqlrouter/plugin/connection_pool.so
@@ -41,9 +43,16 @@ usr/lib/mysqlrouter/plugin/rest_connection_pool.so
 usr/lib/mysqlrouter/plugin/rest_router.so
 usr/lib/mysqlrouter/plugin/rest_routing.so
 usr/lib/mysqlrouter/plugin/rest_metadata_cache.so
+usr/lib/mysqlrouter/plugin/mysql_rest_service.so
+@DEB_INSTALL_MRS_JIT_EXECUTOR_PLUGIN@
+
 # private shared libraries
+usr/lib/mysqlrouter/private/libicui18n.so.77.1
+usr/lib/mysqlrouter/private/libicustubdata.so.77.1
+usr/lib/mysqlrouter/private/libicuuc.so.77.1
 usr/lib/mysqlrouter/private/libprotobuf.so.24.4.0
 usr/lib/mysqlrouter/private/libabsl_*.so
+usr/lib/mysqlrouter/private/libmysqlrouter_http_client.so.1
 usr/lib/mysqlrouter/private/libmysqlharness.so.1
 usr/lib/mysqlrouter/private/libmysqlharness_stdx.so.1
 usr/lib/mysqlrouter/private/libmysqlharness_tls.so.1
@@ -63,7 +72,9 @@ usr/lib/mysqlrouter/private/libmysqlrouter_mysqlxclient.so.1
 usr/lib/mysqlrouter/private/libmysqlrouter_mysqlxmessages.so.1
 usr/lib/mysqlrouter/private/libmysqlrouter_routing.so.1
 usr/lib/mysqlrouter/private/libmysqlrouter_routing_connections.so.1
+usr/lib/mysqlrouter/private/libmysqlrouter_routing_guidelines.so.1
 usr/lib/mysqlrouter/private/libmysqlrouter_utils.so.1
+@DEB_INSTALL_MRS_JIT_EXECUTOR_LIB@
 
 usr/share/mysqlrouter/docs/sample_mysqlrouter.conf
 usr/share/mysqlrouter/mysqlrouter-systemd-start

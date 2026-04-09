@@ -2,12 +2,20 @@
 # two parallel workers. The test case then insert on the slave a tuple that will
 # block writes on d2 and generate gaps.
 
+# to create gaps, this test must run without preserve commit order
+# and with WRITESET dependency tracking
+
 --let $slave_stop_wait=5
 
 --echo #### I. Initialize ####
 
 --source include/rpl/connection_replica.inc
 --source include/rpl/stop_replica.inc
+
+# allow transactions to commit out of order
+--let $save_replica_preserve_commit_order=`SELECT @@replica_preserve_commit_order`
+SET GLOBAL replica_preserve_commit_order=FALSE;
+
 SET @save.innodb_lock_wait_timeout= @@global.innodb_lock_wait_timeout;
 --eval set @@global.innodb_lock_wait_timeout=$slave_stop_wait + 1000
 
@@ -24,6 +32,7 @@ CREATE TABLE d2.t (a INT PRIMARY KEY, name text) ENGINE=INNODB;
 --source include/rpl/sync_to_replica.inc
 BEGIN;
 INSERT INTO d2.t VALUES (2, 'Slave local'); # Hold T3
+INSERT INTO d2.t VALUES (3, 'Slave local'); # Hold T4
 INSERT INTO d1.t VALUES (3, 'Slave local'); # Hold T6
 
 --source include/rpl/connection_source.inc

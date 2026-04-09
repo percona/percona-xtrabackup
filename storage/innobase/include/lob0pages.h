@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -149,11 +149,6 @@ struct data_page_t : public basic_page_t {
   @param[in,out]        len     length of data.
   @return number of bytes appended. */
   ulint append(trx_id_t trxid, byte *&data, ulint &len);
-
-  std::pair<ulint, byte *> insert_middle(trx_t *trx, ulint offset, byte *&data,
-                                         ulint &len, buf_block_t *&new_block);
-
-  buf_block_t *remove_middle(trx_t *trx, ulint offset, ulint &len);
 
   ulint max_space_available() const { return (payload()); }
 

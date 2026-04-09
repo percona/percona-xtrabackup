@@ -1,0 +1,22 @@
+#
+# WL#16956: Move SQL functions MD5() and SHA1() in a separate component
+#
+# Restart mysqld in FIPs mode.
+# restart: --ssl-fips-mode=STRICT
+Server fips mode:
+Variable_name	Value
+ssl_fips_mode	STRICT
+INSTALL COMPONENT 'file://component_classic_hashing';
+# Tests
+SELECT MD5('hello');
+MD5('hello')
+NULL
+SELECT SHA1('hello');
+SHA1('hello')
+aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d
+SELECT SHA('hello');
+SHA('hello')
+aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d
+# Cleanup
+UNINSTALL COMPONENT 'file://component_classic_hashing';
+# restart:

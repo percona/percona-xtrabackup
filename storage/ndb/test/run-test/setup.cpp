@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,7 +38,7 @@ extern int g_mt_rr;
 
 static atrt_host *find(const char *hostname, Vector<atrt_host *> &);
 static bool load_process(atrt_config &, atrt_coverage_config &, atrt_cluster &,
-                         BaseString, atrt_process::Type, unsigned idx,
+                         const BaseString &, atrt_process::Type, unsigned idx,
                          const char *hostname, bool clean_shutdown);
 static bool load_options(int argc, char **argv, int type, atrt_options &);
 bool load_custom_processes(atrt_config &config,
@@ -405,7 +405,7 @@ BaseString getProcGroupName(atrt_process::Type type) {
 
 static bool load_process(atrt_config &config,
                          atrt_coverage_config &coverage_config,
-                         atrt_cluster &cluster, BaseString name,
+                         atrt_cluster &cluster, const BaseString &name,
                          atrt_process::Type type, unsigned idx,
                          const char *hostname, bool clean_shutdown) {
   atrt_host *host_ptr = find(hostname, config.m_hosts);

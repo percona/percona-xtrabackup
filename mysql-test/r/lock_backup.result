@@ -1,6 +1,7 @@
 #
 # WL#9451 -- Backup Lock
 #
+include/rpl/set_gtid_mode_off.inc
 CREATE TABLE t1 (a INT);
 connect  con1, localhost, root,,;
 SET lock_wait_timeout= 1;
@@ -133,3 +134,4 @@ clean up
 DROP DATABASE db1;
 disconnect con1;
 connection default;
+include/rpl/set_gtid_mode_on.inc

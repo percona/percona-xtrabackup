@@ -448,3 +448,20 @@ SET @@sql_select_limit=DEFAULT;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 DROP TABLE t1;
+
+--echo #
+--echo # Bug#37293822: Wrong result with OFFSET in table-less subquery
+--echo #
+
+SELECT (SELECT 1 LIMIT 10 OFFSET 1) AS res;
+SELECT (SELECT 1 LIMIT 0) AS res;
+SELECT (SELECT 1 LIMIT 10 OFFSET 0) AS res;
+SELECT (SELECT 1 LIMIT 1) AS res;
+
+PREPARE ps FROM 'SELECT (SELECT 1 LIMIT ? OFFSET ?) AS res';
+SET @zero = 0, @one = 1;
+EXECUTE ps USING @zero, @zero;
+EXECUTE ps USING @zero, @one;
+EXECUTE ps USING @one, @zero;
+EXECUTE ps USING @one, @one;
+DEALLOCATE PREPARE ps;

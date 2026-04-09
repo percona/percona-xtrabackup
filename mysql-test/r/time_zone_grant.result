@@ -6,6 +6,8 @@ delete from mysql.db where user like 'mysqltest\_%';
 delete from mysql.tables_priv where user like 'mysqltest\_%';
 delete from mysql.columns_priv where user like 'mysqltest\_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 create table t1 (a int, b datetime);
 create table t2 (c int, d datetime);
 create user mysqltest_1@localhost;
@@ -29,6 +31,8 @@ select Name, convert_tz('2004-10-21 19:00:00', Name, 'UTC') from mysql.time_zone
 ERROR 42000: SELECT command denied to user 'mysqltest_1'@'localhost' for table 'time_zone_name'
 delete from mysql.db where user like 'mysqltest\_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 grant all privileges on test.t1 to mysqltest_1@localhost;
 grant all privileges on test.t2 to mysqltest_1@localhost;
 show grants for current_user();
@@ -62,6 +66,8 @@ delete from mysql.user where user like 'mysqltest\_%';
 delete from mysql.db where user like 'mysqltest\_%';
 delete from mysql.tables_priv where user like 'mysqltest\_%';
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 drop table t1, t2;
 create table t1 (a int, b datetime);
 insert into t1 values (1, 20010101000000), (2, 20020101000000);

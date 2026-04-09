@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,7 +30,7 @@
 
 #include "errors.h"
 
-#include <assert.h>
+#include <cassert>
 #include <cstddef>
 #include <unordered_map>
 
@@ -51,16 +51,6 @@ struct UErrorCodeHash {
 /**
   Map from ICU error codes to MySQL dittos. We strive to keep this list in the
   same order as the enum UErrorCode in common/unicode/utypes.h.
-
-  ICU version 67 introduced a new implementation for '@\X'
-  "Match a Grapheme Cluster". This means that our bundled version will
-  return ER_REGEXP_MISSING_RESOURCE while for system ICU we return
-  ER_WARN_REGEXP_USING_DEFAULT as a Note.
-
-  TODO(tdidriks) Bundle data files in
-    icudt69b/brkitr/
-    icudt69l/brkitr/
-  so that bundled and system ICU results are aligned.
 */
 std::unordered_map<UErrorCode, int, UErrorCodeHash> error_map = {
     // ICU Error code                 MySQL error code
@@ -97,7 +87,7 @@ std::unordered_map<UErrorCode, int, UErrorCodeHash> error_map = {
 bool check_icu_status(UErrorCode status, const UParseError *parse_error) {
   if (status == U_ZERO_ERROR) return false;
 
-  int error_code = error_map[status];
+  int const error_code = error_map[status];
 
   // Add notification for select status codes.
   // E.g. we have lots of U_STRING_NOT_TERMINATED_WARNING,

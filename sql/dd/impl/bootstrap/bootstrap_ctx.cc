@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -24,8 +24,7 @@
 #include "sql/dd/impl/bootstrap/bootstrap_ctx.h"  // dd::DD_bootstrap_ctx
 #include "sql/dd/impl/tables/dd_properties.h"     // dd::tables::DD_properties
 
-namespace dd {
-namespace bootstrap {
+namespace dd::bootstrap {
 
 DD_bootstrap_ctx &DD_bootstrap_ctx::instance() {
   static DD_bootstrap_ctx s_instance;
@@ -46,5 +45,4 @@ bool DD_bootstrap_ctx::is_above_minor_downgrade_threshold(THD *thd) const {
           exists && dd::DD_VERSION >= minor_downgrade_threshold);
 }
 
-}  // namespace bootstrap
-}  // namespace dd
+}  // namespace dd::bootstrap

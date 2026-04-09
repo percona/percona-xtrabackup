@@ -1,0 +1,60 @@
+#
+# Bug#38175557 - Json Duality View: derived_merge=off optimizer hint not working
+#
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 INT);
+INSERT INTO t1 VALUES (3, 8), (1, 7), (5, 5), (7, 5);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+CREATE OR REPLACE JSON DUALITY VIEW dv1 AS SELECT
+JSON_DUALITY_OBJECT(WITH (INSERT, UPDATE, DELETE)
+"_id" : f1,
+"f2"  : f2) FROM t1;
+SET @optimizer_switch_saved= @@optimizer_switch;
+SET optimizer_switch="derived_merge=on";
+EXPLAIN SELECT * FROM dv1 WHERE json_value(data, '$._id') = 1;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	4	100.00	Using where
+Warnings:
+Note	1003	/* select#1 */ select json_duality_object( WITH (INSERT,UPDATE,DELETE) '_id':`test`.`t1`.`f1`,'f2':`test`.`t1`.`f2`) AS `data` from `test`.`t1` where (json_value(json_duality_object( WITH (INSERT,UPDATE,DELETE) '_id':`test`.`t1`.`f1`,'f2':`test`.`t1`.`f2`), '$._id' returning char(512)) = 1)
+SELECT * FROM dv1 WHERE json_value(data, '$._id') = 1;
+data
+{"f2": 7, "_id": 1, "_metadata": {"etag": "c616a4dc6df17c2e6761a5c08e0bb3ed"}}
+EXPLAIN SELECT * FROM dv1 WHERE json_value(data, '$.f2') = 5;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	SIMPLE	t1	NULL	ALL	NULL	NULL	NULL	NULL	4	100.00	Using where
+Warnings:
+Note	1003	/* select#1 */ select json_duality_object( WITH (INSERT,UPDATE,DELETE) '_id':`test`.`t1`.`f1`,'f2':`test`.`t1`.`f2`) AS `data` from `test`.`t1` where (json_value(json_duality_object( WITH (INSERT,UPDATE,DELETE) '_id':`test`.`t1`.`f1`,'f2':`test`.`t1`.`f2`), '$.f2' returning char(512)) = 5)
+SELECT * FROM dv1 WHERE json_value(data, '$.f2') = 5;
+data
+{"f2": 5, "_id": 5, "_metadata": {"etag": "f7b8491f7d05055d8883ef95210b8be6"}}
+{"f2": 5, "_id": 7, "_metadata": {"etag": "de1ceaca4de1e51171b2cd7983bc59c5"}}
+SET optimizer_switch="derived_merge=off";
+# Without fix, deriver_merge=off does not have any effect.
+# Optimizer does attempts to merge derived tables. As a result,
+# following explain dumps same information as EXPLAIN with
+# derived_merge=on.
+# With fix, optimizer does not attempts to merge derived tables
+# when "derived_merge=off" for SELECTs.
+EXPLAIN SELECT * FROM dv1 WHERE json_value(data, '$._id') = 1;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	<derived2>	NULL	ALL	NULL	NULL	NULL	NULL	4	100.00	NULL
+2	DERIVED	t1	NULL	ALL	NULL	NULL	NULL	NULL	4	100.00	Using where
+Warnings:
+Note	1003	/* select#1 */ select `test`.`dv1`.`data` AS `data` from `test`.`dv1`
+SELECT * FROM dv1 WHERE json_value(data, '$._id') = 1;
+data
+{"f2": 7, "_id": 1, "_metadata": {"etag": "c616a4dc6df17c2e6761a5c08e0bb3ed"}}
+EXPLAIN SELECT * FROM dv1 WHERE json_value(data, '$.f2') = 5;
+id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
+1	PRIMARY	<derived2>	NULL	ALL	NULL	NULL	NULL	NULL	4	100.00	NULL
+2	DERIVED	t1	NULL	ALL	NULL	NULL	NULL	NULL	4	100.00	Using where
+Warnings:
+Note	1003	/* select#1 */ select `test`.`dv1`.`data` AS `data` from `test`.`dv1`
+SELECT * FROM dv1 WHERE json_value(data, '$.f2') = 5;
+data
+{"f2": 5, "_id": 5, "_metadata": {"etag": "f7b8491f7d05055d8883ef95210b8be6"}}
+{"f2": 5, "_id": 7, "_metadata": {"etag": "de1ceaca4de1e51171b2cd7983bc59c5"}}
+SET @@optimizer_switch= @optimizer_switch_saved;
+DROP VIEW dv1;
+DROP TABLE t1;

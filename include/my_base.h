@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -421,7 +421,11 @@ enum ha_extra_function {
   */
   HA_EXTRA_ENABLE_UNIQUE_RECORD_FILTER,
   /* Disable and free unique record filter. */
-  HA_EXTRA_DISABLE_UNIQUE_RECORD_FILTER
+  HA_EXTRA_DISABLE_UNIQUE_RECORD_FILTER,
+  /* Enable locking read. Used for foreign key check */
+  HA_EXTRA_ENABLE_LOCKING_RECORD,
+  /* Reset locking read. */
+  HA_EXTRA_RESET_LOCKING_RECORD
 };
 
 /* Compatible option, to be deleted in 6.0 */
@@ -718,6 +722,82 @@ is the global server default. */
   HA_CREATE_INFO::table_options. Not persisted in data-dictionary.
 */
 #define HA_OPTION_NO_DELAY_KEY_WRITE (1L << 18)
+/**
+  Table was created with CREATE EXTERNAL TABLE syntax.
+  Used in TABLE_SHARE::db_create_options to preserve EXTERNAL keyword
+  for SHOW CREATE TABLE output.
+*/
+#define HA_OPTION_CREATE_EXTERNAL_TABLE (1L << 19)
+
+/**
+  ALLOW_MISSING_FILES=1 has been specified in the SQL command
+  (either CREATE or ALTER TABLE). When loading external tables, the
+  loading will NOT fail if some of the specified files can not be found.
+  This option will not be persisted in data-dictionary, but encoded in the
+  ENGINE_ATTRIBUTE option.
+*/
+#define HA_OPTION_ALLOW_MISSING_FILES (1L << 19)
+/**
+  ALLOW_MISSING_FILES=0 has been specified in the SQL command
+  (either CREATE or ALTER TABLE). When loading external tables, the
+  loading will fail if some of the specified files can not be found.
+  This option will not be persisted in data-dictionary, but encoded in the
+  ENGINE_ATTRIBUTE option. If neither HA_OPTION_ALLOW_MISSING_FILES nor
+  HA_OPTION_NO_ALLOW_MISSING_FILES is set, ENGINE_ATTRIBUTE will not be
+  affected, and the default behavior for the storage engine will be used.
+*/
+#define HA_OPTION_NO_ALLOW_MISSING_FILES (1L << 20)
+/**
+  VERIFY_KEY_CONSTRAINTS=1 has been specified in the SQL command (either
+  CREATE or ALTER TABLE). When loading external tables, primary key
+  and unique key constraints will be validated.
+  This option will not be persisted in data-dictionary, but encoded in the
+  ENGINE_ATTRIBUTE option.
+*/
+#define HA_OPTION_VERIFY_KEY_CONSTRAINTS (1L << 21)
+/**
+  VERIFY_KEY_CONSTRAINTS=0 has been specified in the SQL command (either
+  CREATE or ALTER TABLE). When loading external tables, primary key
+  and unique key constraints will NOT be validated.
+  This option will not be persisted in data-dictionary, but encoded in the
+  ENGINE_ATTRIBUTE option.
+*/
+#define HA_OPTION_NO_VERIFY_KEY_CONSTRAINTS (1L << 22)
+/**
+  STRICT_LOAD=1 has been specified in the SQL command (either CREATE
+  or ALTER TABLE). When loading external tables, the loading will
+  fail if there are rows that does not match the specified file format etc.
+  This option will not be persisted in data-dictionary, but encoded in the
+  ENGINE_ATTRIBUTE option. If neither HA_OPTION_VERIFY_KEY_CONSTRAINTS_FILES nor
+  HA_OPTION_NO_VERIFY_KEY_CONSTRAINTS_FILES is set, ENGINE_ATTRIBUTE will not be
+  affected, and the default behavior for the storage engine will be used.
+*/
+#define HA_OPTION_STRICT_LOAD (1L << 23)
+/**
+  STRICT_LOAD=0 has been specified in the SQL command (either CREATE
+  or ALTER TABLE). When loading external tables, the loading will
+  just generate a warning and continue loading if a row does not
+  match the specified file format etc.
+  This option will not be persisted in data-dictionary, but encoded in the
+  ENGINE_ATTRIBUTE option.
+*/
+#define HA_OPTION_NO_STRICT_LOAD (1L << 24)
+/**
+  AUTO_REFRESH=1 has been specified in the SQL command (either CREATE
+  or ALTER TABLE). This will turn off automatic refresh.
+  This option will not be persisted in data-dictionary, but encoded in the
+  ENGINE_ATTRIBUTE option. If neither HA_OPTION_STRICT_LOAD_FILES nor
+  HA_OPTION_NO_STRICT_LOAD_FILES is set, ENGINE_ATTRIBUTE will not be
+  affected, and the default behavior for the storage engine will be used.
+*/
+#define HA_OPTION_AUTO_REFRESH (1L << 25)
+/**
+  AUTO_REFRESH=0 has been specified in the SQL command (either CREATE
+  or ALTER TABLE). This will turn off automatic refresh.
+  This option will not be persisted in data-dictionary, but encoded in the
+  ENGINE_ATTRIBUTE option.
+*/
+#define HA_OPTION_NO_AUTO_REFRESH (1L << 26)
 
 /* Bits in flag to create() */
 
@@ -762,7 +842,7 @@ is the global server default. */
   have been disabled.
 
   The most important parameters set here is records per key on
-  all indexes. block_size and primar key ref_length.
+  all indexes. block_size and primary key ref_length.
 
   For each index there is an array of rec_per_key.
   As an example if we have an index with three attributes a,b and c
@@ -808,6 +888,13 @@ is the global server default. */
   also when only HA_STATUS_VARIABLE but it won't be used.
 */
 #define HA_STATUS_VARIABLE_EXTRA 128
+/*
+  Get the same statistics as HA_STATUS_CONST, but only if those statistics
+  where updated since open_table_for_share i.e. by the background statistics
+  thread. Do not ask for HA_STATUS_CONST otherwise. This way the optimizer can
+  make sure its statistics are always up-to-date with engine ones.
+*/
+#define HA_STATUS_CONST_WHEN_UPDATED 256
 
 /*
   Errorcodes given by handler functions

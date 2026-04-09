@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -416,99 +416,6 @@ const byte *mlog_parse_string(
   return (ptr + len);
 }
 
-const byte *mlog_parse_index_8027(const byte *ptr, const byte *end_ptr,
-                                  bool comp, dict_index_t **index) {
-  ulint i;
-  dict_table_t *table;
-  dict_index_t *ind;
-  bool instant = false;
-  uint16_t n, n_uniq;
-  uint16_t n_inst_cols = 0;
-
-  if (comp) {
-    if (end_ptr < ptr + 4) {
-      return (nullptr);
-    }
-    n = mach_read_from_2(ptr);
-    ptr += 2;
-    if ((n & 0x8000) != 0) {
-      /* This is instant fields,
-      see also mlog_open_and_write_index() */
-      instant = true;
-      n_inst_cols = n & ~0x8000;
-      n = mach_read_from_2(ptr);
-      ptr += 2;
-      ut_ad((n & 0x8000) == 0);
-      ut_ad(n_inst_cols <= n);
-
-      if (end_ptr < ptr + 2) {
-        return (nullptr);
-      }
-    }
-    n_uniq = mach_read_from_2(ptr);
-    ptr += 2;
-    ut_ad(n_uniq <= n);
-    if (end_ptr < ptr + n * 2) {
-      return (nullptr);
-    }
-  } else {
-    n = n_uniq = 1;
-  }
-  table = dict_mem_table_create("LOG_DUMMY", DICT_HDR_SPACE, n, 0, 0,
-                                comp ? DICT_TF_COMPACT : 0, 0);
-  if (instant) {
-    table->set_instant_cols(n_inst_cols);
-  }
-
-  ind = dict_mem_index_create("LOG_DUMMY", "LOG_DUMMY", DICT_HDR_SPACE, 0, n);
-  ind->table = table;
-  ind->n_uniq = (unsigned int)n_uniq;
-  if (n_uniq != n) {
-    ut_a(n_uniq + DATA_ROLL_PTR <= n);
-    ind->type = DICT_CLUSTERED;
-  }
-  if (comp) {
-    for (i = 0; i < n; i++) {
-      ulint len = mach_read_from_2(ptr);
-      ptr += 2;
-      /* The high-order bit of len is the NOT NULL flag;
-      the rest is 0 or 0x7fff for variable-length fields,
-      and 1..0x7ffe for fixed-length fields. */
-      dict_mem_table_add_col(
-          table, nullptr, nullptr,
-          ((len + 1) & 0x7fff) <= 1 ? DATA_BINARY : DATA_FIXBINARY,
-          len & 0x8000 ? DATA_NOT_NULL : 0, len & 0x7fff, true);
-
-      /* The is_ascending flag does not matter during
-      redo log apply, because we do not compare for
-      "less than" or "greater than". */
-      dict_index_add_col(ind, table, table->get_col(i), 0, true);
-    }
-    dict_table_add_system_columns(table, table->heap);
-    if (n_uniq != n) {
-      /* Identify DB_TRX_ID and DB_ROLL_PTR in the index. */
-      ut_a(DATA_TRX_ID_LEN == ind->get_col(DATA_TRX_ID - 1 + n_uniq)->len);
-      ut_a(DATA_ROLL_PTR_LEN == ind->get_col(DATA_ROLL_PTR - 1 + n_uniq)->len);
-      ind->fields[DATA_TRX_ID - 1 + n_uniq].col = &table->cols[n + DATA_TRX_ID];
-      ind->fields[DATA_ROLL_PTR - 1 + n_uniq].col =
-          &table->cols[n + DATA_ROLL_PTR];
-    }
-
-    if (ind->is_clustered() && ind->table->has_instant_cols()) {
-      ind->instant_cols = true;
-      ind->n_instant_nullable =
-          ind->get_n_nullable_before(ind->get_instant_fields());
-    } else {
-      ind->instant_cols = false;
-      ind->n_instant_nullable = ind->n_nullable;
-    }
-  }
-  /* avoid ut_ad(index->cached) in dict_index_get_n_unique_in_tree */
-  ind->cached = true;
-  *index = ind;
-  return (ptr);
-}
-
 #ifndef UNIV_HOTBACKUP
 /* logical_pos 2 bytes, phy_pos 2 bytes, v_added 1 byte, v_dropped 1 byte */
 constexpr size_t inst_col_info_size = 6;
@@ -640,12 +547,9 @@ static void log_index_column_counts(const dict_index_t *index, uint16_t n,
   }
 
   /* log n_uniq */
-  uint16_t n_uniq;
-  if (page_is_leaf(page_align(rec))) {
-    n_uniq = dict_index_get_n_unique_in_tree(index);
-  } else {
-    n_uniq = dict_index_get_n_unique_in_tree_nonleaf(index);
-  }
+  const auto n_uniq = page_is_leaf(page_align(rec))
+                          ? dict_index_get_n_unique_in_tree(index)
+                          : dict_index_get_n_unique_in_tree_nonleaf(index);
   ut_ad(n_uniq <= n);
   mach_write_to_2(log_ptr, n_uniq);
   log_ptr += 2;
@@ -952,12 +856,12 @@ static const byte *read_2_bytes(const byte *ptr, const byte *end_ptr,
   return ptr;
 }
 
-/** Read 1 bytes from log buffer.
+/** Read 1 byte from log buffer.
 @param[in]   ptr      pointer to buffer
 @param[in]   end_ptr  pointer to end of buffer
-@param[out]  val      read 2 bytes value */
-static const byte *read_1_bytes(const byte *ptr, const byte *end_ptr,
-                                uint8_t &val) {
+@param[out]  val      read 1 byte value */
+static const byte *read_1_byte(const byte *ptr, const byte *end_ptr,
+                               uint8_t &val) {
   if (end_ptr < ptr + 1) {
     return (nullptr);
   }
@@ -1115,8 +1019,10 @@ static const byte *parse_index_versioned_fields(const byte *ptr,
 
       uint8_t version{0};
       /* Read v_added */
-      ptr = read_1_bytes(ptr, end_ptr, version);
-      if (ptr == nullptr) return (nullptr);
+      ptr = read_1_byte(ptr, end_ptr, version);
+      if (ptr == nullptr) {
+        return nullptr;
+      }
 
       info.v_added = static_cast<row_version_t>(version);
       crv = std::max(crv, info.v_added);
@@ -1127,8 +1033,10 @@ static const byte *parse_index_versioned_fields(const byte *ptr,
 
       uint8_t version{0};
       /* Read v_dropped */
-      ptr = read_1_bytes(ptr, end_ptr, version);
-      if (ptr == nullptr) return (nullptr);
+      ptr = read_1_byte(ptr, end_ptr, version);
+      if (ptr == nullptr) {
+        return nullptr;
+      }
 
       info.v_dropped = static_cast<row_version_t>(version);
       crv = std::max(crv, info.v_dropped);
@@ -1211,18 +1119,12 @@ static void populate_dummy_fields(dict_index_t *index, dict_table_t *table,
 
 static const byte *parse_index_log_version(const byte *ptr, const byte *end_ptr,
                                            uint8_t &version) {
-  ptr = read_1_bytes(ptr, end_ptr, version);
-  if (ptr == nullptr) return nullptr;
-
-  return ptr;
+  return read_1_byte(ptr, end_ptr, version);
 }
 
 static const byte *parse_index_flag(const byte *ptr, const byte *end_ptr,
                                     uint8_t &flag) {
-  ptr = read_1_bytes(ptr, end_ptr, flag);
-  if (ptr == nullptr) return nullptr;
-
-  return ptr;
+  return read_1_byte(ptr, end_ptr, flag);
 }
 
 const byte *mlog_parse_index(const byte *ptr, const byte *end_ptr,

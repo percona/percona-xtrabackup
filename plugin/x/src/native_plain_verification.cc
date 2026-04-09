@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +42,7 @@ bool Native_plain_verification::verify_authentication_string(
 
   bool client_string_matches = client_string.empty() && db_string.empty();
 
-  std::string hash_string{"*" + generate_hash(client_string)};
+  std::string const hash_string{"*" + generate_hash(client_string)};
   if (!client_string_matches && hash_string == db_string) {
     client_string_matches = true;
   }

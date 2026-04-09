@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -167,7 +167,7 @@ class CertificateGenerator {
   stdx::expected<X509Cert, std::error_code> generate_x509(
       EVP_PKEY *pkey, const std::string &common_name, const uint32_t serial,
       X509 *ca_cert, EVP_PKEY *ca_pkey, uint32_t notbefore = 0,
-      uint32_t notafter = 10 * k_year) const;
+      uint32_t notafter = k_year) const;
 
  private:
   constexpr static uint32_t k_year = 365 * 24 * 60 * 60;

@@ -27,7 +27,6 @@
 # Bug#31636339 MTS IS UNUSABLE; ERRNO 3030, AND WORKER HA_ERR_FOUND_DUPP_KEY OR HA_ERR_LOCK_WAIT_TIMEOUT
 #
 --source include/have_binlog_format_row.inc
---source include/have_replica_parallel_workers.inc
 --let $skip_configuration_privilege_checks_user= 'skip'
 --let $rpl_privilege_checks_user_grant_all= 1
 --echo #

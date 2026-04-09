@@ -1,4 +1,4 @@
-# Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -33,6 +33,8 @@ ROUTER_ADD_SHARED_LIBRARY(router_utils
   keyring_info.cc
   utils.cc
   uri.cc
+  routing_guidelines_version.cc
+  router_config_utils.cc
 
   OUTPUT_NAME "mysqlrouter_utils"
 
@@ -43,8 +45,10 @@ ROUTER_ADD_SHARED_LIBRARY(router_utils
   )
 
 ROUTER_ADD_SHARED_LIBRARY(router_mysql
+  common/accounts_cleaner.cc
   common/log_filter.cc
   common/mysql_session.cc
+  common/server_compatibility.cc
   common/utils_sqlstring.cc
 
   OUTPUT_NAME "mysqlrouter_mysql"
@@ -60,6 +64,7 @@ IF(MY_COMPILER_IS_GNU AND (WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO))
 ENDIF()
 
 ROUTER_ADD_SHARED_LIBRARY(router_cluster
+  cluster_aware_session.cc  
   cluster_metadata.cc
   cluster_metadata_instance_attributes.cc
   cluster_metadata_dynamic_state.cc
@@ -72,7 +77,17 @@ ROUTER_ADD_SHARED_LIBRARY(router_cluster
   harness-library
   router_utils
   router_mysql
+  routing_guidelines
   )
+
+IF(WITH_LTO OR CMAKE_COMPILER_FLAG_WITH_LTO)
+  IF(MY_COMPILER_IS_GNU)
+    TARGET_LINK_OPTIONS(router_cluster PRIVATE
+      -Wno-error=stringop-overflow
+      )
+  ENDIF()
+ENDIF()
+
 
 IF(WIN32)
   SET(router_lib_output_name "mysqlrouter_lib")
@@ -81,7 +96,6 @@ ELSE()
 ENDIF()
 
 ROUTER_ADD_SHARED_LIBRARY(router_lib
-  auto_cleaner.cc
   certificate_generator.cc
   certificate_handler.cc
   config_files.cc
@@ -100,6 +114,7 @@ ROUTER_ADD_SHARED_LIBRARY(router_lib
   # router_mysql
   OpenSSL::SSL OpenSSL::Crypto
   io_component
+  routing_guidelines
   extra::rapidjson
   )
 
@@ -114,6 +129,7 @@ GENERATE_EXPORT_HEADER(router_lib
 
 SET(frontend_lib_source_files
   router_app.cc
+  router_conf.cc
   config_generator.cc
   )
 
@@ -167,7 +183,6 @@ MYSQL_ADD_EXECUTABLE(mysqlrouter
   router_frontend_lib
   ${CMAKE_DL_LIBS}
   )
-ADD_INSTALL_RPATH(mysqlrouter "${ROUTER_INSTALL_RPATH}")
 
 IF(SOLARIS)
   TARGET_LINK_LIBRARIES(mysqlrouter -lnsl -lsocket)

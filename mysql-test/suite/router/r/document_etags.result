@@ -1,0 +1,597 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic_schema
+# Registred DB_OBJECT at path: /svc/basic_schema/tab
+
+I. Verify that etag for a document is the same regardless of used fields filter
+
+No fields filter used
+{
+    "id": 1,
+    "vec": [
+        0.0
+    ],
+    "cbin": "MAAA",
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 0.0,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "first row",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "BCA7CA369AF560DDC280B33A14F1AD164DE47441D149B7D1C748FEBF0D3BABA1"
+    }
+}
+Single field selected with a filter
+GET /svc/basic_schema/tab/1?f=cbin
+{
+    "cbin": "MAAA",
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "BCA7CA369AF560DDC280B33A14F1AD164DE47441D149B7D1C748FEBF0D3BABA1"
+    }
+}
+OK
+Single field excluded by a filter
+GET /svc/basic_schema/tab/1?f=!cbin
+{
+    "id": 1,
+    "vec": [
+        0.0
+    ],
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 0.0,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "first row",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "BCA7CA369AF560DDC280B33A14F1AD164DE47441D149B7D1C748FEBF0D3BABA1"
+    }
+}
+OK
+
+II. Verify that value of field configured as no_check is not used for etag calculation
+
+Configure 'cvarchar' field as no_check
+update `mysql_rest_service_metadata`.`object_field` set no_check = 1 where name = "cvarchar";
+Check the initial etag for document id=1
+{
+    "id": 1,
+    "vec": [
+        0.0
+    ],
+    "cbin": "MAAA",
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 0.0,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "first row",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "86F0AFFBD066B34EBC30106442E69E1D939F37A9ECC823E05EDD54BDB54F68E9"
+    }
+}
+Change the value of cvarchar in the document
+update basic_schema.table3 set cvarchar = "new_value" where id = 1;
+Fetch the document again, the etag should not change
+{
+    "id": 1,
+    "vec": [
+        0.0
+    ],
+    "cbin": "MAAA",
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 0.0,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "new_value",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "86F0AFFBD066B34EBC30106442E69E1D939F37A9ECC823E05EDD54BDB54F68E9"
+    }
+}
+Change the value of 'cdouble' field that is not configure as no_check
+update basic_schema.table3 set cdouble = 12.12 where id = 1;
+Fetch the document again, the etag should change now
+{
+    "id": 1,
+    "vec": [
+        0.0
+    ],
+    "cbin": "MAAA",
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 12.12,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "new_value",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "CA79107DEC51CFEC4907CBFBDE947FB6A5A254EA85FBCEB0ECF6F02E69A3D52B"
+    }
+}
+
+III. Verify that the PUT is accepted if the etag sent in the request is matching the current checksum and it is rejected otherwise
+
+Get document id=1
+{
+    "id": 1,
+    "vec": [
+        0.0
+    ],
+    "cbin": "MAAA",
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 12.12,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "new_value",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "CA79107DEC51CFEC4907CBFBDE947FB6A5A254EA85FBCEB0ECF6F02E69A3D52B"
+    }
+}
+Modify the document using etag received in the previous step, that should be accepted
+{
+    "id": 1,
+    "vec": [
+        1.1,
+        2.2
+    ],
+    "cbin": "AMMM",
+    "cbit": true,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            1.0,
+            3.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 12.1,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "new_value",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "0B7B3C86CAEDD06538D988741273A932A5961C65C88A9F3C13A67DC2004CC31F",
+        "gtid": "GTID"
+    }
+}
+Try that again, should be rejected as the checksum has changed due to the update in the previous step
+PUT /svc/basic_schema/tab/1 (payload-size:649)
+{
+    "message": "Precondition failed",
+    "status": 412
+}
+OK
+
+IV. Verify that the PUT is accepted if the request does not contain etag
+
+{
+    "id": 1,
+    "vec": [
+        2.3,
+        2.2
+    ],
+    "cbin": null,
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            1.0,
+            3.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/1"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 12.1,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "new_value",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "C04F2D532D9348F07303BEBACAB421DDEDD33FADD2A0E806C10E1F2EA63496C5",
+        "gtid": "GTID"
+    }
+}
+
+V. Verify the POST will also have etag in response (GET and PUT checked before). Include etag in the POST request making sure it is ignored.
+
+{
+    "id": 4,
+    "vec": [
+        2.3,
+        2.2
+    ],
+    "cbin": null,
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            1.0,
+            3.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/4"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 12.1,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "new_value",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "9B3B05CB043E174E609B42550D38BE388CA980824064A9AC6EFAC98823009FA8",
+        "gtid": "GTID"
+    }
+}
+
+VI. Verify the etag is ignored if PUT does an insert
+
+{
+    "id": 7,
+    "vec": [
+        2.3,
+        2.2
+    ],
+    "cbin": null,
+    "cbit": false,
+    "cset": "",
+    "geo0": {
+        "type": "Point",
+        "coordinates": [
+            1.0,
+            3.0
+        ]
+    },
+    "cbit1": false,
+    "cblob": "",
+    "cdate": "2020-12-01",
+    "cenum": "value1",
+    "ctext": "numeric zeros",
+    "ctime": "12:01:50.000000",
+    "cyear": 2020,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic_schema/tab/7"
+        }
+    ],
+    "cbit10": "AAA=",
+    "cfloat": 0.0,
+    "cbigint": 0,
+    "cdouble": 12.1,
+    "geo4326": {
+        "type": "Point",
+        "coordinates": [
+            0.0,
+            0.0
+        ]
+    },
+    "cdecimal": 0.0,
+    "ctinyint": 0,
+    "cvarchar": "new_value",
+    "cdatetime": "2020-12-01 12:01:50.000000",
+    "csmallint": 0,
+    "cmediumint": 0,
+    "ctimestamp": "2020-12-01 12:01:50.000000",
+    "_metadata": {
+        "etag": "91A98B8B4E2EE2CB7FCDC311A05B55FAC3A7ED01F66AFA80813A3383E2A8693E",
+        "gtid": "GTID"
+    }
+}
+
+VII. Verify that the PUT request containing etag of invalid type leads to BadRequest response
+
+etag is int
+{
+    "message": "Invalid etag",
+    "status": 400
+}
+etag is object
+etag is boolean
+{
+    "message": "Invalid etag",
+    "status": 400
+}
+
+VIII. Verify that the PUT request containing etag that is string but not a valid checksum format is still accepted and used for check
+
+{
+    "message": "Precondition failed",
+    "status": 412
+}
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

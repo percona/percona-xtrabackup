@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -213,17 +213,25 @@ static uint32 get_list_array_idx_for_endpoint(partition_info *part_info,
 
 Item *convert_charset_partition_constant(Item *item, const CHARSET_INFO *cs) {
   THD *thd = current_thd;
-  Name_resolution_context *context = &thd->lex->current_query_block()->context;
-  Table_ref *save_list = context->table_list;
+  Query_block *qb = thd->lex->current_query_block();
+  Name_resolution_context *context = nullptr;
+  Table_ref *save_list = nullptr;
   const char *save_where = thd->where;
 
   item = item->convert_charset(thd, cs);
   if (item == nullptr) return nullptr;
-  context->table_list = nullptr;
+
+  if (qb != nullptr) {
+    context = &qb->context;
+    save_list = context->table_list;
+    context->table_list = nullptr;
+  }
   thd->where = "convert character set partition constant";
   if (item->fix_fields(thd, nullptr)) return nullptr;
   thd->where = save_where;
-  context->table_list = save_list;
+  if (qb != nullptr) {
+    context->table_list = save_list;
+  }
   return item;
 }
 
@@ -775,6 +783,11 @@ static bool handle_list_of_fields(List_iterator<char> it, TABLE *table,
       */
       for (i = 0; i < num_key_parts; i++) {
         Field *field = table->key_info[primary_key].key_part[i].field;
+        // BLOB/TEXT columns are not allowed in partitioning keys.
+        if (field->is_flag_set(BLOB_FLAG)) {
+          my_error(ER_BLOB_FIELD_IN_PART_FUNC_ERROR, MYF(0));
+          return true;
+        }
         field->set_flag(GET_FIXED_FIELDS_FLAG);
       }
     } else {
@@ -5730,7 +5743,7 @@ static int get_part_iter_for_interval_via_mapping(
   get_endpoint_func get_endpoint = nullptr;
   bool can_match_multiple_values; /* is not '=' */
   const uint field_len = field->pack_length_in_rec();
-  MYSQL_TIME start_date;
+  Datetime_val start_date;
   bool check_zero_dates = false;
   bool zero_in_start_date = true;
   DBUG_TRACE;
@@ -5823,7 +5836,7 @@ static int get_part_iter_for_interval_via_mapping(
         if (!(flags & NO_MAX_RANGE) && (field->type() == MYSQL_TYPE_DATE ||
                                         field->type() == MYSQL_TYPE_DATETIME)) {
           /* Monotonic, but return NULL for dates with zeros in month/day. */
-          zero_in_start_date = field->get_date(&start_date, 0);
+          zero_in_start_date = field->val_datetime(&start_date, 0);
           DBUG_PRINT("info",
                      ("zero start %u %04d-%02d-%02d", zero_in_start_date,
                       start_date.year, start_date.month, start_date.day));
@@ -5843,8 +5856,8 @@ static int get_part_iter_for_interval_via_mapping(
     part_iter->part_nums.end = get_endpoint(part_info, false, include_endp);
     if (check_zero_dates && !zero_in_start_date &&
         !part_info->part_expr->null_value) {
-      MYSQL_TIME end_date;
-      const bool zero_in_end_date = field->get_date(&end_date, 0);
+      Datetime_val end_date;
+      const bool zero_in_end_date = field->val_datetime(&end_date, 0);
       /*
         This is an optimization for TO_DAYS()/TO_SECONDS() to avoid scanning
         the NULL partition for ranges that cannot include a date with 0 as

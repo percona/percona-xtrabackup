@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -68,10 +68,10 @@ auto parse_headers(uint64_t num_fields, my_h_statement statement,
                    unsigned char *error) -> std::vector<std::string> {
   *error = 1;
   auto header_row = std::vector<std::string>{};
-  auto field = my_h_field{nullptr};
-  auto field_name = static_cast<char *>(nullptr);
-  auto charset_name = static_cast<char *>(nullptr);
-  auto collation_name = static_cast<char *>(nullptr);
+  auto *field = my_h_field{nullptr};
+  auto *field_name = static_cast<char *>(nullptr);
+  auto *charset_name = static_cast<char *>(nullptr);
+  auto *collation_name = static_cast<char *>(nullptr);
   for (auto j = size_t{}; j < num_fields; j++) {
     if (SERVICE_PLACEHOLDER(mysql_stmt_resultset_metadata)
             ->fetch_field(statement, j, &field) != 0)
@@ -94,7 +94,7 @@ auto parse_headers(uint64_t num_fields, my_h_statement statement,
 
 auto get_field_type(my_h_statement statement, size_t index,
                     unsigned char *error) -> uint64_t {
-  auto field = my_h_field{nullptr};
+  auto *field = my_h_field{nullptr};
   if (SERVICE_PLACEHOLDER(mysql_stmt_resultset_metadata)
           ->fetch_field(statement, index, &field) != 0) {
     *error = 1;
@@ -150,7 +150,7 @@ auto parse_value_at_index(uint64_t field_type, my_h_row row, size_t index)
 }
 
 auto fetch_statement_row(my_h_statement statement) -> std::optional<my_h_row> {
-  auto row = static_cast<my_h_row>(nullptr);
+  auto *row = static_cast<my_h_row>(nullptr);
   if (SERVICE_PLACEHOLDER(mysql_stmt_result)->fetch(statement, &row) != 0)
     return {};
   return row;
@@ -177,7 +177,7 @@ auto parse_rows(my_h_statement statement, size_t fields_count,
 
 // Make a string where values are separated by separator
 auto string_from_vector(const std::vector<std::string> &values,
-                        const std::string separator) -> std::string {
+                        const std::string &separator) -> std::string {
   auto temp = std::string{};
   auto first = true;
   for (const auto &header : values) {
@@ -225,7 +225,7 @@ auto handle_error(my_h_statement statement, unsigned char *error, char *result,
           ->sqlstate(statement, &sql_state)) {
     // Setting error = 0 so that the error message is displayed as result
     *error = 0;
-    std::string error_msg =
+    std::string const error_msg =
         "Error in getting the error from the DA. This probably means there is "
         "an error at the service layer.";
     return print_output(result, length, error_msg);

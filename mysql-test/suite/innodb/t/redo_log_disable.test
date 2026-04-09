@@ -3,6 +3,7 @@
 --disable_query_log
 call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* InnoDB redo logging is disabled. All data could be lost in case of a server crash");
 call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* InnoDB redo logging is enabled. Data is now safe and can be recovered in case of a server crash.");
+call mtr.add_suppression("Failed to compress the gtid_executed table.");
 --enable_query_log
 
 --echo #1. Check Redo logging syntax and status

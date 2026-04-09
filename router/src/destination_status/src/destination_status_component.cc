@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,6 @@
 
 #include <chrono>
 #include <memory>
-#include <mutex>
 #include <string>
 
 #include "unreachable_destinations_quarantine.h"
@@ -41,13 +40,13 @@ void DestinationStatusComponent::init(std::chrono::seconds quarantine_interval,
 }
 
 bool DestinationStatusComponent::report_connection_result(
-    const mysql_harness::TCPAddress &dest, bool success) {
+    const mysql_harness::Destination &dest, bool success) {
   return unreachable_destinations_quarantine_->report_connection_result(
       dest, success);
 }
 
 bool DestinationStatusComponent::is_destination_quarantined(
-    const mysql_harness::TCPAddress &dest) {
+    const mysql_harness::Destination &dest) {
   return unreachable_destinations_quarantine_->is_quarantined(dest);
 }
 

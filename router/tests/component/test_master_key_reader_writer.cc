@@ -1,5 +1,5 @@
 /*
- Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -41,9 +41,9 @@
 #include "dim.h"
 #include "keyring/keyring_manager.h"
 #include "mock_server_testutils.h"
+#include "mysql/harness/filesystem.h"    // copy_file
 #include "mysql/harness/string_utils.h"  // split_string
 #include "mysqlrouter/keyring_info.h"
-#include "mysqlrouter/utils.h"  // copy_file
 #include "process_manager.h"
 #include "random_generator.h"
 #include "router_component_test.h"
@@ -51,6 +51,7 @@
 #include "script_generator.h"
 #include "tcp_port_pool.h"
 
+Path g_origin_path;
 /**
  * @file
  * @brief Component Tests for the master-key-reader and master-key-writer
@@ -73,6 +74,9 @@ MATCHER_P(FileContentNotEqual, master_key, "") {
 }
 
 class MasterKeyReaderWriterTest : public RouterComponentBootstrapTest {
+ public:
+  MasterKeyReaderWriterTest() : RouterComponentBootstrapTest(false) {}
+
  protected:
   void SetUp() override {
     static mysql_harness::RandomGenerator rg;
@@ -727,7 +731,6 @@ TEST_F(MasterKeyReaderWriterTest, CannotLaunchRouterWhenMasterKeyIncorrect) {
  * for Windows. Bootstrap for layouts different than STANDALONE use
  * directories to which tests don't have access (see install_layout.cmake).
  */
-Path g_origin_path;
 #ifndef SKIP_BOOTSTRAP_SYSTEM_DEPLOYMENT_TESTS
 
 class MasterKeyReaderWriterSystemDeploymentTest
@@ -767,7 +770,7 @@ class MasterKeyReaderWriterSystemDeploymentTest
     mysql_harness::mkdir(tmp_dir_.name() + "/stage", 0700);
     mysql_harness::mkdir(tmp_dir_.name() + "/stage/bin", 0700);
     exec_file_ = tmp_dir_.name() + "/stage/bin/mysqlrouter";
-    mysqlrouter::copy_file(get_mysqlrouter_exec().str(), exec_file_);
+    mysql_harness::copy_file(get_mysqlrouter_exec().str(), exec_file_);
 #ifndef _WIN32
     chmod(exec_file_.c_str(), 0700);
 #endif
@@ -840,8 +843,9 @@ TEST_F(MasterKeyReaderWriterSystemDeploymentTest, BootstrapPass) {
   // check if the bootstrapping was successful
   ASSERT_NO_FATAL_FAILURE(check_exit_code(router, EXIT_SUCCESS));
 
-  EXPECT_TRUE(router.expect_output(
-      "MySQL Router configured for the InnoDB Cluster 'test'"))
+  EXPECT_TRUE(
+      router.expect_output("MySQL Router configured for the "
+                           "InnoDB Cluster 'test'"))
       << router.get_full_output() << std::endl
       << "server: " << server_mock.get_full_output();
 

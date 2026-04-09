@@ -1,6 +1,9 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 #
 # testing of the BIT column type
 #
@@ -545,3 +548,7 @@ INSERT INTO t2 SELECT SQL_SMALL_RESULT DISTINCT * FROM t1;
 SELECT a, hex(b) FROM t2 ORDER BY 1,2;
 
 DROP TABLE t1, t2, t3;
+
+--source include/type_bit.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

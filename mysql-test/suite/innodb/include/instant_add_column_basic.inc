@@ -3,9 +3,6 @@
 --echo # Create a small table, and add all kinds of new columns and verify
 --echo #
 
---disable_query_log
-call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* Cannot add field.*");
---enable_query_log
 SET @saved_innodb_strict_mode=@@SESSION.innodb_strict_mode;
 
 --eval CREATE TABLE t1 (a INT NOT NULL AUTO_INCREMENT PRIMARY KEY, b INT) ROW_FORMAT=$row_format

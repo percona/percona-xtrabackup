@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,10 +31,13 @@
 
 #include "basic_protocol_splicer.h"
 #include "classic_connection_base.h"
-#include "classic_frame.h"
 #include "destination_error.h"
+#include "mysql/harness/destination.h"
+#include "mysql/harness/destination_endpoint.h"
+#include "mysql/harness/destination_socket.h"
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/net_ts/impl/poll.h"
+#include "mysql/harness/net_ts/impl/resolver.h"
 #include "mysql/harness/net_ts/impl/socket_error.h"
 #include "mysql/harness/net_ts/internet.h"
 #include "mysql/harness/stdx/expected.h"
@@ -47,23 +50,6 @@
 #include "processor.h"
 
 IMPORT_LOG_FUNCTIONS()
-
-// create a destination id that's understood by make_tcp_address()
-static std::string destination_id_from_endpoint(
-    const std::string &host_name, const std::string &service_name) {
-  if (net::ip::make_address_v6(host_name.c_str())) {
-    return "[" + host_name + "]:" + service_name;
-  } else {
-    return host_name + ":" + service_name;
-  }
-}
-
-static std::string destination_id_from_endpoint(
-    const net::ip::tcp::resolver::results_type::iterator::value_type
-        &endpoint) {
-  return destination_id_from_endpoint(endpoint.host_name(),
-                                      endpoint.service_name());
-}
 
 stdx::expected<Processor::Result, std::error_code> ConnectProcessor::process() {
   switch (stage()) {
@@ -122,7 +108,9 @@ static stdx::expected<std::error_code, std::error_code> sock_error_code(
   return {};
 }
 
-// skip destinations which don't matched the current expected server-mode.
+/**
+ * Skip destinations which don't match the current expected server-mode.
+ */
 static bool skip_destination(MysqlRoutingClassicConnectionBase *conn,
                              Destination *destination) {
   if (conn->context().access_mode() != routing::AccessMode::kAuto) return false;
@@ -138,22 +126,43 @@ static bool skip_destination(MysqlRoutingClassicConnectionBase *conn,
 
 stdx::expected<Processor::Result, std::error_code>
 ConnectProcessor::init_destination() {
-  std::vector<std::string> dests;
-  for (const auto &dest : destinations_) {
-    dests.push_back(destination_id_from_endpoint(dest->hostname(),
-                                                 std::to_string(dest->port())));
-  }
-
   if (auto &tr = tracer()) {
-    tr.trace(Tracer::Event().stage("connect::init_destination: " +
-                                   mysql_harness::join(dests, ",")));
+    tr.trace(Tracer::Event().stage("connect::init_destination"));
   }
 
   trace_event_connect_ =
       trace_span(parent_event_, "mysql/from_pool_or_connect");
-  if (auto *ev = trace_event_connect_) {
-    ev->attrs.emplace_back("mysql.remote.candidates",
-                           mysql_harness::join(dests, ","));
+
+  const auto &destination_manager = connection()->destination_manager();
+  bool dest_manager_started{true};
+
+  if (!connection()->has_transient_error_at_connect()) {
+    if (destination_manager->routing_guidelines_session_rand_used()) {
+      connection()->set_routing_guidelines_session_rand();
+    }
+    const auto &session_info = connection()->get_session_info();
+
+    dest_manager_started =
+        destination_manager->init_destinations(session_info).has_value();
+
+    if (dest_manager_started) {
+      destination_ = destination_manager->get_next_destination(session_info);
+    }
+  } else {
+    destination_ = destination_manager->get_last_used_destination();
+  }
+
+  if (!dest_manager_started || !destination_) {
+    if (connect_errors_.empty()) {
+      // no backends
+      log_debug("init_destination(): the destinations list is empty");
+
+      connect_errors_.emplace_back(
+          "no destinations",
+          make_error_code(DestinationsErrc::kNoDestinations));
+    }
+    stage(Stage::Error);
+    return Result::Again;
   }
 
   // reset the error-code for this destination.
@@ -167,17 +176,8 @@ ConnectProcessor::init_destination() {
   // - only RW (multi-primary)
   // - only RO (replica of replicaset)
   if (connection()->context().access_mode() == routing::AccessMode::kAuto) {
-    bool has_read_only{false};
-    bool has_read_write{false};
-
-    for (auto const &dest : destinations_) {
-      if (dest->server_mode() == mysqlrouter::ServerMode::ReadOnly) {
-        has_read_only = true;
-      }
-      if (dest->server_mode() == mysqlrouter::ServerMode::ReadWrite) {
-        has_read_write = true;
-      }
-    }
+    const bool has_read_only = destination_manager->has_read_only();
+    const bool has_read_write = destination_manager->has_read_write();
 
     if (has_read_only && !has_read_write) {
       connection()->current_server_mode(mysqlrouter::ServerMode::ReadOnly);
@@ -186,27 +186,13 @@ ConnectProcessor::init_destination() {
     }
   }
 
-  destinations_it_ = destinations_.begin();
-  if (destinations_it_ == destinations_.end()) {
-    if (connect_errors_.empty()) {
-      // no backends
-      log_debug("init_destination(): the destinations list is empty");
-
-      connect_errors_.emplace_back(
-          "no destinations",
-          make_error_code(DestinationsErrc::kNoDestinations));
-    }
-
-    stage(Stage::Error);
-    return Result::Again;
-  }
-
-  const auto &destination = *destinations_it_;
-
   if (connection()->context().access_mode() == routing::AccessMode::kAuto) {
-    if (skip_destination(connection(), destination.get())) {
+    if (skip_destination(connection(), destination_.get())) {
       connect_errors_.emplace_back(
-          "connect(/* " + destination->hostname() + " */)",
+          "connect(/* " + destination_->destination().str() + " */)",
+          make_error_code(DestinationsErrc::kIgnored));
+
+      destination_manager->connect_status(
           make_error_code(DestinationsErrc::kIgnored));
 
       stage(Stage::NextDestination);
@@ -214,12 +200,11 @@ ConnectProcessor::init_destination() {
     }
   }
 
-  if (is_destination_good(destination->hostname(), destination->port())) {
+  if (is_destination_good(destination_->destination())) {
     stage(Stage::Resolve);
   } else {
     connect_errors_.emplace_back(
-        "connect(/* " + destination->hostname() + ":" +
-            std::to_string(destination->port()) + " */)",
+        "connect(/* " + destination_->destination().str() + " */)",
         make_error_code(DestinationsErrc::kQuarantined));
 
     stage(Stage::NextDestination);
@@ -233,29 +218,22 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::resolve() {
     tr.trace(Tracer::Event().stage("connect::resolve"));
   }
 
-  const auto &destination = *destinations_it_;
-
-  if (!destination->good()) {
-    stage(Stage::NextDestination);
-
-    return Result::Again;
-  }
-
   // must use current_server_mode() here as this may be a fallback round.
   const auto dest_id =
       connection()->current_server_mode() == mysqlrouter::ServerMode::ReadOnly
           ? connection()->read_only_destination_id()
           : connection()->read_write_destination_id();
 
-  if (!dest_id.empty()) {
+  if (dest_id.has_value()) {
     // already connected before. Make sure the same endpoint is connected.
     if (auto &tr = tracer()) {
-      tr.trace(Tracer::Event().stage("connect::sticky: " + dest_id));
+      tr.trace(Tracer::Event().stage("connect::sticky: " + dest_id->str()));
     }
 
-    if (dest_id !=
-        destination_id_from_endpoint(destination->hostname(),
-                                     std::to_string(destination->port()))) {
+    if (dest_id != destination_->destination()) {
+      destination_ec_ = make_error_code(std::errc::no_such_file_or_directory);
+      connection()->destination_manager()->connect_status(destination_ec_);
+
       stage(Stage::NextDestination);
       return Result::Again;
     }
@@ -263,50 +241,64 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::resolve() {
 
   auto started = std::chrono::steady_clock::now();
 
-  const auto resolve_res = resolver_.resolve(
-      destination->hostname(), std::to_string(destination->port()));
+  if (destination_->destination().is_tcp()) {
+    auto tcp_dest = destination_->destination().as_tcp();
 
-  if (!resolve_res) {
-    auto ec = resolve_res.error();
+    const auto resolve_res =
+        resolver_.resolve(tcp_dest.hostname(), std::to_string(tcp_dest.port()));
 
-    const auto resolve_duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - started);
-    connect_errors_.emplace_back(
-        "resolve(" + destination->hostname() + ") failed after " +
-            std::to_string(resolve_duration.count()) + "ms",
-        ec);
+    if (!resolve_res) {
+      auto ec = resolve_res.error();
 
-    log_debug("resolve(%s,%d) failed: %s:%s",  //
-              destination->hostname().c_str(), destination->port(),
-              ec.category().name(), ec.message().c_str());
+      const auto resolve_duration =
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now() - started);
+      connect_errors_.emplace_back(
+          "resolve(" + tcp_dest.hostname() + ") failed after " +
+              std::to_string(resolve_duration.count()) + "ms",
+          ec);
 
-    destination_ec_ = ec;
+      log_debug("resolve(%s,%d) failed: %s:%s",  //
+                tcp_dest.hostname().c_str(), tcp_dest.port(),
+                ec.category().name(), ec.message().c_str());
 
-    // resolve(...) failed, move host:port to the quarantine to monitor the
-    // solve to come back.
+      destination_ec_ = ec;
 
-    auto hostname = destination->hostname();
-    auto port = destination->port();
+      connection()->destination_manager()->connect_status(destination_ec_);
 
-    auto &ctx = connection()->context();
+      // resolve(...) failed, move host:port to the quarantine to monitor the
+      // solve to come back.
 
-    if (ctx.shared_quarantine().update({hostname, port}, false)) {
-      log_debug("[%s] add destination '%s:%d' to quarantine",
-                ctx.get_name().c_str(), hostname.c_str(), port);
-    } else {
-      // failed to connect, but not quarantined. Don't close the ports, yet.
-      all_quarantined_ = false;
+      auto &ctx = connection()->context();
+
+      if (ctx.shared_quarantine().update(destination_->destination(), false)) {
+        log_debug("[%s] add destination '%s' to quarantine",
+                  ctx.get_name().c_str(),
+                  destination_->destination().str().c_str());
+      } else {
+        // failed to connect, but not quarantined. Don't close the ports, yet.
+        all_quarantined_ = false;
+      }
+
+      stage(Stage::NextDestination);
+      return Result::Again;
     }
 
-    stage(Stage::NextDestination);
-    return Result::Again;
+    endpoints_.clear();
+
+    for (const auto &ep : *resolve_res) {
+      endpoints_.emplace_back(
+          mysql_harness::DestinationEndpoint::TcpType(ep.endpoint()));
+    }
+  } else {
+    endpoints_.clear();
+
+    endpoints_.emplace_back(mysql_harness::DestinationEndpoint::LocalType(
+        destination_->destination().as_local().path()));
   }
 
-  endpoints_ = *resolve_res;
-
 #if 0
-  std::cerr << __LINE__ << ": " << destination->hostname() << "\n";
+  std::cerr << __LINE__ << ": " << destination_->hostname() << "\n";
   for (auto const &ep : endpoints_) {
     std::cerr << __LINE__ << ": .. " << ep.endpoint() << "\n";
   }
@@ -330,13 +322,16 @@ stdx::expected<Processor::Result, std::error_code>
 ConnectProcessor::init_connect() {
   // trace(Tracer::Event().stage("connect::init_connect"));
 
+  // Connection sharing may be set explicitly by the routing guidelines route
+  // setting
+  connection()->context().connection_sharing(
+      destination_->guidelines_route_info().connection_sharing_allowed);
+
   (void)connection()->server_conn().close();
 
   connection()->connect_error_code({});  // reset the connect-error-code.
 
-  auto endpoint = *endpoints_it_;
-
-  server_endpoint_ = endpoint.endpoint();
+  server_endpoint_ = *endpoints_it_;
 
   stage(Stage::FromPool);
   return Result::Again;
@@ -373,16 +368,17 @@ void ConnectProcessor::assign_server_side_connection_after_pool(
 
   if (connection()->expected_server_mode() ==
       mysqlrouter::ServerMode::Unavailable) {
-    const auto *dest = destinations_it_->get();
     // before the first query, the server-mode is not set,
     // remember it now.
-    connection()->expected_server_mode(dest->server_mode());
+    connection()->expected_server_mode(destination_->server_mode());
   }
 
   // set destination-id to get the "trace_set_connection_attributes"
   // right.
-  connection()->destination_id(destination_id_from_endpoint(*endpoints_it_));
-  connection()->destination_endpoint(endpoints_it_->endpoint());
+  connection()->destination_id(destination_->destination());
+  connection()->destination_endpoint(*endpoints_it_);
+
+  connection()->server_address(connection()->server_conn().endpoint());
 
   // update the msg-tracer callback to the new connection.
   if (auto *ssl = connection()->server_conn().channel().ssl()) {
@@ -407,6 +403,13 @@ ConnectProcessor::from_pool() {
   auto &pools = ConnectionPoolComponent::get_instance();
 
   if (auto pool = pools.get(ConnectionPoolComponent::default_pool_name())) {
+    if (auto &tr = tracer()) {
+      tr.trace(Tracer::Event().stage(
+          "connect::from_pool::try: " + endpoints_it_->str() +
+          ", expected-transport-constraints: " +
+          connection()->expected_server_transport_constraints().to_string()));
+    }
+
     // preference order:
     //
     // 0. take a server-side connection that is still owned by us.
@@ -416,8 +419,8 @@ ConnectProcessor::from_pool() {
 
     // if the RW-node is used for Reads too, we may end up on the same node that
     // was just stashed.
-    if (auto pop_res = pool->unstash_mine(
-            mysqlrouter::to_string(server_endpoint_), connection())) {
+    if (auto pop_res =
+            pool->unstash_mine(server_endpoint_.str(), connection())) {
       if (!socket_is_alive(*pop_res)) {
         // take the next connection from pool, this one is dead.
         return Result::Again;
@@ -426,9 +429,8 @@ ConnectProcessor::from_pool() {
       assign_server_side_connection_after_pool(std::move(*pop_res));
 
       if (auto &tr = tracer()) {
-        tr.trace(
-            Tracer::Event().stage("connect::from_stash_mine: " +
-                                  mysqlrouter::to_string(server_endpoint_)));
+        tr.trace(Tracer::Event().stage("connect::from_stash_mine: " +
+                                       server_endpoint_.str()));
       }
 
       if (auto *ev = trace_event_socket_from_pool_) {
@@ -461,9 +463,10 @@ ConnectProcessor::from_pool() {
         .reset(classic_protocol::capabilities::pos::multi_statements);
 
     auto connection_matcher =
-        [client_caps, requires_tls = connection()->requires_tls(),
-         requires_client_cert =
-             connection()->requires_client_cert()](const auto &pooled_conn) {
+        [client_caps,
+         expected_transport_constraints =
+             connection()->expected_server_transport_constraints()]  //
+        (const auto &pooled_conn) {
           auto pooled_caps = pooled_conn.protocol().shared_capabilities();
 
           pooled_caps.reset(classic_protocol::capabilities::pos::ssl)
@@ -476,18 +479,32 @@ ConnectProcessor::from_pool() {
               .reset(classic_protocol::capabilities::pos::multi_statements);
 
           const bool has_ssl = pooled_conn.channel().ssl() != nullptr;
+          const bool is_secure_transport = pooled_conn.is_secure_transport();
           const bool has_client_cert =
               has_ssl &&
               (SSL_get_certificate(pooled_conn.channel().ssl()) != nullptr);
 
-          return (client_caps == pooled_caps &&  //
-                  (requires_tls == has_ssl) &&
-                  (requires_client_cert == has_client_cert));
+          if (client_caps != pooled_caps) return false;
+
+          using TC = TransportConstraints::Constraint;
+
+          switch (expected_transport_constraints.constraint()) {
+            case TC::kHasClientCert:
+              if (!has_client_cert) return false;
+              [[fallthrough]];
+            case TC::kEncrypted:
+              return has_ssl;
+            case TC::kSecure:
+              return is_secure_transport;
+            case TC::kPlaintext:
+              return !has_ssl;
+          }
+          return false;
         };
 
     // check the pool for a connection we can use.
-    if (auto pool_res = pool->pop_if(mysqlrouter::to_string(server_endpoint_),
-                                     connection_matcher)) {
+    if (auto pool_res =
+            pool->pop_if(server_endpoint_.str(), connection_matcher)) {
       if (!socket_is_alive(*pool_res)) {
         // take the next connection from pool, this one is dead.
         return Result::Again;
@@ -496,9 +513,8 @@ ConnectProcessor::from_pool() {
       assign_server_side_connection_after_pool(std::move(*pool_res));
 
       if (auto &tr = tracer()) {
-        tr.trace(Tracer::Event().stage(
-            "connect::from_pool: " +
-            destination_id_from_endpoint(*endpoints_it_)));
+        tr.trace(Tracer::Event().stage("connect::from_pool: " +
+                                       endpoints_it_->str()));
       }
 
       if (auto *ev = trace_event_socket_from_pool_) {
@@ -520,9 +536,8 @@ ConnectProcessor::from_pool() {
         connection()->has_transient_error_at_connect();
 
     // try to steal a server-side connection from another connection.
-    if (auto pop_res =
-            pool->unstash_if(mysqlrouter::to_string(server_endpoint_),
-                             connection_matcher, ignore_sharing_delay)) {
+    if (auto pop_res = pool->unstash_if(
+            server_endpoint_.str(), connection_matcher, ignore_sharing_delay)) {
       if (!socket_is_alive(*pop_res)) {
         // take the next connection from pool, this one is dead.
         return Result::Again;
@@ -563,16 +578,31 @@ ConnectProcessor::from_pool() {
 
 stdx::expected<Processor::Result, std::error_code> ConnectProcessor::connect() {
   if (auto &tr = tracer()) {
-    tr.trace(Tracer::Event().stage("connect::connect: " +
-                                   mysqlrouter::to_string(server_endpoint_)));
+    tr.trace(
+        Tracer::Event().stage("connect::connect: " + server_endpoint_.str()));
   }
 
   trace_event_socket_connect_ =
       trace_span(trace_event_connect_, "mysql/connect");
 
   if (auto *ev = trace_event_socket_connect_) {
-    ev->attrs.emplace_back("net.peer.name", endpoints_it_->host_name());
-    ev->attrs.emplace_back("net.peer.port", endpoints_it_->service_name());
+    // https://opentelemetry.io/docs/specs/semconv/attributes-registry/network/
+    //
+    // says:
+    //
+    // - net.peer.* is deprecated
+    // - network.* is the stable name.
+    //
+    // keep the old names for now for existing names, and use the new names for
+    // new stuff.
+    if (endpoints_it_->is_tcp()) {
+      auto tcp_ep = endpoints_it_->as_tcp();
+      ev->attrs.emplace_back("net.peer.name", tcp_ep.address().to_string());
+      ev->attrs.emplace_back("net.peer.port", std::to_string(tcp_ep.port()));
+    } else {
+      auto local_ep = endpoints_it_->as_local();
+      ev->attrs.emplace_back("network.peer.address", local_ep.path());
+    }
   }
 
 #if 0
@@ -589,15 +619,22 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::connect() {
 #endif
   };
 
-  net::ip::tcp::socket server_sock(io_ctx_);
+  auto server_sock =
+      endpoints_it_->is_tcp()
+          ? mysql_harness::DestinationSocket{mysql_harness::DestinationSocket::
+                                                 TcpType(io_ctx_)}
+          : mysql_harness::DestinationSocket{
+                mysql_harness::DestinationSocket::LocalType(io_ctx_)};
 
-  auto open_res = server_sock.open(server_endpoint_.protocol(), socket_flags);
+  auto open_res = server_sock.open(server_endpoint_, socket_flags);
   if (!open_res) return stdx::unexpected(open_res.error());
 
   const auto non_block_res = server_sock.native_non_blocking(true);
   if (!non_block_res) return stdx::unexpected(non_block_res.error());
 
-  server_sock.set_option(net::ip::tcp::no_delay{true});
+  if (server_sock.is_tcp()) {
+    server_sock.set_option(net::ip::tcp::no_delay{true});
+  }
 
 #ifdef FUTURE_TASK_USE_SOURCE_ADDRESS
   /* set the source address to take a specific route.
@@ -652,9 +689,16 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::connect() {
       connection()->disconnect_request([this, &server_sock](bool req) {
         if (req) return true;
 
-        connection()->server_conn().assign_connection(
-            std::make_unique<TcpConnection>(std::move(server_sock),
-                                            server_endpoint_));
+        if (server_sock.is_tcp()) {
+          connection()->server_conn().assign_connection(
+              std::make_unique<TcpConnection>(std::move(server_sock.as_tcp()),
+                                              server_endpoint_.as_tcp()));
+        } else {
+          connection()->server_conn().assign_connection(
+              std::make_unique<UnixDomainConnection>(
+                  std::move(server_sock.as_local()),
+                  server_endpoint_.as_local()));
+        }
 
         return false;
       });
@@ -662,6 +706,7 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::connect() {
     connection()->connect_error_code(
         make_error_code(std::errc::operation_canceled));
 
+    connection()->completed();
     stage(Stage::Done);
     return Result::Again;
   }
@@ -715,9 +760,8 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::connect() {
 
       return Result::SendableToServer;
     } else {
-      log_debug("connect(%s, %d) failed: %s:%s",
-                server_endpoint_.address().to_string().c_str(),
-                server_endpoint_.port(), connect_res.error().category().name(),
+      log_debug("connect(%s) failed: %s:%s", server_endpoint_.str().c_str(),
+                connect_res.error().category().name(),
                 connect_res.error().message().c_str());
       connection()->connect_error_code(ec);
 
@@ -731,11 +775,19 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::connect() {
 }
 
 namespace {
-std::string pretty_endpoint(const net::ip::tcp::endpoint &ep,
-                            const std::string &hostname) {
-  if (ep.address().to_string() == hostname) return mysqlrouter::to_string(ep);
+std::string pretty_endpoint(const mysql_harness::DestinationEndpoint &ep,
+                            const mysql_harness::Destination &dest) {
+  if (dest.is_tcp()) {
+    // if the hostname is an IP, return it directly.
+    if (ep.as_tcp().address().to_string() == dest.as_tcp().hostname()) {
+      return ep.str();
+    }
 
-  return mysqlrouter::to_string(ep) + " /* " + hostname + " */";
+    // ... otherwise append it.
+    return ep.str() + " /* " + dest.as_tcp().hostname() + " */";
+  }
+
+  return dest.str();
 }
 }  // namespace
 
@@ -752,10 +804,8 @@ ConnectProcessor::connect_finish() {
   (void)server_conn.cancel();
 
   if (auto ec = connection()->connect_error_code()) {
-    log_debug("connect(%s, %d) failed: %s:%s",
-              server_endpoint_.address().to_string().c_str(),
-              server_endpoint_.port(), ec.category().name(),
-              ec.message().c_str());
+    log_debug("connect(%s) failed: %s:%s", server_endpoint_.str().c_str(),
+              ec.category().name(), ec.message().c_str());
 
     if (auto &tr = tracer()) {
       tr.trace(
@@ -764,7 +814,7 @@ ConnectProcessor::connect_finish() {
 
     connect_errors_.emplace_back(
         "connect(" +
-            pretty_endpoint(server_endpoint_, (*destinations_it_)->hostname()) +
+            pretty_endpoint(server_endpoint_, destination_->destination()) +
             ") failed after " + std::to_string(connect_duration.count()) + "ms",
         ec);
 
@@ -778,10 +828,8 @@ ConnectProcessor::connect_finish() {
   if (!sock_ec_res) {
     auto ec = sock_ec_res.error();
 
-    log_debug("connect(%s, %d) failed: %s:%s",
-              server_endpoint_.address().to_string().c_str(),
-              server_endpoint_.port(), ec.category().name(),
-              ec.message().c_str());
+    log_debug("connect(%s) failed: %s:%s", server_endpoint_.str().c_str(),
+              ec.category().name(), ec.message().c_str());
 
     if (auto &tr = tracer()) {
       tr.trace(
@@ -790,7 +838,7 @@ ConnectProcessor::connect_finish() {
 
     connect_errors_.emplace_back(
         "connect(" +
-            pretty_endpoint(server_endpoint_, (*destinations_it_)->hostname()) +
+            pretty_endpoint(server_endpoint_, destination_->destination()) +
             ")::getsockopt()",
         ec);
 
@@ -803,10 +851,8 @@ ConnectProcessor::connect_finish() {
   auto sock_ec = *sock_ec_res;
 
   if (sock_ec != std::error_code{}) {
-    log_debug("connect(%s, %d) failed: %s:%s",
-              server_endpoint_.address().to_string().c_str(),
-              server_endpoint_.port(), sock_ec.category().name(),
-              sock_ec.message().c_str());
+    log_debug("connect(%s) failed: %s:%s", server_endpoint_.str().c_str(),
+              sock_ec.category().name(), sock_ec.message().c_str());
 
     if (auto &tr = tracer()) {
       tr.trace(Tracer::Event().stage("connect::connect_finish: " +
@@ -815,7 +861,7 @@ ConnectProcessor::connect_finish() {
 
     connect_errors_.emplace_back(
         "connect(" +
-            pretty_endpoint(server_endpoint_, (*destinations_it_)->hostname()) +
+            pretty_endpoint(server_endpoint_, destination_->destination()) +
             ") failed after " + std::to_string(connect_duration.count()) + "ms",
         sock_ec);
 
@@ -857,22 +903,16 @@ ConnectProcessor::next_endpoint() {
     return Result::Again;
   }
 
-  // no more endpoints for this destination.
-
-  auto &destination = *destinations_it_;
-
   // report back the connect status to the destination
-  destination->connect_status(destination_ec_);
+  connection()->destination_manager()->connect_status(destination_ec_);
 
   if (destination_ec_) {
-    auto hostname = destination->hostname();
-    auto port = destination->port();
-
     auto &ctx = connection()->context();
 
-    if (ctx.shared_quarantine().update({hostname, port}, false)) {
-      log_debug("[%s] add destination '%s:%d' to quarantine",
-                ctx.get_name().c_str(), hostname.c_str(), port);
+    if (ctx.shared_quarantine().update(destination_->destination(), false)) {
+      log_debug("[%s] Add destination '%s' to quarantine",
+                ctx.get_name().c_str(),
+                destination_->destination().str().c_str());
     } else {
       // failed to connect, but not quarantined. Don't close the ports, yet.
       all_quarantined_ = false;
@@ -883,15 +923,16 @@ ConnectProcessor::next_endpoint() {
   return Result::Again;
 }
 
-bool ConnectProcessor::is_destination_good(const std::string &hostname,
-                                           uint16_t port) const {
+bool ConnectProcessor::is_destination_good(
+    const mysql_harness::Destination &dest) const {
   const auto &ctx = connection()->context();
 
-  const auto is_quarantined =
-      ctx.shared_quarantine().is_quarantined({hostname, port});
+  const auto is_quarantined = ctx.shared_quarantine().is_quarantined(dest);
   if (is_quarantined) {
-    log_debug("[%s] skip quarantined destination '%s:%d'",
-              ctx.get_name().c_str(), hostname.c_str(), port);
+    const auto &client_socket = connection()->client_conn();
+    log_debug("[%s] fd=%d skip quarantined destination '%s'",
+              ctx.get_name().c_str(), client_socket.native_handle(),
+              dest.str().c_str());
 
     return false;
   }
@@ -904,47 +945,52 @@ ConnectProcessor::next_destination() {
   if (auto &tr = tracer()) {
     tr.trace(Tracer::Event().stage("connect::next_destination"));
   }
+
+  bool is_quarantined{false};
+  bool is_skipped{false};
+  const auto &session_info = connection()->get_session_info();
+  const auto &destination_manager = connection()->destination_manager();
   do {
-    std::advance(destinations_it_, 1);
+    destination_ = destination_manager->get_next_destination(session_info);
+    if (destination_) {
+      // for read-only connections, skip the writable destinations,
+      // for read-write connections, skip the read-only destinations.
+      is_skipped = skip_destination(connection(), destination_.get());
+      if (is_skipped) {
+        connect_errors_.emplace_back(
+            "connect(/* " + destination_->destination().str() + " */)",
+            make_error_code(DestinationsErrc::kIgnored));
 
-    if (destinations_it_ == std::end(destinations_)) break;
+        destination_manager->connect_status(
+            make_error_code(DestinationsErrc::kIgnored));
+      }
 
-    const auto &destination = *destinations_it_;
+      is_quarantined = !is_destination_good(destination_->destination());
+      if (is_quarantined) {
+        connect_errors_.emplace_back(
+            "connect(/* " + destination_->destination().str() + " */)",
+            make_error_code(DestinationsErrc::kQuarantined));
 
-    // for read-only connections, skip the writable destinations,
-    // for read-write connections, skip the read-only destinations.
-    if (skip_destination(connection(), destination.get())) {
-      connect_errors_.emplace_back(
-          "connect(/* " + (*destinations_it_)->hostname() + " */)",
-          make_error_code(DestinationsErrc::kIgnored));
-
-      continue;
+        destination_manager->connect_status(
+            make_error_code(DestinationsErrc::kQuarantined));
+      }
     }
+  } while (destination_ && (is_quarantined || is_skipped));
 
-    if (is_destination_good(destination->hostname(), destination->port())) {
-      break;
-    }
-
-    connect_errors_.emplace_back(
-        "connect(/* " + destination->hostname() + ":" +
-            std::to_string(destination->port()) + " */)",
-        make_error_code(DestinationsErrc::kQuarantined));
-  } while (true);
-
-  if (destinations_it_ != destinations_.end()) {
+  if (destination_) {
     // next destination
     stage(Stage::Resolve);
     return Result::Again;
-  }
-
-  // no more destinations.
-
-  if (auto refresh_res =
-          connection()->destinations()->refresh_destinations(destinations_)) {
-    destinations_ = std::move(refresh_res.value());
-
-    stage(Stage::InitDestination);
-    return Result::Again;
+  } else if (destination_ec_ != make_error_condition(std::errc::timed_out) &&
+             destination_ec_.category() != net::ip::resolver_category() &&
+             destination_manager->refresh_destinations(session_info)) {
+    // On member failure (connection refused, ...) wait for failover and use
+    // the new primary.
+    destination_ = destination_manager->get_next_destination(session_info);
+    if (destination_) {
+      stage(Stage::Resolve);
+      return Result::Again;
+    }
   }
 
   if (connection()->context().access_mode() == routing::AccessMode::kAuto &&
@@ -952,7 +998,8 @@ ConnectProcessor::next_destination() {
           mysqlrouter::ServerMode::ReadOnly &&
       connection()->current_server_mode() ==
           mysqlrouter::ServerMode::ReadOnly) {
-    // if we want a RO connections but there are only primaries, take a primary.
+    // if we want a RO connections but there are only primaries, take a
+    // primary.
     connection()->current_server_mode(mysqlrouter::ServerMode::ReadWrite);
     stage(Stage::InitDestination);
     return Result::Again;
@@ -977,22 +1024,30 @@ ConnectProcessor::connected() {
     trace_span_end(ev);
   }
 
-  const auto *dest = destinations_it_->get();
-
   // remember the destination and its server-mode for connection-sharing.
   if (connection()->expected_server_mode() ==
       mysqlrouter::ServerMode::Unavailable) {
-    // before the first query the server-mode is not set,
+    // before the first query, the server-mode is not set,
     // remember it now.
-    connection()->expected_server_mode(dest->server_mode());
+    connection()->expected_server_mode(destination_->server_mode());
   }
 
-  connection()->destination_id(destination_id_from_endpoint(*endpoints_it_));
-  connection()->destination_endpoint(endpoints_it_->endpoint());
+  connection()->destination_id(destination_->destination());
+  connection()->destination_endpoint(*endpoints_it_);
+
+  connection()->server_address(connection()->server_conn().endpoint());
 
   // mark destination as reachable.
   connection()->context().shared_quarantine().update(
-      {dest->hostname(), dest->port()}, true);
+      destination_->destination(), true);
+
+  // Keep information about destination, we need it to determine which
+  // connections are no longer allowed after guidelines update.
+  connection()->set_destination(std::move(destination_));
+
+  connection()->completed();
+  // We are done, destination manager should know about that
+  connection()->destination_manager()->connect_status({});
 
   // back to the caller.
   stage(Stage::Done);
@@ -1021,10 +1076,15 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::error() {
       msg += ": ";
       msg += ec.message();
     }
+
     log_error("[%s] connecting to backend(s) for client from %s failed: %s",
               connection()->context().get_name().c_str(),
-              connection()->get_client_address().c_str(), msg.c_str());
+              connection()->client_conn().endpoint().c_str(), msg.c_str());
   }
+
+  // We are done for this connection, lets reset the connect status for new
+  // incoming connections.
+  connection()->destination_manager()->connect_status({});
 
   if (auto *ev = trace_event_connect_) {
     ev->attrs.emplace_back("mysql.error_message", last_ec.message());
@@ -1039,7 +1099,8 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::error() {
     //
     // don't retry as router may run into an infinite loop.
     ConnectionPoolComponent::get_instance().clear();
-  } else if (connection()->get_destination_id().empty() && all_quarantined_) {
+  } else if (!connection()->get_destination_id().has_value() &&
+             all_quarantined_) {
     // fresh-connect == "destination-id is empty"
 
     // if there are no destinations for a fresh connect, close the
@@ -1047,16 +1108,13 @@ stdx::expected<Processor::Result, std::error_code> ConnectProcessor::error() {
     if (auto &tr = tracer()) {
       tr.trace(Tracer::Event().stage("connect::error::all_down"));
     }
-    // all backends are down.
-    MySQLRoutingComponent::get_instance()
-        .api(connection()->context().get_id())
-        .stop_socket_acceptors();
   }
 
   connection()->server_conn().protocol().handshake_state(
       ClassicProtocolState::HandshakeState::kConnected);
   connection()->authenticated(false);
 
+  connection()->completed();
   stage(Stage::Done);
 
   on_error_({2003, "Can't connect to remote MySQL server", "HY000"});

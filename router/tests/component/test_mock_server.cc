@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -38,6 +38,7 @@
 #include "router_config.h"
 #include "stdx_expected_no_error.h"
 #include "tcp_port_pool.h"
+#include "test/temp_directory.h"
 
 using namespace std::chrono_literals;
 using namespace std::string_literals;
@@ -577,6 +578,8 @@ class MockServerConnectTest
       public ::testing::WithParamInterface<MockServerConnectTestParam> {};
 
 TEST_P(MockServerConnectTest, check) {
+  TempDirectory tmp_dir;
+
   auto classic_port = port_pool_.get_next_available();
   std::map<std::string, std::string> config{
       {"http_port", std::to_string(port_pool_.get_next_available())},
@@ -585,6 +588,7 @@ TEST_P(MockServerConnectTest, check) {
       {"datadir", get_data_dir().str()},
       {"certdir", SSL_TEST_DATA_DIR},
       {"hostname", "127.0.0.1"},
+      {"socket", Path(tmp_dir.name()).join("mock.sock").str()},
       {"plugin_dir", plugin_output_directory()},
   };
 
@@ -1070,8 +1074,44 @@ const MockServerConnectTestParam mock_server_connect_test_param[] = {
        std::string version_string;
        ASSERT_TRUE(row->get_string(1, &version_string));
        ASSERT_THAT(version_string,
-                   ::testing::SizeIs(::testing::Gt(5)));  // x.y.z
+                   ::testing::SizeIs(::testing::Ge(5)));  // x.y.z
      }},
+    {"via_socket",
+     // connect via unix-domain socket.
+     {
+         "--filename", "@datadir@/my_port.js",  //
+         "--module-prefix", "@datadir@",        //
+         "--socket", "@socket@",                //
+     },
+     [](const std::map<std::string, std::string> &config) {
+#ifdef _WIN32
+       GTEST_SKIP() << "libmysqlclient does not support connecting to "
+                       "unix-sockets on windows.";
+#endif
+       auto sock = config.at("socket");
+       const char username[] = "username";
+       const char password[] = "password";
+
+       mysqlrouter::MySQLSession sess;
+
+       try {
+         sess.connect("localhost", 0,
+                      username,  // user
+                      password,  // pass
+                      sock,      // socket
+                      ""         // schema
+         );
+       } catch (const mysqlrouter::MySQLSession::Error &e) {
+         FAIL() << e.what();
+       } catch (const std::exception &e) {
+         FAIL() << e.what();
+       }
+
+       auto row = sess.query_one("select @@port");
+       ASSERT_EQ(row->size(), 1);
+       EXPECT_STREQ((*row)[0], "0");
+     }},
+
 };
 
 INSTANTIATE_TEST_SUITE_P(Spec, MockServerConnectTest,

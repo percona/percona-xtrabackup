@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,9 +25,9 @@
 
 #include "my_config.h"
 
-#include <stdio.h>
-#include <string.h>
 #include <sys/types.h>
+#include <cstdio>
+#include <cstring>
 
 #include "my_byteorder.h"
 #include "my_dbug.h"
@@ -132,7 +132,7 @@ String *Item_func_inet_ntoa::val_str(String *str) {
   assert(fixed);
   assert(arg_count == 1);
   null_value = true;
-  const ulonglong n = (ulonglong)args[0]->val_int();
+  const auto n = (ulonglong)args[0]->val_int();
 
   /*
     We do not know if args[0] is NULL until we have called
@@ -291,7 +291,7 @@ static bool str_to_ipv4(const char *str, int str_length,
     return false;
   }
 
-  unsigned char *ipv4_bytes = (unsigned char *)ipv4_address;
+  auto *ipv4_bytes = (unsigned char *)ipv4_address;
   const char *p = str;
   int byte_value = 0;
   int chars_in_group = 0;
@@ -564,7 +564,7 @@ static bool str_to_ipv6(const char *str, int str_length,
 */
 
 static void ipv4_to_str(const in_addr *ipv4, char *str) {
-  const unsigned char *ipv4_bytes = (const unsigned char *)ipv4;
+  const auto *ipv4_bytes = (const unsigned char *)ipv4;
 
   sprintf(str, "%d.%d.%d.%d", ipv4_bytes[0], ipv4_bytes[1], ipv4_bytes[2],
           ipv4_bytes[3]);
@@ -589,7 +589,7 @@ static void ipv6_to_str(const in6_addr *ipv6, char *str) {
     int length;
   };
 
-  const unsigned char *ipv6_bytes = (const unsigned char *)ipv6;
+  const auto *ipv6_bytes = (const unsigned char *)ipv6;
 
   // 1. Translate IPv6-address bytes to words.
   // We can't just cast to short, because it's not guaranteed
@@ -741,7 +741,8 @@ bool Item_func_inet6_ntoa::calc_value(String *arg, String *buffer) {
     buffer->append(str, strlen(str), &my_charset_latin1);
 
     return true;
-  } else if ((int)arg->length() == IN6_ADDR_SIZE) {
+  }
+  if ((int)arg->length() == IN6_ADDR_SIZE) {
     char str[INET6_ADDRSTRLEN];
 
     ipv6_to_str((const in6_addr *)arg->ptr(), str);

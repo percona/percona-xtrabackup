@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,28 +26,21 @@
 #ifndef _PROCESS_MANAGER_H_
 #define _PROCESS_MANAGER_H_
 
-#include "mysql/harness/loader.h"
-#include "process_launcher.h"
-#include "process_wrapper.h"
-
-#include <gmock/gmock.h>
 #include <chrono>
 #include <cstring>
-#include <functional>
-#include <iostream>
 #include <list>
 #include <map>
-#include <sstream>
-#include <stdexcept>
-#include <streambuf>
 #include <vector>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
 
+#include "mysql/harness/filesystem.h"
 #include "mysql/harness/net_ts/local.h"
 #include "mysql/harness/net_ts/win32_named_pipe.h"
 #include "mysql/harness/stdx/expected.h"
+#include "process_launcher.h"
+#include "process_wrapper.h"
 #include "router_test_helpers.h"
 #include "test/temp_directory.h"
 
@@ -141,12 +134,23 @@ class ProcessManager {
         std::string executable, std::string logging_dir,
         std::string logging_file, std::string notify_socket_path,
         std::list<std::tuple<std::unique_ptr<ProcessWrapper>, exit_status_type>>
-            &processes)
+            &processes
+#ifdef _WIN32
+        ,
+        mysql_harness::win32::JobObject &job_object
+#endif
+        )
         : executable_{std::move(executable)},
           logging_dir_{std::move(logging_dir)},
           logging_file_{std::move(logging_file)},
           notify_socket_path_{std::move(notify_socket_path)},
-          processes_(processes) {}
+          processes_(processes)
+#ifdef _WIN32
+          ,
+          job_object_(job_object)
+#endif
+    {
+    }
 
     ProcessWrapper &launch_command(
         const std::string &command, const std::vector<std::string> &params,
@@ -181,6 +185,10 @@ class ProcessManager {
     std::list<std::tuple<std::unique_ptr<ProcessWrapper>, exit_status_type>>
         &processes_;
 
+#ifdef _WIN32
+    mysql_harness::win32::JobObject &job_object_;
+#endif
+
     bool with_core_{false};
   };
 
@@ -189,6 +197,10 @@ class ProcessManager {
   Spawner router_spawner() {
     return spawner(mysqlrouter_exec_.str(), "mysqlrouter.log")
         .with_core_dump(true);
+  }
+
+  Spawner router_bootstrap_spawner() {
+    return spawner(mysqlrouter_bootstrap_exec_.str(), "mysqlrouter.log");
   }
 
   class MockServerCmdline {
@@ -235,6 +247,30 @@ class ProcessManager {
      */
     MockServerCmdline &http_port(uint16_t port) {
       http_port_ = port;
+
+      return *this;
+    }
+
+    /**
+     * set the socket for the classic protocol.
+     *
+     * @param sock  name of the socket where the mock server will accept
+     * the client connections.
+     */
+    MockServerCmdline &socket(std::string sock) {
+      socket_ = std::move(sock);
+
+      return *this;
+    }
+
+    /**
+     * set the socket for the x protocol.
+     *
+     * @param sock  name of the socket where the mock server will accept
+     * the client connections.
+     */
+    MockServerCmdline &xsocket(std::string sock) {
+      xsocket_ = std::move(sock);
 
       return *this;
     }
@@ -313,6 +349,16 @@ class ProcessManager {
         server_params.emplace_back(std::to_string(x_port_));
       }
 
+      if (!socket_.empty()) {
+        server_params.emplace_back("--socket");
+        server_params.emplace_back(socket_);
+      }
+
+      if (!xsocket_.empty()) {
+        server_params.emplace_back("--xsocket");
+        server_params.emplace_back(xsocket_);
+      }
+
       if (enable_ssl_) {
         server_params.emplace_back("--ssl-mode");
         server_params.emplace_back("PREFERRED");
@@ -342,6 +388,9 @@ class ProcessManager {
     uint16_t port_{};
     uint16_t x_port_{};
     uint16_t http_port_{};
+
+    std::string socket_;
+    std::string xsocket_;
 
     bool enable_ssl_{false};
 
@@ -483,6 +532,33 @@ class ProcessManager {
    * @returns handle to the launched process
    */
   ProcessWrapper &launch_router(
+      const std::vector<std::string> &params, int expected_exit_code = 0,
+      bool catch_stderr = true, bool with_sudo = false,
+      std::chrono::milliseconds wait_for_notify_ready =
+          std::chrono::seconds(30),
+      OutputResponder output_responder = kEmptyResponder);
+
+  /** @brief Launches the MySQLRouter Bootstrap process.
+   *
+   * @param   params vector<string> containing command line parameters to pass
+   * to process
+   * @param expected_exit_code expected exit-code for ensure_clean_exit()
+   * @param   catch_stderr bool flag indicating if the process' error output
+   * stream should be included in the output caught from the process
+   * @param   with_sudo    bool flag indicating if the process' should be
+   * execute with sudo privileges
+   * @param wait_for_notify_ready
+   *        if >=0 the method should use the notification socket and the value
+   * is the time in milliseconds - how long the it should wait for the process
+   * to notify it is ready. if < 0 is should not use (open) the notification
+   * socket to wait for ready notification
+   * @param output_responder method to be called when the process outputs a line
+   * returning string that should be send back to the process input (if not
+   * empty)
+   *
+   * @returns handle to the launched process
+   */
+  ProcessWrapper &launch_router_bootstrap(
       const std::vector<std::string> &params, int expected_exit_code = 0,
       bool catch_stderr = true, bool with_sudo = false,
       std::chrono::milliseconds wait_for_notify_ready =
@@ -668,6 +744,13 @@ class ProcessManager {
     return mysqlserver_mock_exec_;
   }
 
+  const Path &get_mysqlrouter_bootstrap_exec() const {
+    return mysqlrouter_bootstrap_exec_;
+  }
+
+  void set_mysqlrouter_bootstrap_exec(const Path &path) {
+    mysqlrouter_bootstrap_exec_ = path;
+  }
   void set_mysqlrouter_exec(const Path &path) { mysqlrouter_exec_ = path; }
 
   std::string get_test_temp_dir_name() const { return test_dir_.name(); }
@@ -699,6 +782,7 @@ class ProcessManager {
   static Path data_dir_;
   static Path plugin_dir_;
   static Path mysqlrouter_exec_;
+  static Path mysqlrouter_bootstrap_exec_;
   static Path mysqlserver_mock_exec_;
 
   TempDirectory logging_dir_;
@@ -707,6 +791,10 @@ class ProcessManager {
   std::list<std::tuple<std::unique_ptr<ProcessWrapper>, exit_status_type>>
       processes_;
   static const OutputResponder kEmptyResponder;
+
+#ifdef _WIN32
+  mysql_harness::win32::JobObject job_object_;
+#endif
 };
 
 #endif  // _PROCESS_MANAGER_H_

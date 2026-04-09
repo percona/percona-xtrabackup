@@ -1396,7 +1396,8 @@ drop table t1;
 --echo #
 --echo # Bug#21461026: INCONSISTEND CASING ON STORAGE ENGINE VARIABLE VALUE
 --echo #
-SHOW GLOBAL VARIABLES LIKE '%\_storage\_engine';
+SHOW GLOBAL VARIABLES WHERE Variable_name LIKE '%\_storage\_engine'
+AND Variable_name NOT LIKE 'external_table%';
 #============================end && cleanup======================= 
 set big_tables= @old_big_tables;
 set optimizer_switch= @old_optimizer_switch;

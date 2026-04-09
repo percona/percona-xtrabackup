@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -227,7 +227,7 @@ class NdbDictionary {
     Object(const Object &) = default;
 
    private:
-    Object &operator=(const Object &);
+    Object &operator=(const Object &) = delete;
   };
 
   class Dictionary;  // Forward declaration
@@ -785,7 +785,7 @@ class NdbDictionary {
      * Get column definition via index in table.
      * @return null if none existing name
      */
-    Column *getColumn(const int attributeId);
+    Column *getColumn(int attributeId);
 
     /**
      * Get column definition via name.
@@ -797,7 +797,7 @@ class NdbDictionary {
      * Get column definition via index in table.
      * @return null if none existing name
      */
-    const Column *getColumn(const int attributeId) const;
+    const Column *getColumn(int attributeId) const;
 
     /** @} *******************************************************************/
     /**
@@ -1682,11 +1682,11 @@ class NdbDictionary {
     /**
      * Add type of event that should be detected
      */
-    void addTableEvent(const TableEvent te);
+    void addTableEvent(TableEvent te);
     /**
      * Check if a specific table event will be detected
      */
-    bool getTableEvent(const TableEvent te) const;
+    bool getTableEvent(TableEvent te) const;
     /**
      * Set durability of the event
      *
@@ -1861,7 +1861,16 @@ class NdbDictionary {
         Used for MySQLD char(0) column
         Used only with RecMysqldBitfield flag
       */
-      BitColMapsNullBitOnly = 0x1
+      BitColMapsNullBitOnly = 0x1,
+      /*
+        In record store only length as 4 byte little endian unsigned integer
+        followed by a 8 byte native pointer (like MySQL LONGBLOB).
+        This flag can only be used for columns which is either Longvarbinary or
+        Longvarchar.
+        To read such column one also need to provide operation option
+        OO_ROW_SIDE_BUFFER.
+       */
+      MysqldLongBlob = 0x2
     };
     Uint32 column_flags;
   };
@@ -2984,14 +2993,12 @@ class NdbDictionary {
 
 class NdbOut &operator<<(class NdbOut &out, const NdbDictionary::Column &col);
 class NdbOut &operator<<(class NdbOut &out, const NdbDictionary::Index &idx);
+class NdbOut &operator<<(class NdbOut &out, NdbDictionary::Index::Type type);
 class NdbOut &operator<<(class NdbOut &out,
-                         const NdbDictionary::Index::Type type);
+                         NdbDictionary::Object::FragmentType fragtype);
 class NdbOut &operator<<(class NdbOut &out,
-                         const NdbDictionary::Object::FragmentType fragtype);
-class NdbOut &operator<<(class NdbOut &out,
-                         const NdbDictionary::Object::Status status);
-class NdbOut &operator<<(class NdbOut &out,
-                         const NdbDictionary::Object::Type type);
+                         NdbDictionary::Object::Status status);
+class NdbOut &operator<<(class NdbOut &out, NdbDictionary::Object::Type type);
 class NdbOut &operator<<(class NdbOut &out, const NdbDictionary::Table &tab);
 
 #endif

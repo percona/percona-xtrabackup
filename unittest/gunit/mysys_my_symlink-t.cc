@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include <fcntl.h>
 #include <gtest/gtest.h>
-#include <stddef.h>
+#include <cstddef>
 
 #include "m_string.h"
 #include "my_inttypes.h"
@@ -36,8 +36,8 @@ namespace mysys_my_symlink {
 #if !defined(_WIN32)
 TEST(Mysys, MysysMySymlink) {
   char filename[FN_REFLEN];
-  int fd = create_temp_file(filename, nullptr, "gunit_mysys_symlink",
-                            O_CREAT | O_WRONLY, KEEP_FILE, MYF(MY_WME));
+  int const fd = create_temp_file(filename, nullptr, "gunit_mysys_symlink",
+                                  O_CREAT | O_WRONLY, KEEP_FILE, MYF(MY_WME));
   EXPECT_GT(fd, 0);
 
   char linkname[FN_REFLEN];

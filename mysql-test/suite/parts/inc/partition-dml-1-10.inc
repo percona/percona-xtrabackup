@@ -32,21 +32,17 @@ PREPARE st1 FROM 'UPDATE t1 PARTITION (`p0-29`) SET b=''p0-29-upd-1'' WHERE a BE
 
 connect (session2, localhost, test_user_2,'testpw',test);
 PREPARE st2 FROM 'UPDATE t1 PARTITION (`p0-29`) SET b=? WHERE a BETWEEN 20 AND 29' ;
+PREPARE st3 FROM 'UPDATE t1 PARTITION (`p0-29`) SET b=? WHERE a BETWEEN 4 AND 9' ;
 
 connection session1;
 EXECUTE st1;
 
 connection session2;
 SET @var1= 'p0-29-upd-2';
-if ($engine == MyISAM)
-{
 EXECUTE st2 USING @var1;
-}
-if ($engine == InnoDB)
-{
+
 --error ER_LOCK_WAIT_TIMEOUT
-EXECUTE st2 USING @var1;
-}
+EXECUTE st3 USING @var1;
 
 connection session1;
 COMMIT WORK;

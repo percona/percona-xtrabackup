@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,6 +30,8 @@
 #include <time.h>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <thread>  // std::this_thread::sleep_for
 
 #include "lex_string.h"
 #include "my_inttypes.h"
@@ -352,7 +354,9 @@ static void print_fatal_signal(int sig, siginfo_t *info [[maybe_unused]]) {
       query_length = thd->query().length;
     }
     my_safe_printf_stderr("Query (%p): ", query);
-    my_safe_puts_stderr(query, std::min(size_t{1024}, query_length));
+    // 1024 * 1024 * 1024 is the limit for max_allowed_packet
+    my_safe_puts_stderr(query,
+                        std::min(size_t{1024 * 1024 * 1024}, query_length));
     my_safe_printf_stderr("Connection ID (thread ID): %u\n", thd->thread_id());
     my_safe_printf_stderr("Status: %s\n\n", kreason);
   }

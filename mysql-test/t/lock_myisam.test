@@ -1,6 +1,7 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
-
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 # Testing of table locking
 #
@@ -96,3 +97,5 @@ FLUSH TABLE m1;
 
 UNLOCK TABLES;
 DROP TABLE m1, t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

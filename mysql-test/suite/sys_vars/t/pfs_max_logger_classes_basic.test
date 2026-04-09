@@ -1,3 +1,4 @@
+--source include/have_server_telemetry_logs.inc
 
 #
 # Only global

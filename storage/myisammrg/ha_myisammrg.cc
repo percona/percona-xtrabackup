@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -111,7 +111,7 @@
 #include "sql/mysqld.h"
 #include "sql/sql_class.h"  // THD
 #include "sql/sql_lex.h"
-#include "sql/sql_show.h"    // append_identifier
+#include "sql/sql_show.h"    // append_identifier_*
 #include "sql/sql_table.h"   // build_table_filename
 #include "sql/thr_malloc.h"  // int_sql_alloc
 #include "storage/myisam/ha_myisam.h"

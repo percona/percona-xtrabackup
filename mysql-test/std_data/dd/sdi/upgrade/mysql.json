@@ -14718,7 +14718,7 @@
                 "engine_attribute": "",
                 "secondary_engine_attribute": "",
                 "column_key": 1,
-                "column_type_utf8": "enum('FUNCTION','PROCEDURE')",
+                "column_type_utf8": "enum('FUNCTION','PROCEDURE','LIBRARY')",
                 "elements": [
                     {
                         "name": "RlVOQ1RJT04=", "decoded-name": "FUNCTION",
@@ -14727,6 +14727,10 @@
                     {
                         "name": "UFJPQ0VEVVJF", "decoded-name": "PROCEDURE",
                         "index": 2
+                    },
+                    {
+                        "name": "TElCUkFSWQ==", "decoded-name": "LIBRARY",
+                        "index": 3
                     }
                 ],
                 "collation_id": X,
@@ -43491,7 +43495,7 @@
                 "engine_attribute": "",
                 "secondary_engine_attribute": "",
                 "column_key": 2,
-                "column_type_utf8": "enum('FUNCTION','PROCEDURE')",
+                "column_type_utf8": "enum('FUNCTION','PROCEDURE','LIBRARY')",
                 "elements": [
                     {
                         "name": "RlVOQ1RJT04=", "decoded-name": "FUNCTION",
@@ -43500,6 +43504,10 @@
                     {
                         "name": "UFJPQ0VEVVJF", "decoded-name": "PROCEDURE",
                         "index": 2
+                    },
+                    {
+                        "name": "TElCUkFSWQ==", "decoded-name": "LIBRARY",
+                        "index": 3
                     }
                 ],
                 "collation_id": X,

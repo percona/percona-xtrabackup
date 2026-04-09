@@ -1,4 +1,4 @@
--- Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+-- Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -108,6 +108,10 @@ mysql> CALL sys.ps_trace_thread(25, CONCAT(\'/tmp/stack-\', REPLACE(NOW(), \' \'
     MODIFIES SQL DATA
 BEGIN
     DECLARE v_done bool DEFAULT FALSE;
+    DECLARE v_prepared bool DEFAULT FALSE;
+    DECLARE v_mysql_errno INT;
+    DECLARE v_sqlstate TEXT;
+    DECLARE v_msg_text TEXT;
     DECLARE v_start, v_runtime DECIMAL(20,2) DEFAULT 0.0;
     DECLARE v_min_event_id bigint unsigned DEFAULT 0;
     DECLARE v_this_thread_enabed ENUM('YES', 'NO');
@@ -314,21 +318,33 @@ BEGIN
     END WHILE;
 
     INSERT INTO tmp_events VALUES (v_min_event_id+1, '}');
-   
-    SET @query = CONCAT('SELECT event FROM tmp_events ORDER BY event_id INTO OUTFILE ''', in_outfile, ''' FIELDS ESCAPED BY '''' LINES TERMINATED BY ''''');
-    PREPARE stmt_output FROM @query;
-    EXECUTE stmt_output;
-    DEALLOCATE PREPARE stmt_output;
-   
-    SELECT CONCAT('Stack trace written to ', in_outfile) AS 'Info';
-    SELECT CONCAT('dot -Tpdf -o /tmp/stack_', in_thread_id, '.pdf ', in_outfile) AS 'Convert to PDF';
-    SELECT CONCAT('dot -Tpng -o /tmp/stack_', in_thread_id, '.png ', in_outfile) AS 'Convert to PNG';
+
+    BEGIN
+      DECLARE EXIT HANDLER FOR SQLEXCEPTION
+        BEGIN
+          GET STACKED DIAGNOSTICS CONDITION 1 v_mysql_errno = MYSQL_ERRNO, v_sqlstate = RETURNED_SQLSTATE, v_msg_text = MESSAGE_TEXT;
+          SELECT CONCAT('ERROR ', v_mysql_errno, ' (', v_sqlstate, '): ', v_msg_text) AS 'Error while writing stack trace';
+        END;
+      SET @query = CONCAT('SELECT event FROM tmp_events ORDER BY event_id INTO OUTFILE ''', in_outfile, ''' FIELDS ESCAPED BY '''' LINES TERMINATED BY ''''');
+      PREPARE stmt_output FROM @query;
+      SET v_prepared = TRUE;
+      EXECUTE stmt_output;
+      SELECT CONCAT('Stack trace written to ', in_outfile) AS 'Info';
+      SELECT CONCAT('dot -Tpdf -o /tmp/stack_', in_thread_id, '.pdf ', in_outfile) AS 'Convert to PDF';
+      SELECT CONCAT('dot -Tpng -o /tmp/stack_', in_thread_id, '.png ', in_outfile) AS 'Convert to PNG';
+    END;
+
+    IF (v_prepared) THEN
+      DEALLOCATE PREPARE stmt_output;
+    END IF;
+
     DROP TEMPORARY TABLE tmp_events;
 
     -- Reset the settings for the performance schema
     IF (in_auto_setup) THEN
         CALL sys.ps_setup_reload_saved();
     END IF;
+
     -- Restore INSTRUMENTED for this thread
     IF (v_this_thread_enabed = 'YES') THEN
         CALL sys.ps_setup_enable_thread(CONNECTION_ID());

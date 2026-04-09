@@ -1495,5 +1495,5 @@ DROP DATABASE gis_ogs;
 #
 # Bug#13362660 ASSERTION `FIELD_POS < FIELD_COUNT' FAILED. IN PROTOCOL_TEXT::STORE
 #
-SELECT ST_Union('', ''), md5(1);
+SELECT ST_Union('', ''), SHA2(1,256);
 ERROR 22023: Invalid GIS data provided to function st_union.

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -57,7 +57,7 @@ bool printMASTER_LCP_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const MasterLCPConf *sig = (const MasterLCPConf *)&theData[0];
+  const auto *sig = (const MasterLCPConf *)&theData[0];
 
   static char buf[255];
   print(buf, sizeof(buf), (MasterLCPConf::State)sig->lcpState);
@@ -73,7 +73,7 @@ bool printMASTER_LCP_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const MasterLCPReq *sig = (const MasterLCPReq *)&theData[0];
+  const auto *sig = (const MasterLCPReq *)&theData[0];
 
   fprintf(output, " masterRef=(node=%d, block=%d), failedNode=%d\n",
           refToNode(sig->masterRef), refToBlock(sig->masterRef),
@@ -88,7 +88,7 @@ bool printMASTER_LCP_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const MasterLCPRef *sig = (const MasterLCPRef *)&theData[0];
+  const auto *sig = (const MasterLCPRef *)&theData[0];
   fprintf(output, " senderNode=%d failedNode=%d\n", sig->senderNodeId,
           sig->failedNodeId);
   return true;

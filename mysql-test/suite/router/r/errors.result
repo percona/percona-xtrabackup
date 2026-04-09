@@ -1,0 +1,31 @@
+include/rpl/set_gtid_mode_off.inc
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+
+
+## I. Verify returned errors by
+#
+# 1. use of 'asof' query FilterObject parameter on badly
+#    configured MySQL Server (gtid_mode set to off).
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/sch
+# Registred DB_OBJECT at path: /svc/sch/t1
+
+#
+# I.1
+GET /svc/sch/t1?q=%7B%22%24asof%22:%223E11FA47-71CA-11E1-9E33-C80AA9429562:1-5%22%7D
+{
+    "message": "'Asof' requirement was not fulfilled, GTID_MODE is not configured properly on the MySQL Server.",
+    "status": 400
+}
+OK
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;
+include/rpl/set_gtid_mode_on.inc

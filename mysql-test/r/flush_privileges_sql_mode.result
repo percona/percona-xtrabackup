@@ -25,6 +25,8 @@ Grants for u2b35380295@%
 GRANT EXECUTE ON PROCEDURE `db35380295`.`p35380295` TO `u2b35380295`@`%`
 GRANT USAGE ON *.* TO `u2b35380295`@`%`
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # test: should be the same as the previous SHOW
 SHOW GRANTS FOR u2b35380295;
 Grants for u2b35380295@%

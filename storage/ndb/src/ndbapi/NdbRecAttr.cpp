@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -78,7 +78,7 @@ int NdbRecAttr::setup(Uint32 byteSize, char *aValue) {
     return 0;
   }
   Uint32 tSize = (byteSize + 7) >> 3;
-  Uint64 *tRef = new Uint64[tSize];
+  auto *tRef = new Uint64[tSize];
   if (tRef != nullptr) {
     for (Uint32 i = 0; i < tSize; i++) {
       tRef[i] = 0;
@@ -92,7 +92,7 @@ int NdbRecAttr::setup(Uint32 byteSize, char *aValue) {
 }
 
 NdbRecAttr *NdbRecAttr::clone() const {
-  NdbRecAttr *ret = new NdbRecAttr(nullptr);
+  auto *ret = new NdbRecAttr(nullptr);
   if (ret == nullptr) {
     errno = ENOMEM;
     return nullptr;
@@ -121,7 +121,7 @@ NdbRecAttr *NdbRecAttr::clone() const {
 }
 
 bool NdbRecAttr::receive_data(const Uint32 *data32, Uint32 sz) {
-  const unsigned char *data = (const unsigned char *)data32;
+  const auto *data = (const unsigned char *)data32;
   if (sz) {
     if (unlikely(m_getVarValue != nullptr)) {
       // ONLY for blob V2 implementation

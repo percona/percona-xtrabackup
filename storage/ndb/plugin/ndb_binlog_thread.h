@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,10 +26,8 @@
 #ifndef NDB_BINLOG_THREAD_H
 #define NDB_BINLOG_THREAD_H
 
-#include <mutex>
 #include <string>
 #include <unordered_set>
-#include <vector>
 
 #include "storage/ndb/include/ndbapi/NdbDictionary.hpp"
 #include "storage/ndb/plugin/ndb_binlog_index_rows.h"
@@ -376,6 +374,7 @@ class Ndb_binlog_thread : public Ndb_component {
 
 #ifndef NDEBUG
   void dbug_log_table_maps(Ndb *ndb, Uint64 current_epoch);
+  void dbug_log_multi_server_id(Ndb *ndb, Uint64 current_epoch);
 #endif
 };
 

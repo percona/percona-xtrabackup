@@ -5,6 +5,9 @@
 
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 CALL mtr.add_suppression("Enabling keys got errno");
 #
 # Test bugs in the MyISAM code
@@ -1840,3 +1843,5 @@ INSERT INTO ta VALUES
 --sorted_result
 SELECT FROM_VECTOR(embedding) FROM ta;
 DROP TABLE ta;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

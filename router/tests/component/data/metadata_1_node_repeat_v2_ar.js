@@ -20,6 +20,7 @@ var options = {
   innodb_cluster_instances: cluster_members_online,
   cluster_type: "ar",
   cluster_id: "uuid",
+  router_id: 1,
 };
 
 // prepare the responses for common statements
@@ -34,13 +35,15 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_select_cluster_type_v2",
       "router_select_view_id_v2_ar",
       "router_select_router_options_view",
+      "get_guidelines_router_info",
+      "get_routing_guidelines",
     ],
     options);
 
 var common_responses_regex = common_stmts.prepare_statement_responses_regex(
     [
       "router_update_attributes_v2",
-      "router_update_last_check_in_v2",
+      "router_update_last_check_in_v2_4",
     ],
     options);
 

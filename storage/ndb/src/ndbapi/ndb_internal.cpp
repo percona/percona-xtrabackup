@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
 
 #include "ndb_internal.hpp"
 #include "API.hpp"
+#include "portlib/NdbTimestamp.h"
 
 int Ndb_internal::send_event_report(bool is_poll_owner, Ndb *ndb, Uint32 *data,
                                     Uint32 length) {
@@ -42,4 +43,27 @@ void Ndb_internal::set_TC_COMMIT_ACK_immediate(Ndb *ndb, bool flag) {
 int Ndb_internal::send_dump_state_all(Ndb *ndb, Uint32 *dumpStateCodeArray,
                                       Uint32 len) {
   return ndb->theImpl->send_dump_state_all(dumpStateCodeArray, len);
+}
+
+int Ndb_internal::set_log_timestamp_format(log_timestamp_format format) {
+  switch (format) {
+    case log_timestamp_format::default_format:
+      NdbTimestamp_SetDefaultStringFormat(
+          NdbTimestampStringFormat::DefaultFormat);
+      break;
+    case log_timestamp_format::legacy_format:
+      NdbTimestamp_SetDefaultStringFormat(
+          NdbTimestampStringFormat::LegacyFormat);
+      break;
+    case log_timestamp_format::iso8601_utc:
+      NdbTimestamp_SetDefaultStringFormat(NdbTimestampStringFormat::Iso8601Utc);
+      break;
+    case log_timestamp_format::iso8601_system_time:
+      NdbTimestamp_SetDefaultStringFormat(
+          NdbTimestampStringFormat::Iso8601SystemTime);
+      break;
+    default:
+      return -1;
+  }
+  return 0;
 }

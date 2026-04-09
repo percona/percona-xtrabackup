@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -29,15 +29,11 @@
 #include "mysqlrouter/router_utils_export.h"
 
 #include <cstdint>
-#include <exception>
 #include <map>
-#include <stdexcept>
+#include <stdexcept>  // runtime_error
 #include <string>
 #include <tuple>
 #include <vector>
-#ifndef _WIN32
-#include <unistd.h>
-#endif
 
 namespace mysqlrouter {
 
@@ -84,10 +80,12 @@ class ROUTER_UTILS_EXPORT URI {
    * @param query_single_parameter_when_cant_parse This parameter allows to
    * handles query parameter that follows the RFC but is not accepted by default
    * implementation of URL
+   * @param keep_empty_root parsing the URL keeps empty root
    */
   URI(const std::string &uri, bool allow_path_rootless = true,
       bool allow_schemeless = false, bool path_keep_last_slash = false,
-      bool query_single_parameter_when_cant_parse = false)
+      bool query_single_parameter_when_cant_parse = false,
+      bool keep_empty_root = false)
       : scheme(),
         host(),
         port(0),
@@ -101,7 +99,8 @@ class ROUTER_UTILS_EXPORT URI {
         allow_schemeless_{allow_schemeless},
         path_keep_last_slash_{path_keep_last_slash},
         query_single_parameter_when_cant_parse_{
-            query_single_parameter_when_cant_parse} {
+            query_single_parameter_when_cant_parse},
+        keep_empty_root_{keep_empty_root} {
     if (!uri.empty()) {
       init_from_uri(uri);
     }
@@ -181,6 +180,7 @@ class ROUTER_UTILS_EXPORT URI {
   bool path_keep_last_slash_;
   bool query_single_parameter_when_cant_parse_;
   bool query_is_signle_parameter_{false};
+  bool keep_empty_root_;
 };
 
 ROUTER_UTILS_EXPORT std::ostream &operator<<(std::ostream &strm,
@@ -192,7 +192,8 @@ class ROUTER_UTILS_EXPORT URIParser {
   static URI parse(const std::string &uri, bool allow_path_rootless = true,
                    bool allow_schemeless = false,
                    bool path_keep_last_slash = false,
-                   bool query_single_parameter_when_cant_parse = false);
+                   bool query_single_parameter_when_cant_parse = false,
+                   bool keep_empty_root = false);
   static URI parse_shorthand_uri(const std::string &uri,
                                  bool allow_path_rootless = true,
                                  const std::string &default_scheme = "mysql");

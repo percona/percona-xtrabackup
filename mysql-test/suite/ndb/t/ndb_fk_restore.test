@@ -369,5 +369,111 @@ select * from t2;
 
 drop table t2,t1;
 
+--echo Show effect of --skip-fk-checks ndb_restore option
+
+create table parent (
+  a int primary key,
+  b int) engine=ndb;
+
+create table child (
+  x int primary key,
+  b int,
+  c int,
+foreign key(b) references parent(a)) engine=ndb;
+
+insert into parent values (1,1), (2,2), (3,3), (4,4);
+insert into child values (1,1,1), (2,2,2), (3,3,3), (4,4,4);
+
+--echo Go to the dark side of MySQL
+set foreign_key_checks=0;
+insert into child values (5,5,5);
+delete from parent where a=4;
+set foreign_key_checks=1;
+
+select * from parent order by a;
+select * from child order by x;
+
+-- echo # take backup and drop the tables
+--source include/ndb_backup.inc
+drop table child;
+drop table parent;
+
+--echo # Now try restoring
+--echo # Restore schema, with indexes disabled
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --restore-meta --disable-indexes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+--echo # Restore data - should succeed
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --restore-data $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+--exec $NDB_RESTORE -b $the_backup_id -n 2 --restore-data $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+--echo # Rebuild indexes + constraints - will fail
+--error 1
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --rebuild-indexes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+--echo # Show that we can get round this by skipping the whole child table
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --rebuild-indexes --exclude-tables=test.child $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+# Restore succeeded, but now we are missing indexes etc
+# Could be used manually to fix things
+
+--echo # Disable so that we can try again
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --disable-indexes $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+--echo # Try again with skip-fk-checks
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --rebuild-indexes --skip-fk-checks $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+# Restore succeeded, and FK constraints
+# are in place
+
+--echo Check data
+select * from parent order by a;
+select * from child order by x;
+
+--echo Show constraint active
+--error ER_NO_REFERENCED_ROW_2
+insert into child values (10,10,10);
+--error ER_ROW_IS_REFERENCED_2
+delete from parent where a=1;
+
+--echo Try adding duplicate FK - will fail due
+--echo to inconsistencies
+--error ER_CANNOT_ADD_FOREIGN
+ALTER TABLE child ADD FOREIGN KEY(b) references parent(a);
+
+--echo Fix data
+insert into parent values (4,4), (5,5);
+
+select * from parent order by a;
+select * from child order by x;
+
+--echo Try adding duplicate FK again
+ALTER TABLE child ADD FOREIGN KEY(b) references parent(a);
+
+--echo Cleanup
+drop table child;
+drop table parent;
+
+--echo Show that --restore-meta with --skip-fk-checks behaves the same as --restore-meta
+--exec $NDB_RESTORE -b $the_backup_id -n 1 --restore-meta --skip-fk-checks $NDB_BACKUPS-$the_backup_id >> $NDB_TOOLS_OUTPUT
+
+select * from parent;
+select * from child;
+
+insert into parent values (1,1);
+insert into child values (1,1,1);
+
+--echo Show constraint active
+--error ER_NO_REFERENCED_ROW_2
+insert into child values (10,10,10);
+--error ER_ROW_IS_REFERENCED_2
+delete from parent where a=1;
+
+--echo Cleanup
+delete from child;
+delete from parent;
+
+drop table child;
+drop table parent;
+
 --source suite/ndb/include/backup_restore_cleanup.inc
 --remove_file $NDB_TOOLS_OUTPUT

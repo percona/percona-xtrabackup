@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,15 +31,17 @@
 */
 
 #include "my_config.h"
-#include "mysql/my_loglevel.h"
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
 
+#include <stddef.h>
+
 #include "my_dbug.h"
 #include "my_sys.h"
 #include "my_thread_local.h"
+#include "mysql/my_loglevel.h"
 #include "mysys_err.h"
 
 const char *globerrs[GLOBERRS] = {
@@ -141,7 +143,8 @@ const char *globerrs[GLOBERRS] = {
     "Unknown LDML tag: '%.*s'.",
     "Failed to reset before a secondary ignorable character %s.",
     "Stopped processing the '%s' directive in file %s at line %d.",
-    "pthread_kill(thread_id:%lu, signal:%s) returned '%s'."};
+    "pthread_kill(thread_id:%lu, signal:%s) returned '%s'.",
+    "%s."};
 
 /*
  We cannot call my_error/my_printf_error here in this function.

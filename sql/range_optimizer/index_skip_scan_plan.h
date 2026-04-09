@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -97,6 +97,79 @@ struct IndexSkipScanParameters {
 
   SEL_ROOT *index_range_tree;   ///< The sub-tree corresponding to index_info
   bool has_aggregate_function;  ///< TRUE if there are aggregate functions.
+};
+
+/**
+  Manage cost-related info and cost calculation functions for index skip scans
+*/
+class IndexSkipScanCost {
+ private:
+  TABLE *m_table;
+  uint m_key;
+  uint m_distinct_key_parts;
+  ha_rows m_quick_prefix_records;
+  Item *m_where_cond;
+  Opt_trace_object *m_trace;
+
+  struct IndexSkipScanCardinality {
+    uint num_groups{0};
+    ha_rows records{0};
+  } m_cardinality;
+
+  /**
+    DESCRIPTION
+      This method computes the parameters used to calculate the access cost of
+      an INDEX_SKIP_SCAN access path and the number of rows returned.
+
+    NOTES
+      To estimate the size of the groups to read, index statistics
+      from rec_per_key is used. Each equality range decreases
+      number of the groups to read. The total number of processed
+      records from all the groups will be quick_prefix_records if
+      there are equality ranges else it will be the entire table.
+      Number of distinct group is calculated by dividing the
+      number of processed record by the number keys in a group.
+
+      Number of processed records is calculated using following formula:
+
+      records = number_of_distinct_groups * records_per_group * filtering_effect
+
+      where filtering_effect is filtering effect of the range condition.
+  */
+  void CalcCardinality();
+
+ public:
+  IndexSkipScanCost(TABLE *tab, uint cur_key, uint keyparts,
+                    ha_rows prefix_records, Item *where,
+                    Opt_trace_object *trace_idx)
+      : m_table(tab),
+        m_key(cur_key),
+        m_distinct_key_parts(keyparts),
+        m_quick_prefix_records(prefix_records),
+        m_where_cond(where),
+        m_trace(trace_idx) {
+    CalcCardinality();
+  }
+  /**
+    DESCRIPTION
+      This method computes the access cost of an INDEX_SKIP_SCAN access path
+      and the number of rows returned for the old optimizer.
+
+    RETURN
+      Cost estimate
+  */
+  Cost_estimate GetCost() const;
+  /**
+    DESCRIPTION
+      This method computes the access cost of an INDEX_SKIP_SCAN access path
+      and the number of rows returned in hypergraph.
+
+    RETURN
+      Hypergraph cost value.
+  */
+  double GetCostForHypergraph() const;
+
+  ha_rows GetNumRecords() const { return m_cardinality.records; }
 };
 
 Mem_root_array<AccessPath *> get_all_skip_scans(THD *thd,

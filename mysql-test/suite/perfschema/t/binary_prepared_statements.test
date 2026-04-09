@@ -1,0 +1,23 @@
+# Test for prepared statement instrumentation, for the binary protocol
+
+# Test requires: sp-protocol/ps-protocol/view-protocol/cursor-protocol disabled
+--source include/no_protocol.inc
+
+
+TRUNCATE TABLE performance_schema.events_statements_history_long;
+
+--echo # Execute prepared statements from mysql_client_test.
+--exec echo "$MYSQL_CLIENT_TEST" > $MYSQLTEST_VARDIR/log/test_prepare_text_and_digest.out.log 2>&1
+--exec $MYSQL_CLIENT_TEST -u root test_prepare_text_and_digest >> $MYSQLTEST_VARDIR/log/test_prepare_text_and_digest.out.log 2>&1
+
+--echo # Verify that prepared statements in the binary protocol have a message text and digest
+
+SELECT
+  EVENT_NAME, SQL_TEXT, DIGEST, DIGEST_TEXT,
+    CURRENT_SCHEMA, RETURNED_SQLSTATE, MESSAGE_TEXT, ERRORS, WARNINGS
+  FROM performance_schema.events_statements_history_long
+  WHERE EVENT_NAME LIKE 'statement/com/%'
+  ORDER BY THREAD_ID, EVENT_ID;
+
+--remove_file $MYSQLTEST_VARDIR/log/test_prepare_text_and_digest.out.log
+

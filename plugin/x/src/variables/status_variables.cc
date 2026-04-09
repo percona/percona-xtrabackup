@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -458,6 +458,7 @@ struct SHOW_VAR Plugin_status_variables::m_plugin_status_variables[] = {
 
 // simple (no measurement attributes supported) common Variable metric
 // callback
+#ifdef HAVE_PSI_METRICS_INTERFACE
 static void get_metric_simple_variable(void *measurement_context,
                                        measurement_delivery_callback_t delivery,
                                        void *delivery_context) {
@@ -859,5 +860,5 @@ PSI_meter_info_v1 Plugin_status_variables::m_xpl_meter[] = {
 size_t Plugin_status_variables::get_meter_count() {
   return std::size(m_xpl_meter);
 }
-
+#endif /* HAVE_PSI_METRICS_INTERFACE */
 }  // namespace xpl

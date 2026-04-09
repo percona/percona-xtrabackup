@@ -250,7 +250,7 @@ CREATE TABLE t1 (id bigint(12) unsigned NOT NULL auto_increment,
   spatial_point point NOT NULL SRID 0,
   PRIMARY KEY(id),
   SPATIAL KEY (spatial_point)
-  )ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_bin;
+  )ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 #
 INSERT INTO t1 (c2, c1, c3, spatial_point) VALUES
   ('y', 's', 'j', ST_GeomFromText('POINT(167 74)')),

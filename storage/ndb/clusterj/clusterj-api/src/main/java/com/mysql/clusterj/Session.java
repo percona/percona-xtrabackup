@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -260,4 +260,36 @@ public interface Session  extends AutoCloseable {
      * or if the object is used after calling this method.
      */
     <T> T release(T obj);
+
+    /** Get the underlying database connection used by this session */
+    Connection getConnection();
+
+    /** Release resources associated with an instance.
+     *  releaseCache(T, cls) is equivalent to release(T).
+     *  It is provided in Cluster/J 9.4 for compatibility with RonDB.
+     */
+    @Deprecated
+    default <T> T releaseCache(T obj, Class<?> cls) {
+        return release(obj);
+    }
+
+    /** Close this session.
+     *
+     * closeCache(boolean drop) is equivalent to close().
+     * It is provided in Cluster/J 9.4 for compatibility with RonDB.
+     */
+    @Deprecated
+    default void closeCache(boolean b) {
+        close();
+    }
+
+    /* Close this session.
+     *
+     * closeCache() is equivalent to close().
+     * It is provided in Cluster/J 9.4 for compatibility with RonDB.
+     */
+    @Deprecated
+    default void closeCache() {
+        close();
+    }
 }

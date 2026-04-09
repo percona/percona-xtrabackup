@@ -52,18 +52,27 @@ ERROR HY000: Variable 'ssl_session_cache_timeout' is a GLOBAL variable
 # Set value to min
 SET @@GLOBAL.ssl_session_cache_timeout = 0;
 # Set value to max
-SET @@GLOBAL.ssl_session_cache_timeout = 84600;
+SET @@GLOBAL.ssl_session_cache_timeout = 86400;
 # Set value below min
 SET @@GLOBAL.ssl_session_cache_timeout = -1;
 Warnings:
 Warning	1292	Truncated incorrect ssl_session_cache_timeout value: '-1'
 # Set value above max
-SET @@GLOBAL.ssl_session_cache_timeout = 84600 + 1;
+SET @@GLOBAL.ssl_session_cache_timeout = 86400 + 1;
 Warnings:
-Warning	1292	Truncated incorrect ssl_session_cache_timeout value: '84601'
+Warning	1292	Truncated incorrect ssl_session_cache_timeout value: '86401'
 # expect to be able to set it with step of 1
 SET @@GLOBAL.ssl_session_cache_timeout = 300;
 SET @@GLOBAL.ssl_session_cache_timeout = 301;
 SET @@GLOBAL.ssl_session_cache_timeout = 299;
 # Cleanup
 SET @@GLOBAL.ssl_session_cache_timeout = default;
+#
+# Bug #37354555: Contribution: Fix incorrect number of seconds in a day (86400, not 84600)
+#
+test: must return 24 hrs * 60 min * 60 sec : 86400
+SELECT MAX_VALUE FROM performance_schema.variables_info
+WHERE VARIABLE_NAME = 'ssl_session_cache_timeout';
+MAX_VALUE
+86400
+# End of 9.3 Tests

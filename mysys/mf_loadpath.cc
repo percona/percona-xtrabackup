@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,8 +30,8 @@
   @file mysys/mf_loadpath.cc
 */
 
-#include <string.h>
 #include <sys/types.h>
+#include <cstring>
 
 #include "m_string.h"
 #include "my_dbug.h"
@@ -88,7 +88,7 @@ char *my_load_path(char *to, const char *path, const char *own_path_prefix) {
     If path is hard path or home dir, return the path.
   */
   else if (own_path_prefix != nullptr &&
-           !(path[0] == FN_HOMELIB && path[1] == FN_LIBCHAR) &&
+           (path[0] != FN_HOMELIB || path[1] != FN_LIBCHAR) &&
            !test_if_hard_path(path)) {
     (void)strxnmov(buff, sizeof(buff) - 1, own_path_prefix, path, NullS);
     buff_ptr = buff;

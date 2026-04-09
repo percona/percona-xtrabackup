@@ -1,4 +1,6 @@
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT USER(),CURRENT_USER();
 USER()	CURRENT_USER()
 root@	skip-grants user@skip-grants host

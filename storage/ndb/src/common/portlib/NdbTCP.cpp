@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 #include "ndb_global.h"
 #include "portlib/ndb_sockaddr.h"
 
-#include <string.h>
+#include <cstring>
 
 /* By default, prefer IPv4 addresses, for smooth upgrade from an IPv4-only
    environment.
@@ -54,7 +54,7 @@ static struct addrinfo *get_preferred_address(struct addrinfo *ai_list) {
       first_ip4_addr = ai;
     }
     if ((ai->ai_family == AF_INET6) && (first_unscoped_ip6_addr == nullptr)) {
-      struct sockaddr_in6 *addr = (struct sockaddr_in6 *)ai->ai_addr;
+      auto *addr = (struct sockaddr_in6 *)ai->ai_addr;
       if (addr->sin6_scope_id == 0) {
         first_unscoped_ip6_addr = ai;
       }
@@ -78,7 +78,7 @@ static int get_addr(ndb_sockaddr *dst, const struct addrinfo *src) {
   }
 
   if (src->ai_family == AF_INET6) {
-    const sockaddr_in6 *addr6_ptr = (const sockaddr_in6 *)src->ai_addr;
+    const auto *addr6_ptr = (const sockaddr_in6 *)src->ai_addr;
     if (addr6_ptr->sin6_scope_id != 0) {
       return -1;  // require unscoped address
     }
@@ -216,8 +216,9 @@ int Ndb_split_string_address_port(const char *arg, char *host, size_t hostlen,
       return 0;
     }
     return -1;
-  } else if ((port_colon = strchr(arg, ':')) &&
-             (strchr(port_colon + 1, ':') == nullptr)) {
+  }
+  if ((port_colon = strchr(arg, ':')) &&
+      (strchr(port_colon + 1, ':') == nullptr)) {
     // checking for IPv4_address:port or hostname:port
     size_t copy_bytes = port_colon - arg;
     if ((copy_bytes >= hostlen) || (strlen(port_colon + 1) >= servlen))
@@ -271,7 +272,7 @@ static void CHECK(const char *name, int chk_result,
   addr_str1 = Ndb_inet_ntop(&addr, buf1, sizeof(buf1));
   fprintf(stderr, "> '%s' -> '%s'\n", name, addr_str1);
 
-  if (chk_address && strcmp(addr_str1, chk_address)) {
+  if (chk_address && strcmp(addr_str1, chk_address) != 0) {
     fprintf(stderr, "> mismatch from expected '%s'\n", chk_address);
     abort();
   }
@@ -309,7 +310,7 @@ static void CHECK_SPLIT(const char str[], int chk_result,
      having to link with "everything", implement it locally
 */
 
-static void socket_library_init(void) {
+static void socket_library_init() {
 #ifdef _WIN32
   WORD requested_version = MAKEWORD(2, 0);
   WSADATA wsa_data;

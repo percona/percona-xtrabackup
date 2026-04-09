@@ -1,4 +1,6 @@
 -- source include/no_valgrind_without_big.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 # Dump all databases
 --exec $MYSQL_DUMP -uroot --all-databases > $MYSQLTEST_VARDIR/tmp/bug20902791.sql
@@ -30,3 +32,10 @@ SHOW DATABASES;
 
 FLUSH PRIVILEGES;
 --source include/force_restart.inc
+
+# The value of gtid_mode might have been changed already(via force_restart.inc)
+# but if it's not then do it now
+if (`SELECT @@GLOBAL.gtid_mode = "OFF"`)
+{
+  --source include/rpl/set_gtid_mode_on.inc
+}

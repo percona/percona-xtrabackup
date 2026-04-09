@@ -43,10 +43,8 @@ INSERT INTO ts(ts) VALUES
 
 --echo Time difference between 2 consecutive rows should be 1200(20 min)
 CREATE TABLE diffs (i INT, CONSTRAINT i CHECK (1200 = i) ENFORCED);
---skip_if_hypergraph #hypergraph does not support window functions yet
 INSERT INTO diffs (SELECT unix_timestamp(ts) - LAG(unix_timestamp(ts))
                    OVER(ORDER BY id) AS diff FROM ts ORDER BY id);
---skip_if_hypergraph
 SELECT COUNT(*) FROM diffs;
 DROP TABLE diffs;
 

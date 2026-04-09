@@ -76,7 +76,7 @@ Warning	3126	Hint INDEX(`t1` ) is ignored as conflicting/duplicated
 EXPLAIN SELECT /*+ INDEX(t1 i_a, i_b) */ a FROM t1 WHERE a = 1 AND b = 2 AND c = 3;
 EXPLAIN
 -> Filter: (t1.c = 3)  (rows=0.0156)
-    -> Intersect rows sorted by row ID  (rows=0.0156)
+    -> Intersect rows sorted by row ID  (rows=4)
         -> Index range scan on t1 using i_a over (a = 1)  (rows=32)
         -> Index range scan on t1 using i_b over (b = 2)  (rows=32)
 
@@ -88,7 +88,7 @@ EXPLAIN
 EXPLAIN SELECT /*+ INDEX(t1 i_a, i_b) JOIN_INDEX(t1 i_c) */ * FROM t1 WHERE a = 1 AND b = 2 AND c = 3;
 EXPLAIN
 -> Filter: (t1.a = 1)  (rows=0.0156)
-    -> Intersect rows sorted by row ID  (rows=0.0156)
+    -> Intersect rows sorted by row ID  (rows=1)
         -> Index range scan on t1 using i_c over (c = 3)  (rows=1)
         -> Index range scan on t1 using i_b over (b = 2)  (rows=32)
 
@@ -179,7 +179,7 @@ b IN (SELECT /*+ NO_INDEX(t1 i_ab,i_b) */ a FROM t1 WHERE a > 3)
 ORDER BY a;
 SHOW CREATE VIEW v1;
 View	Create View	character_set_client	collation_connection
-v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select /*+ NO_INDEX(`t1`@`select#1` `i_a`, `i_b`) NO_INDEX(`t1`@`select#2` `i_ab`, `i_b`) */ `t1`.`a` AS `a` from `t1` where `t1`.`b` in (select `t1`.`a` from `t1` where (`t1`.`a` > 3)) order by `t1`.`a`	utf8mb4	utf8mb4_0900_ai_ci
+v1	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v1` AS select /*+ NO_INDEX(`t1`@`select#2` `i_ab`, `i_b`) NO_INDEX(`t1`@`select#1` `i_a`, `i_b`) */ `t1`.`a` AS `a` from `t1` where `t1`.`b` in (select `t1`.`a` from `t1` where (`t1`.`a` > 3)) order by `t1`.`a`	utf8mb4	utf8mb4_0900_ai_ci
 EXPLAIN SELECT a FROM v1;
 EXPLAIN
 -> Sort: a  (rows=256)
@@ -216,10 +216,10 @@ EXPLAIN SELECT /*+ INDEX(tb i_a) */ tb.a FROM v2, t1 tb WHERE tb.a > 3;
 EXPLAIN
 -> Inner hash join (no condition)  (rows=6.55e+6)
     -> Inner hash join (no condition)  (rows=40960)
-        -> Nested loop semijoin (FirstMatch)  (rows=256)
+        -> Hash semijoin (FirstMatch) (t1.b = t1.a)  (rows=256)
             -> Covering index scan on t1 using i_ab  (rows=256)
-            -> Filter: (t1.a > 3)  (rows=20)
-                -> Covering index lookup on t1 using i_a (a = t1.b)  (rows=32)
+            -> Hash
+                -> Covering index range scan on t1 using i_a over (3 < a)  (rows=160)
         -> Hash
             -> Covering index range scan on ta using i_a over (3 < a)  (rows=160)
     -> Hash

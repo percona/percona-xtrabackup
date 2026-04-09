@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -36,15 +36,17 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef btr0mtib_h
 #define btr0mtib_h
 
-#include <stddef.h>
+#include <cstddef>
 #include <vector>
 
+#include "api0api.h"
 #include "btr0load.h"
 #include "ddl0impl-compare.h"
 #include "dict0dict.h"
 #include "lob0bulk.h"
 #include "lob0lob.h"
 #include "page0cur.h"
+#include "row0mysql.h"
 #include "ut0class_life_cycle.h"
 #include "ut0new.h"
 #include "ut0object_cache.h"
@@ -489,14 +491,15 @@ class Bulk_extent_allocator {
   ~Bulk_extent_allocator() { stop(); }
 
   /** Check size and set extent allocator size parameters
-  @param[in] table Innodb dictionary table object
+  @param[in] table InnoDB dictionary table object
+  @param[in] index InnoDB index being built.
   @param[in] trx transaction performing bulk load
   @param[in] size total data size to be loaded
   @param[in] num_threads number of concurrent threads
   @param[in] in_pages if true, allocate in pages
   @return tablespace extend size in bytes. */
-  uint64_t init(dict_table_t *table, trx_t *trx, size_t size,
-                size_t num_threads, bool in_pages);
+  uint64_t init(dict_table_t *table, dict_index_t *index, trx_t *trx,
+                size_t size, size_t num_threads, bool in_pages);
 
   /* Start extent allocator thread. */
   void start();
@@ -643,6 +646,7 @@ class Bulk_extent_allocator {
 
   /** Innodb dictionary table object. */
   dict_table_t *m_table{};
+  dict_index_t *m_index{};
 
   /** Innodb transaction - used for checking interrupt. */
   trx_t *m_trx{};
@@ -851,6 +855,10 @@ class Blob_inserter {
   @return the current transaction id. */
   trx_id_t get_trx_id() const;
 
+  bool verify_blob_context(Blob_context ctx) const {
+    return ctx == m_blob_handle.get();
+  }
+
  private:
   Page_load *alloc_page_from_extent(Page_extent *&m_page_extent);
 
@@ -895,8 +903,12 @@ class Btree_load : private ut::Non_copyable {
   /** Merge multiple Btree_load sub-trees together. */
   class Merger;
 
+  /** Class used to read the target table when the table is not empty. We bulk
+  load into a duplicate and migrate the data into it. */
+  class Table_reader;
+
   dberr_t insert_blob(lob::ref_t &ref, const dfield_t *dfield) {
-    return m_blob_inserter.insert_blob(ref, dfield);
+    return m_full_blob_inserter.insert_blob(ref, dfield);
   }
 
   /** Create a blob.
@@ -985,6 +997,8 @@ class Btree_load : private ut::Non_copyable {
   /** Trigger flusher thread and check for error.
   @return Innodb error code. */
   dberr_t trigger_flusher() const { return m_bulk_flusher.check_and_notify(); }
+
+  bool is_pk() const { return m_index->is_clustered(); }
 
   /** Get the index object.
   @return index object. */
@@ -1184,6 +1198,9 @@ class Btree_load : private ut::Non_copyable {
                       irrespective of whether it is fully used or not. */
   void add_to_bulk_flusher(bool finish = false);
 
+  /** Add blob extents to the bulk flusher and wait till they are flushed. */
+  void add_blobs_to_bulk_flusher();
+
   /** Add the given page extent object to the bulk flusher.
   @param[in]  page_extent the extent to be flushed. */
   void add_to_bulk_flusher(Page_extent *page_extent);
@@ -1205,6 +1222,12 @@ class Btree_load : private ut::Non_copyable {
   disable doing it again. */
   void disable_check_order() { m_check_order = false; }
 
+  Bulk_extent_allocator &get_extent_allocator() { return m_allocator; }
+
+  bool verify_blob_context(Blob_context ctx) const {
+    return m_blob_inserter.verify_blob_context(ctx);
+  }
+
  private:
   /** Page allocation type. We allocate in extents by default. */
   Bulk_extent_allocator::Type m_alloc_type =
@@ -1224,7 +1247,6 @@ class Btree_load : private ut::Non_copyable {
   /** Root page level */
   size_t m_root_level{};
 
- private:
   /** Context information for each level of the B-tree.  The leaf level is at
   m_level_ctxs[0]. */
   Level_ctxs m_level_ctxs{};
@@ -1260,9 +1282,14 @@ class Btree_load : private ut::Non_copyable {
   /* End wait callback function. */
   Wait_callbacks::Function m_fn_wait_end;
 
-  /** Blob inserter that will be used to handle all the externally stored
-  fields of InnoDB. */
+  /** Blob inserter to handle the externally stored fields of InnoDB.  This
+  is used when blobs are inserted using multiple calls like open_blob(),
+  write_blob() and close_blob(). */
   bulk::Blob_inserter m_blob_inserter;
+
+  /** Need another blob inserter to store blobs with a single call using
+  insert_blob() */
+  bulk::Blob_inserter m_full_blob_inserter;
 
   /* Dedicated thread to flush pages. */
   Bulk_flusher m_bulk_flusher;
@@ -1274,8 +1301,10 @@ class Btree_load::Merger {
  public:
   using Btree_loads = std::vector<Btree_load *, ut::allocator<Btree_load *>>;
 
-  Merger(Btree_loads &loads, dict_index_t *index, trx_t *trx)
-      : m_btree_loads(loads),
+  Merger(const size_t n_threads, Btree_loads &loads, dict_index_t *index,
+         const trx_t *trx)
+      : m_n_threads(n_threads),
+        m_btree_loads(loads),
         m_index(index),
         m_trx(trx),
         m_tuple_heap(2048, UT_LOCATION_HERE) {}
@@ -1326,6 +1355,9 @@ class Btree_load::Merger {
   void link_right_sibling(const page_no_t l_page_no, const page_no_t r_page_no);
 
  private:
+  /** Number of loader threads. */
+  const size_t m_n_threads;
+
   /** Refernce to the subtrees to be merged. */
   Btree_loads &m_btree_loads;
 
@@ -1333,7 +1365,7 @@ class Btree_load::Merger {
   dict_index_t *m_index{};
 
   /** Transaction making the changes. */
-  trx_t *m_trx{};
+  const trx_t *m_trx{};
 
   /** Memory heap to store node pointers. */
   Scoped_heap m_tuple_heap{};

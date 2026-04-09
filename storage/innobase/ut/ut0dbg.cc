@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -31,7 +31,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
  Created 1/30/1994 Heikki Tuuri
  **********************************************************************/
 
-#include <stdlib.h>
+#include <cstdlib>
 
 #include "my_dbug.h"
 #include "univ.i"
@@ -65,7 +65,7 @@ void ut_set_assert_callback(std::function<void()> &callback) {
   flush_error_log_messages();
 
 #else  /* !UNIV_HOTBACKUP && !defined(UNIV_NO_ERR_MSGS) */
-  auto filename = base_name(file);
+  const auto *filename = base_name(file);
 
   if (filename == nullptr) {
     filename = "null";

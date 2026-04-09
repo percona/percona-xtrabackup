@@ -1,4 +1,4 @@
-# Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 # Enable various apparmor systems for Ubuntu
 IF(DEB_ID STREQUAL "ubuntu")
-  SET (DEB_RULES_INSTALL_APPARMOR_ROUTER "install -g root -o root -m 0644 -D debian/extra/apparmor-profile-router debian/tmp/etc/apparmor.d/usr.bin.mysqlrouter")
+  SET (DEB_RULES_INSTALL_APPARMOR_ROUTER "install -m 0644 -D debian/extra/apparmor-profile-router debian/tmp/etc/apparmor.d/usr.bin.mysqlrouter")
   SET (DEB_RULES_APPARMOR_LOAD_ROUTER "dh_apparmor -pmysql-router-${DEB_PRODUCTNAME} --profile-name=usr.bin.mysqlrouter")
   SET (DEB_INSTALL_ROUTER_APPARMOR "etc/apparmor.d/usr.bin.mysqlrouter")
 ENDIF()
@@ -32,6 +32,12 @@ SET (DEB_RULES_INSTALL_ROUTER_SYSTEMD
   "install -m 0755 debian/extra/mysqlrouter-systemd-start debian/tmp/usr/share/mysqlrouter/"
   )
 
+
+if(DEFINED MRS_JIT_EXECUTOR_LIB)
+  SET (DEB_CMAKE_EXTRAS "${DEB_CMAKE_EXTRAS} -DMRS_JIT_EXECUTOR_LIB=${MRS_JIT_EXECUTOR_LIB}")
+  SET (DEB_INSTALL_MRS_JIT_EXECUTOR_PLUGIN "usr/lib/mysqlrouter/plugin/jit_executor.so")
+  SET (DEB_INSTALL_MRS_JIT_EXECUTOR_LIB "usr/lib/mysqlrouter/private/libjitexecutor.so")
+endif()
 
 SET(DEB_CONTROL_ROUTER
 "

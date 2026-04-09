@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 
 #include <assert.h>
 #include <algorithm>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -272,38 +273,43 @@ class Mem_root_array_YY {
 
     Notice that this function changes the actual content of the
     container by inserting or erasing elements from it.
+
+    @param n The new size of the container.
+    @param val The value to copy into new elements.
+    @return True if out of memory, false otherwise.
    */
-  void resize(size_t n, const value_type &val) {
-    if (n == m_size) return;
+  [[nodiscard]] bool resize(size_t n, const value_type &val) {
     if (n > m_size) {
-      if (!reserve(n)) {
-        while (n != m_size) push_back(val);
+      if (reserve(n)) {
+        return true;
       }
-      return;
+      std::uninitialized_fill(m_array + m_size, m_array + n, val);
+      m_size = n;
+    } else if (n < m_size) {
+      chop(n);
     }
-    if (!has_trivial_destructor) {
-      while (n != m_size) pop_back();
-    }
-    m_size = n;
+    return false;
   }
 
   /**
-    Same as resize(size_t, const value_type &val), but default-constructs
+    Same as resize(size_t, const value_type &val), but value-initializes
     the new elements. This allows one to resize containers even if
     value_type is not copy-constructible.
+
+    @param n The new size of the container.
+    @return True if out of memory, false otherwise.
    */
-  void resize(size_t n) {
-    if (n == m_size) return;
+  [[nodiscard]] bool resize(size_t n) {
     if (n > m_size) {
-      if (!reserve(n)) {
-        while (n != m_size) push_back(value_type());
+      if (reserve(n)) {
+        return true;
       }
-      return;
+      std::uninitialized_value_construct(m_array + m_size, m_array + n);
+      m_size = n;
+    } else if (n < m_size) {
+      chop(n);
     }
-    if (!has_trivial_destructor) {
-      while (n != m_size) pop_back();
-    }
-    m_size = n;
+    return false;
   }
 
   /**
@@ -455,12 +461,12 @@ class Mem_root_array : public Mem_root_array_YY<Element_type> {
 
   Mem_root_array(MEM_ROOT *root, size_t n) {
     super::init(root);
-    super::resize(n);
+    (void)super::resize(n);
   }
 
   Mem_root_array(MEM_ROOT *root, size_t n, const value_type &val) {
     super::init(root);
-    super::resize(n, val);
+    (void)super::resize(n, val);
   }
 
   /**

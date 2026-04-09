@@ -79,13 +79,13 @@
   copy.
 
   The @ref PAGE_MYSQL_TEST_RUN_PL "mysql-test-run.pl" application
-  starts MySQL servers, restarts them as necessary when a specific
-  test case needs different start arguments, and presents the test
-  result. For each test case, @ref PAGE_MYSQL_TEST_RUN_PL
-  "mysql-test-run.pl" invokes the @ref PAGE_MYSQLTEST "mysqltest"
-  program (also referred to as the “test engine”) to read the test
-  case file, intepret the test language constructs, and send SQL
-  statements to the server.
+  starts MySQL servers, (and the MySQL routers optionally) restarts
+  them as necessary when a specific test case needs different start
+  arguments, and presents the test result. For each test case,
+  @ref PAGE_MYSQL_TEST_RUN_PL "mysql-test-run.pl" invokes the @ref
+  PAGE_MYSQLTEST "mysqltest" program (also referred to as the “test
+  engine”) to read the test case file, intepret the test language
+  constructs, and send SQL statements to the server.
 
   Input for each test case is stored in a file, and the expected
   result from running the test is stored in another file. The actual
@@ -372,6 +372,72 @@
   [ENV]
   SERVER_MYPORT_1= @mysqld.1.port
   SERVER_MYPORT_2= @mysqld.2.port
+        @endverbatim
+      </li>
+
+      <li>
+        If the test also launches the MySQL Router the file of form
+        <b><em>test_name</em>-router.cnf</b> contains additional entries
+        for the Router config file to be used for this test. (The Router
+        config file pareser assumes each section is a Router plugin to
+        be loaded so in that sense it is not compatible with the main
+        test config <em>.cfg</em>,  hence the need for a separate
+        <em>.router-cfg</em> file.)
+
+        <ul>
+          <li>
+            The file is a template for a final Router configuration file
+            that is used to run the MySQL Router, as such it is expected
+            to follow the MySQL Router configuration syntax.
+          </li>
+
+          <li>
+            If there is no <b><em>test_name</em>-router.cnf</b> file for
+            a test, the default template
+            <b><em>include/default_my-router.cnf</em></b> is used.
+          </li>
+
+          <li>
+            The <b><em>test_name</em>-router.cnf</b> template does not
+            support <b><em>!include</em></b> nor <b><em>[ENV]</em></b>
+            section.
+          </li>
+        </ul>
+
+        Here is a sample <b>-router.cnf</b> file.
+
+        @verbatim
+[DEFAULT]
+
+[logger]
+level=DEBUG
+
+[metadata_cache:my_cluster]
+user=mysqlrouter
+cluster_type=gr
+router_id=1
+auth_cache_refresh_interval=4
+ttl=0.5
+metadata_cluster=my_cluster
+auth_cache_ttl=-1
+
+[routing:rw]
+destinations=metadata-cache://my_cluster/?role=PRIMARY
+bind_address=0.0.0.0
+routing_strategy=first-available
+protocol=classic
+client_ssl_mode=PREFERRED
+server_ssl_mode=PREFERRED
+server_ssl_verify=DISABLED
+
+[routing:ro]
+destinations=metadata-cache://my_cluster/?role=SECONDARY
+bind_address=0.0.0.0
+routing_strategy=round-robin
+protocol=classic
+client_ssl_mode=PREFERRED
+server_ssl_mode=PREFERRED
+server_ssl_verify=DISABLED
         @endverbatim
       </li>
 
@@ -947,7 +1013,6 @@
   - @subpage PAGE_QUICK_START
   - @subpage PAGE_TESTCASE_CODING_GUIDELINES
   - @subpage PAGE_SAMPLE_TESTCASES
-  - @subpage PAGE_CLEANUP_PREVIOUS_TEST_RUN
   - @subpage PAGE_GENERATE_TESTCASE_RESULT_FILE
   - @subpage PAGE_CHECK_EXPECTED_ERRORS
   - @subpage PAGE_CONTROL_INFORMATION_PRODUCED_TESTCASE
@@ -1439,68 +1504,6 @@
   can see the actual output from the last unsuccessful run of the test
   case in the reject file
   <b>mysql-test/var/log/<em>test_name</em>.reject</b>.
-*/
-
-###############################################################################
-
-
-
-## Cleaning Up from a Previous Test Run
-
-/**
-  @page PAGE_CLEANUP_PREVIOUS_TEST_RUN Cleaning Up from a Previous Test Run
-
-  For efficiency, the @ref PAGE_MYSQLTEST "mysqltest" test engine does
-  not start with a clean new database for running each test case, so a
-  test case generally starts with a “cleaning up section”. Assume that
-  a test case will use two tables named <b>t1</b> and <b>t2</b>.
-  The test case should begin by making sure that any old tables with
-  those names do not exist:
-
-  @verbatim
-  --disable_warnings
-  DROP TABLE IF EXISTS t1,t2;
-  --enable_warnings
-  @endverbatim
-
-  The <b>disable_warnings</b> command instructs the test engine not
-  to log any warnings until an <b>enable_warnings</b> command occurs
-  or the test case is ended. (MySQL generates a warning if the table
-  <b>t1</b> or <b>t2</b> does not exist.) Surrounding this part of
-  the test case with commands to disable and enable warnings makes its
-  output the same regardless of whether the tables exist before the
-  test is started. After ensuring that the tables do not exist, we are
-  free to put in any SQL statements that create and use the tables
-  <b>t1</b> and <b>t2</b>. The test case should also clean up at
-  the end of the test by dropping any tables that it creates.
-
-  Let's put in some SQL code into this test case:
-
-  @verbatim
-  --disable_warnings
-  DROP TABLE IF EXISTS t1,t2;
-  --enable_warnings
-  CREATE TABLE t1 (
-    Period SMALLINT(4) UNSIGNED ZEROFILL DEFAULT '0000' NOT NULL,
-    Varor_period SMALLINT(4) UNSIGNED DEFAULT '0' NOT NULL
-  );
-  CREATE TABLE t2 (Period SMALLINT);
-
-  INSERT INTO t1 VALUES (9410,9412);
-  INSERT INTO t2 VALUES (9410),(9411),(9412),(9413);
-
-  SELECT PERIOD FROM t1;
-  SELECT * FROM t1;
-  SELECT t1.* FROM t1;
-  SELECT * FROM t1 INNER JOIN t2 USING (Period);
-
-  DROP TABLE t1, t2;
-  @endverbatim
-
-  If a test case creates other objects such as stored programs or
-  user accounts, it should take care to also clean those up at the
-  beginning and end of the test. Temporary files should also be
-  removed, either at the end or just after they have been used.
 */
 
 ###############################################################################
@@ -2243,6 +2246,14 @@
       </li>
 
       <li>
+        MySQL Router tests: Include <b>have_router.inc</b> file
+        if a test is supposed to launch the Router process along with
+        a server. The Router configuration file will be created from a
+        default template file (include/default_my-router.cnf) if the
+        test does not overwrite it by <b>test_name-router.cnf</b>
+      </li>
+
+      <li>
         Debugging capabilities: Include the <b>have_debug.inc</b>
         file if a test requires that the server was built for
         debugging (that is, that the MySQL distribution was configured
@@ -2644,9 +2655,7 @@
   @endverbatim
 
   For a description of the Debug Sync facility and how to use
-  synchronization points,
-  see [MySQL Source Code Documentation: Thread Synchronization]
-  (https://dev.mysql.com/doc/dev/mysql-server/latest/PAGE_THREAD_SYNCHRONIZATION.html).
+  synchronization points, see @ref PAGE_DEBUG_SYNC.
 */
 
 ###############################################################################
@@ -2875,6 +2884,49 @@
 
     </li>
 
+  </ul>
+
+  If the test launches the MySQL Router process it can be forcefully
+  restarted in a test in a similar way that MySQL Server process is.
+
+  @verbatim
+  --exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqlrouter.expect
+  --let $pid_file=$MYSQLROUTER_PIDFILE
+  --source mysqlrouter_shutdown.inc
+  --source include/wait_until_disconnected.inc
+  # Do something while router is down
+  --exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqlrouter.expect
+  --source include/wait_until_connected_again.inc
+  @endverbatim
+
+  <ul>
+    <li>
+      <tt>mysqlrouter_restart.inc</tt>
+
+      <b>include/mysqlrouter_restart.inc</b> can be sourced in your
+      own test case, to shutdown and start the router but the router is
+      immediately started up again.
+
+      @verbatim
+  # Restart the router
+  --source include/mysqlrouter_restart.inc
+      @endverbatim
+
+      It is also possible to provide additional command line options
+      to the restarted router, by using
+      <b>$router_restart_parameters</b> parameter. These extra options
+      will be dropped if the same router is restarted again,
+      unless they are repeated. A value for shutdown timeout can also
+      be set with  <b>$router_shutdown_timeout</b>, when this file
+      is used.
+
+      @verbatim
+  # Restart router with extra parameters
+  --let $router_restart_parameters= 10
+  --source include/mysqlrouter_restart.inc
+      @endverbatim
+
+    </li>
   </ul>
 
 */
@@ -3886,7 +3938,10 @@
     <tr>
       <td><tt>MYSQL_TMP_DIR</tt></td>
       <td>
-        Path to temp directory used for temporary files during tests
+        Path to temp directory used for temporary files during tests.
+        Avoid using MYSQL_TMP_DIR for files that need to be imported or exported
+        by the server. When --parallel > 1, MYSQL_TMP_DIR does not fall
+        within secure-file-priv, which will cause access failures.
       </td>
     </tr>
     <tr>
@@ -3918,8 +3973,11 @@
     <tr>
       <td><tt>MYSQLTEST_VARDIR</tt></td>
       <td>
-        Path name to the <b>var</b> directory that is used for logs,
-        temporary files, and so forth
+        Path to the <b>var</b> directory used for logs, temporary files,
+        and other test-related data.
+        For temporary files that need to be imported or exported by the server,
+        strictly use MYSQLTEST_VARDIR/tmp, as secure-file-priv is set
+        to MYSQLTEST_VARDIR by default.
       </td>
     </tr>
     <tr>
@@ -5266,6 +5324,18 @@
     </li>
 
     <li>
+      <tt>`--valgrind--ld-preload`=<b>library</b></tt>
+
+      Set environment variable <b>LD_PRELOAD</b> to <b>library</b> prior
+      running the test.
+
+      Valgrind shows many errors in dload-ed libraries (typically plugins and components)
+      because of missing symbols. Use this option to solve this issue.
+
+      This option is valid only with <b>`--valgrind`</b>.
+    </li>
+
+    <li>
       <tt>`--valgrind-mysqld`</tt>
 
       Run the <b>mysqld</b> server with <b>valgrind</b>.
@@ -6029,6 +6099,10 @@
 
             <li>
               <tt>TCP</tt>: Use the TCP/IP connection protocol.
+            </li>
+
+            <li>
+              <tt>INTERACTIVE</tt>: Pass CLIENT_INTERACTIVE to mysql_real_connect()
             </li>
 
           </ul>
@@ -6935,7 +7009,8 @@
 
       <tt>let <b>$var_name</b> = query_get_value(<b>query</b>,
                                                  <b>col_name</b>,
-                                                 <b>row_num</b>)</tt>
+                                                 <b>row_num</b>,
+                                                 [<b>result_set_num</b>])</tt>
 
       Assign a value to a variable. The variable name cannot contain
       whitespace or the “<b>=</b>” character. Except for the one-digit
@@ -7135,7 +7210,8 @@
     </li>
 
     <li>
-      <tt>query_get_value(<b>query</b>, <b>col_name</b>, <b>row_num</b>)</tt>
+      <tt>query_get_value(<b>query</b>, <b>col_name</b>, <b>row_num</b>,
+                          [<b>result_set_num</b>])</tt>
 
       The <b>query_get_value()</b> function can be used only on the
       right hand side of a variable assigment in a <b>let</b>
@@ -7147,8 +7223,11 @@
       execute. The second and third arguments indicate the column name
       and row number that specify which value to extract from the
       result set. The column name is case sensitive. Row numbers begin
-      with 1. The arguments can be given literally or supplied using
-      variables.
+      with 1. An optional fourth argument can be used to specify a result
+      set number when a query can return multiple result-sets and a value
+      from a specific result set needs to be retrieved. When this argument
+      is not used, the first result set is considered by default. The
+      arguments can be given literally or supplied using variables.
 
       Suppose that the test file contains this input:
 

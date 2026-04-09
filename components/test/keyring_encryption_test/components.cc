@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,33 +23,99 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 */
 
+#include "components.h"
+#include <scope_guard.h>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
-
-#include <scope_guard.h>
-
-#include "components.h"
+#include "components/keyrings/common/component_helpers/include/keyring_log_builtins_definition.h"
+#include "mysql/components/services/component_status_var_service.h"
+#include "mysql/components/services/registry.h"
 #include "options.h" /* command line options */
 
 using options::Options;
 
 namespace components {
 
-registry_type_t *components_registry = nullptr;
-dynamic_loader_type_t *components_dynamic_loader = nullptr;
+SERVICE_TYPE_NO_CONST(registry) *components_registry = nullptr;
+SERVICE_TYPE_NO_CONST(dynamic_loader) *components_dynamic_loader = nullptr;
+SERVICE_TYPE_NO_CONST(registry_registration) *reg_reg = nullptr;
+
+/*
+  We need to register a dummy status variable registration service
+  since some of the keyring components are exposing status vars now.
+*/
+namespace dummy_status_variable_registration_implementation {
+DEFINE_BOOL_METHOD(register_variable, (SHOW_VAR * /*status_var*/)) {
+  return false;
+}
+
+DEFINE_BOOL_METHOD(unregister_variable, (SHOW_VAR * /*status_var*/)) {
+  return false;
+}
+
+void setup() {
+  static BEGIN_SERVICE_IMPLEMENTATION(
+      keyring_encryption_test, status_variable_registration) register_variable,
+      unregister_variable, END_SERVICE_IMPLEMENTATION();
+
+  reg_reg->register_service(
+      "status_variable_registration.keyring_encryption_test",
+      (my_h_service) const_cast<void *>((const void *)&SERVICE_IMPLEMENTATION(
+          keyring_encryption_test, status_variable_registration)));
+}
+
+void teardown() {
+  reg_reg->unregister("status_variable_registration.keyring_encryption_test");
+}
+}  // namespace dummy_status_variable_registration_implementation
+
+/*
+  We need to register log_builins implementation because keyring components
+  depend on it (in terms of REQUIRES_SERVICE_PLACEHOLDER)
+  and minchassis does not provide it
+*/
+namespace log_builtins_component_helper {
+KEYRING_LOG_BUILTINS_IMPLEMENTOR(keyring_encryption_test);
+KEYRING_LOG_BUILTINS_STRING_IMPLEMENTOR(keyring_encryption_test);
+
+void setup() {
+  reg_reg->register_service(
+      "log_builtins.keyring_encryption_test",
+      (my_h_service) const_cast<void *>((const void *)&SERVICE_IMPLEMENTATION(
+          keyring_encryption_test, log_builtins)));
+
+  reg_reg->register_service(
+      "log_builtins_string.keyring_encryption_test",
+      (my_h_service) const_cast<void *>((const void *)&SERVICE_IMPLEMENTATION(
+          keyring_encryption_test, log_builtins_string)));
+}
+
+void teardown() {
+  reg_reg->unregister("log_builtins.keyring_encryption_test");
+  reg_reg->unregister("log_builtins_string.keyring_encryption_test");
+}
+
+}  // namespace log_builtins_component_helper
 
 void init_components_subsystem() {
   minimal_chassis_init((&components_registry), nullptr);
   components_registry->acquire(
       "dynamic_loader",
       reinterpret_cast<my_h_service *>(&components_dynamic_loader));
+  components_registry->acquire("registry_registration",
+                               reinterpret_cast<my_h_service *>(&reg_reg));
+  dummy_status_variable_registration_implementation::setup();
+  log_builtins_component_helper::setup();
 }
 
 void deinit_components_subsystem() {
+  log_builtins_component_helper::teardown();
+  dummy_status_variable_registration_implementation::teardown();
+  components_registry->release(reinterpret_cast<my_h_service>(reg_reg));
   components_registry->release(
       reinterpret_cast<my_h_service>(components_dynamic_loader));
   minimal_chassis_deinit(components_registry, nullptr);
@@ -122,8 +188,8 @@ Keyring_encryption_test::Keyring_encryption_test(
 bool Keyring_encryption_test::test_aes() {
   if (!ok_) return false;
 
-  const auto writer = aes_service_.writer();
-  const auto aes = aes_service_.aes();
+  const auto *const writer = aes_service_.writer();
+  const auto *const aes = aes_service_.aes();
 
   const std::string aes_key_1("AES_test_key_1");
   if (writer->store("aes_key_1", "keyring_aes_test",
@@ -164,18 +230,19 @@ bool Keyring_encryption_test::test_aes() {
   }
   const std::string iv1("abcdefgh12345678");
 
-  if (aes->encrypt("aes_key_invalid", "keyring_aes_test", mode.c_str(),
-                   block_size,
-                   reinterpret_cast<const unsigned char *>(iv1.c_str()),
-                   padding, plaintext, plaintext_length, output_1.get(),
-                   ciphertext_length, &ciphertext_length) == false) {
+  if (!static_cast<bool>(aes->encrypt(
+          "aes_key_invalid", "keyring_aes_test", mode.c_str(), block_size,
+          reinterpret_cast<const unsigned char *>(iv1.c_str()), padding,
+          plaintext, plaintext_length, output_1.get(), ciphertext_length,
+          &ciphertext_length))) {
     std::cerr << "Failed negative test for AES-CBC-256" << std::endl;
     return false;
   }
-  if (aes->encrypt("secret_key_1", "keyring_aes_test", mode.c_str(), block_size,
-                   reinterpret_cast<const unsigned char *>(iv1.c_str()),
-                   padding, plaintext, plaintext_length, output_1.get(),
-                   ciphertext_length, &ciphertext_length) == false) {
+  if (!static_cast<bool>(aes->encrypt(
+          "secret_key_1", "keyring_aes_test", mode.c_str(), block_size,
+          reinterpret_cast<const unsigned char *>(iv1.c_str()), padding,
+          plaintext, plaintext_length, output_1.get(), ciphertext_length,
+          &ciphertext_length))) {
     std::cerr << "Failed negative test for AES-CBC-256" << std::endl;
     return false;
   }
@@ -206,19 +273,20 @@ bool Keyring_encryption_test::test_aes() {
   }
   memset(output_2.get(), 0, decrypted_length);
 
-  if (aes->decrypt("aes_key_invalid", "keyring_aes_test", mode.c_str(),
-                   block_size,
-                   reinterpret_cast<const unsigned char *>(iv1.c_str()),
-                   padding, output_1.get(), ciphertext_length, output_2.get(),
-                   decrypted_length, &decrypted_length) == false) {
+  if (!static_cast<bool>(aes->decrypt(
+          "aes_key_invalid", "keyring_aes_test", mode.c_str(), block_size,
+          reinterpret_cast<const unsigned char *>(iv1.c_str()), padding,
+          output_1.get(), ciphertext_length, output_2.get(), decrypted_length,
+          &decrypted_length))) {
     std::cerr << "Failed negative test for AES-CBC-256" << std::endl;
     return false;
   }
 
-  if (aes->decrypt("secret_key_1", "keyring_aes_test", mode.c_str(), block_size,
-                   reinterpret_cast<const unsigned char *>(iv1.c_str()),
-                   padding, output_1.get(), ciphertext_length, output_2.get(),
-                   decrypted_length, &decrypted_length) == false) {
+  if (!static_cast<bool>(aes->decrypt(
+          "secret_key_1", "keyring_aes_test", mode.c_str(), block_size,
+          reinterpret_cast<const unsigned char *>(iv1.c_str()), padding,
+          output_1.get(), ciphertext_length, output_2.get(), decrypted_length,
+          &decrypted_length))) {
     std::cerr << "Failed negative test for AES-CBC-256" << std::endl;
     return false;
   }

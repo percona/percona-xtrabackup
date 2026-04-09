@@ -1,0 +1,48 @@
+select @@global.server_memory;
+@@global.server_memory
+0
+select @@session.server_memory;
+ERROR HY000: Variable 'server_memory' is a GLOBAL variable
+show global variables like 'server_memory';
+Variable_name	Value
+server_memory	0
+show session variables like 'server_memory';
+Variable_name	Value
+server_memory	0
+select * from performance_schema.global_variables where variable_name='server_memory';
+VARIABLE_NAME	VARIABLE_VALUE
+server_memory	0
+select * from performance_schema.session_variables where variable_name='server_memory';
+VARIABLE_NAME	VARIABLE_VALUE
+server_memory	0
+set global server_memory=1G;
+ERROR HY000: Variable 'server_memory' is a read only variable
+set session server_memory=1G;
+ERROR HY000: Variable 'server_memory' is a read only variable
+set persist server_memory=1G;
+ERROR HY000: Variable 'server_memory' is a read only variable
+set persist_only server_memory=1G;
+ERROR HY000: Variable 'server_memory' is a non persistent read only variable
+# restart: --server-memory=512M
+select @@server_memory;
+@@server_memory
+536870912
+select * from performance_schema.global_variables where variable_name='server_memory';
+VARIABLE_NAME	VARIABLE_VALUE
+server_memory	536870912
+select * from performance_schema.session_variables where variable_name='server_memory';
+VARIABLE_NAME	VARIABLE_VALUE
+server_memory	536870912
+# restart: --server-memory=512M
+call mtr.add_suppression("Warning.* option 'server_memory': value -1 adjusted to 0.");
+select @@server_memory;
+@@server_memory
+536870912
+select * from performance_schema.global_variables where variable_name='server_memory';
+VARIABLE_NAME	VARIABLE_VALUE
+server_memory	536870912
+select * from performance_schema.session_variables where variable_name='server_memory';
+VARIABLE_NAME	VARIABLE_VALUE
+server_memory	536870912
+# Cleanup by restart
+# restart

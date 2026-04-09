@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2024, Oracle and/or its affiliates.
+  Copyright (c) 2024, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -64,7 +64,7 @@ class TestConfigurationUpdateSchema : public ::testing::Test {
           std::to_string(schema_json.GetErrorOffset()) + ": " +
           rapidjson::GetParseError_En(schema_json.GetParseError()));
     }
-    JsonSchemaDocument schema_doc(schema_json);
+    JsonSchemaDocument const schema_doc(schema_json);
 
     // 2. create json document from string to verify
     JsonDocument verified_json_doc;

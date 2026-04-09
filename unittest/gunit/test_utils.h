@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -145,6 +145,13 @@ class TraceGuard final {
   /// The trace.
   UnstructuredTrace m_trace;
 };
+
+/// Counts the number of (possibly overlapping) occurrences of 'needle' in
+/// 'hay'.
+/// @param hay    The string to search within.
+/// @param needle The substring to search for.
+/// @return       The number of times 'needle' appears in 'hay'.
+size_t get_number_of_occurrences(std::string_view hay, std::string_view needle);
 
 }  // namespace my_testing
 

@@ -426,6 +426,7 @@ innodb_deadlock_detect	OFF
 # Bug#26085712: SERVER FAILS TO START AFTER SET PERSIST GTID_MODE
 #                = ON_PERMISSIVE OR ON
 #
+include/rpl/set_gtid_mode_off.inc
 RESET PERSIST;
 SELECT @@gtid_mode;
 @@gtid_mode

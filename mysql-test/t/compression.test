@@ -3,6 +3,9 @@
 --echo # WL#12475: Protocol Changes to specify compression configuration for connections
 --echo #
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 CREATE USER wl12475@localhost;
 
 SELECT @@global.protocol_compression_algorithms;
@@ -372,6 +375,5 @@ INSERT INTO wl13292.t1 VALUES (1);
 --exec echo "SELECT 1;" | $MYSQL_TEST --compress 2>&1
 
 DROP DATABASE wl13292;
-
 
 --echo End of 8.0 tests

@@ -306,6 +306,7 @@ EXPLAIN
 #
 # Bug#33905918 Server crashes after using explain of a query with except/intersect.
 #
+SET explain_json_format_version = 1;
 EXPLAIN SELECT * FROM r UNION ALL SELECT * FROM s;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	r	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
@@ -1124,6 +1125,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	(/* select#1 */ select `test`.`r`.`a` AS `a` from `test`.`r` except /* select#2 */ select `test`.`s`.`a` AS `a` from `test`.`s`) union (/* select#3 */ select `test`.`t`.`a` AS `a` from `test`.`t` intersect /* select#4 */ select `test`.`t`.`a` AS `a` from `test`.`t`)
+SET explain_json_format_version = DEFAULT;
 DROP TABLE r, s, t;
 #
 # Check that more set ops don't interfere with
@@ -2780,6 +2782,7 @@ EXPLAIN
 #
 # Bug#33905918 Server crashes after using explain of a query with except/intersect.
 #
+SET explain_json_format_version = 1;
 EXPLAIN SELECT * FROM r UNION ALL SELECT * FROM s;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	PRIMARY	r	NULL	ALL	NULL	NULL	NULL	NULL	3	100.00	NULL
@@ -3598,6 +3601,7 @@ EXPLAIN
 }
 Warnings:
 Note	1003	(/* select#1 */ select `test`.`r`.`a` AS `a` from `test`.`r` except /* select#2 */ select `test`.`s`.`a` AS `a` from `test`.`s`) union (/* select#3 */ select `test`.`t`.`a` AS `a` from `test`.`t` intersect /* select#4 */ select `test`.`t`.`a` AS `a` from `test`.`t`)
+SET explain_json_format_version = DEFAULT;
 DROP TABLE r, s, t;
 #
 # Check that more set ops don't interfere with

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,6 +60,11 @@ class Gcs_basic_logging {
   */
   int64_t saved_debug_options;
 
+  /*
+   The clock timestamp provider.
+  */
+  std::shared_ptr<Gcs_clock_timestamp_provider> m_clock_timestamp_provider;
+
   /**
     Constructor that creates the logger, debugger and sink.
   */
@@ -76,7 +81,10 @@ class Gcs_basic_logging {
     logger = new Gcs_default_logger(sink);
     Gcs_log_manager::initialize(logger);
 
-    debugger = new Gcs_default_debugger(sink);
+    m_clock_timestamp_provider =
+        std::make_shared<Gcs_clock_timestamp_provider>();
+    m_clock_timestamp_provider->initialize();
+    debugger = new Gcs_default_debugger(sink, m_clock_timestamp_provider);
     Gcs_debug_manager::initialize(debugger);
 
     ::set_xcom_logger(cb_xcom_logger);
@@ -97,6 +105,8 @@ class Gcs_basic_logging {
     Gcs_debug_manager::finalize();
     debugger->finalize();
     delete debugger;
+
+    m_clock_timestamp_provider->finalize();
 
     sink->finalize();
     delete sink;

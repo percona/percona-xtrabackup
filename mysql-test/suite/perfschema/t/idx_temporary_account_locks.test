@@ -1,0 +1,29 @@
+#
+# Verify that query results are the same with and without indexes.
+#
+--source include/have_debug_sync.inc
+
+#setup
+let $select_column = FAILED_LOGIN_ATTEMPTS;
+let $table = performance_schema.temporary_account_locks;
+
+# Create an entry in table temporary_account_locks
+
+CREATE USER foo@localhost IDENTIFIED BY 'foo' FAILED_LOGIN_ATTEMPTS 4 PASSWORD_LOCK_TIME 6;
+
+--source ../include/hostcache_set_state.inc
+
+###########################################################################
+# Test index on USER, HOST
+###########################################################################
+
+let $column_count = 2;
+let $col1 = USER;
+let $col2 = HOST;
+let $col1_act = "foo";
+let $col2_act = "localhost";
+
+--source ../include/idx_explain_test.inc
+
+# Cleanup
+DROP USER foo@localhost;

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -59,16 +59,16 @@
 
 #include <NdbApi.hpp>
 
-#include <stdlib.h>
-#include <string.h>
+#include <cstdlib>
+#include <cstring>
 // Used for cout
-#include <stdio.h>
+#include <cstdio>
 #include <iostream>
 #ifdef VM_TRACE
 #include <my_dbug.h>
 #endif
 #ifndef assert
-#include <assert.h>
+#include <cassert>
 #endif
 
 /**
@@ -121,7 +121,7 @@
   }
 
 int myCreateEvent(Ndb *myNdb, const char *eventName, const char *eventTableName,
-                  const char **eventColumnName, const int noEventColumnName,
+                  const char **eventColumnName, int noEventColumnName,
                   bool merge_events);
 
 int main(int argc, char **argv) {
@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
   const char *connectstring = argv[1];
   int timeout = atoi(argv[2]);
   ndb_init();
-  bool merge_events = argc > 3 && strchr(argv[3], 'm') != 0;
+  bool merge_events = argc > 3 && strchr(argv[3], 'm') != nullptr;
 #ifdef VM_TRACE
   bool dbug = argc > 3 && strchr(argv[3], 'd') != 0;
   if (dbug) {
@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
   }
 #endif
 
-  Ndb_cluster_connection *cluster_connection = new Ndb_cluster_connection(
+  auto *cluster_connection = new Ndb_cluster_connection(
       connectstring);  // Object representing the cluster
 
   int r = cluster_connection->connect(5 /* retries               */,
@@ -194,7 +194,7 @@ int main(int argc, char **argv) {
     // Start "transaction" for handling events
     NdbEventOperation *op;
     printf("create EventOperation\n");
-    if ((op = myNdb->createEventOperation(eventName)) == NULL)
+    if ((op = myNdb->createEventOperation(eventName)) == nullptr)
       APIERROR(myNdb->getNdbError());
     op->mergeEvents(merge_events);
 
@@ -266,7 +266,7 @@ int main(int argc, char **argv) {
                     Uint64 length = 0;
                     bh->getLength(length);
                     // read into buffer
-                    unsigned char *buf = new unsigned char[length];
+                    auto *buf = new unsigned char[length];
                     memset(buf, 'X', length);
                     Uint32 n = length;
                     bh->readData(buf, n);  // n is in/out
@@ -297,7 +297,7 @@ int main(int argc, char **argv) {
     }
     // don't want to listen to events anymore
     if (myNdb->dropEventOperation(the_op)) APIERROR(myNdb->getNdbError());
-    the_op = 0;
+    the_op = nullptr;
 
     j++;
   }

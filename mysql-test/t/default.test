@@ -2,6 +2,9 @@
 #
 # test of already fixed bugs
 #
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --disable_warnings
 drop table if exists t1,t2,t3,t4,t5,t6;
 drop database if exists mysqltest;
@@ -277,3 +280,6 @@ SELECT HEX(f1),HEX(f2),HEX(f3) FROM t1;
 
 DROP TABLE t1;
 --remove_file $MYSQLTEST_VARDIR/tmp/bindfltdump.sql
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -49,6 +49,8 @@
 #include "rest_routing_config.h"
 #include "rest_routing_connections.h"
 #include "rest_routing_destinations.h"
+#include "rest_routing_guidelines.h"
+#include "rest_routing_guidelines_schema.h"
 #include "rest_routing_health.h"
 #include "rest_routing_list.h"
 #include "rest_routing_routes_status.h"
@@ -65,9 +67,9 @@ std::string require_realm_routing;
 
 using StringOption = mysql_harness::StringOption;
 
-#define GET_OPTION_CHECKED(option, section, name, value)                      \
-  static_assert(                                                              \
-      mysql_harness::str_in_collection(rest_plugin_supported_options, name)); \
+#define GET_OPTION_CHECKED(option, section, name, value)                 \
+  static_assert(                                                         \
+      mysql_harness::str_in_collection(plugin_supported_options, name)); \
   option = get_option(section, name, value);
 
 class RestRoutingPluginConfig : public mysql_harness::BasePluginConfig {
@@ -167,6 +169,18 @@ static const std::array routing_status_def_tokens{
     make_json_pointer_token("definitions"),
     make_json_pointer_token("RoutingGlobalStatus"),
 };
+
+static const std::array routing_guidelines_tokens{
+    make_json_pointer_token("paths"),
+    make_json_pointer_token("/routing/guidelines")};
+
+static const std::array routing_guidelines_schema_tokens{
+    make_json_pointer_token("paths"),
+    make_json_pointer_token("/routing/guidelines/schema")};
+
+static const std::array routing_guidelines_def{
+    make_json_pointer_token("definitions"),
+    make_json_pointer_token("RoutingGuidelinesDef")};
 
 static const std::array route_name_param_tokens{
     make_json_pointer_token("parameters"),
@@ -302,6 +316,20 @@ static void spec_adder(RestApiComponent::JsonDocument &spec_doc) {
 
   std::string routing_status_def_ptr_str =
       json_pointer_stringfy(routing_status_def_ptr);
+
+  // /definitions/RoutingGuidelinesDef
+  const RestApiComponent::JsonPointer routing_guidelines_def_ptr(
+      routing_guidelines_def.data(), routing_guidelines_def.size());
+
+  routing_guidelines_def_ptr.Set(
+      spec_doc,
+      JsonValue(rapidjson::kObjectType)
+          .AddMember("type", "object", allocator)
+          .AddMember("additionalProperties", "true", allocator),
+      allocator);
+
+  std::string routing_guidelines_def_ptr_str =
+      json_pointer_stringfy(routing_guidelines_def_ptr);
 
   // /parameters/routeNameParam
   const RestApiComponent::JsonPointer route_name_param_ptr(
@@ -773,6 +801,98 @@ static void spec_adder(RestApiComponent::JsonDocument &spec_doc) {
         allocator);
   }
 
+  // /guidelines schema
+  {
+    JsonPointer ptr(routing_guidelines_schema_tokens.data(),
+                    routing_guidelines_schema_tokens.size());
+
+    ptr.Set(
+        spec_doc,
+        JsonValue(rapidjson::kObjectType)
+            .AddMember(
+                "get",
+                JsonValue(rapidjson::kObjectType)
+                    .AddMember("tags",
+                               JsonValue(rapidjson::kArrayType)
+                                   .PushBack("routing", allocator),
+                               allocator)
+                    .AddMember("description",
+                               "Get routing guidelines document schema",
+                               allocator)
+                    .AddMember(
+                        "responses",
+                        JsonValue(rapidjson::kObjectType)
+                            .AddMember(
+                                "200",
+                                JsonValue(rapidjson::kObjectType)
+                                    .AddMember(
+                                        "description",
+                                        "routing guidelines document schema",
+                                        allocator)
+                                    .AddMember(
+                                        "schema",
+                                        JsonValue(rapidjson::kObjectType)
+                                            .AddMember(
+                                                "$ref",
+                                                JsonValue(
+                                                    routing_guidelines_def_ptr_str
+                                                        .data(),
+                                                    routing_guidelines_def_ptr_str
+                                                        .size(),
+                                                    allocator),
+                                                allocator),
+                                        allocator),
+                                allocator),
+                        allocator),
+                allocator),
+        allocator);
+  }
+
+  // /guidelines
+  {
+    JsonPointer ptr(routing_guidelines_tokens.data(),
+                    routing_guidelines_tokens.size());
+
+    ptr.Set(
+        spec_doc,
+        JsonValue(rapidjson::kObjectType)
+            .AddMember(
+                "get",
+                JsonValue(rapidjson::kObjectType)
+                    .AddMember("tags",
+                               JsonValue(rapidjson::kArrayType)
+                                   .PushBack("routing", allocator),
+                               allocator)
+                    .AddMember("description", "Get routing guidelines document",
+                               allocator)
+                    .AddMember(
+                        "responses",
+                        JsonValue(rapidjson::kObjectType)
+                            .AddMember(
+                                "200",
+                                JsonValue(rapidjson::kObjectType)
+                                    .AddMember("description",
+                                               "routing guidelines document",
+                                               allocator)
+                                    .AddMember(
+                                        "schema",
+                                        JsonValue(rapidjson::kObjectType)
+                                            .AddMember(
+                                                "$ref",
+                                                JsonValue(
+                                                    routing_guidelines_def_ptr_str
+                                                        .data(),
+                                                    routing_guidelines_def_ptr_str
+                                                        .size(),
+                                                    allocator),
+                                                allocator),
+                                        allocator),
+                                allocator),
+                        allocator),
+                allocator),
+        allocator);
+  }
+
   // /paths/routesConfig
   {
     JsonPointer ptr(routes_config_path_tokens.data(),
@@ -1215,6 +1335,12 @@ static void start(mysql_harness::PluginFuncEnv *env) {
           rest_api_srv, RestRoutingStatus::path_regex,
           std::make_unique<RestRoutingStatus>(require_realm_routing)},
       RestApiComponentPath{
+          rest_api_srv, RestRoutingGuidelines::path_regex,
+          std::make_unique<RestRoutingGuidelines>(require_realm_routing)},
+      RestApiComponentPath{
+          rest_api_srv, RestRoutingGuidelinesSchema::path_regex,
+          std::make_unique<RestRoutingGuidelinesSchema>(require_realm_routing)},
+      RestApiComponentPath{
           rest_api_srv, RestRoutingList::path_regex,
           std::make_unique<RestRoutingList>(require_realm_routing)},
       RestApiComponentPath{
@@ -1309,8 +1435,8 @@ mysql_harness::Plugin REST_ROUTING_EXPORT harness_plugin_rest_routing = {
     start,    // start
     nullptr,  // stop
     true,     // declares_readiness
-    rest_plugin_supported_options.size(),
-    rest_plugin_supported_options.data(),
+    plugin_supported_options.size(),
+    plugin_supported_options.data(),
     expose_configuration,
 };
 }

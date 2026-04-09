@@ -48,44 +48,44 @@ insert into t1 values (2, @z1, 3, @z2, 2);
 insert into t1 values (3, @x1, 1, @x2, 3);
 insert into t1 values (3, @y1, 2, @y2, 3);
 insert into t1 values (3, @z1, 3, @z2, 3);
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 
 # -- pk read --
-select a, c, sha1(b), sha1(d) from t1 where a = 1 and c = 1;
-select a, c, sha1(b), sha1(d) from t1 where a = 1 and c = 2;
-select a, c, sha1(b), sha1(d) from t1 where a = 1 and c = 3;
+select a, c, sha2(b,256), sha2(d,256) from t1 where a = 1 and c = 1;
+select a, c, sha2(b,256), sha2(d,256) from t1 where a = 1 and c = 2;
+select a, c, sha2(b,256), sha2(d,256) from t1 where a = 1 and c = 3;
 
 # -- pk update --
 update t1 set b = @y1, d = @y2 where a = 2 and c = 1;
 update t1 set b = @z1, d = @z2 where a = 2 and c = 2;
 update t1 set b = @x1, d = @x2 where a = 2 and c = 3;
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 
 # -- hash index update --
 update t1 set b = @y1, d = @y2 where c = 1 and e = 3;
 update t1 set b = @z1, d = @z2 where c = 2 and e = 3;
 update t1 set b = @x1, d = @x2 where c = 3 and e = 3;
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 
 # -- full scan update --
 update t1 set b = @x1, d = @x2;
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 
 # -- range scan update
 update t1 set b = @x1, d = @x2 where c = 1;
 update t1 set b = @y1, d = @y2 where c = 2;
 update t1 set b = @z1, d = @z2 where c = 3;
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 
 # -- delete --
 delete from t1 where a = 1 and c = 1;
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 delete from t1 where c = 2 and e = 2;
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 delete from t1 where c < 3;
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 delete from t1;
-select a, c, sha1(b), sha1(d) from t1 order by a, c;
+select a, c, sha2(b,256), sha2(d,256) from t1 order by a, c;
 
 # -- clean up --
 drop table t1;

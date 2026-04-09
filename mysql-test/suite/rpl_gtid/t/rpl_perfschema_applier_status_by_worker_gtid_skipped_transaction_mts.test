@@ -20,8 +20,6 @@
 
 --source include/rpl/init_source_replica.inc
 
---let $is_mts= 1
-
 --source common/rpl/check_ps_applier_status_by_worker_gtid_skipped_transaction.inc
 
 --source include/rpl/deinit.inc

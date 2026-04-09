@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -28,11 +28,11 @@
 
 #include "sql/histograms/equi_height_bucket.h"  // equi_height::Bucket
 
-#include <assert.h>
-#include <stddef.h>
-#include <stdint.h>
 #include <sys/types.h>
 #include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>  // std::unique_ptr
 
@@ -49,8 +49,7 @@
 #include "sql/sql_time.h"              // calc_time_diff
 #include "template_utils.h"
 
-namespace histograms {
-namespace equi_height {
+namespace histograms::equi_height {
 
 template <typename T>
 Bucket<T>::Bucket(T lower, T upper, double freq, ha_rows num_distinct)
@@ -142,9 +141,24 @@ bool Bucket<longlong>::add_values_json_bucket(const longlong &lower_value,
 }
 
 template <>
-bool Bucket<MYSQL_TIME>::add_values_json_bucket(const MYSQL_TIME &lower_value,
-                                                const MYSQL_TIME &upper_value,
-                                                Json_array *json_array) {
+bool Bucket<Time_val>::add_values_json_bucket(const Time_val &lower_value,
+                                              const Time_val &upper_value,
+                                              Json_array *json_array) {
+  const Json_time json_lower_value(lower_value);
+  if (json_array->append_clone(&json_lower_value)) {
+    return true; /* purecov: inspected */
+  }
+  const Json_time json_upper_value(upper_value);
+  if (json_array->append_clone(&json_upper_value)) {
+    return true; /* purecov: inspected */
+  }
+  return false;
+}
+
+template <>
+bool Bucket<Datetime_val>::add_values_json_bucket(
+    const Datetime_val &lower_value, const Datetime_val &upper_value,
+    Json_array *json_array) {
   assert(lower_value.time_type == upper_value.time_type);
 
   enum_field_types field_type;
@@ -154,9 +168,6 @@ bool Bucket<MYSQL_TIME>::add_values_json_bucket(const MYSQL_TIME &lower_value,
       break;
     case MYSQL_TIMESTAMP_DATETIME:
       field_type = MYSQL_TYPE_DATETIME;
-      break;
-    case MYSQL_TIMESTAMP_TIME:
-      field_type = MYSQL_TYPE_TIME;
       break;
     default:
       /* purecov: begin deadcode */
@@ -201,7 +212,7 @@ static bool values_are_equal(const T &val1, const T &val2) {
 */
 template <class T>
 double Bucket<T>::get_distance_from_lower(const T &value) const {
-  const double lower_inclusive = static_cast<double>(get_lower_inclusive());
+  const auto lower_inclusive = static_cast<double>(get_lower_inclusive());
   return (value - lower_inclusive) /
          (get_upper_inclusive() - lower_inclusive + 1.0);
 }
@@ -287,29 +298,28 @@ template <>
 double Bucket<String>::get_distance_from_lower(const String &value) const {
   assert(value.charset()->number == get_lower_inclusive().charset()->number);
 
-  if (Histogram_comparator()(value, get_lower_inclusive()))
-    return 0.0;
-  else if (values_are_equal(get_lower_inclusive(), get_upper_inclusive()))
+  if (Histogram_comparator()(value, get_lower_inclusive())) return 0.0;
+  if (values_are_equal(get_lower_inclusive(), get_upper_inclusive()))
     return 1.0;
 
-  uint max_strnxfrm_len = value.charset()->coll->strnxfrmlen(
+  uint const max_strnxfrm_len = value.charset()->coll->strnxfrmlen(
       value.charset(), HISTOGRAM_MAX_COMPARE_LENGTH);
 
-  std::unique_ptr<uchar[]> value_buf(new uchar[max_strnxfrm_len]());
-  std::unique_ptr<uchar[]> upper_buf(new uchar[max_strnxfrm_len]());
-  std::unique_ptr<uchar[]> lower_buf(new uchar[max_strnxfrm_len]());
+  std::unique_ptr<uchar[]> const value_buf(new uchar[max_strnxfrm_len]());
+  std::unique_ptr<uchar[]> const upper_buf(new uchar[max_strnxfrm_len]());
+  std::unique_ptr<uchar[]> const lower_buf(new uchar[max_strnxfrm_len]());
 
-  const uchar *ptr = pointer_cast<const uchar *>(value.ptr());
-  size_t value_len = my_strnxfrm(value.charset(), value_buf.get(),
-                                 max_strnxfrm_len, ptr, value.length());
+  const auto *ptr = pointer_cast<const uchar *>(value.ptr());
+  size_t const value_len = my_strnxfrm(value.charset(), value_buf.get(),
+                                       max_strnxfrm_len, ptr, value.length());
 
-  const uchar *ptr2 = pointer_cast<const uchar *>(get_lower_inclusive().ptr());
-  size_t lower_len =
+  const auto *ptr2 = pointer_cast<const uchar *>(get_lower_inclusive().ptr());
+  size_t const lower_len =
       my_strnxfrm(value.charset(), lower_buf.get(), max_strnxfrm_len, ptr2,
                   get_lower_inclusive().length());
 
-  const uchar *ptr3 = pointer_cast<const uchar *>(get_upper_inclusive().ptr());
-  size_t upper_len =
+  const auto *ptr3 = pointer_cast<const uchar *>(get_upper_inclusive().ptr());
+  size_t const upper_len =
       my_strnxfrm(value.charset(), upper_buf.get(), max_strnxfrm_len, ptr3,
                   get_upper_inclusive().length());
 
@@ -323,9 +333,9 @@ double Bucket<String>::get_distance_from_lower(const String &value) const {
     start_index++;
   }
 
-  std::uint64_t lower_converted = uchar_array_to_64bit_unsigned(
+  std::uint64_t const lower_converted = uchar_array_to_64bit_unsigned(
       lower_buf.get() + start_index, lower_len - start_index);
-  std::uint64_t upper_converted = uchar_array_to_64bit_unsigned(
+  std::uint64_t const upper_converted = uchar_array_to_64bit_unsigned(
       upper_buf.get() + start_index, upper_len - start_index);
   if (upper_converted == lower_converted) {
     /*
@@ -335,7 +345,7 @@ double Bucket<String>::get_distance_from_lower(const String &value) const {
     return 1.0; /* purecov: deadcode */
   }
 
-  std::uint64_t value_converted = uchar_array_to_64bit_unsigned(
+  std::uint64_t const value_converted = uchar_array_to_64bit_unsigned(
       value_buf.get() + start_index, value_len - start_index);
 
   assert(lower_converted <= value_converted);
@@ -346,11 +356,40 @@ double Bucket<String>::get_distance_from_lower(const String &value) const {
 }
 
 template <>
-double Bucket<MYSQL_TIME>::get_distance_from_lower(
-    const MYSQL_TIME &value) const {
-  MYSQL_TIME lower_modified = get_lower_inclusive();
-  MYSQL_TIME upper_modified = get_upper_inclusive();
-  MYSQL_TIME value_modified = value;
+double Bucket<Time_val>::get_distance_from_lower(const Time_val &value) const {
+  Time_val lower_modified = get_lower_inclusive();
+  Time_val upper_modified = get_upper_inclusive();
+  Time_val value_modified = value;
+
+  if (Histogram_comparator()(value_modified, lower_modified)) {
+    return 0.0;
+  }
+  if (values_are_equal(lower_modified, upper_modified)) {
+    return 1.0;
+  }
+  /*
+    Calculate the difference in microseconds between the upper inclusive value
+    and the lower inclusive value of the bucket.
+  */
+  longlong upper_lower_diff =
+      upper_modified.to_microseconds() - lower_modified.to_microseconds();
+  /*
+    Calculate the difference in microseconds between the lower inclusive value
+    of the bucket and the provided parameter value.
+  */
+  longlong value_lower_diff =
+      value_modified.to_microseconds() - lower_modified.to_microseconds();
+
+  return static_cast<double>(value_lower_diff) /
+         static_cast<double>(upper_lower_diff);
+}
+
+template <>
+double Bucket<Datetime_val>::get_distance_from_lower(
+    const Datetime_val &value) const {
+  Datetime_val lower_modified = get_lower_inclusive();
+  Datetime_val upper_modified = get_upper_inclusive();
+  Datetime_val value_modified = value;
 
   if (value.time_type == MYSQL_TIMESTAMP_DATE ||
       get_lower_inclusive().time_type == MYSQL_TIMESTAMP_DATE) {
@@ -364,10 +403,8 @@ double Bucket<MYSQL_TIME>::get_distance_from_lower(
     value_modified.second_part = 0;
   }
 
-  if (Histogram_comparator()(value_modified, lower_modified))
-    return 0.0;
-  else if (values_are_equal(lower_modified, upper_modified))
-    return 1.0;
+  if (Histogram_comparator()(value_modified, lower_modified)) return 0.0;
+  if (values_are_equal(lower_modified, upper_modified)) return 1.0;
 
   /*
     Calculate the difference in seconds between the upper inclusive value and
@@ -378,7 +415,7 @@ double Bucket<MYSQL_TIME>::get_distance_from_lower(
   int sign = lower_modified.neg != upper_modified.neg ? -1 : 1;
   calc_time_diff(lower_modified, upper_modified, sign,
                  &upper_lower_diff_seconds, &upper_lower_diff_microseconds);
-  double upper_lower_diff =
+  double const upper_lower_diff =
       upper_lower_diff_seconds + (upper_lower_diff_microseconds / 1000000.0);
 
   /*
@@ -390,7 +427,7 @@ double Bucket<MYSQL_TIME>::get_distance_from_lower(
   sign = lower_modified.neg != value_modified.neg ? -1 : 1;
   calc_time_diff(lower_modified, value_modified, sign,
                  &value_lower_diff_seconds, &value_lower_diff_microseconds);
-  double value_lower_diff =
+  double const value_lower_diff =
       value_lower_diff_seconds + (value_lower_diff_microseconds / 1000000.0);
 
   return value_lower_diff / upper_lower_diff;
@@ -399,9 +436,8 @@ double Bucket<MYSQL_TIME>::get_distance_from_lower(
 template <>
 double Bucket<my_decimal>::get_distance_from_lower(
     const my_decimal &value) const {
-  if (Histogram_comparator()(value, get_lower_inclusive()))
-    return 0.0;
-  else if (values_are_equal(get_lower_inclusive(), get_upper_inclusive()))
+  if (Histogram_comparator()(value, get_lower_inclusive())) return 0.0;
+  if (values_are_equal(get_lower_inclusive(), get_upper_inclusive()))
     return 1.0;
 
   double lower_inclusive_double;
@@ -438,7 +474,7 @@ double Bucket<T>::get_distance_from_upper(const T &value) const {
 
 template <>
 double Bucket<longlong>::get_distance_from_upper(const longlong &value) const {
-  const double upper_inclusive = static_cast<double>(get_upper_inclusive());
+  const auto upper_inclusive = static_cast<double>(get_upper_inclusive());
   return (upper_inclusive - value) /
          (upper_inclusive - get_lower_inclusive() + 1.0);
 }
@@ -446,7 +482,7 @@ double Bucket<longlong>::get_distance_from_upper(const longlong &value) const {
 template <>
 double Bucket<ulonglong>::get_distance_from_upper(
     const ulonglong &value) const {
-  const double upper_inclusive = static_cast<double>(get_upper_inclusive());
+  const auto upper_inclusive = static_cast<double>(get_upper_inclusive());
   return (upper_inclusive - value) /
          (upper_inclusive - get_lower_inclusive() + 1.0);
 }
@@ -456,8 +492,8 @@ template class Bucket<double>;
 template class Bucket<String>;
 template class Bucket<ulonglong>;
 template class Bucket<longlong>;
-template class Bucket<MYSQL_TIME>;
+template class Bucket<Time_val>;
+template class Bucket<Datetime_val>;
 template class Bucket<my_decimal>;
 
-}  // namespace equi_height
-}  // namespace histograms
+}  // namespace histograms::equi_height

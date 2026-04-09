@@ -1,0 +1,109 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE USER user1@'%' IDENTIFIED BY 'secretpass1';
+# Registered MRS ROLE: AllPriv
+# Registered MRS Role Grant: /svc1 * * => READ,CREATE,UPDATE,DELETE
+# Registred SERVICE at path: /svc1
+# Registred DB_SCHEMA at path: /svc1/basic_schema
+# Registred AUTH APP at path: /svc1
+# Registred MRS USER: 'user1'
+# Registred CONTENT_SET at path: /svc1/set
+SET @my_set=@content_set_id;
+# Registred CONTENT_FILE at path: /svc1/set/Sample.js
+SET @auth_content_file_id=@content_file_id;
+# Registred DB_OBJECT at path: /svc1/basic_schema/helloWorld
+# Registered CONTENT_SET Object Definition for: Sample.helloWorld
+# Registred DB_OBJECT at path: /svc1/basic_schema/helloUser
+# Registered CONTENT_SET Object Definition for: Sample.helloUser
+# Registred DB_OBJECT at path: /svc1/basic_schema/getSampleContentSetPath
+# Registered CONTENT_SET Object Definition for: Sample.getSampleContentSetPath
+# Registred DB_OBJECT at path: /svc1/basic_schema/errorCCallbackMissingParams
+# Registered CONTENT_SET Object Definition for: Sample.errorCCallbackMissingParams
+# Registred DB_OBJECT at path: /svc1/basic_schema/helloSomeone
+# Registered CONTENT_SET Object Definition for: Sample.helloSomeone
+# Registred DB_OBJECT at path: /svc1/basic_schema/defaultTimeOut
+# Registered CONTENT_SET Object Definition for: Sample.defaultTimeOut
+
+Calls JavaScript functions to exercise the functionality provided out
+of the box, including:
+
+The global functions:
+- getSession()
+- getContentSetPath()
+- getSession()
+- getCurrentMrsUserId
+
+Passing parameters in the request
+The default timeout
+GET /svc1/basic_schema/helloWorld
+{
+    "status": "ok",
+    "result": "Hello World!"
+}
+OK
+GET /svc1/basic_schema/getSampleContentSetPath
+{
+    "status": "ok",
+    "result": "/svc1/set"
+}
+OK
+GET /svc1/authentication/login
+
+OK
+GET /svc1/basic_schema/helloUser
+{
+    "status": "ok",
+    "result": "Hello user1!"
+}
+OK
+PUT /svc1/basic_schema/helloSomeone (payload-size:18)
+{
+    "status": "ok",
+    "result": "Hello dude!!"
+}
+OK
+GET /svc1/basic_schema/defaultTimeOut
+{
+    "message": "Request Timeout",
+    "status": 408
+}
+OK
+PUT /svc1/basic_schema/helloWorld (payload-size:14)
+{
+    "message": "Invalid parameters format.",
+    "status": 400
+}
+OK
+PUT /svc1/basic_schema/helloWorld (payload-size:30)
+{
+    "message": "Not allowed parameter:invalid_value. The function accepts no parameters.",
+    "status": 400
+}
+OK
+GET /svc1/basic_schema/helloSomeone
+{
+    "status": "ok",
+    "result": "Hello undefined!"
+}
+OK
+PUT /svc1/basic_schema/helloSomeone (payload-size:30)
+{
+    "message": "Not allowed parameter:invalid_value. Allowed: sample.",
+    "status": 400
+}
+OK
+GET /svc1/basic_schema/errorCCallbackMissingParams
+{
+    "status": "error",
+    "message": "getContentSetPath(...) takes 1 argument"
+}
+OK
+drop user user1@'%';
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

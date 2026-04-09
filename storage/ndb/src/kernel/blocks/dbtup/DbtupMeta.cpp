@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1905,14 +1905,12 @@ void Dbtup::releaseFragment(Signal *signal, Uint32 tableId,
   tabPtr.i = tableId;
   ptrCheckGuard(tabPtr, cnoOfTablerec, tablerec);
   Uint32 fragIndex = RNIL;
-  Uint32 fragId = RNIL;
   Uint32 i = 0;
   for (i = 0; i < NDB_ARRAY_SIZE(tabPtr.p->fragid); i++) {
     jam();
     if (tabPtr.p->fragid[i] != RNIL) {
       jam();
       fragIndex = tabPtr.p->fragrec[i];
-      fragId = tabPtr.p->fragid[i];
       break;
     }
   }
@@ -2363,6 +2361,12 @@ void Dbtup::drop_fragment_fsremove_done(Signal *signal, TablerecPtr tabPtr,
     signal->theData[0] = ZREL_FRAG;
     signal->theData[1] = tabPtr.i;
     signal->theData[2] = logfile_group_id;
+    if (ERROR_INSERTED(4039)) {
+      jam();
+      // Delay fragment release
+      sendSignalWithDelay(cownref, GSN_CONTINUEB, signal, 1000, 3);
+      return;
+    }
     sendSignal(cownref, GSN_CONTINUEB, signal, 3, JBB);
   } else {
     jam();

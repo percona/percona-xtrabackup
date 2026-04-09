@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -88,7 +88,6 @@ public class SchemaChangeTest extends AbstractClusterJModelTest {
 
     @Override
     public void localSetUp() {
-        logger.info("PLEASE IGNORE THE FOLLOWING EXPECTED SEVERE ERRORS.");
         createSessionFactory();
         session = sessionFactory.getSession();
         executeSQL(dropTableStatement);

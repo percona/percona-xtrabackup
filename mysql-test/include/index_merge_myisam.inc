@@ -4,6 +4,8 @@
 # Skip this test from daily Valgrind execution
 --source include/no_valgrind_without_big.inc
 --source include/elide_costs.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 # t/index_merge_myisam.test
 #
@@ -235,3 +237,5 @@ show variables like 'optimizer_switch';
 set @@global.optimizer_switch=@global_optimizer_switch_saved;
 
 drop table t0, t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

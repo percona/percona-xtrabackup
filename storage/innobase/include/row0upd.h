@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -54,45 +54,52 @@ this program; if not, write to the Free Software Foundation, Inc.,
 @param[in]      n       number of fields
 @param[in]      heap    heap from which memory allocated
 @return own: update vector object */
-static inline upd_t *upd_create(ulint n, mem_heap_t *heap);
+inline upd_t *upd_create(ulint n, mem_heap_t *heap);
 
 /** Returns the number of fields in the update vector == number of columns
  to be updated by an update vector.
+ @param[in]     update  update vector
  @return number of fields */
-static inline ulint upd_get_n_fields(
-    const upd_t *update); /*!< in: update vector */
+inline ulint upd_get_n_fields(const upd_t *update);
 
-#ifdef UNIV_DEBUG
 /** Returns the nth field of an update vector.
 @param[in]      update  update vector
 @param[in]      n       field position in update vector
 @return update vector field */
-static inline upd_field_t *upd_get_nth_field(const upd_t *update, ulint n);
-#else
-#define upd_get_nth_field(update, n) ((update)->fields + (n))
-#endif
-/** Sets an index field number to be updated by an update vector field.
-@param[in]      upd_field       update vector field
-@param[in]      field_no        field number in a clustered index
-@param[in]      index           index */
-static inline void upd_field_set_field_no(upd_field_t *upd_field,
-                                          ulint field_no,
-                                          const dict_index_t *index);
+inline upd_field_t *upd_get_nth_field(upd_t *update, ulint n);
 
-/** set field number to a update vector field, marks this field is updated
-@param[in,out]  upd_field       update vector field
-@param[in]      field_no        virtual column sequence num
+/** Returns the nth field of an update vector.
+@param[in]      update  update vector
+@param[in]      n       field position in update vector
+@return update vector field */
+inline const upd_field_t *upd_get_nth_field(const upd_t *update, ulint n);
+
+/** Set which index field is updated by an update vector field.
+@param[in]      upd_field       update vector field
+@param[in]      field_no        field position in index
 @param[in]      index           index */
-static inline void upd_field_set_v_field_no(upd_field_t *upd_field,
-                                            ulint field_no,
-                                            const dict_index_t *index);
+inline void upd_field_set_field_no(upd_field_t *upd_field, ulint field_no,
+                                   const dict_index_t *index);
+
+/** Set for which virtual column the value is updated by an update vector
+field.
+@param[in,out]  upd_field       update vector field
+@param[in]      field_no        virtual column number in table
+@param[in]      index           index */
+inline void upd_field_set_v_field_no(upd_field_t *upd_field, ulint field_no,
+                                     const dict_index_t *index);
+
 /** Returns a field of an update vector by field_no.
 @param[in] update     Update vector.
-@param[in] no         Field no.
+@param[in] no         "Field number" as stored in the update vector:
+                      when is_virtual is false the position of the field
+                      in the updated index, otherwise the column number
+                      of the virtual field in table. @see upd_field::field_no
 @param[in] is_virtual If it is a virtual column.
 @return update vector field, or nullptr. */
-[[nodiscard]] static inline const upd_field_t *upd_get_field_by_field_no(
+[[nodiscard]] inline const upd_field_t *upd_get_field_by_field_no(
     const upd_t *update, ulint no, bool is_virtual);
+
 /** Writes into the redo log the values of trx id and roll ptr and enough info
 to determine their positions within a clustered index record.
 @param[in] index    Clustered index.
@@ -116,11 +123,10 @@ row is updated or marked deleted.
 @param[in]      trx             transaction
 @param[in]      roll_ptr        roll ptr of the undo log record, can be 0
                                 during IMPORT */
-static inline void row_upd_rec_sys_fields(rec_t *rec, page_zip_des_t *page_zip,
-                                          const dict_index_t *index,
-                                          const ulint *offsets,
-                                          const trx_t *trx,
-                                          roll_ptr_t roll_ptr);
+inline void row_upd_rec_sys_fields(rec_t *rec, page_zip_des_t *page_zip,
+                                   const dict_index_t *index,
+                                   const ulint *offsets, const trx_t *trx,
+                                   roll_ptr_t roll_ptr);
 #endif /* !UNIV_HOTBACKUP */
 
 /** Sets the trx id or roll ptr field of a clustered index entry.
@@ -292,11 +298,11 @@ static inline bool row_upd_changes_ord_field_binary(
 }
 
 /** Checks if an FTS indexed column is affected by an UPDATE.
+ @param[in]  table      table
+ @param[in]  upd_field  clustered index field update
  @return offset within fts_t::indexes if FTS indexed column updated else
  ULINT_UNDEFINED */
-ulint row_upd_changes_fts_column(
-    dict_table_t *table,     /*!< in: table */
-    upd_field_t *upd_field); /*!< in: field to check */
+ulint row_upd_changes_fts_column(dict_table_t *table, upd_field_t *upd_field);
 /** Checks if an FTS Doc ID column is affected by an UPDATE.
  @return whether Doc ID column is affected */
 [[nodiscard]] bool row_upd_changes_doc_id(
@@ -344,12 +350,15 @@ void row_upd_rec_sys_fields_in_recovery(rec_t *rec, page_zip_des_t *page_zip,
                                         trx_id_t trx_id, roll_ptr_t roll_ptr);
 
 /** Parses the log data written by row_upd_index_write_log.
+ @param[in]   ptr         buffer
+ @param[in]   end_ptr     buffer end
+ @param[in]   heap        memory heap where update vector is built
+ @param[out]  update_out  update vector
+ @param[in]   index       the index corresponding to the update
  @return log data end or NULL */
-byte *row_upd_index_parse(const byte *ptr,     /*!< in: buffer */
-                          const byte *end_ptr, /*!< in: buffer end */
-                          mem_heap_t *heap,    /*!< in: memory heap where update
-                                               vector is    built */
-                          upd_t **update_out); /*!< out: update vector */
+byte *row_upd_index_parse(const byte *ptr, const byte *end_ptr,
+                          mem_heap_t *heap, upd_t **update_out,
+                          dict_index_t *index);
 
 /** Get the new autoinc counter from the update vector when there is
 an autoinc field defined in this table.
@@ -481,12 +490,14 @@ struct upd_field_t {
 
   bool is_virtual() const { return (new_val.is_virtual()); }
 
-  unsigned field_no : 16; /*!< field number in an index, usually
+  unsigned field_no : 16; /*!< for non-virtual fields, the field
+                          position in an index, usually
                           the clustered index, but in updating
                           a secondary index record in btr0cur.cc
                           this is the position in the secondary
-                          index, also it could be the position
-                          in virtual index for virtual column */
+                          index; for virtual fields the number
+                          of correcponding virtual column in
+                          table metadata */
   IF_DEBUG(uint16_t field_phy_pos{UINT16_MAX};)
   unsigned orig_len : 16; /*!< original length of the locally
                           stored part of an externally stored
@@ -546,18 +557,13 @@ inline std::ostream &operator<<(std::ostream &out, const upd_field_t &obj) {
   return (obj.print(out));
 }
 
-/* check whether an update field is on virtual column */
-static inline bool upd_fld_is_virtual_col(const upd_field_t *upd_fld) {
-  return (upd_fld->new_val.type.prtype & DATA_VIRTUAL) == DATA_VIRTUAL;
-}
-
 /* check whether an update field is on multi-value virtual column */
-static inline bool upd_fld_is_multi_value_col(const upd_field_t *upd_fld) {
+inline bool upd_fld_is_multi_value_col(const upd_field_t *upd_fld) {
   return dfield_is_multi_value(&upd_fld->new_val);
 }
 
 /* set DATA_VIRTUAL bit on update field to show it is a virtual column */
-static inline void upd_fld_set_virtual_col(upd_field_t *upd_fld) {
+inline void upd_fld_set_virtual_col(upd_field_t *upd_fld) {
   upd_fld->new_val.type.prtype |= DATA_VIRTUAL;
 }
 
@@ -580,7 +586,7 @@ struct upd_t {
   dtuple_t *old_vrow;
 
   /** The table object. */
-  dict_table_t *table;
+  const dict_table_t *table;
 
   /** The mysql table object. */
   TABLE *mysql_table;
@@ -591,9 +597,13 @@ struct upd_t {
   /** Array of update fields. */
   upd_field_t *fields;
 
-  /** Append an update field to the end of array
+  /** Capacity of the fields array */
+  size_t n_capacity;
+
+  /** Append an update field to the end of array. If fields array is full, more
+  space is allocated on the heap.
   @param[in]    field   an update field */
-  void append(const upd_field_t &field) { fields[n_fields++] = field; }
+  void append(const upd_field_t &field);
 
   /** Determine if the given field_no is modified.
   @return true if modified, false otherwise.  */
@@ -614,14 +624,26 @@ struct upd_t {
   }
 
 #ifdef UNIV_DEBUG
-  bool validate() const {
+  void validate() const {
     for (ulint i = 0; i < n_fields; ++i) {
       dfield_t *field = &fields[i].new_val;
       if (dfield_is_ext(field)) {
-        ut_ad(dfield_get_len(field) >= BTR_EXTERN_FIELD_REF_SIZE);
+        ut_ad_le(BTR_EXTERN_FIELD_REF_SIZE, dfield_get_len(field));
       }
     }
-    return (true);
+  }
+
+  void validate_for_index(const dict_index_t *index) const {
+    validate();
+    for (ulint i = 0; i < n_fields; ++i) {
+      const upd_field_t &field = fields[i];
+      ut_a(index->is_clustered() || !field.is_virtual());
+      if (!field.is_virtual()) {
+        ut_a_lt(field.field_no, dict_index_get_n_fields(index));
+      } else {
+        ut_a_lt(field.field_no, index->table->n_v_cols);
+      }
+    }
   }
 #endif  // UNIV_DEBUG
 
@@ -630,7 +652,8 @@ struct upd_t {
   @return true if partially updated, false otherwise. */
   bool is_partially_updated(ulint field_no) const;
 
-  upd_field_t *get_field_by_field_no(ulint field_no, dict_index_t *index) const;
+  const upd_field_t *get_field_by_field_no(ulint field_no,
+                                           const dict_index_t *index) const;
 
   const Binary_diff_vector *get_binary_diff_by_field_no(ulint field_no) const;
 
@@ -712,7 +735,9 @@ struct upd_node_t {
                             doing an ON DELETE or ON UPDATE operation */
   upd_node_t *cascade_node; /* NULL or an update node template which
                        is used to implement ON DELETE/UPDATE CASCADE
-                       or ... SET NULL for foreign keys */
+                       or ... SET NULL for foreign keys. If present,
+                       this node updates the child (referencing) table's
+                       clustered index */
   mem_heap_t *cascade_heap;
   /*!< NULL or a mem heap where cascade_upd_nodes
   are created.*/

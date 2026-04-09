@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -197,12 +197,19 @@ static int tina_done_func(void *) {
   return 0;
 }
 
+static File open_meta_file(const char *table_name) {
+  char meta_file_name[FN_REFLEN];
+  fn_format(meta_file_name, table_name, "", CSM_EXT,
+            MY_REPLACE_EXT | MY_UNPACK_FILENAME);
+  return mysql_file_open(csv_key_file_metadata, meta_file_name,
+                         O_RDWR | O_CREAT, MYF(MY_WME));
+}
+
 /*
   Simple lock controls.
 */
 static TINA_SHARE *get_share(const char *table_name, TABLE *) {
   TINA_SHARE *share;
-  char meta_file_name[FN_REFLEN];
   MY_STAT file_stat; /* Stat information for the data file */
   char *tmp_name;
   uint length;
@@ -235,8 +242,6 @@ static TINA_SHARE *get_share(const char *table_name, TABLE *) {
     my_stpcpy(share->table_name, table_name);
     fn_format(share->data_file_name, table_name, "", CSV_EXT,
               MY_REPLACE_EXT | MY_UNPACK_FILENAME);
-    fn_format(meta_file_name, table_name, "", CSM_EXT,
-              MY_REPLACE_EXT | MY_UNPACK_FILENAME);
 
     if (mysql_file_stat(csv_key_file_data, share->data_file_name, &file_stat,
                         MYF(MY_WME)) == nullptr)
@@ -254,9 +259,7 @@ static TINA_SHARE *get_share(const char *table_name, TABLE *) {
       Usually this will result in auto-repair, and we will get a good
       meta-file in the end.
     */
-    if (((share->meta_file =
-              mysql_file_open(csv_key_file_metadata, meta_file_name,
-                              O_RDWR | O_CREAT, MYF(MY_WME))) == -1) ||
+    if (((share->meta_file = open_meta_file(table_name)) == -1) ||
         read_meta_file(share->meta_file, &share->rows_recorded))
       share->crashed = true;
   } else {
@@ -418,10 +421,12 @@ static int free_share(TINA_SHARE *share) {
   mysql_mutex_lock(&tina_mutex);
   int result_code = 0;
   if (!--share->use_count) {
-    /* Write the meta file. Mark it as crashed if needed. */
-    (void)write_meta_file(share->meta_file, share->rows_recorded,
-                          share->crashed ? true : false);
-    if (mysql_file_close(share->meta_file, MYF(0))) result_code = 1;
+    if (share->meta_file != -1) {
+      /* Write the meta file. Mark it as crashed if needed. */
+      (void)write_meta_file(share->meta_file, share->rows_recorded,
+                            share->crashed ? true : false);
+      if (mysql_file_close(share->meta_file, MYF(0))) result_code = 1;
+    }
     if (share->tina_write_opened) {
       if (mysql_file_close(share->tina_write_filedes, MYF(0))) result_code = 1;
       share->tina_write_opened = false;
@@ -1385,6 +1390,18 @@ int ha_tina::repair(THD *thd, HA_CHECK_OPT *) {
   ha_rows rows_repaired = 0;
   my_off_t write_begin = 0, write_end;
   DBUG_TRACE;
+
+  /* reopen meta file */
+  if ((share->meta_file != -1) && (mysql_file_close(share->meta_file, MYF(0))))
+    return -1;
+  if ((share->meta_file = open_meta_file(share->table_name)) == -1)
+    return HA_ERR_CRASHED_ON_REPAIR;
+
+  /* check meta file */
+  if (share->meta_file == -1) {
+    share->crashed = true;
+    return HA_ERR_CRASHED_ON_REPAIR;
+  }
 
   /* empty file */
   if (!share->saved_data_file_length) {

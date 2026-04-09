@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,7 +54,9 @@ void SHM_Transporter::make_error_info(char info[], int sz) {
 bool SHM_Transporter::ndb_shm_create() {
   if (!isServer) {
     g_eventLogger->info(
-        "Trying to create shared memory segment on the client side");
+        "Node %u transporter to node %u: create SHM segment requested on "
+        "client side; refusing",
+        localNodeId, remoteNodeId);
     return false;
   }
   shmId = shmget(shmKey, shmSize, IPC_CREAT | 960);
@@ -65,8 +67,10 @@ bool SHM_Transporter::ndb_shm_create() {
                    localNodeId, remoteNodeId, __LINE__, shmId, errno,
                    strerror(errno)));
     g_eventLogger->info(
-        "ERROR: Failed to create SHM segment of size %u with errno: %d(%s)",
-        shmSize, errno, strerror(errno));
+        "Node %u transporter to node %u: failed to create SHM segment size %u, "
+        "errno: "
+        "%d(%s)",
+        localNodeId, remoteNodeId, shmSize, errno, strerror(errno));
     require(false);
     return false;
   }
@@ -83,8 +87,10 @@ bool SHM_Transporter::ndb_shm_get() {
                    strerror(errno)));
     if (errno != ENOENT) {
       g_eventLogger->info(
-          "ERROR: Failed to get SHM segment of size %u with errno: %d(%s)",
-          shmSize, errno, strerror(errno));
+          "Node %u transporter to node %u: failed to get SHM segment size %u, "
+          "errno: "
+          "%d(%s)",
+          localNodeId, remoteNodeId, shmSize, errno, strerror(errno));
       require(false);
     }
     return false;

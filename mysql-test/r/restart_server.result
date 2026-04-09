@@ -10,6 +10,8 @@ GRANT SHUTDOWN ON *.* TO u1@localhost;
 RESTART;
 REVOKE SHUTDOWN ON *.* FROM u1@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 RESTART;
 ERROR 42000: Access denied; you need (at least one of) the SHUTDOWN privilege(s) for this operation
 DROP USER u1@localhost;

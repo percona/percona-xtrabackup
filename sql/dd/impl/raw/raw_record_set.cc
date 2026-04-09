@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -138,7 +138,7 @@ bool Raw_record_set::next(Raw_record *&r) {
 
 Raw_record_set::~Raw_record_set() {
   if (m_table->file->inited != handler::NONE) {
-    int rc = m_table->file->ha_index_end();
+    int const rc = m_table->file->ha_index_end();
 
     if (rc) {
       /* purecov: begin inspected */

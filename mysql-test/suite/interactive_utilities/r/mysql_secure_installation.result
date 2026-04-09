@@ -219,3 +219,5 @@ INSERT INTO mysql.db VALUES ('%','test','','Y','Y','Y','Y','Y','Y','N','Y','Y','
 UPDATE mysql.user SET password_last_changed=@plc, authentication_string=@auth_str, plugin= @plugin, user_attributes=@user_attrib where user='root';
 UPDATE mysql.user SET password_last_changed=@sys_plc, authentication_string=@sys_auth_str, plugin= @sys_plugin where user='mysql.sys';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.

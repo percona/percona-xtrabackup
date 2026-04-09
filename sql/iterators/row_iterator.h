@@ -1,7 +1,7 @@
 #ifndef SQL_ITERATORS_ROW_ITERATOR_H_
 #define SQL_ITERATORS_ROW_ITERATOR_H_
 
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <assert.h>
-#include <string>
+#include <cstdint>
 
 class Item;
 class JOIN;
@@ -98,13 +98,21 @@ class RowIterator {
     You can call Init() multiple times; subsequent calls will rewind the
     iterator (or reposition it, depending on whether the iterator takes in
     e.g. a Index_lookup) and allow you to read the records anew.
+
+    Subclasses should implement DoInit() to do the actual initalization of the
+    iterator.
    */
-  virtual bool Init() = 0;
+  bool Init() {
+    ++m_num_init_calls;
+    return DoInit();
+  }
 
   /**
     Read a single row. The row data is not actually returned from the function;
     it is put in the table's (or tables', in case of a join) record buffer, ie.,
     table->records[0].
+
+    Subclasses should override DoRead() to do the actual reading of the row.
 
     @retval
       0   OK
@@ -113,7 +121,15 @@ class RowIterator {
     @retval
       1   Error
    */
-  virtual int Read() = 0;
+  int Read() {
+    const int error = DoRead();
+    if (error == 0) {
+      ++m_num_rows;
+    } else if (error == -1) {
+      ++m_num_full_reads;
+    }
+    return error;
+  }
 
   /**
     Mark the current row buffer as containing a NULL row or not, so that if you
@@ -224,11 +240,28 @@ class RowIterator {
   virtual RowIterator *real_iterator() { return this; }
   virtual const RowIterator *real_iterator() const { return this; }
 
+  /// Returns the number of times Init() has been called on this iterator.
+  uint64_t num_init_calls() const { return m_num_init_calls; }
+
+  /// Returns the number of times Read() has returned a row successfully from
+  /// this iterator.
+  uint64_t num_rows() const { return m_num_rows; }
+
+  /// Returns the number of times the iterator has been fully read. That is, the
+  /// number of times Read() has returned EOF.
+  uint64_t num_full_reads() const { return m_num_full_reads; }
+
  protected:
   THD *thd() const { return m_thd; }
 
  private:
+  virtual bool DoInit() = 0;
+  virtual int DoRead() = 0;
+
   THD *const m_thd;
+  uint64_t m_num_init_calls{0};
+  uint64_t m_num_rows{0};
+  uint64_t m_num_full_reads{0};
 };
 
 class TableRowIterator : public RowIterator {

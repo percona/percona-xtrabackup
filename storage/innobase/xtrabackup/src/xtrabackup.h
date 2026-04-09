@@ -114,8 +114,7 @@ extern bool xtrabackup_decrypt_decompress;
 extern char *innobase_data_file_path;
 extern char *xtrabackup_encrypt_key;
 extern char *xtrabackup_encrypt_key_file;
-extern longlong innobase_log_file_size;
-extern long innobase_log_files_in_group;
+extern longlong innobase_redo_log_capacity;
 extern longlong innobase_page_size;
 
 extern const char *xtrabackup_encrypt_algo_names[];

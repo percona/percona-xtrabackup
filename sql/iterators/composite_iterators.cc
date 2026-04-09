@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,24 +33,26 @@
 #include <functional>
 #include <limits>
 #include <new>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
 
 #include <ankerl/unordered_dense.h>
 
+#include "extra/xxhash/my_xxhash.h"
 #include "field_types.h"
 #include "mem_root_deque.h"
 #include "my_config.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
 #include "my_sys.h"
-#include "my_xxhash.h"
 #include "mysql_com.h"
 #include "mysqld_error.h"
 #include "prealloced_array.h"
 #include "scope_guard.h"
 #include "sql/debug_sync.h"
+#include "sql/derror.h"
 #include "sql/error_handler.h"
 #include "sql/field.h"
 #include "sql/handler.h"
@@ -68,6 +70,7 @@
 #include "sql/key.h"
 #include "sql/opt_trace.h"
 #include "sql/opt_trace_context.h"
+#include "sql/pack_rows.h"
 #include "sql/pfs_batch_mode.h"
 #include "sql/psi_memory_key.h"
 #include "sql/sql_base.h"
@@ -76,6 +79,7 @@
 #include "sql/sql_executor.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
+#include "sql/sql_opt_exec_shared.h"
 #include "sql/sql_optimizer.h"
 #include "sql/sql_show.h"
 #include "sql/sql_tmp_table.h"
@@ -89,7 +93,7 @@
 using pack_rows::TableCollection;
 using std::any_of;
 
-int FilterIterator::Read() {
+int FilterIterator::DoRead() {
   for (;;) {
     int err = m_source->Read();
     if (err != 0) return err;
@@ -114,7 +118,7 @@ int FilterIterator::Read() {
   }
 }
 
-bool LimitOffsetIterator::Init() {
+bool LimitOffsetIterator::DoInit() {
   if (m_source->Init()) {
     return true;
   }
@@ -128,7 +132,7 @@ bool LimitOffsetIterator::Init() {
   return false;
 }
 
-int LimitOffsetIterator::Read() {
+int LimitOffsetIterator::DoRead() {
   if (m_seen_rows >= m_limit) {
     // We either have hit our LIMIT, or we need to skip OFFSET rows.
     // Check which one.
@@ -192,12 +196,14 @@ int LimitOffsetIterator::Read() {
 
 AggregateIterator::AggregateIterator(
     THD *thd, unique_ptr_destroy_only<RowIterator> source, JOIN *join,
-    TableCollection tables, bool rollup)
+    TableCollection tables, std::span<AccessPath *> single_row_index_lookups,
+    bool rollup)
     : RowIterator(thd),
       m_source(std::move(source)),
       m_join(join),
       m_rollup(rollup),
-      m_tables(std::move(tables)) {
+      m_tables(std::move(tables)),
+      m_single_row_index_lookups(single_row_index_lookups) {
   if (!tables.has_blob_column()) {
     // If blob, we reserve lazily in StoreFromTableBuffers since we can't know
     // upper bound here.
@@ -208,22 +214,19 @@ AggregateIterator::AggregateIterator(
   }
 }
 
-bool AggregateIterator::Init() {
+bool AggregateIterator::DoInit() {
   assert(!m_join->tmp_table_param.precomputed_group_by);
 
   // Disable any leftover rollup items used in children.
   m_current_rollup_position = -1;
   SetRollupLevel(INT_MAX);
 
-  // If the iterator has been executed before, restore the state of
-  // the table buffers. This is needed for correctness if there is an
-  // EQRefIterator below this iterator, as the restoring of the
-  // previous group in Read() may have disturbed the cache in
-  // EQRefIterator.
-  if (!m_first_row_next_group.is_empty()) {
-    LoadIntoTableBuffers(
-        m_tables, pointer_cast<const uchar *>(m_first_row_next_group.ptr()));
-    m_first_row_next_group.length(0);
+  // Invalidate the cache in all single-row index lookups below us. The previous
+  // execution of the aggregation may have overwritten the cached value in
+  // EQRefIterator with a value from a different row, and the next read from the
+  // EQRefIterator must read the correct value from the index.
+  for (AccessPath *lookup : m_single_row_index_lookups) {
+    lookup->eq_ref().ref->key_err = true;
   }
 
   if (m_source->Init()) {
@@ -255,7 +258,7 @@ bool AggregateIterator::Init() {
   return false;
 }
 
-int AggregateIterator::Read() {
+int AggregateIterator::DoRead() {
   switch (m_state) {
     case READING_FIRST_ROW: {
       // Start the first group, if possible. (If we're not at the first row,
@@ -264,22 +267,9 @@ int AggregateIterator::Read() {
       if (err == -1) {
         m_seen_eof = true;
         m_state = DONE_OUTPUTTING_ROWS;
-        if (m_rollup && m_join->send_group_parts > 0) {
-          // No rows in result set, but we must output one grouping row: we
-          // just want the final totals row, not subtotals rows according
-          // to SQL standard.
-          SetRollupLevel(0);
-          if (m_output_slice != -1) {
-            m_join->set_ref_item_slice(m_output_slice);
-          }
-          return 0;
-        }
-        if (m_join->grouped || m_join->group_optimized_away) {
-          SetRollupLevel(m_join->send_group_parts);
-          return -1;
-        } else {
-          // If there's no GROUP BY, we need to output a row even if there are
-          // no input rows.
+        if (!(m_join->grouped || m_join->group_optimized_away) || m_rollup) {
+          // If there's no GROUP BY or if there is ROLLUP, we need to output
+          // a row even if there are no input rows.
 
           // Calculate aggregate functions for no rows
           for (Item *item : *m_join->get_current_fields()) {
@@ -302,10 +292,17 @@ int AggregateIterator::Read() {
           for (Item_sum **item = m_join->sum_funcs; *item != nullptr; ++item) {
             (*item)->clear();
           }
+          // No rows in result set, but we must output one grouping row: we
+          // just want the final totals row, not subtotals rows according
+          // to SQL standard.
+          SetRollupLevel(0);
+
           if (m_output_slice != -1) {
             m_join->set_ref_item_slice(m_output_slice);
           }
           return 0;
+        } else {
+          return -1;
         }
       }
       if (err != 0) return err;
@@ -340,6 +337,18 @@ int AggregateIterator::Read() {
         }
       }
 
+      // Invalidate the cache in EQRefIterators, if needed. The call to
+      // LoadIntoTableBuffers() above would usually restore the cache correctly
+      // to the values it had just after the previous call to m_source->Read().
+      // However, if the row was NULL-complemented, LoadIntoTableBuffers() will
+      // have overwritten the cached values with NULLs, and the cache must be
+      // invalidated.
+      for (AccessPath *lookup : m_single_row_index_lookups) {
+        if (lookup->eq_ref().table->has_null_row()) {
+          lookup->eq_ref().ref->key_err = true;
+        }
+      }
+
       // Keep reading rows as long as they are part of the existing group.
       for (;;) {
         int err = m_source->Read();
@@ -347,11 +356,6 @@ int AggregateIterator::Read() {
 
         if (err == -1) {
           m_seen_eof = true;
-
-          // We need to be able to restore the table buffers in Init()
-          // if the iterator is reexecuted (can happen if it's inside
-          // a correlated subquery).
-          StoreFromTableBuffers(m_tables, &m_first_row_next_group);
 
           // End of input rows; return the last group. (One would think this
           // LoadIntoTableBuffers() call is unneeded, since the last row read
@@ -482,7 +486,7 @@ void AggregateIterator::SetRollupLevel(int level) {
   }
 }
 
-bool NestedLoopIterator::Init() {
+bool NestedLoopIterator::DoInit() {
   if (m_source_outer->Init()) {
     return true;
   }
@@ -493,7 +497,7 @@ bool NestedLoopIterator::Init() {
   return false;
 }
 
-int NestedLoopIterator::Read() {
+int NestedLoopIterator::DoRead() {
   if (m_state == END_OF_ROWS) {
     return -1;
   }
@@ -1141,10 +1145,19 @@ class SpillState {
   /// chunks.
   size_t m_no_of_chunk_file_sets{0};
 
+  /// Anything more than two file sets is too slow, at least for large volume
+  /// which forces chunk file memory buffers to disk.
+  static const size_t m_max_sets{2};
+
   /// The current chunk under processing. 0-based.
   size_t m_current_chunk_file_set{0};
 
  public:
+  /// If we find that we need more than \c m_max_sets, we need to increase
+  /// space set for \c 'set_operations_buffer_size' by this factor for best
+  /// performance.
+  size_t m_factor_too_little_memory{2};
+
   size_t current_chunk_file_set() const { return m_current_chunk_file_set; }
 
  private:
@@ -1286,9 +1299,6 @@ class MaterializeIterator final : public TableRowIterator {
                       unique_ptr_destroy_only<RowIterator> table_iterator,
                       JOIN *join);
 
-  bool Init() override;
-  int Read() override;
-
   void SetNullRowFlag(bool is_null_row) override {
     m_table_iterator->SetNullRowFlag(is_null_row);
   }
@@ -1310,6 +1320,9 @@ class MaterializeIterator final : public TableRowIterator {
   }
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   Operands m_operands;
   unique_ptr_destroy_only<RowIterator> m_table_iterator;
 
@@ -1514,7 +1527,7 @@ MaterializeIterator<Profiler>::MaterializeIterator(
 }
 
 template <typename Profiler>
-bool MaterializeIterator<Profiler>::Init() {
+bool MaterializeIterator<Profiler>::DoInit() {
   const typename Profiler::TimeStamp start_time = Profiler::Now();
 
   if (!table()->materialized && table()->pos_in_table_list != nullptr &&
@@ -1779,7 +1792,7 @@ bool MaterializeIterator<Profiler>::MaterializeRecursive() {
   ha_rows stored_rows = 0;
 
   // Give each recursive iterator access to the stored number of rows
-  // (see FollowTailIterator::Read() for details).
+  // (see FollowTailIterator::DoRead() for details).
   for (const Operand &operand : m_operands) {
     if (operand.is_recursive_reference) {
       operand.recursive_reader->set_stored_rows_pointer(&stored_rows);
@@ -2116,10 +2129,9 @@ bool MaterializeIterator<Profiler>::check_unique_fields_hash_map(TABLE *t,
       return true;
     }
 
-    Prealloced_array<TABLE *, 4> ta(key_memory_hash_op, 1);
-    ta[0] = t;
-    TableCollection tc(ta, false, 0, 0);
-    m_table_collection = tc;
+    m_table_collection = {/*tables=*/{t},
+                          /*store_rowids=*/false,
+                          /*tables_to_get_rowid_for=*/0};
     if (!m_table_collection.has_blob_column()) {
       m_row_size_upper_bound =
           ComputeRowSizeUpperBoundSansBlobs(m_table_collection);
@@ -2271,9 +2283,20 @@ bool MaterializeIterator<Profiler>::handle_hash_map_full(
            (!m_spill_state.spill() && single_row_too_large));
     Opt_trace_context *trace = &thd()->opt_trace;
     Opt_trace_object trace_wrapper(trace);
+    char buff[512];
+    snprintf(buff, sizeof(buff),
+             "hash spill handling overflow, reverting to slower method "
+             "of indexed tmp table. To avoid, try setting "
+             "set_operations_buffer_size to %lli or more. To avoid "
+             "spill to disk, further increase it with a factor of %zu "
+             "or %zu.",
+             m_spill_state.m_factor_too_little_memory *
+                 thd()->variables.set_operations_buffer_size,
+             HashJoinIterator::kMaxChunks / 2, HashJoinIterator::kMaxChunks);
+
     Opt_trace_object trace_exec(
         trace, m_spill_state.spill()
-                   ? "spill handling overflow, reverting to index"
+                   ? buff
                    : "spill handling not attempted due to large row, reverting "
                      "to index");
     Opt_trace_array trace_steps(trace, "steps");
@@ -2283,6 +2306,9 @@ bool MaterializeIterator<Profiler>::handle_hash_map_full(
       m_spill_state.set_secondary_overflow();
       // Save current row for later use, see save_operand_to_IF_chunk_files
       if (m_spill_state.save_offending_row()) return true;
+
+      push_warning(thd(), Sql_condition::SL_NOTE, ER_WARN_SET_OPERATIONS_BUFFER,
+                   ER_THD(thd(), ER_WARN_SET_OPERATIONS_BUFFER));
     }
 
     TABLE *const t = table();
@@ -2938,7 +2964,7 @@ bool MaterializeIterator<Profiler>::MaterializeOperand(const Operand &operand,
 }
 
 template <typename Profiler>
-int MaterializeIterator<Profiler>::Read() {
+int MaterializeIterator<Profiler>::DoRead() {
   const typename Profiler::TimeStamp start_time = Profiler::Now();
   /*
     Enable the items which one should use if one wants to evaluate
@@ -3011,6 +3037,19 @@ bool SpillState::compute_chunk_file_sets(const Operand *current_operand) {
   m_num_chunks = std::bit_ceil(num_chunks);
   m_no_of_chunk_file_sets = (m_num_chunks + HashJoinIterator::kMaxChunks - 1) /
                             HashJoinIterator::kMaxChunks;
+
+  if (m_no_of_chunk_file_sets > m_max_sets) {
+    // By increasing set_operations_buffer_size we should get down to
+    // one file set if uniform row sizes.
+    m_factor_too_little_memory = m_no_of_chunk_file_sets;
+
+    // We have too little memory set aside for set_operations_buffer_size and/or
+    // the number of estimated row is too high. Use max sets. If this is not
+    // enough, user needs to increase set_operations_buffer_size, cf.
+    // diagnostics given when we get secondary overflow (handle_hash_map_full).
+    m_num_chunks = HashJoinIterator::kMaxChunks;
+    m_no_of_chunk_file_sets = m_max_sets;
+  }
   m_current_chunk_file_set = 0;
 
   // Save offending row, we may not be able to write it in first set of
@@ -3037,12 +3076,17 @@ bool SpillState::compute_chunk_file_sets(const Operand *current_operand) {
     }
   }
 
-  m_chunk_files.resize(std::min(m_num_chunks, HashJoinIterator::kMaxChunks));
+  if (m_chunk_files.resize(
+          std::min(m_num_chunks, HashJoinIterator::kMaxChunks))) {
+    return true;
+  }
 
   /// Set aside space for current generation of chunk row counters. This is
   /// a two dimensional matrix. Each element is allocated in
   /// initialize_first_HF_chunk_files
-  m_row_counts.resize(m_chunk_files.size());
+  if (m_row_counts.resize(m_chunk_files.size())) {
+    return true;
+  }
 
   Opt_trace_context *const trace = &m_thd->opt_trace;
   Opt_trace_object trace_wrapper(trace);
@@ -3067,7 +3111,9 @@ bool SpillState::initialize_first_HF_chunk_files() {
     }
     // Initialize counters matrix
     Mem_root_array<CountPair> ma(m_thd->mem_root, 1);
-    ma.resize(m_no_of_chunk_file_sets);
+    if (ma.resize(m_no_of_chunk_file_sets)) {
+      return true;
+    }
     m_row_counts[i] = std::move(ma);
   }
 
@@ -3501,10 +3547,8 @@ bool SpillState::init(const Operand &left_operand, hash_map_type *hash_map,
   // prepare m_materialized_table as a TableCollection; this is needed by
   // some APIs we use
   {
-    Prealloced_array<TABLE *, 4> ta(key_memory_hash_op, 1);
-    ta[0] = t;
-    pack_rows::TableCollection tc(ta, false, 0, 0);
-    m_table_collection = tc;
+    m_table_collection = {/*tables=*/{t}, /*store_rowids=*/false,
+                          /*tables_to_get_rowid_for=*/0};
   }
   // Use different hash seed for chunking of EXCEPT and INTERSECT
   // to avoid effects of initial set of rows all from one set op
@@ -3748,7 +3792,7 @@ StreamingIterator::StreamingIterator(
   }
 }
 
-bool StreamingIterator::Init() {
+bool StreamingIterator::DoInit() {
   if (m_join->query_expression()->clear_correlated_query_blocks()) return true;
 
   if (m_provide_rowid) {
@@ -3771,7 +3815,7 @@ bool StreamingIterator::Init() {
   return m_subquery_iterator->Init();
 }
 
-int StreamingIterator::Read() {
+int StreamingIterator::DoRead() {
   /*
     Enable the items which one should use if one wants to evaluate
     anything (e.g. functions in WHERE, HAVING) involving columns of this
@@ -3817,8 +3861,6 @@ class TemptableAggregateIterator final : public TableRowIterator {
       unique_ptr_destroy_only<RowIterator> table_iterator, JOIN *join,
       int ref_slice);
 
-  bool Init() override;
-  int Read() override;
   void SetNullRowFlag(bool is_null_row) override {
     m_table_iterator->SetNullRowFlag(is_null_row);
   }
@@ -3838,6 +3880,9 @@ class TemptableAggregateIterator final : public TableRowIterator {
   }
 
  private:
+  bool DoInit() override;
+  int DoRead() override;
+
   /// The iterator we are reading rows from.
   unique_ptr_destroy_only<RowIterator> m_subquery_iterator;
 
@@ -3907,7 +3952,7 @@ TemptableAggregateIterator<Profiler>::TemptableAggregateIterator(
       m_ref_slice(ref_slice) {}
 
 template <typename Profiler>
-bool TemptableAggregateIterator<Profiler>::Init() {
+bool TemptableAggregateIterator<Profiler>::DoInit() {
   // NOTE: We never scan these tables more than once, so we don't need to
   // check whether we have already materialized.
 
@@ -3917,6 +3962,8 @@ bool TemptableAggregateIterator<Profiler>::Init() {
   trace_exec.add_select_number(m_join->query_block->select_number);
   Opt_trace_array trace_steps(trace, "steps");
   const typename Profiler::TimeStamp start_time = Profiler::Now();
+  // The input to the aggregation should be read from the base slice.
+  m_join->set_ref_item_slice(REF_SLICE_SAVED_BASE);
 
   if (m_subquery_iterator->Init()) {
     return true;
@@ -4133,7 +4180,7 @@ bool TemptableAggregateIterator<Profiler>::Init() {
 }
 
 template <typename Profiler>
-int TemptableAggregateIterator<Profiler>::Read() {
+int TemptableAggregateIterator<Profiler>::DoRead() {
   const typename Profiler::TimeStamp start_time = Profiler::Now();
 
   /*
@@ -4186,7 +4233,7 @@ MaterializedTableFunctionIterator::MaterializedTableFunctionIterator(
       m_table_iterator(std::move(table_iterator)),
       m_table_function(table_function) {}
 
-bool MaterializedTableFunctionIterator::Init() {
+bool MaterializedTableFunctionIterator::DoInit() {
   if (!table()->materialized) {
     // Create the table if it's the very first time.
     if (table()->pos_in_table_list->create_materialized_table(thd())) {
@@ -4212,7 +4259,7 @@ WeedoutIterator::WeedoutIterator(THD *thd,
   assert(m_sj->tmp_table != nullptr);
 }
 
-bool WeedoutIterator::Init() {
+bool WeedoutIterator::DoInit() {
   if (m_sj->tmp_table->file->ha_delete_all_rows()) {
     return true;
   }
@@ -4229,7 +4276,7 @@ bool WeedoutIterator::Init() {
   return m_source->Init();
 }
 
-int WeedoutIterator::Read() {
+int WeedoutIterator::DoRead() {
   for (;;) {
     int ret = m_source->Read();
     if (ret != 0) {
@@ -4262,22 +4309,22 @@ int WeedoutIterator::Read() {
 
 RemoveDuplicatesIterator::RemoveDuplicatesIterator(
     THD *thd, unique_ptr_destroy_only<RowIterator> source, JOIN *join,
-    Item **group_items, int group_items_size)
+    std::span<Item *> group_items)
     : RowIterator(thd), m_source(std::move(source)) {
   m_caches = Bounds_checked_array<Cached_item *>::Alloc(thd->mem_root,
-                                                        group_items_size);
-  for (int i = 0; i < group_items_size; ++i) {
+                                                        group_items.size());
+  for (size_t i = 0; i < group_items.size(); ++i) {
     m_caches[i] = new_Cached_item(thd, group_items[i]);
     join->semijoin_deduplication_fields.push_back(m_caches[i]);
   }
 }
 
-bool RemoveDuplicatesIterator::Init() {
+bool RemoveDuplicatesIterator::DoInit() {
   m_first_row = true;
   return m_source->Init();
 }
 
-int RemoveDuplicatesIterator::Read() {
+int RemoveDuplicatesIterator::DoRead() {
   for (;;) {
     int err = m_source->Read();
     if (err != 0) {
@@ -4314,12 +4361,12 @@ RemoveDuplicatesOnIndexIterator::RemoveDuplicatesOnIndexIterator(
       m_key_buf(new(thd->mem_root) uchar[key_len]),
       m_key_len(key_len) {}
 
-bool RemoveDuplicatesOnIndexIterator::Init() {
+bool RemoveDuplicatesOnIndexIterator::DoInit() {
   m_first_row = true;
   return m_source->Init();
 }
 
-int RemoveDuplicatesOnIndexIterator::Read() {
+int RemoveDuplicatesOnIndexIterator::DoRead() {
   for (;;) {
     int err = m_source->Read();
     if (err != 0) {
@@ -4331,7 +4378,9 @@ int RemoveDuplicatesOnIndexIterator::Read() {
       return 1;
     }
 
-    if (!m_first_row && key_cmp(m_key->key_part, m_key_buf, m_key_len) == 0) {
+    if (!m_first_row &&
+        key_cmp(m_key->key_part, m_key_buf, m_key_len,
+                /*is_reverse_multi_valued_index_scan=*/false) == 0) {
       // Same as previous row, so keep scanning.
       continue;
     }
@@ -4358,7 +4407,7 @@ NestedLoopSemiJoinWithDuplicateRemovalIterator::
   assert(m_source_inner != nullptr);
 }
 
-bool NestedLoopSemiJoinWithDuplicateRemovalIterator::Init() {
+bool NestedLoopSemiJoinWithDuplicateRemovalIterator::DoInit() {
   if (m_source_outer->Init()) {
     return true;
   }
@@ -4366,7 +4415,7 @@ bool NestedLoopSemiJoinWithDuplicateRemovalIterator::Init() {
   return false;
 }
 
-int NestedLoopSemiJoinWithDuplicateRemovalIterator::Read() {
+int NestedLoopSemiJoinWithDuplicateRemovalIterator::DoRead() {
   m_source_inner->SetNullRowFlag(false);
 
   for (;;) {  // Termination condition within loop.
@@ -4383,7 +4432,8 @@ int NestedLoopSemiJoinWithDuplicateRemovalIterator::Read() {
       }
 
       if (m_deduplicate_against_previous_row &&
-          key_cmp(m_key->key_part, m_key_buf, m_key_len) == 0) {
+          key_cmp(m_key->key_part, m_key_buf, m_key_len,
+                  /*is_reverse_multi_valued_index_scan=*/false) == 0) {
         // Same as previous row, so keep scanning.
         continue;
       }
@@ -4430,7 +4480,7 @@ MaterializeInformationSchemaTableIterator::
       m_table_list(table_list),
       m_condition(condition) {}
 
-bool MaterializeInformationSchemaTableIterator::Init() {
+bool MaterializeInformationSchemaTableIterator::DoInit() {
   if (!m_table_list->schema_table_filled) {
     m_table_list->table->file->ha_extra(HA_EXTRA_RESET_STATE);
     m_table_list->table->file->ha_delete_all_rows();
@@ -4453,13 +4503,13 @@ AppendIterator::AppendIterator(
   assert(!m_sub_iterators.empty());
 }
 
-bool AppendIterator::Init() {
+bool AppendIterator::DoInit() {
   m_current_iterator_index = 0;
   m_pfs_batch_mode_enabled = false;
   return m_sub_iterators[0]->Init();
 }
 
-int AppendIterator::Read() {
+int AppendIterator::DoRead() {
   if (m_current_iterator_index >= m_sub_iterators.size()) {
     // Already exhausted all iterators.
     return -1;

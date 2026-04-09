@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -636,7 +636,6 @@ class Gtid_mode {
       anonymous; replicated GTID-transactions generate an error.
     */
     OFF = 0,
-    DEFAULT = OFF,
     /**
       New transactions are anonyomus. Replicated transactions can be
       either anonymous or GTID-transactions.
@@ -652,7 +651,8 @@ class Gtid_mode {
       must be GTID-transactions; replicated anonymous transactions
       generate an error.
     */
-    ON = 3
+    ON = 3,
+    DEFAULT = ON,
   };
 
   /**
@@ -788,7 +788,7 @@ class Tsid_map {
     not exist, an existing if it did exist).
     @retval negative Error. This function calls my_error.
   */
-  [[NODISCARD]] rpl_sidno add_tsid(const Tsid &tsid);
+  [[nodiscard]] rpl_sidno add_tsid(const Tsid &tsid);
   /**
     Get the SIDNO for a given TSID
 
@@ -898,7 +898,7 @@ class Tsid_map {
     @param tsid The TSID to add.
     @return RETURN_STATUS_OK or RETURN_STATUS_REPORTED_ERROR.
   */
-  [[NODISCARD]] enum_return_status add_node(rpl_sidno sidno, const Tsid &tsid);
+  [[nodiscard]] enum_return_status add_node(rpl_sidno sidno, const Tsid &tsid);
 
   /// Read-write lock that protects updates to the number of SIDNOs.
   mutable Checkable_rwlock *tsid_lock;
@@ -1173,7 +1173,7 @@ struct Gtid {
     @param text The text to parse
     @return status of operation
   */
-  [[NODISCARD]] mysql::utils::Return_status parse(Tsid_map *tsid_map,
+  [[nodiscard]] mysql::utils::Return_status parse(Tsid_map *tsid_map,
                                                   const char *text);
 
   /// @brief Parses TAG from a textual representation of the GTID (text)
@@ -1739,7 +1739,7 @@ class Gtid_set {
   /// @brief Adds specified GTID (TSID+GNO) to this Gtid_set.
   /// @param gtid mysql::gtid::Gtid object
   /// @return RETURN_STATUS_OK or RETURN_STATUS_REPORTED_ERROR.
-  [[NODISCARD]] enum_return_status add_gtid(const mysql::gtid::Gtid &gtid);
+  [[nodiscard]] enum_return_status add_gtid(const mysql::gtid::Gtid &gtid);
 
   /**
     Decodes a Gtid_set from the given string.
@@ -2265,6 +2265,27 @@ class Gtid_set {
   /// @return true in case gtid sets contain the same GTIDs
   bool equals(const Gtid_set *other) const;
 
+  /// Return the number of intervals for the given sidno.
+  int get_n_intervals(rpl_sidno sidno) const {
+    Const_interval_iterator ivit(this, sidno);
+    int ret = 0;
+    while (ivit.get() != nullptr) {
+      ret++;
+      ivit.next();
+    }
+    return ret;
+  }
+
+  /// Return the number of intervals in this Gtid_set.
+  int get_n_intervals() const {
+    if (tsid_lock != nullptr) tsid_lock->assert_some_wrlock();
+    rpl_sidno max_sidno = get_max_sidno();
+    int ret = 0;
+    for (rpl_sidno sidno = 1; sidno < max_sidno; sidno++)
+      ret += get_n_intervals(sidno);
+    return ret;
+  }
+
  private:
   /**
     Contains a list of intervals allocated by this Gtid_set.  When a
@@ -2290,26 +2311,6 @@ class Gtid_set {
   */
   bool sidno_equals(rpl_sidno sidno, const Gtid_set *other,
                     rpl_sidno other_sidno) const;
-
-  /// Return the number of intervals for the given sidno.
-  int get_n_intervals(rpl_sidno sidno) const {
-    Const_interval_iterator ivit(this, sidno);
-    int ret = 0;
-    while (ivit.get() != nullptr) {
-      ret++;
-      ivit.next();
-    }
-    return ret;
-  }
-  /// Return the number of intervals in this Gtid_set.
-  int get_n_intervals() const {
-    if (tsid_lock != nullptr) tsid_lock->assert_some_wrlock();
-    rpl_sidno max_sidno = get_max_sidno();
-    int ret = 0;
-    for (rpl_sidno sidno = 1; sidno < max_sidno; sidno++)
-      ret += get_n_intervals(sidno);
-    return ret;
-  }
 
   /// @brief Goes through recorded tsids. In case any of the TSIDs has a tag,
   /// this function will return Gtid_format::tagged. Otherwise, it will
@@ -4112,7 +4113,7 @@ struct Gtid_specification {
     @param text The text to parse
     @return operation status
   */
-  [[NODISCARD]] mysql::utils::Return_status parse(Tsid_map *tsid_map,
+  [[nodiscard]] mysql::utils::Return_status parse(Tsid_map *tsid_map,
                                                   const char *text);
 
   /// @brief Returns true if the given string is a valid Gtid_specification.

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,3 +23,11 @@
 
 INCLUDE_DIRECTORIES(SYSTEM ${GMOCK_INCLUDE_DIRS})
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/tests/)
+
+SET(TEST_MODULE "connection_pool")
+
+ADD_TEST_FILE(test_connection_pool_concurrency.cc
+  MODULE ${TEST_MODULE}
+  LIB_DEPENDS
+    connection_pool
+)

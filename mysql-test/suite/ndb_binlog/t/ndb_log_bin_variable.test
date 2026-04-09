@@ -1,0 +1,24 @@
+-- source include/have_ndb.inc
+
+--echo #
+--echo # Bug#32860560 NDB_LOG_BIN: INCONSISTENT BEHAVIOUR WHEN SET DYNAMICALLY
+--echo # - it's not possible to change --ndb-log-bin at runtime, make sure it's
+--echo #   there, can be queried and are readonly
+#
+# only global
+#
+select @@global.ndb_log_bin;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+select @@session.ndb_log_bin;
+show global variables like 'ndb_log_bin';
+show session variables like 'ndb_log_bin';
+select * from performance_schema.global_variables where variable_name='ndb_log_bin';
+select * from performance_schema.session_variables where variable_name='ndb_log_bin';
+
+#
+# show that it's read-only
+#
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set global ndb_log_bin=0;
+--error ER_INCORRECT_GLOBAL_LOCAL_VAR
+set session ndb_log_bin=0;

@@ -1,7 +1,7 @@
 #ifndef THR_COND_INCLUDED
 #define THR_COND_INCLUDED
 
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -41,17 +41,15 @@
        See include/mysql/psi/mysql_thread.h
 */
 
-#include <stddef.h>
 #include <sys/types.h>
 #ifdef _WIN32
 #include <time.h>
+#include "my_inttypes.h"
 #include "my_systime.h"
 #endif
 
-#include "my_macros.h"
-#include "my_thread.h"
 #include "mysql/components/services/bits/thr_cond_bits.h"
-#include "thr_mutex.h"
+#include "mysql/components/services/bits/thr_mutex_bits.h"
 
 #ifdef _WIN32
 /**
@@ -129,6 +127,7 @@ static inline int native_cond_broadcast(native_cond_t *cond) {
 }
 
 #ifdef SAFE_MUTEX
+struct safe_mutex_t;
 int safe_cond_wait(native_cond_t *cond, safe_mutex_t *mp, const char *file,
                    uint line);
 int safe_cond_timedwait(native_cond_t *cond, safe_mutex_t *mp,

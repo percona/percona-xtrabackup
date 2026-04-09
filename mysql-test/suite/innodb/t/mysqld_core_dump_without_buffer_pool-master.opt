@@ -1,3 +1,4 @@
 --core-file
 --skip-innodb-buffer-pool-in-core-file
---innodb-buffer-pool-size=2450M
+--innodb-buffer-pool-size=1700M
+--innodb-buffer-pool-instances=1

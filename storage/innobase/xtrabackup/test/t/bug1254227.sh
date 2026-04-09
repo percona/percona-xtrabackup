@@ -8,7 +8,7 @@ start_server
 
 mkfifo $topdir/fifo
 
-$MYSQL $MYSQL_ARGS <$topdir/fifo &
+$MYSQL $MYSQL_ARGS --commands <$topdir/fifo &
 
 client_pid=$!
 

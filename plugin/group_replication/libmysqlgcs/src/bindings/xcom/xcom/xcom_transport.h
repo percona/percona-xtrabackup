@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -255,5 +255,6 @@ int is_new_node_eligible_for_ipv6(xcom_proto incoming_proto,
 #define INITIAL_CONNECT_WAIT 0.1
 #define MAX_CONNECT_WAIT 10.0
 #define CONNECT_WAIT_INCREASE 1.0
+#define MAX_CONNECT_WAIT_TOTAL_TIME 300.0
 
 #endif

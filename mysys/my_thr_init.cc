@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,36 +32,34 @@
   thread variables.
 */
 
-#include <stdlib.h>
-#include <sys/types.h>
+#include <cassert>
+#include <cstdlib>  // IWYU pragma: keep free()
 #ifdef _WIN32
 #include <signal.h>
 #endif
-#include <time.h>
+#include <ctime>  // IWYU pragma: keep timespec
 
-#include "my_dbug.h"
-#include "my_inttypes.h"
-#include "my_macros.h"
+#include "my_dbug.h"  // IWYU pragma: keep DBUG_POP()
 #include "my_psi_config.h"
 #include "my_sys.h"
-#include "my_systime.h"
+#include "my_systime.h"  // IWYU pragma: keep Timeout_type
 #include "my_thread.h"
 #include "my_thread_local.h"
-#include "mysql/my_loglevel.h"
-#include "mysql/psi/mysql_cond.h"
+#include "mysql/my_loglevel.h"     // IWYU pragma: keep ERROR_LEVEL
+#include "mysql/psi/mysql_cond.h"  // IWYU pragma: keep mysql_cond_destroy
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/psi/mysql_thread.h"
-#include "mysql/psi/psi_thread.h"
 #include "mysys/mysys_priv.h"
-#include "mysys_err.h"
+#include "mysys_err.h"  // IWYU pragma: keep EE_FAILED_TO_KILL_ALL_THREADS
 #include "thr_mutex.h"
 
 static bool my_thread_global_init_done = false;
 #ifndef NDEBUG
-static uint THR_thread_count = 0;
+static unsigned THR_thread_count = 0;
 static Timeout_type my_thread_end_wait_time = 5;
 static my_thread_id thread_id = 0;
 struct st_my_thread_var;
+static st_my_thread_var *THR_mysys_main = nullptr;
 static thread_local st_my_thread_var *THR_mysys = nullptr;
 #endif
 static thread_local int THR_myerrno = 0;
@@ -92,6 +90,7 @@ static void install_sigabrt_handler();
 #endif
 
 #ifndef NDEBUG
+struct CODE_STATE;
 struct st_my_thread_var {
   my_thread_id id;
   struct CODE_STATE *dbug;
@@ -103,6 +102,8 @@ static int set_mysys_thread_var(struct st_my_thread_var *mysys_var) {
   THR_mysys = mysys_var;
   return 0;
 }
+
+static void free_dbug_and_decr_thread_count(st_my_thread_var *);
 #endif
 
 /**
@@ -279,6 +280,7 @@ bool my_thread_init() {
 
   mysql_mutex_lock(&THR_LOCK_threads);
   tmp->id = ++thread_id;
+  if (thread_id == 1) THR_mysys_main = tmp;
   ++THR_thread_count;
   mysql_mutex_unlock(&THR_LOCK_threads);
   set_mysys_thread_var(tmp);
@@ -301,6 +303,7 @@ bool my_thread_is_inited() {
   return true;
 #endif
 }
+
 /**
   Deallocate memory used by the thread for book-keeping
 
@@ -310,10 +313,6 @@ bool my_thread_is_inited() {
 */
 
 void my_thread_end() {
-#ifndef NDEBUG
-  struct st_my_thread_var *tmp = mysys_thread_var();
-#endif
-
 #ifdef HAVE_PSI_THREAD_INTERFACE
   /*
     Remove the instrumentation for this thread.
@@ -324,6 +323,21 @@ void my_thread_end() {
 #endif
 
 #if !defined(NDEBUG)
+  free_dbug_and_decr_thread_count(mysys_thread_var());
+  set_mysys_thread_var(nullptr);
+#endif
+}
+
+#if !defined(NDEBUG)
+/* my_main_thread_end() is used when my_end() is called from a different
+   thread than my_init() and with flag MY_END_PROXY_MAIN_THD set.
+*/
+extern void my_main_thread_end() {
+  assert(mysys_thread_var() == nullptr);  // calling thread is not a mysys thd
+  free_dbug_and_decr_thread_count(THR_mysys_main);
+}
+
+static void free_dbug_and_decr_thread_count(st_my_thread_var *tmp) {
   if (tmp) {
     /* tmp->dbug is allocated inside DBUG library */
     if (tmp->dbug) {
@@ -344,9 +358,8 @@ void my_thread_end() {
     if (--THR_thread_count == 0) mysql_cond_signal(&THR_COND_threads);
     mysql_mutex_unlock(&THR_LOCK_threads);
   }
-  set_mysys_thread_var(nullptr);
-#endif
 }
+#endif
 
 int my_errno() { return THR_myerrno; }
 

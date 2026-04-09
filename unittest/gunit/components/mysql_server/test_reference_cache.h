@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -29,6 +29,10 @@
 BEGIN_SERVICE_DEFINITION(mysql_test_foo)
 DECLARE_BOOL_METHOD(emit, (int arg));
 END_SERVICE_DEFINITION(mysql_test_foo)
+
+BEGIN_SERVICE_DEFINITION(test_ref_cache_post_load_init)
+DECLARE_BOOL_METHOD(mysql_test_ref_cache_init, ());
+END_SERVICE_DEFINITION(test_ref_cache_post_load_init)
 
 BEGIN_SERVICE_DEFINITION(test_ref_cache_producer)
 DECLARE_BOOL_METHOD(mysql_test_ref_cache_produce_event, (int arg));

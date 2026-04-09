@@ -508,7 +508,7 @@ f1	SUM(f2) OVER(PARTITION BY f1)
 3	33
 4	44
 EXPLAIN FORMAT=tree SELECT *
-FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f2)
+FROM (SELECT SQL_SMALL_RESULT f1, f2, SUM(f3) OVER(PARTITION BY f2)
 FROM t1 GROUP BY f1) as dt WHERE f2 > 30;
 EXPLAIN
 -> Table scan on dt  (rows=0)
@@ -521,13 +521,13 @@ EXPLAIN
                             -> Table scan on t1  (rows=12)
 
 SELECT *
-FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f2)
+FROM (SELECT SQL_SMALL_RESULT f1, f2, SUM(f3) OVER(PARTITION BY f2)
 FROM t1 GROUP BY f1) as dt WHERE f2 > 30;
 f1	f2	SUM(f3) OVER(PARTITION BY f2)
 3	33	333
 4	44	444
 EXPLAIN FORMAT=tree SELECT *
-FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1)
+FROM (SELECT SQL_SMALL_RESULT f1, f2, SUM(f3) OVER(PARTITION BY f1)
 FROM t1 GROUP BY f1) as dt
 WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
 EXPLAIN
@@ -541,13 +541,14 @@ EXPLAIN
                             -> Index range scan on t1 using f1 over (2 < f1), with index condition: (t1.f1 > 2)  (rows=4)
 
 SELECT *
-FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1)
+FROM (SELECT SQL_SMALL_RESULT f1, f2, SUM(f3) OVER(PARTITION BY f1)
 FROM t1 GROUP BY f1) as dt
 WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
 f1	f2	SUM(f3) OVER(PARTITION BY f1)
 4	44	444
 EXPLAIN FORMAT=tree SELECT *
-FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1,f2)
+FROM (SELECT SQL_SMALL_RESULT f1, f2,
+SUM(f3) OVER(PARTITION BY f1,f2)
 FROM t1 GROUP BY f1) as dt
 WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
 EXPLAIN
@@ -561,13 +562,15 @@ EXPLAIN
                             -> Index range scan on t1 using f1 over (2 < f1), with index condition: (t1.f1 > 2)  (rows=4)
 
 SELECT *
-FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1,f2)
+FROM (SELECT SQL_SMALL_RESULT f1, f2,
+SUM(f3) OVER(PARTITION BY f1,f2)
 FROM t1 GROUP BY f1) as dt
 WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
 f1	f2	SUM(f3) OVER(PARTITION BY f1,f2)
 4	44	444
 EXPLAIN FORMAT=tree SELECT *
-FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1,f2),
+FROM (SELECT SQL_SMALL_RESULT f1, f2,
+SUM(f3) OVER(PARTITION BY f1,f2),
 AVG(f3) OVER (PARTITION BY f1)
 FROM t1 GROUP BY f1) as dt
 WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
@@ -586,7 +589,8 @@ EXPLAIN
                                             -> Index range scan on t1 using f1 over (2 < f1), with index condition: (t1.f1 > 2)  (rows=4)
 
 SELECT *
-FROM (SELECT f1, f2, SUM(f3) OVER(PARTITION BY f1,f2),
+FROM (SELECT SQL_SMALL_RESULT f1, f2,
+SUM(f3) OVER(PARTITION BY f1,f2),
 AVG(f3) OVER (PARTITION BY f1)
 FROM t1 GROUP BY f1) as dt
 WHERE f1 > 2 and f2 > 30 and (f1+f2) > 40;
@@ -2468,3 +2472,53 @@ GROUP BY field1) dt2
 WHERE dt2.field1 = 1);
 f1
 DROP TABLE t1;
+#
+# Bug#37111452: Error selecting from a view where the view and
+#               the connection charset differs
+#
+CREATE TABLE t1 (c1 CHAR(10)) DEFAULT CHARSET=latin1 COLLATE=latin1_spanish_ci;
+CREATE TABLE t2 (c1 char(10)) DEFAULT CHARSET=latin1 COLLATE=latin1_spanish_ci;
+INSERT INTO t1 VALUES (1);
+INSERT INTO t2 VALUES (1);
+SET @create_view_utf8 =
+"CREATE VIEW v1 AS
+ SELECT '0000000001þ' COLLATE latin1_spanish_ci AS tipos FROM t1
+ UNION
+ SELECT '0000000001þ' COLLATE latin1_spanish_ci AS tipos from t2";
+SELECT CAST(@create_view_utf8 AS CHAR CHARACTER SET latin1)
+INTO @create_view_latin1;
+SET @select_utf8 = "SELECT * FROM v1 WHERE tipos IN ('0000000001þ')";
+SELECT CAST(@select_utf8 AS CHAR CHARACTER SET latin1) INTO @select_latin1;
+SET character_set_client = latin1;
+SET character_set_connection = latin1;
+prepare ps FROM @create_view_latin1;
+execute ps;
+prepare ps_select_latin1_on FROM @select_latin1;
+execute ps_select_latin1_on;
+tipos
+0000000001þ
+SET optimizer_switch="derived_condition_pushdown=off";
+prepare ps_select_latin1_off FROM @select_latin1;
+execute ps_select_latin1_off;
+tipos
+0000000001þ
+SET character_set_client = DEFAULT;
+SET character_set_connection = DEFAULT;
+SET optimizer_switch="derived_condition_pushdown=on";
+prepare ps_select_utf8_on FROM @select_utf8;
+execute ps_select_utf8_on;
+tipos
+0000000001þ
+SET optimizer_switch="derived_condition_pushdown=off";
+prepare ps_select_utf8_off FROM @select_utf8;
+execute ps_select_utf8_off;
+tipos
+0000000001þ
+SET optimizer_switch="derived_condition_pushdown=on";
+DEALLOCATE PREPARE ps;
+DEALLOCATE PREPARE ps_select_utf8_on;
+DEALLOCATE PREPARE ps_select_utf8_off;
+DEALLOCATE PREPARE ps_select_latin1_on;
+DEALLOCATE PREPARE ps_select_latin1_off;
+DROP VIEW v1;
+DROP TABLE t1, t2;

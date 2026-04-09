@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,7 +33,23 @@ public class ClusterJDatastoreException extends ClusterJException {
 
     private static final long serialVersionUID = 2208896230646592560L;
 
-    private int code = 0;
+    protected static final int HA_ERR_NO_SUCH_TABLE = 155;
+
+    protected static final int HA_ERR_TABLE_DEF_CHANGED = 159;
+
+    private static final int ndberror_st_temporary = 1;
+
+    private static final int ndberror_st_permanent = 2;
+
+    protected int code = 0;
+
+    protected int mysqlCode = 0;
+
+    protected int status = 0;
+
+    protected int classification = 0;
+
+    private Object syncObject = null;
 
     /** Get the code
      @since 7.3.15, 7.4.13, 7.5.4
@@ -42,8 +58,6 @@ public class ClusterJDatastoreException extends ClusterJException {
         return code;
     }
 
-    private int mysqlCode = 0;
-
     /** Get the mysql code
      @since 7.3.15, 7.4.13, 7.5.4
      */
@@ -51,15 +65,11 @@ public class ClusterJDatastoreException extends ClusterJException {
         return mysqlCode;
     }
 
-    private int status = 0;
-
     /** Get the status
      */
     public int getStatus() {
         return status;
     }
-
-    private int classification = 0;
 
     /** Get the classification
      */
@@ -67,6 +77,70 @@ public class ClusterJDatastoreException extends ClusterJException {
         return classification;
     }
 
+    /** canRetry()
+     * @return true if the error is an Ndb temporary error,
+     * and the operation can be retried.
+     * @since 9.4.0
+     */
+    public boolean canRetry() {
+        return (status == ndberror_st_temporary);
+    }
+
+    /** tableNotFound()
+     *  @return true if the error is a "Table Not Found" condition
+     *  @since 9.4.0
+     */
+    public boolean tableNotFound() {
+        return (mysqlCode == HA_ERR_NO_SUCH_TABLE);
+    }
+
+    /** isStaleMetadata() returns true if the exception was caused by stale
+     *  metadata encountered while attempting to perform a data operation.
+     *  On true, the user should call session.unloadSchema() to refresh the
+     *  metadata, then retry.
+     */
+    public boolean isStaleMetadata() {
+        // Check whether schema change handling has already started
+        if (isSchemaChangePending()) return false;
+
+        // Table definition has changed - codes 241, 284, and 20021
+        if (mysqlCode == HA_ERR_TABLE_DEF_CHANGED) return true;
+
+        // Table is being dropped
+        if (code == 283 || code == 1226) return true;
+
+        // Index is being dropped
+        if (code == 910) return true;
+
+        // Schema object is busy with another schema transaction
+        if (code == 785) return true;
+
+        // NdbRecord obtained from cache is out of date
+        if (code == 4292) return true;
+
+        return false;
+    }
+
+    /* isSchemaChangePending() returns true when some other thread has
+     * already called session.unloadSchema() to initiate schema change handling,
+     * but the handling had not yet completed at the time the exception was
+     * thrown. If true, the user can call awaitSchemaChange() to pause until
+     * handling completes.
+     */
+    public boolean isSchemaChangePending() {
+        return (syncObject != null);
+    }
+
+    /* Wait for schema change handling to complete.
+     * The thread handling the schema change is holding the intrinsic lock
+     * on syncObject, and will release the lock after handling is complete.
+     */
+    public void awaitSchemaChange() {
+        synchronized(syncObject) { }
+    }
+
+
+    /* Constructors*/
     public ClusterJDatastoreException(String message) {
         super(message);
     }
@@ -86,6 +160,31 @@ public class ClusterJDatastoreException extends ClusterJException {
         this.mysqlCode = mysqlCode;
         this.status = status;
         this.classification = classification;
+    }
+
+    public static ClusterJDatastoreException forSchemaChange(Object obj) {
+        ClusterJDatastoreException ex =
+            new ClusterJDatastoreException("Schema change in progress");
+        ex.syncObject = obj;
+        return ex;
+    }
+
+    /* ClusterJDatastoreException produced internally when Cluster/J catches stale
+       metadata before it is passed into the NDBAPI. Code will usually be negative.
+    */
+    public static ClusterJDatastoreException forSchemaChange(String msg, int code, Throwable cause) {
+        var ex = (cause == null) ? new ClusterJDatastoreException(msg)
+                                 : new ClusterJDatastoreException(msg, cause);
+        ex.code = code;
+        ex.mysqlCode = HA_ERR_TABLE_DEF_CHANGED;
+        ex.status = ndberror_st_permanent;
+        ex.classification = 5;
+        return ex;
+    }
+
+    public ClusterJDatastoreException setRetriable() {
+        status = ndberror_st_temporary;
+        return this;
     }
 
     /** Helper class for getClassification().
@@ -136,5 +235,4 @@ public class ClusterJDatastoreException extends ClusterJException {
             return (value >= 0) && (value < entries.length) ? entries[value] : null;
         }
     }
-
 }

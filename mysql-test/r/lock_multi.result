@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2;
 create table t1(n int);
 insert into t1 values (1);
@@ -2764,3 +2765,4 @@ disconnect con1;
 disconnect con2;
 disconnect con3;
 drop tables t1, t2, t3, t4;
+include/rpl/set_gtid_mode_on.inc

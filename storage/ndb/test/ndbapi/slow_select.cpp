@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2004, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2004, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,11 +40,11 @@ struct S_Scan {
 };
 
 static S_Scan g_scans[] = {
-    {"affiliatestometa", "ind_affiliatestometa", 0, 0, 0, 0},
-    {"media", "metaid", 0, 0, 0, 0},
-    {"meta", "PRIMARY", 0, 0, 0, 0},
-    {"artiststometamap", "PRIMARY", 0, 0, 0, 0},
-    {"subgenrestometamap", "metaid", 0, 0, 0, 0}};
+    {"affiliatestometa", "ind_affiliatestometa", nullptr, 0, 0, 0},
+    {"media", "metaid", nullptr, 0, 0, 0},
+    {"meta", "PRIMARY", nullptr, 0, 0, 0},
+    {"artiststometamap", "PRIMARY", nullptr, 0, 0, 0},
+    {"subgenrestometamap", "metaid", nullptr, 0, 0, 0}};
 
 #define require2(o, x)                  \
   if (!(x)) {                           \
@@ -59,10 +59,10 @@ Uint64 start;
 Uint32 g_artistid = 0;
 Uint32 g_subgenreid = 0;
 
-NdbConnection *g_trans = 0;
+NdbConnection *g_trans = nullptr;
 static void lookup();
 
-int main(void) {
+int main() {
   ndb_init();
 
   Ndb_cluster_connection con;

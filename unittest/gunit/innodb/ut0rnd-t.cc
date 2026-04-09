@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@
 #include "storage/innobase/include/ut0crc32.h"
 #include "storage/innobase/include/ut0rnd.h"
 
-#include "my_xxhash.h"
+#include "extra/xxhash/my_xxhash.h"
 
 namespace innodb_ut0rnd_unittest {
 
@@ -151,7 +151,7 @@ double test_distribution(const std::string &test_name, T hasher,
   const auto variance_limit = calculate_limit_variance_from_expected(N);
   for (uint32_t M = stepM, i = 0; M <= maxM; M += stepM) {
     for (; i < M; i++) {
-      uint32_t hash = hasher(i * multiplier, N_mod);
+      uint32_t const hash = hasher(i * multiplier, N_mod);
       assert(hash < N);
       buckets[hash]++;
     }
@@ -275,7 +275,7 @@ TEST(ut0rnd, hash_uint64_pair_sysbench_ahi_distribution) {
   ut_crc32_init();
   std::array<size_t, 8> buckets{};
   for (int i = 0; i < 8; i++) {
-    uint32_t hash = ut::hash_uint64_pair(149 + 2 * i, i) % 8;
+    uint32_t const hash = ut::hash_uint64_pair(149 + 2 * i, i) % 8;
     buckets[hash]++;
   }
 
@@ -313,7 +313,7 @@ TEST(ut0rnd, hash_uint64_pair_highest_byte_distribution) {
       main non-zero part of the value in the highest bytes. The value of
       `highest` byte will be inserted to the 8th, the highest byte of this
       value and it represents the lowest byte of the BIGINT field's value. */
-      uint64_t rec = 0x9a533400000080ULL | (highest << (64 - 8));
+      uint64_t const rec = 0x9a533400000080ULL | (highest << (64 - 8));
       EXPECT_TRUE(hashes_left.insert(ut::hash_uint64_pair(rec, seed)).second);
       EXPECT_TRUE(hashes_right.insert(ut::hash_uint64_pair(seed, rec)).second);
     }
@@ -369,8 +369,8 @@ static void test_interval_fast_distribution(uint64_t n) {
   const uint64_t max_score = 17000;
 
   for (uint64_t i = 0; i < max_count; i++) {
-    const auto value = ut::random_from_interval_fast(0, n - 1);
-    for (auto target : target_score) {
+    const auto value = ut::random_from_interval_fast(0, n);
+    for (auto *target : target_score) {
       if (value == target[0]) {
         target[1]++;
       }
@@ -378,7 +378,7 @@ static void test_interval_fast_distribution(uint64_t n) {
     ut_delay(ut::random_from_interval_fast(0, 6));
   }
 
-  for (auto target : target_score) {
+  for (auto *target : target_score) {
     // EXPECT_GE(target[1], min_score);
     // EXPECT_LE(target[1], max_score);
 
@@ -432,13 +432,13 @@ static void BM_RND_GEN_STD_LINEAR(const size_t num_iterations) {
                                   std::numeric_limits<uint64_t>::max()>
       eng;
   benchmark_hasher(num_iterations,
-                   [&eng](uint64_t, uint64_t n) { return eng(); });
+                   [&eng](uint64_t, uint64_t /*n*/) { return eng(); });
 }
 BENCHMARK(BM_RND_GEN_STD_LINEAR)
 
 static void BM_RND_GEN(const size_t num_iterations) {
   benchmark_hasher(num_iterations,
-                   [](uint64_t, uint64_t n) { return ut::random_64(); });
+                   [](uint64_t, uint64_t /*n*/) { return ut::random_64(); });
 }
 BENCHMARK(BM_RND_GEN)
 
@@ -467,14 +467,14 @@ BENCHMARK(BM_HASH_UINT64_OLD)
 /* Micro-benchmark raw pair of uint32_t hash performance. */
 
 static void BM_HASH_UINT64_PAIR(const size_t num_iterations) {
-  benchmark_hasher(num_iterations, [](uint64_t fold, uint64_t n) {
+  benchmark_hasher(num_iterations, [](uint64_t fold, uint64_t /*n*/) {
     return ut::hash_uint64_pair(fold, ut::random_64());
   });
 }
 BENCHMARK(BM_HASH_UINT64_PAIR)
 
 static void BM_HASH_UINT32_PAIR_OLD(const size_t num_iterations) {
-  benchmark_hasher(num_iterations, [](uint64_t fold, uint64_t n) {
+  benchmark_hasher(num_iterations, [](uint64_t fold, uint64_t /*n*/) {
     return ut::detail::hash_uint32_pair_ib(fold, ut::random_64());
   });
 }

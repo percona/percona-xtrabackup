@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -343,7 +343,10 @@ class Alter_info {
     ANY_ENGINE_ATTRIBUTE = 1ULL << 39,
 
     /// Set for column visibility attribute alter.
-    ALTER_COLUMN_VISIBILITY = 1ULL << 40
+    ALTER_COLUMN_VISIBILITY = 1ULL << 40,
+
+    /// Must be last, not a real type.
+    ALTER_TYPE_END = 1ULL << 41
   };
 
   enum enum_enable_or_disable { LEAVE_AS_IS, ENABLE, DISABLE };
@@ -443,6 +446,14 @@ class Alter_info {
   */
   enum_with_validation with_validation;
 
+  ///  Whether SECONDARY_LOAD should do guided load.
+  enum_with_validation guided_load;
+
+  /// SECONDARY_LOAD should only validate not load table.
+  bool validation_only;
+  /// Number of rows to be validated by SECONDARY_LOAD
+  uint64_t validate_num_rows;
+
   /// "new_db" (if any) or "db" (if any) or default database from
   /// ALTER TABLE [db.]table [ RENAME [TO|AS|=] [new_db.]new_table ]
   LEX_CSTRING new_db_name;
@@ -468,6 +479,9 @@ class Alter_info {
         requested_algorithm(ALTER_TABLE_ALGORITHM_DEFAULT),
         requested_lock(ALTER_TABLE_LOCK_DEFAULT),
         with_validation(ALTER_VALIDATION_DEFAULT),
+        guided_load(ALTER_VALIDATION_DEFAULT),
+        validation_only(false),
+        validate_num_rows(0),
         new_db_name(LEX_CSTRING{nullptr, 0}),
         new_table_name(LEX_CSTRING{nullptr, 0}) {}
 

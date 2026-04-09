@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
  
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License, version 2.0,
@@ -315,7 +315,6 @@
  * NDB
  */
 #cmakedefine HAVE_GETRLIMIT 1
-#cmakedefine WITH_NDBCLUSTER_STORAGE_ENGINE 1
 #cmakedefine HAVE_PTHREAD_SETSCHEDPARAM 1
 
 /*
@@ -349,6 +348,18 @@
 
 /* For default value of --partial_revokes */
 #define DEFAULT_PARTIAL_REVOKES @DEFAULT_PARTIAL_REVOKES@
+
+/* Default storage engine for external tables */
+#cmakedefine DEFAULT_EXTERNAL_TABLE_ENGINE "@DEFAULT_EXTERNAL_TABLE_ENGINE@"
+#ifndef DEFAULT_EXTERNAL_TABLE_ENGINE
+#define DEFAULT_EXTERNAL_TABLE_ENGINE nullptr
+#endif
+
+/* Default secondary storage engine for external tables */
+#cmakedefine DEFAULT_EXTERNAL_TABLE_SECONDARY_ENGINE "@DEFAULT_EXTERNAL_TABLE_SECONDARY_ENGINE@"
+#ifndef DEFAULT_EXTERNAL_TABLE_SECONDARY_ENGINE
+#define DEFAULT_EXTERNAL_TABLE_SECONDARY_ENGINE nullptr
+#endif
 
 #define SO_EXT "@CMAKE_SHARED_MODULE_SUFFIX@"
 

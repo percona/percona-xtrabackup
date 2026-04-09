@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,7 @@
 
 NdbEventOperation::NdbEventOperation(Ndb *ndb,
                                      const NdbDictionary::Event *event)
-    : m_impl(*new NdbEventOperationImpl(*this, ndb, std::move(event))) {}
+    : m_impl(*new NdbEventOperationImpl(*this, ndb, event)) {}
 
 NdbEventOperation::NdbEventOperation(NdbEventOperationImpl &impl)
     : m_impl(impl) {}
@@ -45,7 +45,10 @@ NdbEventOperation::State NdbEventOperation::getState() {
   return m_impl.getState();
 }
 
-void NdbEventOperation::mergeEvents(bool flag) { m_impl.m_mergeEvents = flag; }
+void NdbEventOperation::mergeEvents(bool flag) {
+  m_impl.m_mergeEvents = flag;
+  m_impl.m_filterPreStartEpochs = flag;
+}
 
 NdbRecAttr *NdbEventOperation::getValue(const char *colName, char *aValue) {
   return m_impl.getValue(colName, aValue, 0);
@@ -113,6 +116,10 @@ bool NdbEventOperation::isEmptyEpoch() { return m_impl.isEmptyEpoch(); }
 bool NdbEventOperation::isErrorEpoch(
     NdbDictionary::Event::TableEvent *error_type) {
   return m_impl.isErrorEpoch(error_type);
+}
+
+Uint64 NdbEventOperation::getStartEpoch() const {
+  return m_impl.getStartEpoch();
 }
 
 NdbDictionary::Event::TableEvent NdbEventOperation::getEventType() const {
@@ -186,12 +193,31 @@ void NdbEventOperation::setFilterAnyvalueMySQLNoLogging() {
 }
 
 void NdbEventOperation::setFilterAnyvalueMySQLNoReplicaUpdates() {
+  m_impl.m_requestInfo |= SubStartReq::FILTER_ANYVALUE_MYSQL_NO_REPLICA_UPDATES;
+}
+
+int NdbEventOperation::setFilterRowSlice(Uint16 count, Uint16 id) {
+  constexpr Uint16 MAX_COUNT = 256;
+  constexpr Uint16 MAX_ID = 255;
+  if (id > MAX_ID || id >= count || count > MAX_COUNT || count < 1) {
+    return -1;
+  }
+
+  m_impl.m_requestInfo &= ~SubStartReq::FILTER_ROW_SLICE_COUNT_BITS;
+  m_impl.m_requestInfo &= ~SubStartReq::FILTER_ROW_SLICE_ID_BITS;
+  // reducing value to pack into 8 bits
   m_impl.m_requestInfo |=
-      SubStartReq::SubStartReq::FILTER_ANYVALUE_MYSQL_NO_REPLICA_UPDATES;
+      ((count - 1) << SubStartReq::FILTER_ROW_SLICE_COUNT_SHIFT);
+  m_impl.m_requestInfo |= (id << SubStartReq::FILTER_ROW_SLICE_ID_SHIFT);
+  return 0;
 }
 
 void NdbEventOperation::setAnyValueFilter(AnyValueFilterFn fn) {
   m_impl.m_any_value_filter = fn;
+}
+
+void NdbEventOperation::setFilterPreStartEpochs(bool flag) {
+  m_impl.m_filterPreStartEpochs = flag;
 }
 
 int NdbEventOperation::getReqNodeId() const {

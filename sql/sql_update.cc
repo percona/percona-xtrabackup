@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -70,6 +70,7 @@
 #include "sql/join_optimizer/access_path.h"
 #include "sql/join_optimizer/bit_utils.h"
 #include "sql/join_optimizer/walk_access_paths.h"
+#include "sql/json_duality_view/dml.h"
 #include "sql/key.h"  // is_key_used
 #include "sql/key_spec.h"
 #include "sql/locked_tables_list.h"
@@ -98,6 +99,7 @@
 #include "sql/sql_delete.h"
 #include "sql/sql_error.h"
 #include "sql/sql_executor.h"
+#include "sql/sql_foreign_key_constraint.h"
 #include "sql/sql_lex.h"
 #include "sql/sql_list.h"
 #include "sql/sql_opt_exec_shared.h"
@@ -145,7 +147,7 @@ bool Sql_cmd_update::precheck(THD *thd) {
       if (tr->is_derived() || tr->uses_materialization())
         tr->grant.privilege = SELECT_ACL;
       else {
-        auto chk = [&](long want_access) {
+        auto chk = [&](Access_bitmask want_access) {
           const bool ignore_errors = (want_access == UPDATE_ACL);
           return check_access(thd, want_access, tr->db, &tr->grant.privilege,
                               &tr->grant.m_internal, false, ignore_errors) ||
@@ -379,10 +381,18 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
   Query_block *const query_block = lex->query_block;
   Query_expression *const unit = lex->unit;
   Table_ref *const table_list = query_block->get_table_list();
+
   Table_ref *const update_table_ref = table_list->updatable_base_table();
   TABLE *const table = update_table_ref->table;
 
-  assert(table->pos_in_table_list == update_table_ref);
+  // When an UPDATE operation on a JSON duality view is part of a Stored Program
+  // or a Prepared Statement, the view query is re-parsed during the execution
+  // of the SP or PS for syntax and semantics validation. The following
+  // condition for update_table_ref, which is obtained from the JSON duality
+  // view Content-tree, will no longer be valid. Hence, skipping assert()
+  // check for JSON duality view.
+  assert(table->pos_in_table_list == update_table_ref ||
+         table_list->is_json_duality_view());
 
   const bool transactional_table = table->file->has_transactions();
 
@@ -609,13 +619,15 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
 
   table->mark_columns_per_binlog_row_image(thd);
 
-  if (prepare_partial_update(trace, query_block->fields, *update_value_list))
+  if (!table_list->is_json_duality_view() &&
+      prepare_partial_update(trace, query_block->fields, *update_value_list))
     return true; /* purecov: inspected */
 
   if (table->setup_partial_update()) return true; /* purecov: inspected */
 
   ha_rows updated_rows = 0;
   ha_rows found_rows = 0;
+  ulonglong jdv_affected_rows = 0;
 
   unique_ptr_destroy_only<Filesort> fsort;
   unique_ptr_destroy_only<RowIterator> iterator;
@@ -910,6 +922,26 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
       table->clear_partial_update_diffs();
 
       store_record(table, record[1]);
+
+      if (table_list->is_json_duality_view()) {
+        if (found_rows != 0) {
+          my_error(ER_JDV_OPERATION_NOT_SUPPORTED, MYF(0),
+                   "Multiple object update");
+          error = 1;
+          break;
+        }
+
+        found_rows++;
+
+        if (jdv::jdv_update(thd, table_list, &query_block->fields,
+                            update_value_list, &jdv_affected_rows)) {
+          assert(thd->is_error());
+          error = 1;
+          break;
+        }
+        continue;
+      }
+
       bool is_row_changed = false;
       if (fill_record_n_invoke_before_triggers(
               thd, &update, query_block->fields, *update_value_list, table,
@@ -960,6 +992,18 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
           continue;
         }
 
+        if (use_sql_fk_checks_for_table(thd, table)) {
+          if (check_all_child_fk_ref(thd, table, enum_fk_dml_type::FK_UPDATE) ||
+              check_all_parent_fk_ref(thd, table,
+                                      enum_fk_dml_type::FK_UPDATE)) {
+            if (thd->is_error()) {
+              error = 1;
+              break;
+            }
+            // continue when IGNORE clause is used.
+            continue;
+          }
+        }
         if (will_batch) {
           /*
             Typically a batched handler can execute the batched jobs when:
@@ -1125,6 +1169,19 @@ bool Sql_cmd_update::update_single_table(THD *thd) {
         Transaction_ctx::STMT);
 
   iterator.reset();
+
+  if (table_list->is_json_duality_view()) {
+    if (error < 0) {
+      char buff[MYSQL_ERRMSG_SIZE];
+      snprintf(buff, sizeof(buff), ER_THD(thd, ER_JDV_DML_INFO),
+               static_cast<long>(jdv_affected_rows),
+               (long)thd->get_stmt_da()->current_statement_cond_count());
+      my_ok(thd, jdv_affected_rows, 0, buff);
+      DBUG_PRINT("info", ("%ld records affected",
+                          static_cast<long>(jdv_affected_rows)));
+    }
+    return error >= 0 || thd->is_error();
+  }
 
   /*
     error < 0 means really no error at all: we processed all rows until the
@@ -1481,6 +1538,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
   const bool using_lock_tables = thd->locked_tables_mode != LTM_NONE;
   const bool is_single_table_syntax = !multitable;
 
+  bool is_jdv = table_list->is_json_duality_view();
   assert(select->fields.size() == select->num_visible_fields());
   assert(select->num_visible_fields() == update_value_list->size());
 
@@ -1535,31 +1593,40 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
     - Target table must not be same as one selected from
                                           (checked in unique_table)
   */
-
-  if (!multitable) {
-    // Single-table UPDATE, the table must be updatable:
-    if (!table_list->is_updatable()) {
-      my_error(ER_NON_UPDATABLE_TABLE, MYF(0), table_list->alias, "UPDATE");
+  if (is_jdv) {
+    if (jdv::jdv_prepare_update(thd, table_list, is_single_table_plan())) {
       return true;
     }
-    // Perform multi-table operation if table to be updated is multi-table view
-    if (table_list->is_multiple_tables()) multitable = true;
   }
 
-  // The hypergraph optimizer has a unified execution path for single-table and
-  // multi-table UPDATE, and does not need to distinguish between the two. This
-  // enables it to perform optimizations like sort avoidance and semi-join
-  // flattening even if features specific to single-table UPDATE (that is, ORDER
-  // BY and LIMIT) are used.
-  if (lex->using_hypergraph_optimizer()) {
-    multitable = true;
-  }
+  // FIXME.dtjeldvo: This breaks with JDVs
+  if (!is_jdv) {
+    if (!multitable) {
+      // Single-table UPDATE, the table must be updatable:
+      if (!table_list->is_updatable()) {
+        my_error(ER_NON_UPDATABLE_TABLE, MYF(0), table_list->alias, "UPDATE");
+        return true;
+      }
+      // Perform multi-table operation if table to be updated is multi-table
+      // view
+      if (table_list->is_multiple_tables()) multitable = true;
+    }
 
-  if (!multitable && select->first_inner_query_expression() != nullptr &&
-      should_switch_to_multi_table_if_subqueries(thd, select, table_list))
-    multitable = true;
+    // The hypergraph optimizer has a unified execution path for single-table
+    // and multi-table UPDATE, and does not need to distinguish between the two.
+    // This enables it to perform optimizations like sort avoidance and
+    // semi-join flattening even if features specific to single-table UPDATE
+    // (that is, ORDER BY and LIMIT) are used.
+    if (lex->using_hypergraph_optimizer()) {
+      multitable = true;
+    }
 
-  if (multitable) select->set_sj_candidates(&sj_candidates_local);
+    if (!multitable && select->first_inner_query_expression() != nullptr &&
+        should_switch_to_multi_table_if_subqueries(thd, select, table_list))
+      multitable = true;
+
+    if (multitable) select->set_sj_candidates(&sj_candidates_local);
+  }  // if (!is_jdv)
 
   if (select->leaf_table_count >= 2 &&
       setup_natural_join_row_types(thd, select->m_current_table_nest,
@@ -1596,11 +1663,27 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
 
   if (select->setup_base_ref_items(thd)) return true; /* purecov: inspected */
 
+  // FIXME.dtjeldvo: Need this for the select of previous values for JDV to work
   if (setup_fields(thd, /*want_privilege=*/UPDATE_ACL,
                    /*allow_sum_func=*/false, /*split_sum_funcs=*/false,
-                   /*column_update=*/true, /*typed_items=*/nullptr,
+                   /*column_update=*/(!is_jdv), /*typed_items=*/nullptr,
                    &select->fields, Ref_item_array()))
     return true;
+
+  // FIXME.dtjeldvo: Bailing here since jdv.data is not updatable, but we need
+  // second call to setup_fields() to make things like JSON_REPLACE(data,...)
+  // as the new json value work.
+  if (is_jdv) {
+    bool ret_val =
+        setup_fields(thd, /*want_privilege=*/SELECT_ACL,
+                     /*allow_sum_func=*/false, /*split_sum_funcs=*/false,
+                     /*column_update=*/false, &select->fields,
+                     update_value_list, Ref_item_array());
+    if (!ret_val) {
+      select->master_query_expression()->set_prepared();
+    }
+    return ret_val;
+  }
 
   if (make_base_table_fields(thd, &select->fields))
     return true; /* purecov: inspected */
@@ -1623,7 +1706,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
     if (tr->map() & tables_for_update) tr->set_updated();
     tr->updating = tr->is_updated();
   }
-
+  // FIXME.dtjeldvo: Don't we need this also for JDVs?
   if (setup_fields(thd, /*want_privilege=*/SELECT_ACL,
                    /*allow_sum_func=*/false, /*split_sum_funcs=*/false,
                    /*column_update=*/false, &select->fields, update_value_list,
@@ -1787,6 +1870,7 @@ bool Sql_cmd_update::prepare_inner(THD *thd) {
   Opt_trace_array trace_steps(trace, "steps");
   opt_trace_print_expanded_query(thd, select, &trace_wrapper);
 
+  select->original_tables_map = select->all_tables_map();
   if (select->has_sj_candidates() && select->flatten_subqueries(thd))
     return true; /* purecov: inspected */
 
@@ -1996,9 +2080,9 @@ static void CollectColumnsReferencedInJoinConditions(
       read a row from main_table and:
       - init ref access (construct_lookup_ref() in RefIterator):
         copy referenced value from main_table into 2nd table's ref buffer
-      - look up a first row in 2nd table (RefIterator::Read())
+      - look up a first row in 2nd table (RefIterator::DoRead())
         - if it joins, update row of main_table on the fly
-      - look up a second row in 2nd table (again RefIterator::Read()).
+      - look up a second row in 2nd table (again RefIterator::DoRead()).
       Because construct_lookup_ref() is not called again, the
       before-update value of the row of main_table is still in the 2nd
       table's ref buffer. So the lookup is not influenced by the just-done
@@ -2490,6 +2574,19 @@ bool UpdateRowsIterator::DoImmediateUpdatesAndBufferRowIds(
           continue;
         }
 
+        if (use_sql_fk_checks_for_table(thd(), table)) {
+          if (check_all_child_fk_ref(thd(), table,
+                                     enum_fk_dml_type::FK_UPDATE) ||
+              check_all_parent_fk_ref(thd(), table,
+                                      enum_fk_dml_type::FK_UPDATE)) {
+            if (thd()->is_error()) {
+              return true;
+            }
+            // continue when IGNORE clause is used.
+            continue;
+          }
+        }
+
         if (m_updated_rows == 0) {
           /*
             Inform the main table that we are going to update the table even
@@ -2787,6 +2884,17 @@ bool UpdateRowsIterator::DoDelayedUpdates(bool *trans_safe,
           continue;
         }
 
+        if (use_sql_fk_checks_for_table(thd(), table)) {
+          if (check_all_child_fk_ref(thd(), table,
+                                     enum_fk_dml_type::FK_UPDATE) ||
+              check_all_parent_fk_ref(thd(), table,
+                                      enum_fk_dml_type::FK_UPDATE)) {
+            if (thd()->is_error()) goto err;
+            // continue when IGNORE clause is used.
+            continue;
+          }
+        }
+
         local_error =
             table->file->ha_update_row(table->record[1], table->record[0]);
         if (!local_error)
@@ -2843,7 +2951,7 @@ err:
   return true;
 }
 
-bool UpdateRowsIterator::Init() {
+bool UpdateRowsIterator::DoInit() {
   if (m_source->Init()) return true;
 
   if (m_outermost_table != nullptr &&
@@ -2864,7 +2972,7 @@ UpdateRowsIterator::~UpdateRowsIterator() {
   }
 }
 
-int UpdateRowsIterator::Read() {
+int UpdateRowsIterator::DoRead() {
   bool local_error = false;
   bool trans_safe = true;
   bool transactional_tables = false;

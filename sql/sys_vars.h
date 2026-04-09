@@ -1,6 +1,6 @@
 #ifndef SYS_VARS_H_INCLUDED
 #define SYS_VARS_H_INCLUDED
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,7 +50,6 @@
 #include "my_dbug.h"
 #include "my_getopt.h"
 #include "my_inttypes.h"
-#include "my_sys.h"
 #include "mysql/plugin.h"
 #include "mysql/service_mysql_alloc.h"
 #include "mysql/status_var.h"
@@ -1546,7 +1545,7 @@ class Sys_var_flagset : public Sys_var_typelib {
     char buff[STRING_BUFFER_USUAL_SIZE];
     String str(buff, sizeof(buff), system_charset_info), *res;
     ulonglong default_value, current_value;
-    if (var->type == OPT_GLOBAL) {
+    if (var->is_global_persist() || scope() == GLOBAL) {
       default_value = option.def_value;
       current_value = global_var(ulonglong);
     } else {
@@ -1724,21 +1723,22 @@ class Sys_var_set : public Sys_var_typelib {
 */
 class Sys_var_plugin : public sys_var {
   int plugin_type;
+  bool allow_secondary_engine;
 
  public:
   Sys_var_plugin(
       const char *name_arg, const char *comment, int flag_args, ptrdiff_t off,
       size_t size [[maybe_unused]], CMD_LINE getopt, int plugin_type_arg,
-      const char **def_val, PolyLock *lock = nullptr,
+      const char **def_val, bool allow_secondary_engine,
+      PolyLock *lock = nullptr,
       enum binlog_status_enum binlog_status_arg = VARIABLE_NOT_IN_BINLOG,
-      on_check_function on_check_func = nullptr,
-      on_update_function on_update_func = nullptr,
-      const char *substitute = nullptr, int parse_flag = PARSE_NORMAL)
+      on_check_function on_check_func = nullptr)
       : sys_var(&all_sys_vars, name_arg, comment, flag_args, off, getopt.id,
                 getopt.arg_type, SHOW_CHAR, (intptr)def_val, lock,
-                binlog_status_arg, on_check_func, on_update_func, substitute,
-                parse_flag),
-        plugin_type(plugin_type_arg) {
+                binlog_status_arg, on_check_func, nullptr, nullptr,
+                PARSE_NORMAL),
+        plugin_type(plugin_type_arg),
+        allow_secondary_engine(allow_secondary_engine) {
     option.var_type = GET_STR;
     assert(size == sizeof(plugin_ref));
     assert(getopt.id == -1);  // force NO_CMD_LINE
@@ -1768,6 +1768,16 @@ class Sys_var_plugin : public sys_var {
       }
       return true;
     }
+
+    if (!allow_secondary_engine) {
+      const auto *hton = plugin_data<handlerton *>(plugin);
+      if ((hton->flags & HTON_IS_SECONDARY_ENGINE) != 0U) {
+        const ErrConvString err(res);
+        my_error(ER_UNKNOWN_STORAGE_ENGINE, MYF(0), err.ptr());
+        return true;
+      }
+    }
+
     var->save_result.plugin = plugin;
     return false;
   }
@@ -2823,6 +2833,7 @@ class Sys_var_binlog_encryption : public Sys_var_bool {
   bool global_update(THD *thd, set_var *var) override;
 };
 
+void update_temptable_max_ram_default();
 void update_parser_max_mem_size();
 void update_optimizer_switch();
 

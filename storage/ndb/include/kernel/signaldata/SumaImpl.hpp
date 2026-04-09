@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -107,10 +107,29 @@ struct SubStartReq {
   Uint32 subscriberRef;
   Uint32 requestInfo;
 
-  // For requestInfo bitwise options
+  /**
+   * For requestInfo bitwise options. Each bit indicates a mode of
+   * filtering or data for the mode. Following is a description
+   * of the bits used in the value. Read by combining upper line
+   * digits with the directly below digit.
+   *
+   *  3         2         1         0
+   * 10987654321098765432109876543210
+   * ______________cccccccciiiiiiiirl
+   *
+   * l = no-logging updates
+   * r = no replica updates
+   * i = row slice (i)d bits
+   * c = row slice (c)ount bits (stored is `count - 1` == max-id)
+   * _ = unused
+   */
   enum RequestInfo {
     FILTER_ANYVALUE_MYSQL_NO_LOGGING = 1 << 0,
     FILTER_ANYVALUE_MYSQL_NO_REPLICA_UPDATES = 1 << 1,
+    FILTER_ROW_SLICE_ID_SHIFT = 2,
+    FILTER_ROW_SLICE_ID_BITS = 0xFF << 2,
+    FILTER_ROW_SLICE_COUNT_SHIFT = 10,
+    FILTER_ROW_SLICE_COUNT_BITS = 0xFF << 10,
   };
 };
 
@@ -164,17 +183,19 @@ struct SubStartConf {
    */
 
   friend bool printSUB_START_CONF(FILE *, const Uint32 *, Uint32, Uint16);
-  static constexpr Uint32 SignalLength = 9;
+  static constexpr Uint32 SignalLength_v9_4_0 = 9;  // Without firstGCIlo
+  static constexpr Uint32 SignalLength = 10;
 
   Uint32 senderRef;
   Uint32 senderData;
   Uint32 subscriptionId;
   Uint32 subscriptionKey;
-  Uint32 firstGCI;
+  Uint32 firstGCIhi;
   Uint32 part;  // SubscriptionData::Part
   Uint32 subscriberData;
   Uint32 bucketCount;
   Uint32 nodegroup;
+  Uint32 firstGCIlo;
 };
 
 struct SubStopReq {

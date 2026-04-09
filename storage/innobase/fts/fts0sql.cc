@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -177,15 +177,6 @@ void fts_get_table_name(const fts_table_t *fts_table,
 /*!< in/out: aux table name */
 {
   fts_get_table_name_low(fts_table, table_name, false);
-}
-
-/** Construct the name of an ancillary FTS table for the given table in
-5.7 compatible format. Caller must allocate enough memory(usually size
-of MAX_FULL_NAME_LEN) for param 'table_name'
-@param[in]      fts_table       Auxiliary table object
-@param[in,out]  table_name      aux table name */
-void fts_get_table_name_5_7(const fts_table_t *fts_table, char *table_name) {
-  fts_get_table_name_low(fts_table, table_name, true);
 }
 
 /** Parse an SQL string.

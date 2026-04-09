@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+ *  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License, version 2.0,
@@ -34,40 +34,67 @@ import java.util.Map;
 public interface SessionFactory {
 
     /** Create a Session to use with the cluster, using all the
-     * properties of the SessionFactory.
+     * properties of the SessionFactory, including the default database.
      * @return the session
      */
     Session getSession();
 
-    /** Create a session to use with the cluster, overriding some properties.
-     * Properties PROPERTY_CLUSTER_CONNECTSTRING, PROPERTY_CLUSTER_DATABASE,
-     * and PROPERTY_CLUSTER_MAX_TRANSACTIONS may not be overridden.
-     * @param properties overriding some properties for this session
+    /** Create a Session to use with the cluster, using the default
+     * properties of the SessionFactory except for the database name.
+     *
+     * This requires the property com.mysql.clusterj.multidb to have been
+     * set to true when the SessionFactory was created.
+     *
+     * @param database name of the database to use for this session.
+     *
+     * If database is null, the default database is used.
+     *
+     * @return the session
+     #
+     * @throws ClusterJUserException if SessionFactory is not a multi-db
+     *         SessionFactory, and database is not its configured database
+     *         and is not null.
+     * @since 9.4.0
+     */
+    Session getSession(String database);
+
+    /** Create a session to use with the cluster, overriding some default
+     * properties with the properties supplied in the map.
+     * The property com.mysql.clusterj.connectstring may not be overridden.
+     * @param properties map overriding some properties for this session
+     * @throws ClusterJUserException if properties contains an unexpected
+     *         value for com.mysql.clusterj.connectstring
      * @return the session
      */
     Session getSession(Map properties);
 
     /** Get a list containing the number of open sessions for each connection
-     * in the connection pool.
+     * that it uses from the global connection pool.
      * @since 7.3.14, 7.4.12, 7.5.2
      */
     public List<Integer> getConnectionPoolSessionCounts();
 
-    /** Close this session factory. Release all resources. Set the current state to Closed.
-     * When closed, calls to getSession will throw ClusterJUserException.
+    /** Close this session factory. Release all resources. Set the current state
+     * to Closed. When closed, calls to getSession will throw ClusterJUserException.
+     * Actual connections to the database are managed in a global connection
+     * pool, and may be shared by several session factories; each connection will
+     * be closed when the last session factory using it is closed.
      */
     void close();
 
     /** Disconnect and reconnect this session factory using the specified timeout value
-     * and change the saved timeout value. This is a heavyweight method and should be used rarely.
-     * It is intended for cases where the process in which clusterj is running has lost connectivity
-     * to the cluster and is not able to function normally. Reconnection is done in several phases.
-     * First, the session factory is set to state Reconnecting and a reconnect thread is started to
-     * manage the reconnection procedure. In the Reconnecting state, the getSession methods throw
+     * and change the saved timeout value. This is a heavyweight method and should be
+     * used rarely. It is intended for cases where the process in which clusterj is
+     * running has lost connectivity to the cluster and is not able to function normally.
+     * Reconnection is done in several phases, managed by the global connection pool.
+     * First, a set of connections is set to state Reconnecting and a reconnect thread
+     * is started to manage the reconnection procedure. Then all SessionFactories are
+     * notified of the pending reconnection; every affected SessionFactory will transition
+     * into the Reconnecting state. In the Reconnecting state, the getSession methods throw
      * ClusterJUserException and the connection pool is quiesced until all sessions have closed.
      * If sessions fail to close normally after timeout seconds, the sessions are forced to close.
      * Next, all connections in the connection pool are closed, which frees their connection slots
-     * in the cluster. Finally, the connection pool is recreated using the original connection pool
+     * in the cluster. Finally, the connections are recreated using the original connection pool
      * properties and the state is set to Open.
      * The reconnection procedure is asynchronous. To observe the progress of the procedure, use the
      * methods currentState and getConnectionPoolSessionCounts.

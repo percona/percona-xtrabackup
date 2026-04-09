@@ -3,6 +3,8 @@
 #
 --source include/have_log_bin.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --disable_warnings
 drop table if exists t1,t2;
@@ -1560,7 +1562,7 @@ set session collation_database=2048;
 # the statement below will succeed.
 
 --error ER_WRONG_VALUE_FOR_VAR
-SET @@sql_mode= 8589934592;
+SET @@sql_mode= cast(pow(2,34) as unsigned);
 
 --echo #
 --echo # Bug #59860: log-slow-admin-statements and log-slow-replica-statements not displayed
@@ -1849,3 +1851,67 @@ CALL sp;
 DROP PROCEDURE sp;
 
 SET sql_log_off = DEFAULT;
+
+--echo #
+--echo # Bug#36322812 - RAPID global variables accept 'OF' as valid bool value
+--echo # Bug#36924845 - RAPID session variables accept 'OF' as valid bool value
+--echo #
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'O';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'OX';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'ONX';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'ONN';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'OF';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'OFX';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'OFFF';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'OFFX';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'ONF';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'OFN';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = '1';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = '0';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'true';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL slow_query_log = 'false';
+
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'O';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'OX';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'ONX';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'ONN';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'OF';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'OFX';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'OFFF';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'OFFX';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'ONF';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'OFN';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = '1';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = '0';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'true';
+--error ER_WRONG_VALUE_FOR_VAR
+SET GLOBAL innodb_strict_mode = 'false';
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

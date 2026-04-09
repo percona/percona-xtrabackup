@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -437,18 +437,11 @@ int Ndb::computeHash(Uint32 *retval, const NdbDictionary::Table *table,
     sumlen += len;
   }
 
-  while (true) {
-    if (buf == nullptr) {
-      bufLen = sumlen;
-      buf = malloc(bufLen);
-      if (unlikely(buf == nullptr)) return 4000;
-      malloced_buf = buf; /* Remember to free */
-    }
-    assert(bufLen != 0);
-
-    if (likely(sumlen <= bufLen)) break;
-    require(malloced_buf == nullptr);
-    buf = nullptr;
+  if (unlikely(buf == nullptr || sumlen > bufLen)) {
+    bufLen = sumlen;
+    buf = malloc(bufLen);
+    if (unlikely(buf == nullptr)) return 4000;
+    malloced_buf = buf; /* Remember to free */
   }
 
   pos = (unsigned char *)buf;
@@ -486,6 +479,8 @@ int Ndb::computeHash(Uint32 *retval, const NdbDictionary::Table *table,
   require(len <= bufLen);
 
   Uint32 values[4];
+  // Avoid maybe-uninitialized warning for md5_hash call
+  if (unlikely(len == 0)) buf = nullptr;
   md5_hash(values, (const char *)buf, len);
 
   if (retval) {
@@ -996,21 +991,6 @@ void Ndb::closeTransaction(NdbTransaction *aConnection) {
         //-----------------------------------------------------
         // closeTransaction called on non-existing transaction
         //-----------------------------------------------------
-
-        if (aConnection->theError.code == 4008) {
-          /**
-           * When a SCAN timed-out, returning the NdbTransaction leads
-           * to reuse. And TC crashes when the API tries to reuse it to
-           * something else...
-           */
-#ifdef VM_TRACE
-          g_eventLogger->warning(
-              "Ndb::closeTransaction() scan time out, not "
-              "returning NdbTransaction -> memory leak");
-#endif
-          DBUG_VOID_RETURN;
-        }
-
 #ifdef VM_TRACE
         fprintf(stderr,
                 "%s NDBAPI FATAL ERROR : Non-existing transaction %p "
@@ -1030,18 +1010,6 @@ void Ndb::closeTransaction(NdbTransaction *aConnection) {
 
   theImpl->incClientStat(TransCloseCount, 1);
 
-  if (aConnection->theError.code == 4008) {
-    /**
-     * Something timed-out, returning the NdbTransaction leads
-     * to reuse. And TC crashes when the API tries to reuse it to
-     * something else...
-     */
-    g_eventLogger->warning(
-        "Ndb::closeTransaction() passed a timed out NdbTransaction, not "
-        "returning it -> resource leak");
-    DBUG_VOID_RETURN;
-  }
-
   /**
    * NOTE: It's ok to call getNodeSequence() here wo/ having mutex,
    */
@@ -1049,9 +1017,22 @@ void Ndb::closeTransaction(NdbTransaction *aConnection) {
   Uint32 seq = theImpl->getNodeSequence(nodeId);
   if (aConnection->theNodeSequence != seq) {
     aConnection->theReleaseOnClose = true;
+    aConnection->theForceReleaseOnClose = false;
   }
 
-  if (aConnection->theReleaseOnClose == false) {
+  if (aConnection->theForceReleaseOnClose) {
+#ifdef VM_TRACE
+    g_eventLogger->info(
+        "closeTransaction() forcing release of "
+        "kernel state");
+#endif
+    aConnection->theReleaseOnClose = false;
+    aConnection->theForceReleaseOnClose = false;
+    releaseConnectToNdb(aConnection);
+    DBUG_VOID_RETURN;
+  }
+
+  if (!aConnection->theReleaseOnClose) {
     /**
      * Put it back in idle list for that node
      */
@@ -1059,6 +1040,10 @@ void Ndb::closeTransaction(NdbTransaction *aConnection) {
 
     DBUG_VOID_RETURN;
   } else {
+    /**
+     * The kernel side of this transaction has gone
+     * recycle the API object
+     */
     aConnection->theReleaseOnClose = false;
     releaseNdbCon(aConnection);
   }  // if
@@ -1712,8 +1697,8 @@ const char *Ndb::externalizeTableName(const char *internalTableName,
       ;
     }
     return ptr;
-  } else
-    return internalTableName;
+  }
+  return internalTableName;
 }
 
 const char *Ndb::externalizeIndexName(const char *internalIndexName,
@@ -1732,9 +1717,8 @@ const char *Ndb::externalizeIndexName(const char *internalIndexName,
     }
 
     return ptr + 1;
-  } else {
-    return internalIndexName;
   }
+  return internalIndexName;
 }
 
 // Format internal name from db, schema and table name
@@ -1750,7 +1734,7 @@ BaseString Ndb::internalize_table_name(const char *db_name, const char *schema,
 }
 
 // Format internal name using schema and db name from the Ndb object
-const BaseString Ndb::internalize_table_name(const char *external_name) const {
+BaseString Ndb::internalize_table_name(const char *external_name) const {
   DBUG_TRACE;
   DBUG_PRINT("enter", ("external_name: %s", external_name));
 
@@ -1764,7 +1748,7 @@ const BaseString Ndb::internalize_table_name(const char *external_name) const {
                                 theImpl->m_schemaname.c_str(), external_name);
 }
 
-const BaseString Ndb::getDatabaseFromInternalName(const char *internalName) {
+BaseString Ndb::getDatabaseFromInternalName(const char *internalName) {
   char *databaseName = new char[strlen(internalName) + 1];
   if (databaseName == nullptr) {
     errno = ENOMEM;
@@ -1781,7 +1765,7 @@ const BaseString Ndb::getDatabaseFromInternalName(const char *internalName) {
   return ret;
 }
 
-const BaseString Ndb::getSchemaFromInternalName(const char *internalName) {
+BaseString Ndb::getSchemaFromInternalName(const char *internalName) {
   char *schemaName = new char[strlen(internalName)];
   if (schemaName == nullptr) {
     errno = ENOMEM;
@@ -1883,7 +1867,7 @@ int Ndb::pollEvents2(int aMillisecondNumber, Uint64 *highestQueuedEpoch) {
     found = theEventBuffer->pollEvents(highestQueuedEpoch);
   }
 
-  if ((highestQueuedEpoch) && (isExpectingHigherQueuedEpochs() == false))
+  if ((highestQueuedEpoch) && (!isExpectingHigherQueuedEpochs()))
     *highestQueuedEpoch = NDB_FAILURE_GCI;
 
   return found;
@@ -1935,7 +1919,7 @@ int Ndb::pollEvents(int aMillisecondNumber, Uint64 *highestQueuedEpoch) {
     found = theEventBuffer->pollEvents(highestQueuedEpoch);
   }
 
-  if ((highestQueuedEpoch) && (isExpectingHigherQueuedEpochs() == false))
+  if ((highestQueuedEpoch) && (!isExpectingHigherQueuedEpochs()))
     *highestQueuedEpoch = NDB_FAILURE_GCI;
 
   return found;
@@ -2130,8 +2114,8 @@ const char *Ndb::getNdbErrorDetail(const NdbError &err, char *buff,
          * base table, schema and database, and put that in
          * string form into the caller's buffer
          */
-        UintPtr uip = (UintPtr)err.details;
-        Uint32 indexObjectId = (Uint32)(uip - (UintPtr(0)));
+        auto uip = (UintPtr)err.details;
+        auto indexObjectId = (Uint32)(uip - (UintPtr(0)));
         Uint32 primTableObjectId = ~(Uint32)0;
         BaseString indexName;
         char splitChars[2] = {table_name_separator, 0};
@@ -2240,8 +2224,8 @@ const char *Ndb::getNdbErrorDetail(const NdbError &err, char *buff,
          * `details` has the violated fk id.
          * We'll fetch the fully qualified fk name
          * and put that in caller's buffer */
-        const UintPtr uip = (UintPtr)err.details;
-        const Uint32 foreignKeyId = (Uint32)(uip - (UintPtr(0)));
+        const auto uip = (UintPtr)err.details;
+        const auto foreignKeyId = (Uint32)(uip - (UintPtr(0)));
 
         NdbDictionary::Dictionary::List allForeignKeys;
         int rc = theDictionary->listObjects(allForeignKeys,

@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -134,6 +134,21 @@ static bool is_trx_unsafe_for_parallel_slave(const THD *thd) {
 }
 
 /**
+  Check if the current statement is a CREATE TABLE ... SELECT (CTAS)
+  or any other transactional DDL that should be treated similarly.
+
+  @param thd Current THD handle.
+  @return true  if the statement is a CTAS or a transactional DDL.
+  @return false otherwise.
+*/
+[[nodiscard]] static bool is_create_table_as_query_block(THD *thd) {
+  return ((thd->lex->sql_command == SQLCOM_CREATE_TABLE &&
+           (thd->lex->query_block != nullptr) &&
+           !thd->lex->query_block->field_list_is_empty()) ||
+          thd->m_transactional_ddl.inited());
+}
+
+/**
   Get the sequence_number for a transaction, and get the last_commit based
   on parallel committing transactions.
 
@@ -219,6 +234,11 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
 #ifndef NDEBUG
   /* The writeset of an empty transaction must be empty. */
   if (is_empty_transaction_in_binlog_cache(thd)) assert(writeset->size() == 0);
+
+  DBUG_EXECUTE_IF("PKE_assert_single_primary_key_generated_update_fk_sql",
+                  assert(writeset->size() == 8););
+  DBUG_EXECUTE_IF("PKE_assert_single_primary_key_generated_delete_fk_sql",
+                  assert(writeset->size() == 5););
 #endif
 
   /*
@@ -235,6 +255,11 @@ void Writeset_trx_dependency_tracker::get_dependency(THD *thd,
          they can be executed in parallel.
        */
        is_empty_transaction_in_binlog_cache(thd)) &&
+      /*
+        'CREATE TABLE ... AS SELECT' is considered a DML, though in reality
+        it is DDL + DML, which write-sets do not capture all dependencies.
+      */
+      !is_create_table_as_query_block(thd) &&
       // binlog format must be ROW
       thd->variables.binlog_format == BINLOG_FORMAT_ROW &&
       // must not use foreign keys

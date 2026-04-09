@@ -35,39 +35,43 @@ DROP TABLE t1;
 CREATE TABLE t1 ( a INT, KEY (a) );
 CREATE TABLE t2 ( a INT, KEY (a) INVISIBLE );
 INSERT INTO t1 VALUES (1), (2), (3), (4), (5);
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
+INSERT INTO t1 SELECT * FROM t1;
 INSERT INTO t2 SELECT * FROM t1;
 ANALYZE TABLE t1, t2;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
 test.t2	analyze	status	OK
-EXPLAIN SELECT a FROM t1;
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	p0,p1,p2,p3,p4,p5,p6,p7	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	p0,p1,p2,p3,p4,p5,p6,p7	range	a	a	5	NULL	X	100.00	Using pushed condition (`test`.`t1`.`a` > 3); Using MRR
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` > 3)
 ALTER TABLE t1 ALTER INDEX a INVISIBLE;
-EXPLAIN SELECT a FROM t1;
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	p0,p1,p2,p3,p4,p5,p6,p7	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	p0,p1,p2,p3,p4,p5,p6,p7	ALL	NULL	NULL	NULL	NULL	80	33.33	Using pushed condition (`test`.`t1`.`a` > 3)
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` > 3)
 ALTER TABLE t1 ALTER INDEX a VISIBLE;
-EXPLAIN SELECT a FROM t1;
+EXPLAIN SELECT a FROM t1 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	p0,p1,p2,p3,p4,p5,p6,p7	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t1	p0,p1,p2,p3,p4,p5,p6,p7	range	a	a	5	NULL	X	100.00	Using pushed condition (`test`.`t1`.`a` > 3); Using MRR
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1`
-EXPLAIN SELECT a FROM t2;
+Note	1003	/* select#1 */ select `test`.`t1`.`a` AS `a` from `test`.`t1` where (`test`.`t1`.`a` > 3)
+EXPLAIN SELECT a FROM t2 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	p0,p1,p2,p3,p4,p5,p6,p7	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	p0,p1,p2,p3,p4,p5,p6,p7	ALL	NULL	NULL	NULL	NULL	80	33.33	Using pushed condition (`test`.`t2`.`a` > 3)
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2`
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` where (`test`.`t2`.`a` > 3)
 ALTER TABLE t2 ALTER INDEX a VISIBLE;
-EXPLAIN SELECT a FROM t2;
+EXPLAIN SELECT a FROM t2 WHERE a > 3;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t2	p0,p1,p2,p3,p4,p5,p6,p7	ALL	NULL	NULL	NULL	NULL	5	100.00	NULL
+1	SIMPLE	t2	p0,p1,p2,p3,p4,p5,p6,p7	range	a	a	5	NULL	X	100.00	Using pushed condition (`test`.`t2`.`a` > 3); Using MRR
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2`
+Note	1003	/* select#1 */ select `test`.`t2`.`a` AS `a` from `test`.`t2` where (`test`.`t2`.`a` > 3)
 DROP TABLE t1, t2;
 # Test that renaming an index does not change visibility and vice versa.
 CREATE TABLE t1 (

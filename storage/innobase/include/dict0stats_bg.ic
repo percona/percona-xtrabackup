@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2024, Oracle and/or its affiliates.
+Copyright (c) 2012, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -42,10 +42,10 @@ static inline bool dict_stats_stop_bg(dict_table_t *table) /*!< in/out: table */
   ut_ad(!srv_read_only_mode);
   ut_ad(dict_sys_mutex_own());
 
-  if (!(table->stats_bg_flag & BG_STAT_IN_PROGRESS)) {
+  if (!(table->stats_bg_flag.load() & BG_STAT_IN_PROGRESS)) {
     return (true);
   }
 
-  table->stats_bg_flag |= BG_STAT_SHOULD_QUIT;
+  table->stats_bg_flag.fetch_or(BG_STAT_SHOULD_QUIT);
   return (false);
 }

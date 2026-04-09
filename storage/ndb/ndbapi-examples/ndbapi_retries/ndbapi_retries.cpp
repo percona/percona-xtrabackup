@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +42,7 @@
 #include <mysqld_error.h>
 #include <NdbApi.hpp>
 
-#include <stdlib.h>
+#include <cstdlib>
 // Used for cout
 #include <iostream>
 
@@ -98,13 +98,14 @@ static inline void sleep(unsigned int seconds) { Sleep(seconds / 1000); }
   }
 
 void printTransactionError(NdbTransaction *ndbTransaction) {
-  const NdbOperation *ndbOp = NULL;
+  const NdbOperation *ndbOp = nullptr;
   int i = 0;
 
   /****************************************************************
    * Print NdbError object of every operations in the transaction *
    ****************************************************************/
-  while ((ndbOp = ndbTransaction->getNextCompletedOperation(ndbOp)) != NULL) {
+  while ((ndbOp = ndbTransaction->getNextCompletedOperation(ndbOp)) !=
+         nullptr) {
     NdbError error = ndbOp->getNdbError();
     std::cout << "           OPERATION " << i + 1 << ": " << error.code << " "
               << error.message << std::endl
@@ -127,7 +128,7 @@ int insert(int transactionId, NdbTransaction *myTransaction,
   NdbOperation *myOperation;  // For other operations
 
   myOperation = myTransaction->getNdbOperation(myTable);
-  if (myOperation == NULL) return -1;
+  if (myOperation == nullptr) return -1;
 
   if (myOperation->insertTuple() ||
       myOperation->equal("ATTR1", transactionId) ||
@@ -156,7 +157,7 @@ int executeInsertTransaction(int transactionId, Ndb *myNdb,
      * Start and execute transaction *
      *********************************/
     myTransaction = myNdb->startTransaction();
-    if (myTransaction == NULL) {
+    if (myTransaction == nullptr) {
       APIERROR(myNdb->getNdbError());
       ndberror = myNdb->getNdbError();
       result = -1;  // Failure
@@ -195,7 +196,7 @@ int executeInsertTransaction(int transactionId, Ndb *myNdb,
     /*********************
      * Close transaction *
      *********************/
-    if (myTransaction != NULL) {
+    if (myTransaction != nullptr) {
       myNdb->closeTransaction(myTransaction);
     }
   }
@@ -232,7 +233,7 @@ int main(int argc, char **argv) {
   const char *connectstring = argv[2];
   ndb_init();
 
-  Ndb_cluster_connection *cluster_connection = new Ndb_cluster_connection(
+  auto *cluster_connection = new Ndb_cluster_connection(
       connectstring);  // Object representing the cluster
 
   int r = cluster_connection->connect(5 /* retries               */,
@@ -279,7 +280,7 @@ int main(int argc, char **argv) {
 
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_retries");
-  if (myTable == NULL) {
+  if (myTable == nullptr) {
     APIERROR(myDict->getNdbError());
     return -1;
   }

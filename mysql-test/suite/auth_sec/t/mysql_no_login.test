@@ -48,7 +48,7 @@ GRANT EXECUTE ON noauthdb.* TO noauth@localhost;
 --exec $MYSQL --user=noauth   -e "select user(), current_user(), @@proxy_user"
 
 --echo #try to expire password of this plugin user - should warn
---error ER_CANNOT_USER
+--error ER_PASSWORD_EXPIRATION_NOT_SUPPORTED_BY_AUTH_METHOD
 alter user noauth@localhost password expire;
 
 --echo #uninstall plugin and try to login with this plugin user - should return error

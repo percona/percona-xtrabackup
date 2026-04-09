@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -80,8 +80,8 @@ class NDBT_Context {
   void wait_timeout(int msec);
 
   // Wait until the property has been set to a certain value
-  bool getPropertyWait(const char *, Uint32);
-  const char *getPropertyWait(const char *, const char *);
+  bool getPropertyWait(const char *, Uint32 val);  // returns false on success
+  const char *getPropertyWait(const char *, const char *val);  // returns value
 
   void decProperty(const char *);
   void incProperty(const char *);
@@ -464,20 +464,15 @@ class NDBT_TestSuite {
   bool m_checkErrorInsert;
 };
 
-#define NDBT_TESTSUITE(suitname)                \
-  class C##suitname : public NDBT_TestSuite {   \
-   public:                                      \
-    C##suitname() : NDBT_TestSuite(#suitname) { \
-      NDBT_TestCaseImpl1 *pt;                   \
-      pt = NULL;                                \
-      NDBT_Step *pts;                           \
-      pts = NULL;                               \
-      NDBT_Verifier *ptv;                       \
-      ptv = NULL;                               \
-      NDBT_Initializer *pti;                    \
-      pti = NULL;                               \
-      NDBT_Finalizer *ptf;                      \
-      ptf = NULL;
+#define NDBT_TESTSUITE(suitname)                        \
+  class C##suitname : public NDBT_TestSuite {           \
+   public:                                              \
+    C##suitname() : NDBT_TestSuite(#suitname) {         \
+      NDBT_TestCaseImpl1 *pt = nullptr;                 \
+      [[maybe_unused]] NDBT_Step *pts = nullptr;        \
+      [[maybe_unused]] NDBT_Verifier *ptv = nullptr;    \
+      [[maybe_unused]] NDBT_Initializer *pti = nullptr; \
+      [[maybe_unused]] NDBT_Finalizer *ptf = nullptr;
 
 // The default driver type to use for all tests in suite
 #define DRIVER(type) setDriverType(type)

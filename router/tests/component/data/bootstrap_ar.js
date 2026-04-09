@@ -14,10 +14,17 @@ if (mysqld.global.config_defaults_stored_is_null === undefined) {
 
 var options = {
   cluster_type: "ar",
-  innodb_cluster_name: "mycluster",
   router_version: mysqld.global.router_version,
   config_defaults_stored_is_null: mysqld.global.config_defaults_stored_is_null,
+
+  innodb_cluster_name: "my-cluster",
+  innodb_cluster_instances:
+      [["localhost", 5500], ["localhost", 5510], ["localhost", 5520]],
 };
+
+if (mysqld.global.server_version === undefined) {
+  mysqld.global.server_version = "8.3.0";
+}
 
 var common_responses = common_stmts.prepare_statement_responses(
     [
@@ -34,6 +41,7 @@ var common_responses = common_stmts.prepare_statement_responses(
       "router_start_transaction",
       "router_commit",
       "router_select_metadata_v2_ar_account_verification",
+      "get_routing_guidelines_version",
     ],
     options);
 
@@ -47,8 +55,11 @@ var common_responses_regex = common_stmts.prepare_statement_responses_regex(
       "router_grant_on_pfs_db",
       "router_grant_on_routers",
       "router_grant_on_v2_routers",
+      "router_grant_on_router_stats",
       "router_update_router_options_in_metadata",
       "router_select_config_defaults_stored_ar_cluster",
+      "get_local_cluster_name",
+      "router_update_local_cluster_in_metadata",
     ],
     options);
 
@@ -59,6 +70,7 @@ var router_store_config_defaults_ar_cluster =
     common_stmts.get("router_store_config_defaults_ar_cluster", options);
 
 ({
+  handshake: {greeting: {server_version: mysqld.global.server_version}},
   stmts: function(stmt) {
     var res;
     if (common_responses.hasOwnProperty(stmt)) {

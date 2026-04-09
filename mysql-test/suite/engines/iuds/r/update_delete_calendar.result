@@ -115,8 +115,6 @@ count(*)
 UPDATE t1 SET c1=NULL WHERE c2='2001-01-24' /* updates to 0000-00-00 */;
 ERROR 23000: Column 'c1' cannot be null
 UPDATE IGNORE t1 SET c1=NULL WHERE c2='2001-01-24';
-Warnings:
-Warning	1048	Column 'c1' cannot be null
 SELECT * FROM t1 WHERE c1='0000-00-00';
 ERROR HY000: Incorrect DATE value: '0000-00-00'
 TRUNCATE TABLE t1;
@@ -570,24 +568,15 @@ c1	c2	c3
 2009-02-27	2009-02-27	9
 SELECT * FROM t1 WHERE c1 <=> ADDTIME(NOW(),'1 01:01:01') ORDER BY c1 DESC;
 c1	c2	c3
-Warnings:
-Note	1292	Incorrect date value: '2009-02-26 13:21:14' for column 'c1' at row 1
 DELETE FROM t1 WHERE c1 <=> ADDTIME(NOW(),'1 01:01:01') ORDER BY c1 DESC;
 SELECT * FROM t1 WHERE c1 <=> ADDTIME(NOW(),'1 01:01:01') ORDER BY c1 DESC;
 c1	c2	c3
-Warnings:
-Note	1292	Incorrect date value: '2009-02-26 13:21:14' for column 'c1' at row 1
 SELECT * FROM t1 WHERE c1 <=> ADDDATE(CURDATE(),'1 01:01:01') ORDER BY c1 DESC;
 c1	c2	c3
 2009-02-26	2009-02-26	8
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: '1 01:01:01'
-Warning	1292	Truncated incorrect INTEGER value: '1 01:01:01'
 DELETE FROM t1 WHERE c1 <=> ADDDATE(CURDATE(),'1') ORDER BY c1 DESC;
 SELECT * FROM t1 WHERE c1 <=> ADDDATE(CURDATE(),'1 01:01:01') ORDER BY c1 DESC;
 c1	c2	c3
-Warnings:
-Warning	1292	Truncated incorrect INTEGER value: '1 01:01:01'
 INSERT INTO t1 VALUES('2001-01-01',NOW(),11);
 Warnings:
 Note	1292	Incorrect date value: '2009-02-25 12:20:13' for column 'c2' at row 1
@@ -752,8 +741,6 @@ count(*)
 UPDATE t1 SET c1=NULL WHERE c2='2001-01-24 03:33' /* updates to 0000-00-00 00:00:00 */;
 ERROR 23000: Column 'c1' cannot be null
 UPDATE IGNORE t1 SET c1=NULL WHERE c2='2001-01-24 03:33';
-Warnings:
-Warning	1048	Column 'c1' cannot be null
 SET @OLD_SQL_MODE=@@SQL_MODE, @@SQL_MODE=ALLOW_INVALID_DATES;
 SELECT * FROM t1 WHERE c1='0000-00-00 00:00:00';
 c1	c2	c3
@@ -1402,8 +1389,6 @@ count(*)
 1
 UPDATE t1 SET c1=CURRENT_TIMESTAMP WHERE c2='2001-01-24 03:33' /* updates to current timestamp */;
 UPDATE IGNORE t1 SET c1=NULL WHERE c2='2001-01-26 05:33';
-Warnings:
-Warning	1048	Column 'c1' cannot be null
 SELECT * FROM t1 WHERE c1=CURRENT_TIMESTAMP();
 c1	c2	c3
 2009-02-25 12:20:13	2001-01-24 03:33:00	11

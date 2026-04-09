@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@ namespace service_definition {
 DEFINE_BOOL_METHOD(Keyring_generator_service_impl::generate,
                    (const char *data_id, const char *auth_id,
                     const char *data_type, size_t data_size)) {
-  keyring_file_component_option_usage_set();
+  ++opt_option_tracker_usage_file_keyring;
   return generate_template<Keyring_file_backend>(
       data_id, auth_id, data_type, data_size, *g_keyring_operations,
       *g_component_callbacks);

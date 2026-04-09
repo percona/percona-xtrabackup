@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -1912,6 +1912,12 @@ bool explain_single_table_modification(THD *explain_thd, const THD *query_thd,
   const bool is_explain_into =
       explain_thd->lex->explain_format->is_explain_into();
 
+  if (query_thd->lex->query_block->get_table_list()->is_json_duality_view()) {
+    my_error(ER_JDV_OPERATION_NOT_SUPPORTED, MYF(0),
+             "EXPLAIN for INSERT/UPDATE/DELETE");
+    return true;
+  }
+
   if (explain_thd->lex->explain_format->is_iterator_based(explain_thd,
                                                           query_thd)) {
     // These kinds of queries don't have a JOIN with an iterator tree.
@@ -2294,6 +2300,7 @@ bool explain_query(THD *explain_thd, const THD *query_thd,
       my_error(ER_NOT_SUPPORTED_YET, MYF(0),
                "EXPLAIN ANALYZE with TRADITIONAL format");
     }
+    return true;
   }
 
   // Non-iterator-based formats are not supported with the hypergraph

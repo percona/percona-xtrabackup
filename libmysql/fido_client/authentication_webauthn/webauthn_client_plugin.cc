@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -104,8 +104,7 @@ static int webauthn_auth_client_plugin_option(const char *option,
     return 0;
   }
   if (strcmp(option, "registration_challenge") == 0) {
-    unsigned char *p =
-        reinterpret_cast<unsigned char *>(const_cast<void *>(val));
+    auto *p = reinterpret_cast<unsigned char *>(const_cast<void *>(val));
     memcpy(registration_challenge, p, strlen(reinterpret_cast<char *>(p)));
     /* finish registration */
     if (do_registration()) return 1;
@@ -177,8 +176,8 @@ static int webauthn_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *) {
   webauthn_assertion *wa = nullptr;
   size_t length = 0;
   auto cleanup = create_scope_guard([&] {
-    if (buff) delete[] buff;
-    if (wa) delete wa;
+    delete[] buff;
+    delete wa;
   });
 
 #ifndef NDEBUG
@@ -239,7 +238,7 @@ static bool do_registration() {
 #ifndef NDEBUG
   if (is_fido_testing) {
     const char *dummy = "\nSIGNATURE \nAUTHDATA \nCERT      ";
-    size_t sz = strlen(dummy);
+    size_t const sz = strlen(dummy);
     memcpy(registration_challenge, dummy, sz);
     /* dummy challenge response for testing */
     registration_challenge_response = new unsigned char[sz + 1];
@@ -249,7 +248,7 @@ static bool do_registration() {
   } else
 #endif
   {
-    webauthn_registration *fr = new webauthn_registration();
+    auto *fr = new webauthn_registration();
     if (fr->make_credentials(const_cast<const char *>(
             reinterpret_cast<char *>(registration_challenge)))) {
       delete fr;

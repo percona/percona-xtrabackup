@@ -522,6 +522,16 @@ analyze table tb1;
 --replace_regex $elide_costs
 EXPLAIN FORMAT=TREE select sql_small_result avg(id) from tb1 t1 group by id2;
 
+--echo #
+--echo # Bug#3767052: mysqld crash at Field::is_nullable while querying...
+--echo #
+create table t1(id int, id2 int);
+insert into t1 values (1, 10), (2, 11), (3, 12), (4, 10), (5, 11), (6, 12);
+# LIMIT is there only to minimize the output rows.
+SELECT sql_small_result 1 col1 FROM t1 GROUP BY @a := id LIMIT 1;
+SELECT * FROM (SELECT sql_small_result 1 col1 FROM t1 GROUP BY @a := id) s LIMIT 1;
+drop table t1;
+
 #cleanup
 --source include/restore_sql_mode_after_turn_off_only_full_group_by.inc
 drop table tb1;

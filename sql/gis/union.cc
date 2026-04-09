@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -31,8 +31,6 @@
 #include "sql/gis/union_functor.h"
 #include "sql/sql_exception_handler.h"  // handle_gis_exception
 
-namespace bg = boost::geometry;
-
 namespace gis {
 
 bool union_(const dd::Spatial_reference_system *srs, const Geometry *g1,
@@ -45,8 +43,8 @@ bool union_(const dd::Spatial_reference_system *srs, const Geometry *g1,
            (srs && srs->is_geographic() &&
             g1->coordinate_system() == Coordinate_system::kGeographic));
 
-    Union union_func(srs ? srs->semi_major_axis() : 0.0,
-                     srs ? srs->semi_minor_axis() : 0.0);
+    Union const union_func(srs ? srs->semi_major_axis() : 0.0,
+                           srs ? srs->semi_minor_axis() : 0.0);
     *result = union_func(g1, g2);
 
     if ((*result)->type() != Geometry_type::kGeometrycollection &&

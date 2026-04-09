@@ -336,7 +336,13 @@ SELECT * FROM t1 WHERE c2 <=> NULL ORDER BY c2;
 SELECT * FROM t1 WHERE c2 <=> NULL ORDER BY c2 LIMIT 2;
 SELECT * FROM t1 WHERE c2 BETWEEN NULL AND '10:22:33' ORDER BY c2;
 SELECT * FROM t1 WHERE c2 BETWEEN NULL AND '10:22:33' ORDER BY c2 LIMIT 2;
+# Hypergraph chooses a different plan (index condition pushdown
+# is not supported in hypergraph) which gives different result.
+# Hypergraph is correct here and not the old optimizer with empty
+# result.
+--skip_if_hypergraph
 SELECT * FROM t1 WHERE c2 IN (NULL,'10:22:33') ORDER BY c2;
+--skip_if_hypergraph
 SELECT * FROM t1 WHERE c2 IN (NULL,'10:22:33') ORDER BY c2 LIMIT 2;
 SELECT * FROM t1 WHERE c2 >= NULL AND c2 < '10:22:33' AND c1 = '491:22:33' ORDER BY c2;
 SELECT * FROM t1 WHERE c2 >= NULL AND c2 < '10:22:33' AND c1 = '491:22:33' ORDER BY c2 LIMIT 2;
@@ -360,7 +366,13 @@ SELECT * FROM t1 WHERE c2 <=> NULL ORDER BY c2 DESC;
 SELECT * FROM t1 WHERE c2 <=> NULL ORDER BY c2 DESC LIMIT 2;
 SELECT * FROM t1 WHERE c2 BETWEEN NULL AND '10:22:33' ORDER BY c2 DESC;
 SELECT * FROM t1 WHERE c2 BETWEEN NULL AND '10:22:33' ORDER BY c2 DESC LIMIT 2;
+# Hypergraph chooses a different plan (index condition pushdown
+# is not supported in hypergraph) which gives different result.
+# Hypergraph is correct here and not the old optimizer with empty
+# result.
+--skip_if_hypergraph
 SELECT * FROM t1 WHERE c2 IN (NULL,'10:22:33') ORDER BY c2 DESC;
+--skip_if_hypergraph
 SELECT * FROM t1 WHERE c2 IN (NULL,'10:22:33') ORDER BY c2 DESC LIMIT 2;
 SELECT * FROM t1 WHERE c2 >= NULL AND c2 < '10:22:33' AND c1 = '491:22:33' ORDER BY c2 DESC;
 SELECT * FROM t1 WHERE c2 >= NULL AND c2 < '10:22:33' AND c1 = '491:22:33' ORDER BY c2 DESC LIMIT 2;

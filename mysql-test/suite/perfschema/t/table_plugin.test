@@ -29,6 +29,7 @@ show tables in performance_schema
   where Tables_in_performance_schema like "%pfs_example%";
 
 # Make sure tables are visible in information_schema.
+--sorted_result
 select TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, ENGINE
   from information_schema.tables
   where TABLE_NAME like "pfs_example%" AND

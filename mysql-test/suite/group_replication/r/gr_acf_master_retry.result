@@ -12,6 +12,8 @@ SET sql_log_bin=0;
 CREATE USER 'rpl_user' IDENTIFIED BY '';
 GRANT ALL PRIVILEGES ON *.* TO 'rpl_user';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET sql_log_bin=1;
 include/start_and_bootstrap_group_replication.inc
 [connection server2]

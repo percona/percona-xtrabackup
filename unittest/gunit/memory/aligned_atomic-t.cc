@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -50,12 +50,12 @@ using Aligned_atomic_accessor_ut =
 class AlignedAtomicTest : public ::testing::Test {
  protected:
   AlignedAtomicTest() = default;
-  virtual void SetUp() {}
-  virtual void TearDown() {}
+  void SetUp() override {}
+  void TearDown() override {}
 };
 
 TEST_F(AlignedAtomicTest, Class_template_test) {
-  std::string str{"012345678"};
+  std::string const str{"012345678"};
   memory::Aligned_atomic<int> atm{1};
   EXPECT_EQ(atm->load(), 1);
   atm->store(2);
@@ -81,7 +81,7 @@ TEST_F(AlignedAtomicTest, MinimumCachelineFor) {
 }
 
 TEST_F(AlignedAtomicTest, AlignedAllocation) {
-  Aligned_atomic_accessor_ut accessor;
+  Aligned_atomic_accessor_ut const accessor;
   memory::Aligned_atomic<int> atm1{1};
   EXPECT_EQ((unsigned long long)accessor.get_underlying(atm1) %
                 memory::cache_line_size(),
@@ -99,12 +99,12 @@ TEST_F(AlignedAtomicTest, AlignedAllocation) {
 }
 
 TEST_F(AlignedAtomicTest, AlignedAllocationArray) {
-  Aligned_atomic_accessor_ut accessor;
+  Aligned_atomic_accessor_ut const accessor;
   static const int array_size = 10;
   memory::Aligned_atomic<int> atm[array_size];
 
-  for (int i = 0; i < array_size; i++)
-    EXPECT_EQ((unsigned long long)accessor.get_underlying(atm[i]) %
+  for (auto &i : atm)
+    EXPECT_EQ((unsigned long long)accessor.get_underlying(i) %
                   memory::cache_line_size(),
               0);
 }

@@ -1,4 +1,4 @@
-/*  Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/*  Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License, version 2.0,
@@ -36,8 +36,8 @@
 
 #include <mysql/plugin_auth.h>
 #include <pwd.h>
-#include <string.h>
 #include <sys/socket.h>
+#include <cstring>
 
 #include "my_compiler.h"
 
@@ -77,8 +77,7 @@ static int socket_auth(MYSQL_PLUGIN_VIO *vio, MYSQL_SERVER_AUTH_INFO *info) {
   if (!strcmp(pwd->pw_name, info->user_name) ||
       !strcmp(pwd->pw_name, info->auth_string))
     return CR_OK;
-  else
-    return CR_ERROR;
+  return CR_ERROR;
 }
 
 static int generate_auth_string_hash(char *outbuf [[maybe_unused]],

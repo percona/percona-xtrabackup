@@ -55,8 +55,6 @@ SELECT @@innodb_log_group_home_dir;
 
 SELECT @@innodb_data_file_path;
 
-SELECT @@innodb_undo_tablespaces;
-
 --replace_result $MYSQL_TMP_DIR db_directory1
 SHOW CREATE TABLE tab3;
 
@@ -89,8 +87,6 @@ SELECT @@innodb_data_home_dir;
 SELECT @@innodb_log_group_home_dir;
 
 SELECT @@innodb_data_file_path;
-
-SELECT @@innodb_undo_tablespaces;
 
 --replace_result $MYSQL_TMP_DIR db_directory1
 SHOW CREATE TABLE tab3;
@@ -179,8 +175,6 @@ SELECT @@innodb_log_group_home_dir;
 
 SELECT @@innodb_data_file_path;
 
-SELECT @@innodb_undo_tablespaces;
-
 --replace_result $MYSQL_TMP_DIR db_directory1
 SHOW CREATE TABLE tab3;
 
@@ -210,8 +204,6 @@ SELECT @@innodb_data_home_dir;
 SELECT @@innodb_log_group_home_dir;
 
 SELECT @@innodb_data_file_path;
-
-SELECT @@innodb_undo_tablespaces;
 
 --replace_result $MYSQL_TMP_DIR db_directory1
 SHOW CREATE TABLE tab3;

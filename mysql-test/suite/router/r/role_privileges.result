@@ -1,0 +1,2342 @@
+RESET BINARY LOGS AND GTIDS;
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+create schema test_schema;
+use test_schema;
+create table test_schema.tbl (id int primary key);
+insert into test_schema.tbl values (1), (2), (3), (4), (5);
+create procedure test_schema.sp() begin end;
+create function test_schema.fn() returns int return 42;
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/db
+# Registred DB_OBJECT at path: /svc/db/tbl
+# Registred DB_OBJECT at path: /svc/db/sp
+# Registred DB_OBJECT at path: /svc/db/fn
+# Registred DB_SCHEMA at path: /svc/db2
+# Registred DB_OBJECT at path: /svc/db2/tbl
+# Registred SERVICE at path: /svc2
+# Registred DB_SCHEMA at path: /svc2/db
+# Registred DB_OBJECT at path: /svc2/db/tbl
+# Registred DB_OBJECT at path: /svc2/db/sp
+# Registred DB_OBJECT at path: /svc2/db/fn
+# Registred SERVICE at path: /svc3
+# Registred DB_SCHEMA at path: /svc3/db
+# Registred DB_OBJECT at path: /svc3/db/tbl
+# Registred DB_OBJECT at path: /svc3/db/sp
+# Registred DB_OBJECT at path: /svc3/db/fn
+# Registered MRS ROLE: Nothing
+# Registered MRS ROLE: Svc2Only
+# Registered MRS Role Grant: /svc2 * * => READ,CREATE,UPDATE,DELETE
+# Registered MRS ROLE: AnySvc
+# Registered MRS Role Grant: * * * => READ,CREATE,UPDATE,DELETE
+# Registered MRS ROLE: TablesOnly
+# Registered MRS Role Grant: * * /t* => READ,CREATE,UPDATE,DELETE
+# Registered MRS ROLE: TableInsertOnly
+# Registered MRS Role Grant: * * /t?l => CREATE
+# Registered MRS ROLE: TableReadOnly
+# Registered MRS Role Grant: * * /t* => READ
+# Registered MRS ROLE: FR6_2Role
+# Registered MRS Role Grant: /svc3 * * => READ
+# Registered MRS ROLE: RSvcUSvc2
+# Registered MRS Role Grant: /svc /d? * => READ
+# Registered MRS Role Grant: /s?c2 /?b * => UPDATE
+# Registered MRS ROLE: read_only
+# Registered MRS Role Grant: * * * => READ
+# Registered MRS ROLE: read_update
+# Registered MRS Role Grant: * * * => UPDATE
+# Registered MRS ROLE: read_insert
+# Registered MRS Role Grant: * * * => CREATE
+# Registered MRS ROLE: all
+# Registered MRS Role Grant: * * * => DELETE
+# Registered MRS ROLE: circ
+# Registered MRS Role Grant: * * * => READ
+# Registered MRS ROLE: ular
+# Registered MRS ROLE: loopy
+# Registered MRS Role Grant: * * * => READ
+# Registred AUTH APP at path: NULL
+# Registred MRS USER: 'nobody'
+# Registred MRS USER: 'AanySvc'
+# Registred MRS USER: 'Asvc2Only'
+# Registred MRS USER: 'AtablesOnly'
+# Registred MRS USER: 'AinsertOnly'
+# Registred MRS USER: 'AreadOnly'
+# Registred MRS USER: 'RSvcUSvc2'
+# Registred MRS USER: 'read_only'
+# Registred MRS USER: 'read_update'
+# Registred MRS USER: 'read_insert'
+# Registred MRS USER: 'all'
+# Registred MRS USER: 'ular'
+# Registred MRS USER: 'circ'
+# Registred MRS USER: 'loopy'
+# Registred AUTH APP at path: NULL
+# Registred MRS USER: 'BanySvc'
+# Registred MRS USER: 'Bsvc2Only'
+# Registred MRS USER: 'FR6User'
+set @tmp=(select id from mysql_rest_service_metadata.mrs_role where caption='ular' limit 1);
+update mysql_rest_service_metadata.mrs_role set derived_from_role_id=@tmp where caption='circ';
+GET /svc/db/tbl
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc2/db/tbl
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc/db/tbl (payload-size:2)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+PUT /svc/db/tbl/1 (payload-size:2)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+DELETE /svc/db/tbl/1
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc/db/sp
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc/db/fn
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc2/db/tbl
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/tbl (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/db/tbl/1 (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/db/tbl/1
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/sp
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/fn
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 5,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "id": 10,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/10"
+        }
+    ],
+    "_metadata": {
+        "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/db/tbl/10 (payload-size:10)
+{
+    "id": 10,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/10"
+        }
+    ],
+    "_metadata": {
+        "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+    }
+}
+OK
+DELETE /svc/db/tbl/10
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "resultSets": []
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "result": 42
+}
+OK
+GET /svc2/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 5,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc2/db/tbl (payload-size:10)
+{
+    "id": 20,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/20"
+        }
+    ],
+    "_metadata": {
+        "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc2/db/tbl/20 (payload-size:10)
+{
+    "id": 20,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/20"
+        }
+    ],
+    "_metadata": {
+        "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+    }
+}
+OK
+DELETE /svc2/db/tbl/20
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+POST /svc2/db/sp (payload-size:2)
+{
+    "resultSets": []
+}
+OK
+POST /svc2/db/fn (payload-size:2)
+{
+    "result": 42
+}
+OK
+PUT /svc2/authentication/login
+
+OK
+GET /svc2/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 5,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc2/db/tbl (payload-size:10)
+{
+    "id": 10,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/10"
+        }
+    ],
+    "_metadata": {
+        "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc2/db/tbl/10 (payload-size:10)
+{
+    "id": 10,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/10"
+        }
+    ],
+    "_metadata": {
+        "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+    }
+}
+OK
+DELETE /svc2/db/tbl/10
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+POST /svc2/db/sp (payload-size:2)
+{
+    "resultSets": []
+}
+OK
+POST /svc2/db/fn (payload-size:2)
+{
+    "result": 42
+}
+OK
+GET /svc/db/tbl
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/db/tbl/20 (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/db/tbl/20
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc3/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc3/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc3/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc3/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc3/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc3/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 5,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc3/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc3/db/tbl (payload-size:10)
+{
+    "id": 50,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc3/db/tbl/50"
+        }
+    ],
+    "_metadata": {
+        "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc3/db/tbl/50 (payload-size:10)
+{
+    "id": 50,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc3/db/tbl/50"
+        }
+    ],
+    "_metadata": {
+        "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+    }
+}
+OK
+DELETE /svc3/db/tbl/50
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+POST /svc3/db/sp (payload-size:2)
+{
+    "resultSets": []
+}
+OK
+POST /svc3/db/fn (payload-size:2)
+{
+    "result": 42
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 5,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+GET /svc2/db/tbl
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/db/tbl/50 (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc2/db/tbl
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc2/db/tbl/50 (payload-size:10)
+{
+    "id": 50,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/50"
+        }
+    ],
+    "_metadata": {
+        "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc2/authentication/login
+
+OK
+GET /svc2/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 6,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc2/db/tbl (payload-size:10)
+{
+    "id": 10,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/10"
+        }
+    ],
+    "_metadata": {
+        "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc2/db/tbl/10 (payload-size:10)
+{
+    "id": 10,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/10"
+        }
+    ],
+    "_metadata": {
+        "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+    }
+}
+OK
+DELETE /svc2/db/tbl/10
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+POST /svc2/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc2/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 6,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "id": 20,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/20"
+        }
+    ],
+    "_metadata": {
+        "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/db/tbl/20 (payload-size:10)
+{
+    "id": 20,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/20"
+        }
+    ],
+    "_metadata": {
+        "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+    }
+}
+OK
+DELETE /svc/db/tbl/20
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc2/authentication/login
+
+OK
+GET /svc2/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc2/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 6,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc2/db/tbl (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc2/db/tbl/10 (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc2/db/tbl/10
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc2/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc2/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 6,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/db/tbl/20 (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/db/tbl/20
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc2/authentication/login
+
+OK
+GET /svc2/db/tbl
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc2/db/tbl (payload-size:10)
+{
+    "id": 10,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc2/db/tbl/10"
+        }
+    ],
+    "_metadata": {
+        "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc2/db/tbl/10 (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc2/db/tbl/10
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc2/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc2/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+GET /svc/db/tbl
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "id": 20,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/20"
+        }
+    ],
+    "_metadata": {
+        "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/db/tbl/20 (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/db/tbl/20
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc2/db/tbl
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc2/db/tbl (payload-size:10)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+PUT /svc2/db/tbl/10 (payload-size:10)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+DELETE /svc2/db/tbl/10
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc2/db/sp (payload-size:2)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc2/db/fn (payload-size:2)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 10,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/10"
+                }
+            ],
+            "_metadata": {
+                "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+            }
+        },
+        {
+            "id": 20,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/20"
+                }
+            ],
+            "_metadata": {
+                "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 8,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "id": 30,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/30"
+        }
+    ],
+    "_metadata": {
+        "etag": "0A6DF11DF58BF9E0EFB14BD817580ADE5570361E89B937B18866C6050F128CD4",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/db/tbl/30 (payload-size:10)
+{
+    "id": 30,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/30"
+        }
+    ],
+    "_metadata": {
+        "etag": "0A6DF11DF58BF9E0EFB14BD817580ADE5570361E89B937B18866C6050F128CD4"
+    }
+}
+OK
+DELETE /svc/db/tbl/30
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "resultSets": []
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "result": 42
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc2/db/tbl
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc2/db/tbl (payload-size:10)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+PUT /svc2/db/tbl/10 (payload-size:10)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+DELETE /svc2/db/tbl/10
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc2/db/sp (payload-size:2)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+POST /svc2/db/fn (payload-size:2)
+{
+    "message": "Unauthorized",
+    "status": 401
+}
+OK
+GET /svc/db/tbl
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/db/tbl/30 (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/db/tbl/30
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 10,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/10"
+                }
+            ],
+            "_metadata": {
+                "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+            }
+        },
+        {
+            "id": 20,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/20"
+                }
+            ],
+            "_metadata": {
+                "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 8,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/db/tbl/10 (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+DELETE /svc/db/tbl/10
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 10,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/10"
+                }
+            ],
+            "_metadata": {
+                "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+            }
+        },
+        {
+            "id": 20,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/20"
+                }
+            ],
+            "_metadata": {
+                "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 8,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/db/tbl/10 (payload-size:10)
+{
+    "id": 10,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/10"
+        }
+    ],
+    "_metadata": {
+        "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+    }
+}
+OK
+DELETE /svc/db/tbl/10
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 10,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/10"
+                }
+            ],
+            "_metadata": {
+                "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+            }
+        },
+        {
+            "id": 20,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/20"
+                }
+            ],
+            "_metadata": {
+                "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 8,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "id": 11,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/11"
+        }
+    ],
+    "_metadata": {
+        "etag": "6AF4F18B73FB04387AC2237DE50A4D2A2AD1CBEBD1A038349FA580548CD75BAC",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/db/tbl/11 (payload-size:10)
+{
+    "id": 11,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/11"
+        }
+    ],
+    "_metadata": {
+        "etag": "6AF4F18B73FB04387AC2237DE50A4D2A2AD1CBEBD1A038349FA580548CD75BAC"
+    }
+}
+OK
+DELETE /svc/db/tbl/11
+{
+    "message": "Forbidden",
+    "status": 403
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "resultSets": []
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "result": 42
+}
+OK
+PUT /svc/authentication/login
+
+OK
+GET /svc/db/tbl
+{
+    "items": [
+        {
+            "id": 1,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/1"
+                }
+            ],
+            "_metadata": {
+                "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+            }
+        },
+        {
+            "id": 2,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/2"
+                }
+            ],
+            "_metadata": {
+                "etag": "B25A771FB8C3EEA48C4FCDD7F1637F494FEC04D9BB60648D06D83CB93EB013F7"
+            }
+        },
+        {
+            "id": 3,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/3"
+                }
+            ],
+            "_metadata": {
+                "etag": "3308B8BA3A14BE440EB8C18F0037A1F39DFC14F4684C71D8DC7308DD3BB52030"
+            }
+        },
+        {
+            "id": 4,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/4"
+                }
+            ],
+            "_metadata": {
+                "etag": "55B55E816078B6E910FAD56987D1674AB1CABED47B8609E09E7B4780C29E7130"
+            }
+        },
+        {
+            "id": 5,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/5"
+                }
+            ],
+            "_metadata": {
+                "etag": "3D66BF03C77E83CBD5FAC47CEA8172CBCE234FEF10289391980096F31E5853D2"
+            }
+        },
+        {
+            "id": 10,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/10"
+                }
+            ],
+            "_metadata": {
+                "etag": "983EB86E5628B3683934F099D27E05BD8D1258AE6D225FBD112319121DF31803"
+            }
+        },
+        {
+            "id": 11,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/11"
+                }
+            ],
+            "_metadata": {
+                "etag": "6AF4F18B73FB04387AC2237DE50A4D2A2AD1CBEBD1A038349FA580548CD75BAC"
+            }
+        },
+        {
+            "id": 20,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/20"
+                }
+            ],
+            "_metadata": {
+                "etag": "B02684351033D76F7BC8CA1C96BDB1DBD9BB0AEA3CE86034E7554BFAC72D1975"
+            }
+        },
+        {
+            "id": 50,
+            "links": [
+                {
+                    "rel": "self",
+                    "href": "/svc/db/tbl/50"
+                }
+            ],
+            "_metadata": {
+                "etag": "401BEF6FF5D090E4940E2CD305950DA145FE42D394EB94FD4D6E7D1FE7E541F1"
+            }
+        }
+    ],
+    "limit": 25,
+    "offset": 0,
+    "hasMore": false,
+    "count": 9,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/"
+        }
+    ]
+}
+OK
+POST /svc/db/tbl (payload-size:10)
+{
+    "id": 12,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/12"
+        }
+    ],
+    "_metadata": {
+        "etag": "037676F97A8FAFC0B4210F8339387DF7F57E0E04BCAA1BEC6F68301D39EBF63E",
+        "gtid": "GTID"
+    }
+}
+OK
+PUT /svc/db/tbl/12 (payload-size:10)
+{
+    "id": 12,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/db/tbl/12"
+        }
+    ],
+    "_metadata": {
+        "etag": "037676F97A8FAFC0B4210F8339387DF7F57E0E04BCAA1BEC6F68301D39EBF63E"
+    }
+}
+OK
+DELETE /svc/db/tbl/12
+{
+    "itemsDeleted": 1,
+    "_metadata": {
+        "gtid": "GTID"
+    }
+}
+OK
+POST /svc/db/sp (payload-size:2)
+{
+    "resultSets": []
+}
+OK
+POST /svc/db/fn (payload-size:2)
+{
+    "result": 42
+}
+OK
+POST /svc/authentication/login (payload-size:70)
+
+OK
+POST /svc/authentication/login (payload-size:70)
+
+OK
+POST /svc/authentication/login (payload-size:71)
+
+OK
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;
+drop schema test_schema;

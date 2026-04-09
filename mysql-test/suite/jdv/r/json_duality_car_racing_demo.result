@@ -1,0 +1,124 @@
+# Step-1: Create Schema and tables required for
+# car racing example.
+CREATE SCHEMA car_racing;
+USE car_racing;
+CREATE TABLE team (
+team_id INT AUTO_INCREMENT PRIMARY KEY,
+name VARCHAR(255),
+points INT NOT NULL
+);
+CREATE TABLE driver (
+driver_id INT AUTO_INCREMENT PRIMARY KEY,
+name VARCHAR(255),
+points INT NOT NULL,
+team_id INT NULL,
+FOREIGN KEY (team_id) REFERENCES team(team_id)
+);
+CREATE TABLE race (
+race_id INT AUTO_INCREMENT PRIMARY KEY,
+name VARCHAR(255),
+laps INT NOT NULL,
+race_date DATE
+);
+CREATE TABLE driver_race_map (
+driver_race_map_id INT AUTO_INCREMENT PRIMARY KEY,
+race_id INT NOT NULL,
+driver_id INT NOT NULL,
+position INT NOT NULL,
+CONSTRAINT driver_race_map_uk UNIQUE (race_id, driver_id),
+FOREIGN KEY (race_id) REFERENCES race(race_id),
+FOREIGN KEY (driver_id) REFERENCES driver(driver_id)
+);
+# Step-2: Create Duality views
+CREATE JSON DUALITY VIEW team_dv AS
+SELECT JSON_DUALITY_OBJECT(
+'_id' : team.team_id,
+'name' : team.name,
+'points' : team.points,
+'drivers' : (
+SELECT JSON_ARRAYAGG(
+JSON_DUALITY_OBJECT(
+'driver_id' : driver.driver_id,
+'name' : driver.name,
+'points' : driver.points
+)
+)
+FROM driver WHERE driver.team_id = team.team_id
+)
+)
+FROM team;
+SHOW CREATE VIEW team_dv;
+View	Create View	character_set_client	collation_connection
+team_dv	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER JSON RELATIONAL DUALITY VIEW `team_dv` AS select json_duality_object('_id':`team`.`team_id`,'name':`team`.`name`,'points':`team`.`points`,'drivers':(select json_arrayagg(json_duality_object('driver_id':`driver`.`driver_id`,'name':`driver`.`name`,'points':`driver`.`points`)) from `driver` where (`driver`.`team_id` = `team`.`team_id`))) AS `Name_exp_1` from `team`	utf8mb4	utf8mb4_0900_ai_ci
+CREATE JSON DUALITY VIEW driver_dv AS
+SELECT JSON_DUALITY_OBJECT(
+'_id' : driver.driver_id,
+'name' : driver.name,
+'points' : driver.points,
+'team' : (
+SELECT JSON_DUALITY_OBJECT(
+'team_id' : team.team_id,
+'name' : team.name,
+'points' : team.points
+)
+FROM team WHERE driver.team_id = team.team_id
+),
+'race_details': (
+SELECT JSON_ARRAYAGG(
+JSON_DUALITY_OBJECT(
+'driver_race_map_id' : driver_race_map.driver_race_map_id,
+'position' : driver_race_map.position,
+'race' : (
+SELECT JSON_DUALITY_OBJECT(
+'race_id' : race.race_id,
+'name' : race.name,
+'laps' : race.laps,
+'race_date' : race.race_date
+)
+FROM race
+WHERE driver_race_map.race_id = race.race_id
+)
+)
+)
+FROM driver_race_map
+WHERE driver_race_map.driver_id = driver.driver_id
+)
+)
+FROM driver;
+SHOW CREATE VIEW driver_dv;
+View	Create View	character_set_client	collation_connection
+driver_dv	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER JSON RELATIONAL DUALITY VIEW `driver_dv` AS select json_duality_object('_id':`driver`.`driver_id`,'name':`driver`.`name`,'points':`driver`.`points`,'team':(select json_duality_object('team_id':`team`.`team_id`,'name':`team`.`name`,'points':`team`.`points`) from `team` where (`driver`.`team_id` = `team`.`team_id`)),'race_details':(select json_arrayagg(json_duality_object('driver_race_map_id':`driver_race_map`.`driver_race_map_id`,'position':`driver_race_map`.`position`,'race':(select json_duality_object('race_id':`race`.`race_id`,'name':`race`.`name`,'laps':`race`.`laps`,'race_date':`race`.`race_date`) from `race` where (`driver_race_map`.`race_id` = `race`.`race_id`)))) from `driver_race_map` where (`driver_race_map`.`driver_id` = `driver`.`driver_id`))) AS `Name_exp_1` from `driver`	utf8mb4	utf8mb4_0900_ai_ci
+CREATE JSON DUALITY VIEW race_dv AS
+SELECT JSON_DUALITY_OBJECT(
+'_id' : race.race_id,
+'name' : race.name,
+'laps' : race.laps,
+'race_date' : race.race_date,
+'results' : (
+SELECT JSON_ARRAYAGG(
+JSON_DUALITY_OBJECT(
+'driver_race_map_id' : driver_race_map.driver_race_map_id,
+'position' : driver_race_map.position,
+'driver_details' : (
+SELECT JSON_DUALITY_OBJECT(
+'driver_id' : driver.driver_id,
+'name' : driver.name,
+'points' : driver.points
+)
+FROM driver
+WHERE driver_race_map.driver_id = driver.driver_id
+)
+)
+)
+FROM driver_race_map
+WHERE driver_race_map.race_id = race.race_id
+)
+)
+FROM race;
+SHOW CREATE VIEW race_dv;
+View	Create View	character_set_client	collation_connection
+race_dv	CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER JSON RELATIONAL DUALITY VIEW `race_dv` AS select json_duality_object('_id':`race`.`race_id`,'name':`race`.`name`,'laps':`race`.`laps`,'race_date':`race`.`race_date`,'results':(select json_arrayagg(json_duality_object('driver_race_map_id':`driver_race_map`.`driver_race_map_id`,'position':`driver_race_map`.`position`,'driver_details':(select json_duality_object('driver_id':`driver`.`driver_id`,'name':`driver`.`name`,'points':`driver`.`points`) from `driver` where (`driver_race_map`.`driver_id` = `driver`.`driver_id`)))) from `driver_race_map` where (`driver_race_map`.`race_id` = `race`.`race_id`))) AS `Name_exp_1` from `race`	utf8mb4	utf8mb4_0900_ai_ci
+DROP VIEW team_dv;
+DROP VIEW driver_dv;
+DROP VIEW race_dv;
+DROP SCHEMA car_racing;

@@ -51,6 +51,11 @@ ThreadConfig=main={count=1},tc={count=3},ldm={count=4},io={count=1},rep={count=1
 [ndb_mgm]
 verbose=0
 
+[mysqld]
+# Disable GTID mode
+enforce-gtid-consistency=off
+gtid-mode=off
+
 [ENV]
 # Use the multithreaded scheduler whenever available
 MTR_NDBMTD= 1

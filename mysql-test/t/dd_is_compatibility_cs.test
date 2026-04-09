@@ -4,6 +4,12 @@ if (!$require_case_insensitive_file_system)
   --source include/have_case_sensitive_file_system.inc
 }
 
+let $messages =
+Failed to compress the gtid_executed table
+Failed to save the set of Global Transaction Identifiers
+;
+--let $suppress_on_current_connection = 1
+--source include/suppress_messages.inc
 #
 
 --echo #########################################################
@@ -190,7 +196,7 @@ SELECT count(*) = IF(@@lower_case_table_names = 0, 5, 11)
 --echo # This is because the collation of the column is different. On trunk,
 --echo # it is utf8_general_ci. With the global DD, it is the collation of the
 --echo # underlying column, which depends on l_c_t_n. For l_c_t_n == 0, this
---echo # is utf8_bin.
+--echo # is utf8mb3_bin.
 
 
 --echo #########################################################
@@ -198,7 +204,7 @@ SELECT count(*) = IF(@@lower_case_table_names = 0, 5, 11)
 --echo #                        collate like mysql.tables.name.
 --echo #########################################################
 
---echo # lctn=0 will have table_name as utf8_bin, so we do not match
+--echo # lctn=0 will have table_name as utf8mb3_bin, so we do not match
 --echo # capital information_schema name.
 SELECT COUNT(*)+IF(@@lower_case_table_names=0, 1, 0) FROM
 INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='INFORMATION_SCHEMA' AND
@@ -261,12 +267,17 @@ DROP TABLE t1;
 --echo #########################################################
 
 CREATE DATABASE test1;
+--let $my_gtid_set= `SELECT @@GLOBAL.GTID_EXECUTED`
+--replace_result "$my_gtid_set" GTID_SET
 --error 1
 --exec $MYSQL_DUMP --compact --opt -d INFORMATION_SCHEMA TABLES
+--replace_result "$my_gtid_set" GTID_SET
 --error 1
 --exec $MYSQL_DUMP --compact --opt -d INFORMATION_SCHEMA
+--replace_result "$my_gtid_set" GTID_SET
 --error 1
 --exec $MYSQL_DUMP --compact --opt -d --databases INFORMATION_SCHEMA test1
+--replace_result "$my_gtid_set" GTID_SET
 --error 1
 --exec $MYSQL_DUMP --compact --opt -d --databases INFORMATION_SCHEMA
 

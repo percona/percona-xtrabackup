@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,8 +25,8 @@
 #include <mysql/plugin_audit.h>
 #include <mysql/service_my_plugin_log.h>
 #include <mysql/service_security_context.h>
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 
 static MYSQL_THDVAR_STR(get_field, PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
                         "Get specified security context field.", nullptr,
@@ -52,8 +52,7 @@ static int test_security_context_notify(MYSQL_THD thd,
     return 0;
   }
 
-  const struct mysql_event_command *event_command =
-      (const struct mysql_event_command *)event;
+  const auto *event_command = (const struct mysql_event_command *)event;
 
   if (event_command->command_id != COM_STMT_PREPARE &&
       event_command->command_id != COM_QUERY) {

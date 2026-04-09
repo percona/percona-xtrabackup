@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -87,7 +87,15 @@ bool Log_resource_binlog_wrapper::collect_info() {
   return error;
 }
 
-void Log_resource_gtid_state_wrapper::lock() { global_tsid_lock->wrlock(); }
+void Log_resource_gtid_state_wrapper::lock() {
+  /*
+    Ensure that the number of prepared XIDs is zero to confirm the completion
+    of transactions in the BGC pipeline.
+   */
+  binlog->wait_for_prep_xids();
+
+  global_tsid_lock->wrlock();
+}
 
 void Log_resource_gtid_state_wrapper::unlock() { global_tsid_lock->unlock(); }
 
@@ -138,9 +146,10 @@ Log_resource *Log_resource_factory::get_wrapper(MYSQL_BIN_LOG *binlog,
 }
 
 Log_resource *Log_resource_factory::get_wrapper(Gtid_state *gtid_state,
-                                                Json_dom *json) {
+                                                Json_dom *json,
+                                                MYSQL_BIN_LOG *binlog) {
   Log_resource_gtid_state_wrapper *wrapper;
-  wrapper = new Log_resource_gtid_state_wrapper(gtid_state, json);
+  wrapper = new Log_resource_gtid_state_wrapper(gtid_state, json, binlog);
   return wrapper;
 }
 

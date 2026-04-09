@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -133,7 +133,8 @@ int ParseThreadConfiguration::find_next() {
 
   if (*m_curr_str == 0) {
     return 0;
-  } else if (*m_curr_str == ',') {
+  }
+  if (*m_curr_str == ',') {
     m_curr_str++;
     return 1;
   }
@@ -198,7 +199,7 @@ int ParseThreadConfiguration::find_params(char **start, char **end) {
     if (*m_curr_str != '}') break;
     *end = m_curr_str;
     return 0;
-  } while (0);
+  } while (false);
 
   int len = (int)strlen(m_curr_str);
   m_err_msg.assfmt("Invalid format near: '%.*s'", (len > 10) ? 10 : len,
@@ -225,7 +226,7 @@ int ParseThreadConfiguration::parse_params(char *str, ParamValue values[]) {
       m_err_msg.assfmt("Unknown param near: '%s'", m_curr_str);
       return -1;
     }
-    if (values[idx].found == true) {
+    if (values[idx].found) {
       m_err_msg.assfmt("Param '%s' found twice", m_parse_params[idx].name);
       return -1;
     }

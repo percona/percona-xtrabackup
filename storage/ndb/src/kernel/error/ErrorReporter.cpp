@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,10 +60,6 @@ static void dumpJam(FILE *jamStream, Uint32 thrdTheEmulatedJamIndex,
                     const JamEvent thrdTheEmulatedJam[]);
 
 const char *ndb_basename(const char *path);
-
-#ifdef ERROR_INSERT
-int simulate_error_during_error_reporting = 0;
-#endif
 
 static const char *formatTimeStampString(char *theDateTimeString, size_t len) {
   TimeModule DateTime; /* To create "theDateTimeString" */
@@ -411,12 +407,33 @@ int WriteMessage(int thrdMessageID, const char *thrdProblemData,
   fflush(stream);
   fclose(stream);
 
+#ifdef ERROR_INSERT
+  if (globalEmulatorData.theConfiguration->getShutdownHandlingFault() ==
+      Configuration::SHF_DELAY_WHILE_WRITING_ERRORLOG) {
+    Uint32 seconds =
+        globalEmulatorData.theConfiguration->getShutdownHandlingFaultExtra();
+    if (seconds == 0) seconds = 300;
+
+    fprintf(stderr,
+            "Stall for %us during error reporting before releasing lock\n",
+            seconds);
+    NdbSleep_SecSleep(seconds);
+    fprintf(stderr, "Stall finished\n");
+  }
+#endif
+
   ErrorReporter::prepare_to_crash(false, (nst == NST_ErrorInsert));
 
 #ifdef ERROR_INSERT
-  if (simulate_error_during_error_reporting == 1) {
-    fprintf(stderr, "Stall during error reporting after releasing lock\n");
-    NdbSleep_MilliSleep(30000);
+  if (globalEmulatorData.theConfiguration->getShutdownHandlingFault() ==
+      Configuration::SHF_DELAY_AFTER_WRITING_ERRORLOG) {
+    Uint32 seconds =
+        globalEmulatorData.theConfiguration->getShutdownHandlingFaultExtra();
+    if (seconds == 0) seconds = 300;
+    fprintf(stderr,
+            "Stall for %us during error reporting after releasing lock\n",
+            seconds);
+    NdbSleep_SecSleep(seconds);
   }
 #endif
 

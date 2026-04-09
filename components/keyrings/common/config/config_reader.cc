@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,6 +40,7 @@ inline Config_reader::Config_reader(std::string config_file_path)
   if (!file_stream.is_open()) {
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_NO_CONFIG,
                     config_file_path_.c_str());
+    err_ = "cannot read config file " + config_file_path_;
     return;
   }
   rapidjson::IStreamWrapper json_fstream_reader(file_stream);
@@ -49,6 +50,8 @@ inline Config_reader::Config_reader(std::string config_file_path)
     LogComponentErr(ERROR_LEVEL, ER_KEYRING_COMPONENT_CONFIG_PARSE_FAILED,
                     rapidjson::GetParseError_En(data_.GetParseError()),
                     data_.GetErrorOffset());
+    err_ = "config file " + config_file_path_ + " has not valid format";
+    return;
   }
   file_stream.close();
 }

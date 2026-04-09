@@ -3492,3 +3492,43 @@ COUNT(*)
 1
 SET @@optimizer_switch=@save_opt;
 DROP TABLE t1;
+#
+# Bug#37436310 - Performance issue with Multi-Valued Index and ORDER BY DESC LIMIT
+# (Reads more data than expected)
+#
+CREATE TABLE t1 (
+id INT NOT NULL AUTO_INCREMENT,
+ids json NOT NULL,
+PRIMARY KEY (`id`),
+KEY mx_ids_id ((CAST(json_extract(ids,_utf8mb4'$[*]') AS SIGNED ARRAY)),id)
+);
+INSERT INTO `t1` VALUES (1,'[10]');
+INSERT INTO `t1` VALUES (2,'[10]');
+INSERT INTO `t1` VALUES (3,'[20]');
+INSERT INTO `t1` VALUES (4,'[30]');
+INSERT INTO `t1` VALUES (5,'[40]');
+INSERT INTO `t1` VALUES (6,'[50]');
+INSERT INTO `t1` VALUES (7,'[50]');
+INSERT INTO `t1` VALUES (8,'[50]');
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
+FLUSH STATUS;
+SELECT * FROM t1 WHERE 30 MEMBER OF (ids->'$[*]') AND id < 7 ORDER BY id DESC;
+id	ids
+4	[30]
+SHOW STATUS LIKE 'Handler_read%';
+Variable_name	Value
+Handler_read_first	0
+Handler_read_key	1
+Handler_read_last	0
+Handler_read_next	0
+Handler_read_prev	1
+Handler_read_rnd	0
+Handler_read_rnd_next	0
+SELECT /*+ INDEX(t1 mx_ids_id) */ * FROM t1 WHERE 50 MEMBER OF (ids->'$[*]') AND id > 5 ORDER BY id DESC;
+id	ids
+8	[50]
+7	[50]
+6	[50]
+DROP TABLE t1;

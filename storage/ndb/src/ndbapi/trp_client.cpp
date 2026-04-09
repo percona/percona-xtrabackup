@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -74,9 +74,8 @@ trp_client::PollQueue::~PollQueue() {
    * Require that trp_client user
    * doesn't destroy object when holding any locks.
    */
-  if (unlikely(m_waiting != PQ_IDLE || m_locked == true ||
-               m_poll_owner == true || m_poll_queue == true ||
-               m_next != nullptr || m_prev != nullptr)) {
+  if (unlikely(m_waiting != PQ_IDLE || m_locked || m_poll_owner ||
+               m_poll_queue || m_next != nullptr || m_prev != nullptr)) {
     g_eventLogger->info(
         "ERR: ::~PollQueue: Deleting trp_clnt in use:"
         " waiting %d locked %u poll_owner %u poll_queue %u next %p prev %p",
@@ -487,7 +486,8 @@ int PollGuard::wait_for_input_in_loop(int max_wait_ms, bool forceSend) {
 
     if (likely(state == NO_WAIT)) {
       return 0;
-    } else if (state == WAIT_NODE_FAILURE) {
+    }
+    if (state == WAIT_NODE_FAILURE) {
       ret_val = -2;
       m_waiter->set_state(NO_WAIT);
       break;
@@ -514,7 +514,7 @@ int PollGuard::wait_for_input_in_loop(int max_wait_ms, bool forceSend) {
      * Ensure no reply-signals sent by receivers remains unflushed.
      */
     assert(m_clnt->has_unflushed_sends() == false);
-  } while (1);
+  } while (true);
 #ifdef VM_TRACE
   if (verbose) {
     ndbout << "ERR: receiveResponse - theImpl->theWaiter.m_state = ";

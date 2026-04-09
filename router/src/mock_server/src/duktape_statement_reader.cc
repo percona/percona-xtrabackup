@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -38,17 +38,18 @@
 #include <mysqld_error.h>
 #include <openssl/ssl.h>
 
+#include "authentication.h"
 #include "duk_module_shim.h"
 #include "duk_node_fs.h"
 #include "duktape.h"
 #include "duktape_statement_reader.h"
-#include "harness_assert.h"
 #include "mysql/harness/logging/logger.h"
-#include "mysql/harness/logging/logging.h"
 #include "mysql/harness/stdx/expected.h"
+#include "mysql_protocol_common.h"
 #include "mysqlrouter/classic_protocol.h"
 #include "mysqlrouter/classic_protocol_constants.h"
 #include "mysqlrouter/classic_protocol_session_track.h"
+#include "router_config.h"  // MYSQL_ROUTER_VERSION
 #include "statement_reader.h"
 
 namespace server_mock {
@@ -975,7 +976,11 @@ DuktapeStatementReader::~DuktapeStatementReader() {
 
 static classic_protocol::message::server::Greeting default_server_greeting() {
   // defaults
-  std::string server_version = "8.0.23-mock";
+  const std::string server_version =
+      std::to_string(MYSQL_ROUTER_VERSION_MAJOR) + "." +
+      std::to_string(MYSQL_ROUTER_VERSION_MINOR) + "." +
+      std::to_string(MYSQL_ROUTER_VERSION_PATCH) + "-mock";
+
   uint32_t connection_id = 0;
   classic_protocol::capabilities::value_type server_capabilities =
       classic_protocol::capabilities::long_password |

@@ -68,6 +68,8 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "xtrabackup.h"
 #include "xtrabackup_version.h"
 
+extern ulong srv_undo_tablespaces;
+
 #include "backup_mysql.h"
 #include "fsp0fsp.h"
 #include "xb_regex.h"
@@ -380,8 +382,8 @@ bool check_server_version(unsigned long version_number,
                   version_string = "8.1.1";);
   DBUG_EXECUTE_IF("simulate_90_version", version_number = 90000;
                   version_string = "9.0.1";);
-  DBUG_EXECUTE_IF("simulate_higher_version", version_number = 90199;
-                  version_string = "9.1.99";);
+  DBUG_EXECUTE_IF("simulate_higher_version", version_number = 90699;
+                  version_string = "9.6.99";);
   if (!xtrabackup::utils::get_major_minor_version(MYSQL_SERVER_VERSION,
                                                   pxb_version)) {
     xb::error() << "Failed to parse Percona Xtrabackup version: "
@@ -481,8 +483,7 @@ bool get_mysql_vars(MYSQL *connection) {
   char *innodb_buffer_pool_filename_var = nullptr;
   char *datadir_var = nullptr;
   char *innodb_log_group_home_dir_var = nullptr;
-  char *innodb_log_file_size_var = nullptr;
-  char *innodb_log_files_in_group_var = nullptr;
+  char *innodb_redo_log_capacity_var = nullptr;
   char *innodb_data_file_path_var = nullptr;
   char *innodb_data_home_dir_var = nullptr;
   char *innodb_undo_directory_var = nullptr;
@@ -516,8 +517,7 @@ bool get_mysql_vars(MYSQL *connection) {
       {"innodb_buffer_pool_filename", &innodb_buffer_pool_filename_var},
       {"datadir", &datadir_var},
       {"innodb_log_group_home_dir", &innodb_log_group_home_dir_var},
-      {"innodb_log_file_size", &innodb_log_file_size_var},
-      {"innodb_log_files_in_group", &innodb_log_files_in_group_var},
+      {"innodb_redo_log_capacity", &innodb_redo_log_capacity_var},
       {"innodb_data_file_path", &innodb_data_file_path_var},
       {"innodb_data_home_dir", &innodb_data_home_dir_var},
       {"innodb_undo_directory", &innodb_undo_directory_var},
@@ -631,11 +631,12 @@ bool get_mysql_vars(MYSQL *connection) {
         my_strdup(PSI_NOT_INSTRUMENTED, innodb_directories_var, MYF(MY_FAE));
   }
 
-
-  if (!check_if_param_set("innodb_log_file_size") && innodb_log_file_size_var) {
+  if (!check_if_param_set("innodb_redo_log_capacity") &&
+      innodb_redo_log_capacity_var) {
     char *endptr;
 
-    innobase_log_file_size = strtoll(innodb_log_file_size_var, &endptr, 10);
+    innobase_redo_log_capacity =
+        strtoll(innodb_redo_log_capacity_var, &endptr, 10);
     ut_ad(*endptr == 0);
   }
 
@@ -2142,7 +2143,7 @@ bool write_backup_config_file() {
     << innodb_checksum_algorithm_names[srv_checksum_algorithm] << "\n"
     << "innodb_log_checksums=" << srv_log_checksums << "\n"
     << "innodb_data_file_path=" << innobase_data_file_path << "\n"
-    << "innodb_log_file_size=" << innobase_log_file_size << "\n"
+    << "innodb_redo_log_capacity=" << innobase_redo_log_capacity << "\n"
     << "innodb_page_size=" << srv_page_size << "\n"
     << "innodb_undo_directory=" << srv_undo_dir << "\n"
     << "innodb_undo_tablespaces=" << srv_undo_tablespaces << "\n"

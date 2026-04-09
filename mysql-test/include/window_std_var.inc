@@ -28,8 +28,10 @@ SELECT i, j, VARIANCE(i+j) OVER (ORDER BY j DESC ROWS UNBOUNDED PRECEDING) varia
 
 --echo Check that we eliminate redundant sorting in ORDER BY even with wfs
 SELECT i, j, STD(i+j) OVER (ROWS UNBOUNDED PRECEDING) std FROM t ORDER BY NULL DESC;
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 EXPLAIN FORMAT=JSON SELECT i, j, std(i+j) OVER (ROWS UNBOUNDED PRECEDING) STD FROM t ORDER BY NULL DESC;
+SET explain_json_format_version = DEFAULT;
 --echo With LIMIT
 SELECT i, j, STD(i+j) OVER (ROWS UNBOUNDED PRECEDING) STD FROM t ORDER BY std DESC LIMIT 3;
 

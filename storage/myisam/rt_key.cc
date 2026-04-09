@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -40,7 +40,7 @@
 int rtree_add_key(MI_INFO *info, MI_KEYDEF *keyinfo, uchar *key,
                   uint key_length, uchar *page_buf, my_off_t *new_page) {
   uint page_size = mi_getint(page_buf);
-  uint nod_flag = mi_test_if_nod(page_buf);
+  uint const nod_flag = mi_test_if_nod(page_buf);
   DBUG_TRACE;
 
   if (page_size + key_length + info->s->base.rec_reflength <=

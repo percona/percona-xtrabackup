@@ -1,0 +1,73 @@
+CREATE DATABASE DB1;
+
+USE DB1;
+
+CREATE TABLE `t1x` (
+  `T1C1` int NOT NULL AUTO_INCREMENT,
+  `T1C2` float DEFAULT NULL,
+  PRIMARY KEY (`T1C1`)
+);
+
+CREATE TABLE `t2x` (
+  `T2C1` int NOT NULL,
+  `T2C2` double DEFAULT NULL,
+  PRIMARY KEY (`T2C1`),
+  CONSTRAINT `t2x_ibfk_1` FOREIGN KEY (`T2C1`) REFERENCES `t1x` (`T1C1`)
+);
+
+INSERT INTO t1x VALUES (1, 1.1), (2, 2.1), (3, 3.1);
+INSERT INTO t2x VALUES (1, 1.1), (2, 2.1), (3, 3.1);
+
+CREATE JSON RELATIONAL DUALITY VIEW `dv_float`
+AS SELECT JSON_DUALITY_OBJECT(
+    '_id':`t1x`.`T1C1`,
+    'T1C2':`t1x`.`T1C2`,
+    'T2X':(
+            SELECT JSON_ARRAYAGG(
+                JSON_DUALITY_OBJECT(
+                    'T2C1':`t2x`.`T2C1`,
+                    'T2C2':`t2x`.`T2C2`
+                )
+            ) FROM `t2x` WHERE (`t2x`.`T2C1` = `t1x`.`T1C1`)
+    )
+) AS `Name_exp_1` from `t1x`;
+
+--echo "way-1:  Explicit function call"
+SELECT data FROM dv_float;
+
+--echo "way-2: Make above function implicit during JDV SELECT callflow"
+
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 int);
+INSERT INTO t1 VALUES (0, 0), (1, 10), (2, 20);
+CREATE JSON DUALITY VIEW dv_test AS SELECT JSON_DUALITY_OBJECT(WITH (INSERT, UPDATE, DELETE) "_id": t1.f1) FROM t1;
+
+--echo Query with single duality view.
+--sorted_result
+SELECT * FROM dv_test;
+
+--echo Query with two duality view.
+--sorted_result
+SELECT * FROM dv_test a, dv_test b;
+
+--echo Query with duality view in sub-query.
+--sorted_result
+SELECT * FROM dv_test a, dv_test b WHERE EXISTS (SELECT * FROM dv_test);
+
+--echo "Way-2: Contd. In case of multi-level JDV, etag isn't calculated and injected"
+
+--echo Query with single duality view.
+--sorted_result
+SELECT * FROM dv_float;
+
+--echo Query with two duality view.
+--sorted_result
+SELECT * FROM dv_float a, dv_float b;
+
+--echo Query with duality view in sub-query.
+--sorted_result
+SELECT * FROM dv_float a, dv_float b WHERE EXISTS (SELECT * FROM dv_float);
+
+DROP VIEW dv_float;
+DROP VIEW dv_test;
+
+DROP DATABASE DB1;

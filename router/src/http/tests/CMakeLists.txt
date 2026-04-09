@@ -1,4 +1,4 @@
-# Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -151,6 +151,11 @@ add_googletest_file(test_http_request_router.cc
     http_server_lib     # request-router
     test-helpers        # init_test_logger
     ext::icu
+  )
+
+add_googletest_file(test_client.cc
+  MODULE http
+  LIB_DEPENDS http_client
   )
 
 IF(LIBFUZZER_COMPILE_FLAGS)

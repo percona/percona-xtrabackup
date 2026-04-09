@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -208,6 +208,16 @@ struct ref_t {
   then it is considered as a small change.  For small changes to LOB,
   the changes are undo logged like any other update operation. */
   static const ulint LOB_SMALL_CHANGE_THRESHOLD = 100;
+
+  /* Whether the update to the LOB can be considered as a small change.
+  Currently, the small partial update optimization is restricted to only the
+  first version of the lob, to avoid interacting with the partial update
+  feature.  This restriction is because reconstructing the older versions of
+  the lob is not yet completely implemented. */
+  static bool is_small_change(size_t bytes_changed, const ref_t &blobref) {
+    return (bytes_changed <= ref_t::LOB_SMALL_CHANGE_THRESHOLD) &&
+           (blobref.version() == 1);
+  }
 
   /** Constructor.
   @param[in]    ptr     Pointer to the external field reference. */

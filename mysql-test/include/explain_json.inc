@@ -4,8 +4,11 @@
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
 --source include/elide_costs.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 set end_markers_in_json=on;
+SET explain_json_format_version = 1;
 
 --echo # new "FORMAT" keyword doesn't conflict with the FORMAT() function name:
 
@@ -228,11 +231,9 @@ INSERT INTO t3 VALUES (1);
 
 let $query=UPDATE t1 SET i=(SELECT i FROM t2);
 --eval EXPLAIN $query
---skip_if_hypergraph
 --eval EXPLAIN FORMAT=JSON $query
 let $query=UPDATE t1, t2 SET t1.i=(SELECT i FROM t3);
 --eval EXPLAIN $query
---skip_if_hypergraph
 --eval EXPLAIN FORMAT=JSON $query
 
 --echo # INSERT ... ON DUPLICATE KEY UPDATE x=(SELECT ...) value list
@@ -348,7 +349,6 @@ let $query=SELECT DISTINCT SUM(b) s FROM t1 GROUP BY a ORDER BY s;
 FLUSH STATUS;
 --eval $query
 --disable_warnings
---skip_if_hypergraph  # Depends on the query plan.
 SHOW SESSION STATUS WHERE (Variable_name LIKE 'Sort_%' OR Variable_name LIKE 'Created_%_tables') AND Value > 0;
 --enable_warnings
 
@@ -395,7 +395,6 @@ let $query =
 
 eval EXPLAIN FORMAT=json $query;
 --echo # For comparison
---skip_if_hypergraph  # Depends on the query plan.
 --replace_regex $elide_costs
 eval EXPLAIN FORMAT=tree $query;
 
@@ -462,7 +461,6 @@ DROP TABLE t;
 --echo #
 --echo #  WL#15684 System variable to select JSON EXPLAIN format
 --echo #
-SET @saved_json_format_version = @@explain_json_format_version;
 SET @@end_markers_in_json=OFF;
 SET @@explain_json_format_version = 1;
 
@@ -517,13 +515,12 @@ SELECT @@explain_json_format_version;
 DROP PROCEDURE p;
 DROP TABLE t;
 SET @@end_markers_in_json=ON;
-SET @@explain_json_format_version = @saved_json_format_version;
+SET @@explain_json_format_version = DEFAULT;
 
 --echo #
 --echo # Bug#36134568 Add query type to iterator-based EXPLAIN FORMAT=JSON
 --echo #
 
-SET @saved_json_format_version = @@explain_json_format_version;
 SET @@explain_json_format_version = 2;
 
 CREATE TABLE t1 (i1 INT PRIMARY KEY, i2 INT);
@@ -577,4 +574,170 @@ SELECT JSON_EXTRACT(@v1, '$.query_type') = 'delete';
 
 DROP TABLE t1, t2;
 SET @v1=NULL;
-SET @@explain_json_format_version = @saved_json_format_version;
+SET @@explain_json_format_version = DEFAULT;
+
+--echo #
+--echo # Bug#37126176 Add lookup references to iterator-based EXPLAIN FORMAT=JSON for index lookups
+--echo #
+
+SET @@explain_json_format_version = 2;
+
+SET @v1 = NULL;
+CREATE TABLE t (pk INT PRIMARY KEY AUTO_INCREMENT, i INT DEFAULT NULL, INDEX idx(i));
+INSERT INTO t(i) VALUES (3), (2), (1), (NULL);
+ANALYZE TABLE t;
+
+# Even though these plans are mostly pretty simple we use JSON functions to
+# extract the relevant paths from the EXPLAIN output in case the plan should
+# change in the future but still contains the desired path.
+# As long as the EXPLAIN output contains the desired fields and values in the
+# right relative position we do not care about other parts of the plan.
+
+# CONCAT(SUBSTRING_INDEX(path, '.', CHAR_LENGTH - CHAR_LENGTH)) extracts the
+# path to the lookup object found with the JSON_SEARCH.
+# The same effect could probably be achieved with
+# JSON_EXTRACT(@v1, '$**.lookup_references[0]'), but this way we make sure the
+# access type is right and from the right object.
+# This is probably more useful with more complex plans.
+
+--echo # Index lookup shows correct reference type in "lookup_references".
+# Index lookup (REF)
+EXPLAIN FORMAT=JSON INTO @v1 SELECT i FROM t WHERE i = 1;
+SELECT JSON_EXTRACT(@v1,
+  CONCAT(
+    SUBSTRING_INDEX(index_access_type_path, '.',
+      CHAR_LENGTH(index_access_type_path)
+        -
+      CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+    '.lookup_references[0]'))
+  = "const"
+  AS index_lookup_references_const
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+
+SET @v1 = NULL;
+
+# Single-row index lookup (EQ_REF)
+EXPLAIN FORMAT=JSON INTO @v1 SELECT t1.pk FROM t t1, t t2 WHERE t1.pk = t2.pk + 1;
+SELECT JSON_EXTRACT(@v1,
+  CONCAT(
+    SUBSTRING_INDEX(index_access_type_path, '.',
+      CHAR_LENGTH(index_access_type_path)
+        -
+      CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+    '.lookup_references[0]'))
+  = "func"
+  AS index_lookup_references_func
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+
+SET @v1 = NULL;
+
+# Single-row index lookup (EQ_REF)
+# "lookup_references" can be either '["test.t1.pk"]' or '["test.t2.pk"]'.
+# If the plan changes we do not care as long as "lookup_references" contains a
+# fully qualified column name.
+EXPLAIN FORMAT=JSON INTO @v1 SELECT t1.pk FROM t t1, t t2 WHERE t1.pk = t2.pk;
+SELECT JSON_EXTRACT(@v1,
+  CONCAT(
+    SUBSTRING_INDEX(index_access_type_path, '.',
+      CHAR_LENGTH(index_access_type_path)
+        -
+      CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+    '.lookup_references[0]'))
+  IN ("test.t1.pk", "test.t2.pk")
+  AS index_lookup_references_column
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+
+SET @v1 = NULL;
+
+# Index lookup (REF_OR_NULL)
+EXPLAIN FORMAT=JSON INTO @v1 SELECT * FROM t WHERE i = 1 OR i IS NULL;
+SELECT JSON_UNQUOTE(JSON_EXTRACT(@v1,
+  CONCAT(
+    SUBSTRING_INDEX(index_access_type_path, '.',
+      CHAR_LENGTH(index_access_type_path)
+        -
+      CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+    '.lookup_condition')))
+  LIKE "% or NULL"
+  AS is_ref_or_null
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+
+SET @v1 = NULL;
+
+# Multi-range read (MRR)
+SET @saved_optimizer_switch = @@optimizer_switch;
+SET optimizer_switch='batched_key_access=on,mrr=on,mrr_cost_based=off';
+
+EXPLAIN FORMAT=JSON INTO @v1 SELECT /*+ BKA(t2) */ * FROM t t1 LEFT JOIN t t2 ON t1.pk = t2.pk AND t1.i = 1 AND t1.i = 2;
+SELECT JSON_EXTRACT(@v1,
+  CONCAT(
+    SUBSTRING_INDEX(index_access_type_path, '.',
+      CHAR_LENGTH(index_access_type_path)
+        -
+      CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+    '.lookup_references')) IS NOT NULL
+  AS mrr_has_lookup_references
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'multi_range_read')) AS index_access_type_path) AS t;
+
+SET optimizer_switch = @saved_optimizer_switch;
+
+SET @v1 = NULL;
+DROP TABLE t;
+
+# Fulltext search (FULLTEXT)
+--echo # Fulltext search has "lookup_references", should only show "const"
+CREATE TABLE t (a VARCHAR(200), b TEXT, FULLTEXT (a,b)) ENGINE = InnoDB charset utf8mb4;
+INSERT INTO t VALUES  ('This is a sample text', 'I made up for this test.'),
+                      ('We want to show that fulltext', 'search references a constant in the "lookup_condition".'),
+                      ('In this test the EXPLAIN output', 'should contain a field called "lookup_references".'),
+                      ('"lookup_references" should be an array.', 'That array should contain an element that is "const".'),
+                      ('Function MATCH ... AGAINST()','is used to do a fulltext search.'),
+                      ('Fulltext searches in MySQL', 'are confusing.');
+ANALYZE TABLE t;
+
+EXPLAIN FORMAT=JSON INTO @v1 SELECT * FROM t WHERE MATCH(a,b) AGAINST ("fulltext");
+SELECT JSON_EXTRACT(@v1,
+  CONCAT(
+    SUBSTRING_INDEX(index_access_type_path, '.',
+      CHAR_LENGTH(index_access_type_path)
+        -
+      CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+    '.lookup_references[0]'))
+  = "const"
+  AS fulltext_search_references_const
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'full_text_search')) AS index_access_type_path) AS t;
+
+SET @v1 = NULL;
+DROP TABLE t;
+
+SET @@explain_json_format_version = DEFAULT;
+
+--echo #
+--echo # Bug#35239659 Separate query attributes and iterator attributes in iterator-based EXPLAIN JSON
+--echo #
+# Not many tests for this since it is tested every time the full JSONv2 format
+# is printed in a test
+
+CREATE TABLE t (i INT);
+# Simple TREE EXPLAIN to show TREE output is not affected
+EXPLAIN FORMAT=TREE SELECT * FROM t t1 JOIN t t2 WHERE t1.i = t2.i;
+
+EXPLAIN FORMAT=JSON INTO @var SELECT * FROM t t1 JOIN t t2 WHERE t1.i = t2.i;
+SELECT JSON_KEYS(@var);
+
+DROP TABLE t;
+SET @var = NULL;
+
+--echo #
+--echo # Bug#37838599 EXPLAIN ANALYZE FORMAT=JSON did not handle queries with
+--echo # subqueries correctly when explain_json_format_version=1.
+--echo #
+SET @@explain_json_format_version = 1;
+
+--error ER_EXPLAIN_ANALYZE_JSON_FORMAT_VERSION_NOT_SUPPORTED
+EXPLAIN ANALYZE FORMAT=JSON SELECT * FROM (SELECT 1) b;
+
+SET @@explain_json_format_version = DEFAULT;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

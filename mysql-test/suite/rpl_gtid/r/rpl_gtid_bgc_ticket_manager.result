@@ -1,4 +1,3 @@
-include/only_with_option.inc [GLOBAL.replica_parallel_type = 'LOGICAL_CLOCK']
 include/only_with_option.inc [GLOBAL.replica_parallel_workers != 0]
 include/only_with_option.inc [GLOBAL.binlog_order_commits = 1]
 include/rpl/init_source_replica.inc

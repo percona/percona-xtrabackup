@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2024, Oracle and/or its affiliates.
+Copyright (c) 1996, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -33,22 +33,34 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 /** Returns a new row id.
  @return the new id */
-static inline row_id_t dict_sys_get_new_row_id(void) {
-  row_id_t id;
+static inline row_id_t dict_sys_get_new_row_id() {
+  row_id_t id = dict_sys->row_id.load();
+  while (true) {
+    if ((id % DICT_HDR_ROW_ID_WRITE_MARGIN) == 0) {
+      dict_sys_mutex_enter();
+      id = dict_sys->row_id.load();
 
-  dict_sys_mutex_enter();
+      if ((id % DICT_HDR_ROW_ID_WRITE_MARGIN) == 0) {
+        dict_sys->dict_hdr_flush_row_id();
+        dict_sys->row_id.store(id + 1, std::memory_order_release);
 
-  id = dict_sys->row_id;
+        dict_sys_mutex_exit();
+        return id;
+      } else if (dict_sys->row_id.compare_exchange_weak(id, id + 1)) {
+        /* We could release the mutex and continue. Instead we prefer to improve
+        the chances of successful CAS by holding the mutex. Other threads like
+        us have waited for the mutex to be released by the thread doing the slow
+        dict_hdr_flush_row_id() and now all of us compete to get a row id. So we
+        use the mutex to avoid competition. */
+        dict_sys_mutex_exit();
+        return id;
+      }
 
-  if (0 == (id % DICT_HDR_ROW_ID_WRITE_MARGIN)) {
-    dict_hdr_flush_row_id();
+      dict_sys_mutex_exit();
+    } else if (dict_sys->row_id.compare_exchange_weak(id, id + 1)) {
+      return id;
+    }
   }
-
-  dict_sys->row_id++;
-
-  dict_sys_mutex_exit();
-
-  return (id);
 }
 
 /** Reads a row id from a record or other 6-byte stored form.
@@ -68,14 +80,4 @@ static inline void dict_sys_write_row_id(byte *field, /*!< in: record field */
   static_assert(DATA_ROW_ID_LEN == 6, "DATA_ROW_ID_LEN != 6");
 
   mach_write_to_6(field, row_id);
-}
-
-/** Check if a table id belongs to old innodb internal system table.
-@param[in]      id              table id
-@return true if the table id belongs to a system table. */
-static inline bool dict_is_old_sys_table(table_id_t id) {
-  if (srv_is_upgrade_mode) {
-    return (id < DICT_HDR_FIRST_ID);
-  }
-  return (false);
 }

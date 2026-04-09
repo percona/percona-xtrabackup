@@ -15,6 +15,8 @@ INSERT INTO t1 VALUES (1,1,'a'),(2,2,'b'),(2,3,'c'),(3,4,'E'),(3,5,'C'),(3,6,'D'
 create table t2 (id int, a bigint unsigned not null, c char(10), d int, primary key (a));
 insert into t2 values (1,1,"a",1),(3,4,"A",4),(3,5,"B",5),(3,6,"C",6),(4,7,"D",7);
 
+ANALYZE TABLE t1, t2;
+
 select t1.*,t2.* from t1 JOIN t2 where t1.a=t2.a;
 # Tests printing of EXPLAIN FORMAT=tree for outer join BKA (in join_outer_bka.test).
 --skip_if_hypergraph  # No BKA support.
@@ -248,6 +250,8 @@ INSERT INTO t2 VALUES (1,1,'El Gato');
 INSERT INTO t2 VALUES (2,1,'Perrito');
 INSERT INTO t2 VALUES (3,3,'Happy');
 
+ANALYZE TABLE t1, t2;
+
 --sorted_result
 select t1.name, t2.name, t2.id from t1 left join t2 on (t1.id = t2.owner);
 select t1.name, t2.name, t2.id from t1 left join t2 on (t1.id = t2.owner) where t2.id is null;
@@ -277,6 +281,7 @@ drop table t1,t2;
 
 create table t1 (id int not null, str char(10), index(str));
 insert into t1 values (1, null), (2, null), (3, "foo"), (4, "bar");
+ANALYZE TABLE t1;
 select * from t1 where str is not null order by id;
 select * from t1 where str is null;
 explain select * from t1 where str is null;
@@ -432,6 +437,7 @@ CREATE TABLE t2 (
   UNIQUE id (id,idx)
 );
 INSERT INTO t2 VALUES (1,1);
+ANALYZE TABLE t1, t2;
 explain SELECT * from t1 left join t2 on t1.id=t2.id where t2.id IS NULL;
 SELECT * from t1 left join t2 on t1.id=t2.id where t2.id IS NULL;
 drop table t1,t2;
@@ -649,6 +655,7 @@ INSERT INTO t0 VALUES (1);
 INSERT INTO t1 VALUES (1);
 INSERT INTO t2 VALUES (1), (2);
 INSERT INTO t3 VALUES (1), (2);
+ANALYZE TABLE t0, t1, t2, t3;
 
 SELECT * FROM t1 LEFT JOIN t2 ON a1=0;
 EXPLAIN SELECT * FROM t1 LEFT JOIN t2 ON a1=0;
@@ -659,6 +666,7 @@ EXPLAIN SELECT * FROM t0, t1 LEFT JOIN (t2,t3) ON a1=0 WHERE a0=a1;
 
 INSERT INTO t0 VALUES (0);
 INSERT INTO t1 VALUES (0);
+ANALYZE TABLE t0, t1;
 SELECT * FROM t0, t1 LEFT JOIN (t2,t3) ON a1=5 WHERE a0=a1 AND a0=1;
 EXPLAIN SELECT * FROM t0, t1 LEFT JOIN (t2,t3) ON a1=5 WHERE a0=a1 AND a0=1;
 
@@ -720,6 +728,7 @@ create table t2 (gid smallint(5) unsigned not null, x int(11) not null, y int(11
 insert t2 values (1, -5, -8, 1), (1, 1, 1, 1), (1, 2, 2, 1);
 create table t3 ( set_id smallint(5) unsigned not null, id tinyint(4) unsigned not null, name char(12) not null, primary key  (id,set_id));
 insert t3 values (0, 1, 'a'), (1, 1, 'b'), (0, 2, 'c'), (1, 2, 'd'), (1, 3, 'e'), (1, 4, 'f'), (1, 5, 'g'), (1, 6, 'h');
+ANALYZE TABLE t1, t2, t3;
 explain select name from t1 left join t2 on t1.x = t2.x and t1.y = t2.y
 left join t3 on t1.art = t3.id where t2.id =1 and t2.x = -5 and t2.y =-8
 and t1.gid =1 and t2.gid =1 and t3.set_id =1;
@@ -769,6 +778,7 @@ CREATE TABLE t2 (a int PRIMARY KEY, b int);
 
 INSERT INTO t1 VALUES (1,2), (2,1), (3,2), (4,3), (5,6), (6,5), (7,8), (8,7), (9,10);
 INSERT INTO t2 VALUES (3,0), (4,1), (6,4), (7,5);
+ANALYZE TABLE t1, t2;
 
 --sorted_result
 SELECT * FROM t1 LEFT JOIN t2 ON t1.a = t2.a WHERE t2.b <= t1.a AND t1.a <= t1.b;
@@ -922,7 +932,6 @@ SELECT t1.id, a FROM t1 LEFT JOIN t2 ON t1.id=t2.id WHERE t2.b IS NULL;
 
 flush status;
 SELECT t1.id, a FROM t1 LEFT JOIN t2 ON t1.id=t2.id WHERE t2.b IS NULL;
---skip_if_hypergraph  # Depends on the query plan.
 show status like 'Handler_read%';
 
 DROP TABLE t1,t2;
@@ -980,6 +989,7 @@ CREATE TABLE t1(f1 INT, f2 INT, f3 INT);
 INSERT INTO t1 VALUES (1, NULL, 3);
 CREATE TABLE t2(f1 INT, f2 INT);
 INSERT INTO t2 VALUES (2, 1);
+ANALYZE TABLE t1, t2;
 
 EXPLAIN SELECT * FROM t1 LEFT JOIN t2 ON t1.f2 = t2.f2
 WHERE (COALESCE(t1.f1, t2.f1), f3) IN ((1, 3), (2, 2));
@@ -997,6 +1007,8 @@ CREATE TABLE t1( a INT );
 
 INSERT INTO t1 VALUES (1),(2);
 SET optimizer_search_depth = 0;
+
+ANALYZE TABLE t1;
 
 --echo # Should not core dump on query preparation
 EXPLAIN
@@ -1037,6 +1049,7 @@ DROP TABLE t1, t2;
 --echo #
 CREATE TABLE t1(f1 INT, PRIMARY KEY (f1));
 INSERT INTO t1 VALUES (1),(2);
+ANALYZE TABLE t1;
 
 EXPLAIN SELECT STRAIGHT_JOIN jt1.f1 FROM t1 AS jt1
  LEFT JOIN t1 AS jt2
@@ -1069,6 +1082,8 @@ INSERT INTO t1 VALUES (4);
 INSERT INTO t2 VALUES (3, 3);
 INSERT INTO t2 VALUES (7, 7);
 
+ANALYZE TABLE t1, t2;
+
 EXPLAIN SELECT * FROM t1 LEFT JOIN t2 ON t2.f1 = t1.f1
 WHERE t1.f1 = 4
 GROUP BY t2.f1, t2.f2;
@@ -1100,6 +1115,8 @@ CREATE TABLE t2 (pk INT PRIMARY KEY,
                  col_int INT,
                  col_int_unique INT UNIQUE KEY);
 INSERT INTO t2 VALUES (1,0,1), (2,0,2);
+
+ANALYZE TABLE t1, t2;
 
 EXPLAIN
 SELECT * FROM t1 LEFT JOIN t2
@@ -1335,6 +1352,8 @@ CREATE TABLE t4 (a int);
 
 INSERT INTO t1 VALUES (null),(null);
 
+ANALYZE TABLE t1, t2, t3, t4;
+
 let $query = SELECT t1.a FROM t1 LEFT JOIN (t2 LEFT JOIN t3 ON t2.a)
 ON 0 WHERE t1.a OR t3.a;
 
@@ -1386,6 +1405,8 @@ CREATE TABLE t4 (
 
 INSERT INTO t4 VALUES (1);
 INSERT INTO t4 VALUES (2);
+
+ANALYZE TABLE t1, t2, t3, t4;
 
 SELECT t1.col_int
 FROM t1
@@ -1541,6 +1562,8 @@ CREATE TABLE t6 (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 INSERT INTO t6 VALUES (1,'1',1);
 
+ANALYZE TABLE t1, t2, t3, t4, t5, t6;
+
 # EXPLAIN of query above (t2 is before t5 in plan)
 
 let $rest_of_query=t6a.pk, t2.pk
@@ -1605,12 +1628,12 @@ CREATE TABLE t1(a INT);
 CREATE TABLE t2(a INT NOT NULL);
 INSERT INTO t1 VALUES(1),(2);
 INSERT INTO t2 VALUES(1),(2);
+ANALYZE TABLE t1, t2;
 let $query=SELECT * FROM t1 LEFT JOIN t2 ON t1.a=t2.a WHERE t2.a IS NULL;
 eval EXPLAIN $query;
 FLUSH STATUS;
 eval $query;
 # Without the "not exists" optimization, there would be more read_rnd_next
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'HANDLER_READ%';
 DROP TABLE t1,t2;
 
@@ -1635,13 +1658,16 @@ DROP TABLE t1, t2;
 --echo #
 
 CREATE TABLE t1 (ik INT, vc varchar(1)) charset utf8mb4 ENGINE=Innodb;
+ANALYZE TABLE t1;
 
 let $query=
 SELECT straight_join t1.vc, t1.ik
 FROM t1 JOIN t1 AS t2 ON t1.vc=t2.vc LEFT JOIN t1 AS t3 ON t1.vc=t3.vc;
 
+SET explain_json_format_version = 1;
 --skip_if_hypergraph  # Depends on the query plan.
 eval explain format=json $query;
+SET explain_json_format_version = DEFAULT;
 eval $query;
 
 DROP TABLE t1;
@@ -1661,6 +1687,7 @@ DROP TABLE t1;
 
 create table t1(a int, unique key(a)) engine=innodb;
 insert into t1 values(1);
+ANALYZE TABLE t1;
 let $query=
 select * from t1 left join t1 as t2
               on t2.a=12
@@ -2002,6 +2029,8 @@ INSERT INTO t2 VALUES
  (1,0), (2,0), (3,2), (4,NULL), (5,2),
  (6,3), (7,3), (8,100), (9,3), (10,6);
 
+ANALYZE TABLE t1, t2;
+
 let $query=
 SELECT table2.pk, table1.col_int
 FROM t2 AS table1
@@ -2095,6 +2124,8 @@ CREATE TABLE tb (
 
 INSERT INTO tb (b1, b2, b3) VALUES
  (1, 'text1', 0), (2, 'text2', 0), (3, 'text3', 1), (4, 'text4', 1);
+
+ANALYZE TABLE ta, tb;
 
 let $query=
 SELECT ta.a1, tb.b1, tb.b2
@@ -2258,19 +2289,16 @@ eval EXPLAIN $query3;
 flush status;
 --sorted_result
 eval $query1;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'HANDLER_%';
 
 flush status;
 --sorted_result
 eval $query2;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'HANDLER_%';
 
 flush status;
 --sorted_result
 eval $query3;
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'HANDLER_%';
 
 DROP TABLE t1, t2, t3, t4;
@@ -2284,6 +2312,7 @@ CREATE TABLE t1 (id INT);
 CREATE TABLE t2 (id INT);
 INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (1);
+ANALYZE TABLE t1, t2;
 
 let query1=
 SELECT *
@@ -2479,6 +2508,8 @@ CREATE TABLE t4 (
 ) ENGINE=InnoDB;
 
 INSERT INTO t4 VALUES (9,5);
+
+ANALYZE TABLE t1, t2, t3, t4;
 
 # t3 will be marked by the optimizer as 'Impossible ON condition'
 # and const optimized as a NULL row. However the optimizer failed

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -49,7 +49,7 @@ class NdbInfo {
 
   struct Column {
    public:
-    const enum Type { String = 1, Number = 2, Number64 = 3 } m_type;
+    const enum Type { String = 1, Number = 2, Number64 = 3, Blob = 4 } m_type;
 
     const Uint32 m_column_id;
     const BaseString m_name;
@@ -79,9 +79,9 @@ class NdbInfo {
     Uint32 getRowsEstimate() const { return m_rows_estimate; }
     bool rowCountIsExact() const { return m_exact_row_count; }
 
-    bool addColumn(const Column aCol);
-    unsigned columns(void) const;
-    const Column *getColumn(const unsigned attributeId) const;
+    bool addColumn(const Column &aCol);
+    unsigned columns() const;
+    const Column *getColumn(unsigned attributeId) const;
     const Column *getColumn(const char *name) const;
 
     const class VirtualTable *getVirtualTable() const;
@@ -98,7 +98,7 @@ class NdbInfo {
   };
 
   NdbInfo(class Ndb_cluster_connection *connection, const char *prefix);
-  bool init(void);
+  bool init();
   ~NdbInfo();
 
   int openTable(const char *table_name, const Table **);
@@ -122,11 +122,11 @@ class NdbInfo {
   BaseString m_short_prefix;  // "./ndbinfo/"
   Uint32 m_id_counter;
 
-  bool addColumn(Uint32 tableId, const Column aCol);
+  bool addColumn(Uint32 tableId, const Column &aCol);
 
   bool load_ndbinfo_tables();
-  bool load_hardcoded_tables(void);
-  bool load_virtual_tables(void);
+  bool load_hardcoded_tables();
+  bool load_virtual_tables();
   bool load_tables();
   bool check_tables();
   void flush_tables();

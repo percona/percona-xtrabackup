@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,9 +37,9 @@ bool rpl_semi_sync_replica_enabled;
 char rpl_semi_sync_replica_status = 0;
 unsigned long rpl_semi_sync_replica_trace_level;
 
-int ReplSemiSyncSlave::initObject() {
+int ReplSemiSyncReplica::initObject() {
   int result = 0;
-  const char *kWho = "ReplSemiSyncSlave::initObject";
+  const char *kWho = "ReplSemiSyncReplica::initObject";
 
   if (init_done_) {
     LogErr(WARNING_LEVEL, ER_SEMISYNC_FUNCTION_CALLED_TWICE, kWho);
@@ -48,18 +48,18 @@ int ReplSemiSyncSlave::initObject() {
   init_done_ = true;
 
   /* References to the parameter works after set_options(). */
-  setSlaveEnabled(rpl_semi_sync_replica_enabled);
+  setReplicaEnabled(rpl_semi_sync_replica_enabled);
   setTraceLevel(rpl_semi_sync_replica_trace_level);
 
   return result;
 }
 
-int ReplSemiSyncSlave::slaveReadSyncHeader(const char *header,
-                                           unsigned long total_len,
-                                           bool *need_reply,
-                                           const char **payload,
-                                           unsigned long *payload_len) {
-  const char *kWho = "ReplSemiSyncSlave::slaveReadSyncHeader";
+int ReplSemiSyncReplica::replicaReadSyncHeader(const char *header,
+                                               unsigned long total_len,
+                                               bool *need_reply,
+                                               const char **payload,
+                                               unsigned long *payload_len) {
+  const char *kWho = "ReplSemiSyncReplica::replicaReadSyncHeader";
   int read_res = 0;
   function_enter(kWho);
 
@@ -79,8 +79,8 @@ int ReplSemiSyncSlave::slaveReadSyncHeader(const char *header,
   return function_exit(kWho, read_res);
 }
 
-int ReplSemiSyncSlave::slaveStart(Binlog_relay_IO_param *param) {
-  bool semi_sync = getSlaveEnabled();
+int ReplSemiSyncReplica::replicaStart(Binlog_relay_IO_param *param) {
+  bool semi_sync = getReplicaEnabled();
 
   LogErr(INFORMATION_LEVEL, ER_SEMISYNC_REPLICA_START,
          semi_sync ? "semi-sync" : "asynchronous", param->user, param->host,
@@ -93,16 +93,16 @@ int ReplSemiSyncSlave::slaveStart(Binlog_relay_IO_param *param) {
   return 0;
 }
 
-int ReplSemiSyncSlave::slaveStop(Binlog_relay_IO_param *) {
+int ReplSemiSyncReplica::replicaStop(Binlog_relay_IO_param *) {
   if (rpl_semi_sync_replica_status) rpl_semi_sync_replica_status = 0;
   if (mysql_reply) mysql_close(mysql_reply);
   mysql_reply = nullptr;
   return 0;
 }
 
-int ReplSemiSyncSlave::slaveReply(MYSQL *mysql, const char *binlog_filename,
-                                  my_off_t binlog_filepos) {
-  const char *kWho = "ReplSemiSyncSlave::slaveReply";
+int ReplSemiSyncReplica::replicaReply(MYSQL *mysql, const char *binlog_filename,
+                                      my_off_t binlog_filepos) {
+  const char *kWho = "ReplSemiSyncReplica::replicaReply";
   NET *net = &mysql->net;
   uchar reply_buffer[REPLY_MAGIC_NUM_LEN + REPLY_BINLOG_POS_LEN +
                      REPLY_BINLOG_NAME_LEN];

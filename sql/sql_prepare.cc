@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -183,6 +183,7 @@ When one supplies long data for a placeholder:
 #include "sql/sql_query_rewrite.h"
 #include "sql/sql_rewrite.h"  // mysql_rewrite_query
 #include "sql/sql_view.h"     // create_view_precheck
+#include "sql/sql_yacc.h"
 #include "sql/statement/statement_runnable.h"
 #include "sql/system_variables.h"
 #include "sql/table.h"
@@ -498,16 +499,15 @@ static bool set_parameter_value(
           tm.minute = (uint)to[6];
           tm.second = (uint)to[7];
           tm.second_part = (len > 8) ? (ulong)sint4korr(to + 8) : 0;
-          if (tm.hour > 838) {
-            /* TODO: add warning 'Data truncated' here */
-            tm.hour = 838;
-            tm.minute = 59;
-            tm.second = 59;
-          }
+          tm.time_type = MYSQL_TIMESTAMP_TIME;
           tm.day = tm.year = tm.month = 0;
         } else {
           set_zero_time(&tm, MYSQL_TIMESTAMP_TIME);
         }
+      }
+      if (check_datetime_range(tm)) {
+        my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "TIME", "set_parameter_value");
+        return true;
       }
       param->set_time(&tm, MYSQL_TIMESTAMP_TIME);
       break;
@@ -527,9 +527,14 @@ static bool set_parameter_value(
           tm.hour = tm.minute = tm.second = 0;
           tm.second_part = 0;
           tm.neg = false;
+          tm.time_type = MYSQL_TIMESTAMP_DATE;
         } else {
           set_zero_time(&tm, MYSQL_TIMESTAMP_DATE);
         }
+      }
+      if (check_datetime_range(tm)) {
+        my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "DATE", "set_parameter_value");
+        return true;
       }
       param->set_time(&tm, MYSQL_TIMESTAMP_DATE);
       break;
@@ -542,6 +547,7 @@ static bool set_parameter_value(
       if (pack_type == Prepared_statement::enum_param_pack_type::UNPACKED) {
         assert(len == sizeof(MYSQL_TIME));
         tm = *(*(const MYSQL_TIME **)pos);
+        type = tm.time_type;
       } else {
         assert(len == 0 || len == 4 || len == 7 || len == 11 || len == 13);
         const uchar *to = *pos;
@@ -567,6 +573,12 @@ static bool set_parameter_value(
           tm.time_zone_displacement = sint2korr(to + 11) * SECS_PER_MIN;
           type = MYSQL_TIMESTAMP_DATETIME_TZ;
         }
+      }
+      tm.time_type = type;
+      if (check_datetime_range(tm)) {
+        my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "DATETIME",
+                 "set_parameter_value");
+        return true;
       }
       param->set_time(&tm, type);
       break;
@@ -736,7 +748,7 @@ bool Prepared_statement::insert_parameters(
                param->value.integer < 0) ||
               (!param->unsigned_flag && param->is_unsigned_actual() &&
                param->value.integer < 0)) {
-            my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "signed integer",
+            my_error(ER_DATA_OUT_OF_RANGE, MYF(0), "SIGNED INTEGER",
                      "mysqld_stmt_execute");
             return true;
           }
@@ -1325,6 +1337,9 @@ bool Prepared_statement::prepare_query(THD *thd) {
     case SQLCOM_CREATE_EVENT:
     case SQLCOM_ALTER_EVENT:
     case SQLCOM_DROP_EVENT:
+    case SQLCOM_CREATE_LIBRARY:
+    case SQLCOM_DROP_LIBRARY:
+    case SQLCOM_ALTER_LIBRARY:
     case SQLCOM_SELECT:
     case SQLCOM_DO:
     case SQLCOM_DELETE:
@@ -1345,6 +1360,7 @@ bool Prepared_statement::prepare_query(THD *thd) {
     case SQLCOM_SHOW_CREATE_FUNC:
     case SQLCOM_SHOW_CREATE_PROC:
     case SQLCOM_SHOW_CREATE:
+    case SQLCOM_SHOW_CREATE_LIBRARY:
     case SQLCOM_SHOW_CREATE_TRIGGER:
     case SQLCOM_SHOW_CREATE_USER:
     case SQLCOM_SHOW_DATABASES:
@@ -1371,6 +1387,7 @@ bool Prepared_statement::prepare_query(THD *thd) {
     case SQLCOM_SHOW_STATUS:
     case SQLCOM_SHOW_STATUS_PROC:
     case SQLCOM_SHOW_STATUS_FUNC:
+    case SQLCOM_SHOW_STATUS_LIBRARY:
     case SQLCOM_SHOW_STORAGE_ENGINES:
     case SQLCOM_SHOW_TABLE_STATUS:
     case SQLCOM_SHOW_TABLES:
@@ -1507,6 +1524,10 @@ void mysqld_stmt_prepare(THD *thd, const char *query, uint length,
   DBUG_PRINT("prep_query", ("%s", query));
   assert(stmt != nullptr);
 
+  assert(thd->m_digest == nullptr);
+  thd->m_digest = &thd->m_digest_state;
+  thd->m_digest->reset(thd->m_token_array, max_digest_length);
+
   const bool switch_protocol = thd->is_classic_protocol();
   if (switch_protocol) {
     // set the current client capabilities before switching the protocol
@@ -1537,6 +1558,8 @@ void mysqld_stmt_prepare(THD *thd, const char *query, uint length,
 
   sp_cache_enforce_limit(thd->sp_proc_cache, stored_program_cache_size);
   sp_cache_enforce_limit(thd->sp_func_cache, stored_program_cache_size);
+
+  thd->m_digest = nullptr;
 
   // Prepared_statement::prepare_query() sends metadata packet if success
 }
@@ -1844,6 +1867,14 @@ void mysqld_stmt_execute(THD *thd, Prepared_statement *stmt, bool has_new_types,
 #endif
   DBUG_PRINT("info", ("stmt: %p", stmt));
 
+  assert(thd->m_digest == nullptr);
+  thd->m_digest = &thd->m_digest_state;
+  thd->m_digest->reset(thd->m_token_array, max_digest_length);
+
+  stmt->psi_instrumentation(thd, EXECUTE_SYM, false);
+
+  thd->m_digest = nullptr;
+
   const bool switch_protocol = thd->is_classic_protocol();
   if (switch_protocol) {
     // set the current client capabilities before switching the protocol
@@ -1909,6 +1940,8 @@ void mysql_sql_stmt_execute(THD *thd) {
              name.str, "EXECUTE");
     return;
   }
+
+  stmt->psi_instrumentation(thd, EXECUTE_SYM, false);
 
   if (stmt->m_param_count != lex->prepared_stmt_params.elements) {
     my_error(ER_WRONG_ARGUMENTS, MYF(0), "EXECUTE");
@@ -2006,9 +2039,18 @@ void mysqld_stmt_close(THD *thd, Prepared_statement *stmt) {
     in use is from within Dynamic SQL.
   */
   assert(!stmt->is_in_use());
+
+  assert(thd->m_digest == nullptr);
+  thd->m_digest = &thd->m_digest_state;
+  thd->m_digest->reset(thd->m_token_array, max_digest_length);
+
+  stmt->psi_instrumentation(thd, DEALLOCATE_SYM, true);
+
   MYSQL_DESTROY_PS(stmt->m_prepared_stmt);
   stmt->deallocate(thd);
   query_logger.general_log_print(thd, thd->get_command(), NullS);
+
+  thd->m_digest = nullptr;
 }
 
 /**
@@ -2033,6 +2075,9 @@ void mysql_sql_stmt_close(THD *thd) {
              name.str, "DEALLOCATE PREPARE");
     return;
   }
+
+  stmt->psi_instrumentation(thd, DEALLOCATE_SYM, true);
+
   if (stmt->is_in_use()) {
     my_error(ER_PS_NO_RECURSION, MYF(0));
     return;
@@ -2186,6 +2231,7 @@ Prepared_statement::Prepared_statement(THD *thd_arg)
       m_mem_root(key_memory_prepared_statement_main_mem_root,
                  thd_arg->variables.query_alloc_block_size) {
   *m_last_error = '\0';
+  m_digest.reset(nullptr, 0);
 }
 
 void Prepared_statement::close_cursor() {
@@ -2286,6 +2332,50 @@ void Prepared_statement::cleanup_stmt(THD *thd) {
   thd->cleanup_after_query();
 }
 
+void Prepared_statement::set_display_query_string(
+    const char *display_query_string, size_t display_query_string_length) {
+  size_t len = display_query_string_length;
+  char *str = nullptr;
+
+  if (len > 0) {
+    str = static_cast<char *>(
+        memdup_root(&m_mem_root, display_query_string, len));
+    if (str == nullptr) {
+      len = 0;
+    }
+  }
+
+  m_display_query_string.str = str;
+  m_display_query_string.length = len;
+}
+
+void Prepared_statement::get_display_query_string(
+    const char **display_query_string_ptr,
+    size_t *display_query_string_length_ptr) const {
+  if (m_display_query_string.length > 0) {
+    /* The statement was rewritten, use the sanitized query. */
+    *display_query_string_ptr = m_display_query_string.str;
+    *display_query_string_length_ptr = m_display_query_string.length;
+  } else {
+    /* The statement was not rewritten, safe to use the original query. */
+    *display_query_string_ptr = m_query_string.str;
+    *display_query_string_length_ptr = m_query_string.length;
+  }
+}
+
+void Prepared_statement::set_digest(const sql_digest_storage *digest) {
+  if (m_token_array_length == 0) {
+    m_token_array_length = max_digest_length;
+    if (m_token_array_length > 0) {
+      m_token_array =
+          static_cast<unsigned char *>(m_mem_root.Alloc(m_token_array_length));
+      m_digest.reset(m_token_array, m_token_array_length);
+    }
+  }
+
+  m_digest.copy(digest);
+}
+
 bool Prepared_statement::set_name(const LEX_CSTRING &name_arg) {
   m_name.length = name_arg.length;
   m_name.str = static_cast<char *>(
@@ -2351,6 +2441,7 @@ bool Prepared_statement::prepare(THD *thd, const char *query_str,
                                  size_t query_length,
                                  Item_param **orig_param_array) {
   bool error;
+  bool parse_error = true;
   Query_arena arena_backup;
   Query_arena *old_stmt_arena;
   sql_digest_state *parent_digest = thd->m_digest;
@@ -2422,8 +2513,9 @@ bool Prepared_statement::prepare(THD *thd, const char *query_str,
 
   // we produce digest if it's not explicitly turned off
   // by setting maximum digest length to zero
-  if (get_max_digest_length() != 0)
+  if (get_max_digest_length() != 0) {
     parser_state.m_input.m_compute_digest = true;
+  }
 
   thd->m_parser_state = &parser_state;
   invoke_pre_parse_rewrite_plugins(thd);
@@ -2433,6 +2525,13 @@ bool Prepared_statement::prepare(THD *thd, const char *query_str,
 
   if (!error) {
     error = parse_sql(thd, &parser_state, nullptr);
+    /*
+     * If parsing fail, we do not print the query text anywhere,
+     * because it may contain sensitive information.
+     * If parsing succeeds but preparing the statement fails for another
+     * reason, we do print the query text (possibly rewritten).
+     */
+    parse_error = error;
   }
   error |= thd->is_error();
   if (!error) {  // We've just created the statement maybe there is a rewrite
@@ -2540,20 +2639,96 @@ bool Prepared_statement::prepare(THD *thd, const char *query_str,
 
   rewrite_query(thd);
 
-  const char *display_query_string;
-  int display_query_length;
+  if (!parse_error) {
+    const char *display_query_string;
+    int display_query_length;
 
-  if (thd->rewritten_query().length()) {
-    display_query_string = thd->rewritten_query().ptr();
-    display_query_length = thd->rewritten_query().length();
-  } else {
-    display_query_string = thd->query().str;
-    display_query_length = thd->query().length;
+    if (thd->rewritten_query().length() != 0) {
+      display_query_string = thd->rewritten_query().ptr();
+      display_query_length = thd->rewritten_query().length();
+      /* Save the sanitized SQL_TEXT into the prepared statement. */
+      set_display_query_string(display_query_string, display_query_length);
+    } else {
+      display_query_string = thd->query().str;
+      display_query_length = thd->query().length;
+    }
+
+    thd->set_query_for_display(display_query_string, display_query_length);
+    MYSQL_SET_PS_TEXT(m_prepared_stmt, display_query_string,
+                      display_query_length);
+
+    /* Save DIGEST and DIGEST_TEXT into the prepared statement. */
+    const sql_digest_storage *digest_storage =
+        thd->m_digest ? &thd->m_digest->m_digest_storage : nullptr;
+    if (digest_storage != nullptr) {
+      set_digest(digest_storage);
+    }
+
+    if (parent_locker != nullptr) {
+      /*
+       * For COM_STMT_PREPARE, there is no query text,
+       * because it is not a text statement.
+       * Only the payload to prepare is available,
+       * for example "SELECT * FROM t1 WHERE col = ?".
+       *
+       * For SQLCOM_PREPARE, there is a query text,
+       * which is for example
+       *   "PREPARE stmt FROM 'SELECT * FROM t1 WHERE col = ?'"
+       * Because this statement has already been parsed,
+       * the digest is recorded as "PREPARE stmt FROM ?",
+       * which is not useful.
+       *
+       * Be friendly to monitoring, and set:
+       * - the SQL_TEXT
+       * - the DIGEST
+       * - the DIGEST_TEXT
+       * of statement actually prepared, in both cases,
+       * leading to "SELECT * FROM t1 WHERE col = ?".
+       *
+       * Now, we do not want to aggregate:
+       * - PREPARE
+       * - EXECUTE
+       * - DEALLOCATE PREPARE
+       * into the exact same DIGEST and DIGEST_TEXT,
+       * because this puts statistics from different
+       * executions into the same bucket,
+       * confusing applications that analyse statistics.
+       *
+       * As a result, the final digest collected are:
+       * - "PREPARE SELECT * FROM t1 WHERE col = ?"
+       * - "EXECUTE SELECT * FROM t1 WHERE col = ?"
+       * - "DEALLOCATE SELECT * FROM t1 WHERE col = ?"
+       * using a prefix token.
+       */
+
+      if (display_query_length > 0) {
+        /*
+         * The prepared statement may still be destroyed,
+         * in case of PREPARE that fails.
+         * Copy the display query text to the THD mem_root for this statement.
+         */
+        const char *display_query_string_copy;
+        display_query_string_copy = static_cast<const char *>(
+            thd->memdup(display_query_string, display_query_length));
+        MYSQL_SET_STATEMENT_TEXT(parent_locker, display_query_string_copy,
+                                 display_query_length);
+      }
+
+      const sql_digest_storage *source_digest_storage = get_digest();
+
+      if ((parent_digest != nullptr) && (source_digest_storage != nullptr)) {
+        PSI_digest_locker *digest_locker = MYSQL_DIGEST_START(parent_locker);
+        if (digest_locker != nullptr) {
+          sql_digest_storage *parent_digest_storage =
+              &parent_digest->m_digest_storage;
+
+          parent_digest_storage->prefix_and_copy(PREPARE_SYM,
+                                                 source_digest_storage);
+          MYSQL_DIGEST_END(digest_locker, parent_digest_storage);
+        }
+      }
+    }
   }
-
-  thd->set_query_for_display(display_query_string, display_query_length);
-  MYSQL_SET_PS_TEXT(m_prepared_stmt, display_query_string,
-                    display_query_length);
 
   cleanup_stmt(thd);
   stmt_backup.restore_thd(thd, this);
@@ -3092,7 +3267,7 @@ bool Prepared_statement::execute_loop(THD *thd, String *expanded_query,
   MYSQL_SET_PS_SECONDARY_ENGINE(m_prepared_stmt, used_secondary);
   mysql_thread_set_secondary_engine(used_secondary);
   mysql_statement_set_secondary_engine(thd->m_statement_psi, used_secondary);
-  thd->set_secondary_engine_statement_context(nullptr);
+  thd->cleanup_after_statement_execution();
   m_first_execution = false;
 
   return error;
@@ -3291,6 +3466,7 @@ void Prepared_statement::swap_prepared_statement(Prepared_statement *copy) {
   std::swap(m_lex, copy->m_lex);
 
   std::swap(m_query_string, copy->m_query_string);
+  std::swap(m_display_query_string, copy->m_display_query_string);
 
   /* Swap mem_roots back, they must continue pointing at the m_mem_roots */
   std::swap(m_arena.mem_root, copy->m_arena.mem_root);
@@ -3314,6 +3490,10 @@ void Prepared_statement::swap_prepared_statement(Prepared_statement *copy) {
 
   // Need a new cursor, if requested
   std::swap(m_cursor, copy->m_cursor);
+
+  std::swap(m_digest, copy->m_digest);
+  std::swap(m_token_array, copy->m_token_array);
+  std::swap(m_token_array_length, copy->m_token_array_length);
 }
 
 /**
@@ -3643,6 +3823,47 @@ bool Prepared_statement::execute(THD *thd, String *expanded_query,
     }
   }
   return false;
+}
+
+void Prepared_statement::psi_instrumentation(THD *thd, uint digest_prefix_token,
+                                             bool copy) {
+  PSI_statement_locker *statement_locker = thd->m_statement_psi;
+
+  if (statement_locker == nullptr) {
+    return;
+  }
+
+  /*
+   * Be friendly to monitoring, and set the query text,
+   * digest and digest text of the statement prepared.
+   */
+  const char *display_query_string = nullptr;
+  size_t display_query_length = 0;
+  get_display_query_string(&display_query_string, &display_query_length);
+  if (copy && (display_query_length > 0)) {
+    /*
+     * The prepared statement is about to be destroyed,
+     * because this is a DEALLOCATE PREPARE / CLOSE.
+     * Copy the display query text to the THD mem_root for this statement.
+     */
+    const char *display_query_string_copy;
+    display_query_string_copy = static_cast<const char *>(
+        thd->memdup(display_query_string, display_query_length));
+    display_query_string = display_query_string_copy;
+  }
+  MYSQL_SET_STATEMENT_TEXT(statement_locker, display_query_string,
+                           display_query_length);
+
+  const sql_digest_storage *source_digest_storage = get_digest();
+  sql_digest_state *dest_digest = thd->m_digest;
+  if ((source_digest_storage != nullptr) && (dest_digest != nullptr)) {
+    PSI_digest_locker *digest_locker = MYSQL_DIGEST_START(statement_locker);
+    if (digest_locker != nullptr) {
+      dest_digest->m_digest_storage.prefix_and_copy(digest_prefix_token,
+                                                    source_digest_storage);
+      MYSQL_DIGEST_END(digest_locker, &dest_digest->m_digest_storage);
+    }
+  }
 }
 
 /** Common part of DEALLOCATE PREPARE and mysqld_stmt_close. */

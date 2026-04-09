@@ -1,7 +1,7 @@
 #ifndef SQL_TMP_TABLE_INCLUDED
 #define SQL_TMP_TABLE_INCLUDED
 
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -76,7 +76,6 @@ bool instantiate_tmp_table(THD *thd, TABLE *table);
 Field *create_tmp_field(THD *thd, TABLE *table, Item *item, Item::Type type,
                         Func_ptr_array *copy_func, Field **from_field,
                         Field **default_field, bool group, bool modify_item,
-                        bool table_cant_handle_bit_fields,
                         bool make_copy_field);
 Field *create_tmp_field_from_field(THD *thd, const Field *org_field,
                                    const char *name, TABLE *table,

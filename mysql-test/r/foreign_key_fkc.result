@@ -1,0 +1,65 @@
+# FR 7: When foreign_key_checks=0, do not perform FK check, RESTRICT, or CASCADE
+CREATE TABLE parent(id INT PRIMARY KEY, value INT);
+CREATE TABLE child(id INT PRIMARY KEY, pid INT,
+FOREIGN KEY (pid) REFERENCES parent(id) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO parent VALUES (1, 100), (2, 200), (3, 300);
+INSERT INTO child  VALUES (10, 1), (11, 2);
+# FK enforced by default value of FKC
+INSERT INTO child VALUES (12, 999);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`pid`) REFERENCES `parent` (`id`) ON DELETE CASCADE ON UPDATE CASCADE)
+# Disable FKC
+SET SESSION foreign_key_checks = 0;
+# With FKC off: allow orphan insert
+INSERT INTO child VALUES (12, 999);
+SELECT * FROM child ORDER BY id;
+id	pid
+10	1
+11	2
+12	999
+# With FKC off: allow UPDATE to non-existent parent
+UPDATE child SET pid = 888 WHERE id = 12;
+SELECT * FROM child WHERE id=12;
+id	pid
+12	888
+# With FKC off: parent DELETE should NOT cascade; children referencing it remain
+DELETE FROM parent WHERE id = 1;
+SELECT * FROM parent ORDER BY id;
+id	value
+2	200
+3	300
+SELECT * FROM child ORDER BY id;
+id	pid
+10	1
+11	2
+12	888
+# With FKC off: parent UPDATE should NOT cascade to children
+UPDATE parent SET id = 200 WHERE id = 2;
+SELECT * FROM parent ORDER BY id;
+id	value
+3	300
+200	200
+# Child row referencing former id=2 should still point to 2 (no cascade happened)
+SELECT * FROM child WHERE id=11;
+id	pid
+11	2
+# Re-enable FKC to on
+SET SESSION foreign_key_checks = 1;
+# With FKC on: illegal orphan insert/update must fail
+INSERT INTO child VALUES (13, 777);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`pid`) REFERENCES `parent` (`id`) ON DELETE CASCADE ON UPDATE CASCADE)
+UPDATE child SET pid = 777 WHERE id = 12;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`pid`) REFERENCES `parent` (`id`) ON DELETE CASCADE ON UPDATE CASCADE)
+# With FKC on: DELETE should cascade now (id=3)
+INSERT INTO child VALUES (20, 3);
+DELETE FROM parent WHERE id = 3;
+SELECT * FROM parent ORDER BY id;
+id	value
+200	200
+SELECT * FROM child ORDER BY id;
+id	pid
+10	1
+11	2
+12	888
+# Cleanup
+DROP TABLE child;
+DROP TABLE parent;

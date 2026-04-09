@@ -114,7 +114,10 @@ UPDATE IGNORE t1 SET c1='2001-01-23' WHERE c1='2001-01-25';
 SELECT count(*) FROM t1 WHERE c1='2001-01-23';
 --error ER_BAD_NULL_ERROR
 UPDATE t1 SET c1=NULL WHERE c2='2001-01-24' /* updates to 0000-00-00 */;
+# Different warnings for Hypergraph
+--disable_warnings
 UPDATE IGNORE t1 SET c1=NULL WHERE c2='2001-01-24';
+--enable_warnings
 --error ER_WRONG_VALUE
 SELECT * FROM t1 WHERE c1='0000-00-00';
 
@@ -240,12 +243,21 @@ INSERT INTO t1 VALUES('2001-01-01',NOW(),7),(ADDTIME(NOW(),'1 01:01:01'),ADDTIME
 SELECT * FROM t1 WHERE c1 < ADDTIME(NOW(),'2 01:01:01') ORDER BY c1;
 DELETE FROM t1 WHERE c1 < ADDTIME(NOW(),'2 01:01:01') ORDER BY c1 LIMIT 2;
 SELECT * FROM t1 WHERE c1 < ADDTIME(NOW(),'2 01:01:01') ORDER BY c1;
+# Hypergraph has different warnings
+--disable_warnings
 SELECT * FROM t1 WHERE c1 <=> ADDTIME(NOW(),'1 01:01:01') ORDER BY c1 DESC;
+--enable_warnings
 DELETE FROM t1 WHERE c1 <=> ADDTIME(NOW(),'1 01:01:01') ORDER BY c1 DESC;
+# Hypergraph has different warnings
+--disable_warnings
 SELECT * FROM t1 WHERE c1 <=> ADDTIME(NOW(),'1 01:01:01') ORDER BY c1 DESC;
 SELECT * FROM t1 WHERE c1 <=> ADDDATE(CURDATE(),'1 01:01:01') ORDER BY c1 DESC;
+--enable_warnings
 DELETE FROM t1 WHERE c1 <=> ADDDATE(CURDATE(),'1') ORDER BY c1 DESC;
+# Hypergraph has different warnings
+--disable_warnings
 SELECT * FROM t1 WHERE c1 <=> ADDDATE(CURDATE(),'1 01:01:01') ORDER BY c1 DESC;
+--enable_warnings
 INSERT INTO t1 VALUES('2001-01-01',NOW(),11);
 INSERT INTO t1 VALUES(ADDTIME(NOW(),'1 01:01:01'),ADDTIME(NOW(),'1 01:01:01'),12);
 # Disabling warnings due to #52283
@@ -389,7 +401,10 @@ UPDATE IGNORE t1 SET c1='2001-01-23 02:33' WHERE c1='2001-01-25 04:33';
 SELECT count(*) FROM t1 WHERE c1='2001-01-23 02:33';
 --error ER_BAD_NULL_ERROR
 UPDATE t1 SET c1=NULL WHERE c2='2001-01-24 03:33' /* updates to 0000-00-00 00:00:00 */;
+# Hypergraph has different warnings
+--disable_warnings
 UPDATE IGNORE t1 SET c1=NULL WHERE c2='2001-01-24 03:33';
+--enable_warnings
 SET @OLD_SQL_MODE=@@SQL_MODE, @@SQL_MODE=ALLOW_INVALID_DATES;
 --sorted_result
 SELECT * FROM t1 WHERE c1='0000-00-00 00:00:00';
@@ -651,7 +666,10 @@ UPDATE t1 SET c1='2001-01-23 02:33' WHERE c1='2001-01-25 04:33';
 UPDATE IGNORE t1 SET c1='2001-01-23 02:33' WHERE c1='2001-01-25 04:33'; 
 SELECT count(*) FROM t1 WHERE c1='2001-01-23 02:33';
 UPDATE t1 SET c1=CURRENT_TIMESTAMP WHERE c2='2001-01-24 03:33' /* updates to current timestamp */;
+# Hypergraph has different warnings
+--disable_warnings
 UPDATE IGNORE t1 SET c1=NULL WHERE c2='2001-01-26 05:33';
+--enable_warnings
 --sorted_result
 SELECT * FROM t1 WHERE c1=CURRENT_TIMESTAMP();
 

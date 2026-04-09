@@ -160,15 +160,32 @@ while ($node)
 
 --echo "Print restored rows"
 use test;
+# Force discovery now
+--disable_query_log
+--disable_result_log
+select count(1) from t0;
+select count(1) from t1;
+select count(1) from t2;
+select count(1) from t3;
+select count(1) from t4;
+select count(1) from t5;
+select count(1) from t6;
+select count(1) from t7;
+select count(1) from t8;
+select count(1) from t9;
+--enable_query_log
+--enable_result_log
+
+
 select * from t0 order by id;
 select * from t1 order by val;
 select * from t2 order by id;
 select * from t3 order by id;
 select * from t4 order by id;
-select id, sha1(val) from t5 order by id;
+select id, sha2(val,256) from t5 order by id;
 select * from t6 order by id;
 select * from t7 order by id;
-select id, sha1(val) from t8 order by id;
+select id, sha2(val,256) from t8 order by id;
 select * from t9 order by auto;
 
 --echo Drop all tables
@@ -198,15 +215,31 @@ while ($node)
 
 --echo "Print restored rows"
 use test;
+# Force discovery now
+--disable_query_log
+--disable_result_log
+select count(1) from t0;
+select count(1) from t1;
+select count(1) from t2;
+select count(1) from t3;
+select count(1) from t4;
+select count(1) from t5;
+select count(1) from t6;
+select count(1) from t7;
+select count(1) from t8;
+select count(1) from t9;
+--enable_query_log
+--enable_result_log
+
 select * from t0 order by id;
 select * from t1 order by val;
 select * from t2 order by id;
 select * from t3 order by id;
 select * from t4 order by id;
-select id, sha1(val) from t5 order by id;
+select id, sha2(val,256) from t5 order by id;
 select * from t6 order by id;
 select * from t7 order by id;
-select id, sha1(val) from t8 order by id;
+select id, sha2(val,256) from t8 order by id;
 select * from t9 order by auto;
 
 --disable_query_log

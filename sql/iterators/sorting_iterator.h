@@ -1,7 +1,7 @@
 #ifndef SQL_ITERATORS_SORTING_ITERATOR_H_
 #define SQL_ITERATORS_SORTING_ITERATOR_H_
 
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA */
 
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,7 @@
 class Filesort;
 class QEP_TAB;
 class THD;
+struct AccessPath;
 
 /**
   An adapter that takes in another RowIterator and produces the same rows,
@@ -66,10 +68,12 @@ class SortingIterator final : public RowIterator {
   // RAM, we never use the priority queue.
   SortingIterator(THD *thd, Filesort *filesort,
                   unique_ptr_destroy_only<RowIterator> source,
+                  std::span<AccessPath *> single_row_index_lookups,
                   ha_rows num_rows_estimate, table_map tables_to_get_rowid_for,
                   ha_rows *examined_rows);
   ~SortingIterator() override;
 
+ private:
   // Calls Init() on the source iterator, then does the actual sort.
   // NOTE: If you call Init() again, SortingIterator will actually
   // do a _new sort_, not just rewind the iterator. This is because a
@@ -83,10 +87,11 @@ class SortingIterator final : public RowIterator {
   // that needs ORDER BY with LIMIT, so for correctness, we really need
   // the re-sort. Longer-term we should test whether the Index_lookup is
   // unchanged, and if so, just re-init the result iterator.
-  bool Init() override;
+  bool DoInit() override;
 
-  int Read() override { return m_result_iterator->Read(); }
+  int DoRead() override { return m_result_iterator->Read(); }
 
+ public:
   void SetNullRowFlag(bool is_null_row) override;
 
   void UnlockRow() override { m_result_iterator->UnlockRow(); }
@@ -103,7 +108,7 @@ class SortingIterator final : public RowIterator {
   const Filesort *filesort() const { return m_filesort; }
 
  private:
-  int DoSort();
+  bool DoSort();
   void ReleaseBuffers();
 
   Filesort *m_filesort;
@@ -124,6 +129,9 @@ class SortingIterator final : public RowIterator {
   Filesort_info m_fs_info;
 
   Sort_result m_sort_result;
+
+  // All the single-row index lookups that provide rows to this iterator.
+  std::span<AccessPath *> m_single_row_index_lookups;
 
   const ha_rows m_num_rows_estimate;
   const table_map m_tables_to_get_rowid_for;
@@ -146,6 +154,7 @@ class SortingIterator final : public RowIterator {
     SortFileIterator<true> sort_file_packed_addons;
     SortFileIterator<false> sort_file;
     SortFileIndirectIterator sort_file_indirect;
+    ZeroRowsIterator zero_rows;
   } m_result_iterator_holder;
 };
 

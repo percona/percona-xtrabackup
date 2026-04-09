@@ -94,15 +94,15 @@ ADD
     CAST(`tm_ts` AS DATE)
   ) VIRTUAL,
 ADD
-  COLUMN `s_hash` char(40) GENERATED ALWAYS AS (
-    SHA(
-      HEX(`data`)
+  COLUMN `s_hash` char(64) GENERATED ALWAYS AS (
+    SHA2(
+      HEX(`data`), 256
     )
   ) STORED,
 ADD
-  COLUMN `v_hash` char(40) GENERATED ALWAYS AS (
-    SHA(
-      HEX(`data`)
+  COLUMN `v_hash` char(64) GENERATED ALWAYS AS (
+    SHA2(
+      HEX(`data`), 256
     )
   ) VIRTUAL,
 ADD

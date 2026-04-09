@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -108,7 +108,7 @@ Library_file::Library_file(const std::string &file_name,
 }
 
 uint32_t Library_file::get_abi_version() const {
-  Plugin_abi *plugin = get_plugin_struct<Plugin_abi>(plugin_name_);
+  auto *plugin = get_plugin_struct<Plugin_abi>(plugin_name_);
 
   return plugin->abi_version;
 }

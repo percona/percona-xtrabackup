@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -206,18 +206,16 @@ bool is_colinear(const Point_range &ls) {
 
   @param[in] arg Item that holds the SRID
   @param[out] srid Where to store the SRID
-  @param[out] null_value Where to store the null_value
   @param[in] func_name Function name to use in error messages
 
-  @retval true An error has occurred
-  @retval false Success
+  @returns true if an error has occurred, or null value set, otherwise false.
 */
-static bool validate_srid_arg(Item *arg, gis::srid_t *srid, bool *null_value,
+static bool validate_srid_arg(Item *arg, gis::srid_t *srid,
                               const char *func_name) {
   const longlong arg_srid = arg->val_int();
 
-  if ((*null_value = arg->null_value)) {
-    return false;
+  if (arg->null_value) {
+    return true;
   }
 
   if (arg_srid < 0 || arg_srid > UINT_MAX32) {
@@ -448,13 +446,8 @@ String *Item_func_geometry_from_text::val_str(String *str) {
   Gis_read_stream trs(current_thd, wkt->charset(), wkt->ptr(), wkt->length());
   gis::srid_t srid = 0;
 
-  if (arg_count >= 2) {
-    if (validate_srid_arg(args[1], &srid, &null_value, func_name()))
-      return error_str();
-    if (null_value) {
-      assert(is_nullable());
-      return nullptr;
-    }
+  if (arg_count > 1 && validate_srid_arg(args[1], &srid, func_name())) {
+    return error_str();
   }
 
   const dd::Spatial_reference_system *srs = nullptr;
@@ -685,13 +678,10 @@ String *Item_func_geometry_from_wkb::val_str(String *str) {
   bool is_geographic = false;
   bool lat_long = false;
 
-  if (arg_count >= 2) {
-    if (validate_srid_arg(args[1], &srid, &null_value, func_name()))
-      return error_str();
-    if (null_value) {
-      assert(is_nullable());
-      return nullptr;
-    }
+  null_value = false;
+
+  if (arg_count > 1 && validate_srid_arg(args[1], &srid, func_name())) {
+    return error_str();
   }
 
   const dd::Spatial_reference_system *srs = nullptr;
@@ -833,22 +823,25 @@ const char *Item_func_geomfromgeojson::GEOMETRIES_MEMBER = "geometries";
 const char *Item_func_geomfromgeojson::COORDINATES_MEMBER = "coordinates";
 const char *Item_func_geomfromgeojson::CRS_NAME_MEMBER = "name";
 const char *Item_func_geomfromgeojson::NAMED_CRS = "name";
-const char *Item_func_geomfromgeojson::SHORT_EPSG_PREFIX = "EPSG:";
 const char *Item_func_geomfromgeojson::POINT_TYPE = "Point";
 const char *Item_func_geomfromgeojson::MULTIPOINT_TYPE = "MultiPoint";
 const char *Item_func_geomfromgeojson::LINESTRING_TYPE = "LineString";
 const char *Item_func_geomfromgeojson::MULTILINESTRING_TYPE = "MultiLineString";
 const char *Item_func_geomfromgeojson::POLYGON_TYPE = "Polygon";
 const char *Item_func_geomfromgeojson::MULTIPOLYGON_TYPE = "MultiPolygon";
+const char *Item_func_geomfromgeojson::GEOMETRYCOLLECTION_TYPE =
+    "GeometryCollection";
 const char *Item_func_geomfromgeojson::FEATURE_TYPE = "Feature";
 const char *Item_func_geomfromgeojson::FEATURECOLLECTION_TYPE =
     "FeatureCollection";
+const char *Item_func_geomfromgeojson::SHORT_EPSG_PREFIX = "EPSG:";
+const char *Item_func_geomfromgeojson::SHORT_MYSQL_PREFIX = "MySQL:";
 const char *Item_func_geomfromgeojson::LONG_EPSG_PREFIX =
     "urn:ogc:def:crs:EPSG::";
+const char *Item_func_geomfromgeojson::LONG_MYSQL_PREFIX =
+    "urn:ogc:def:crs:MySQL::";
 const char *Item_func_geomfromgeojson::CRS84_URN =
     "urn:ogc:def:crs:OGC:1.3:CRS84";
-const char *Item_func_geomfromgeojson::GEOMETRYCOLLECTION_TYPE =
-    "GeometryCollection";
 
 /**
   @<geometry@> = ST_GEOMFROMGEOJSON(@<string@>[, @<options@>[, @<srid@>]])
@@ -898,13 +891,9 @@ String *Item_func_geomfromgeojson::val_str(String *buf) {
       Check and parse the SRID parameter. If this is set to a valid value,
       any CRS member in the GeoJSON document will be ignored.
     */
-    if (validate_srid_arg(args[2], &m_user_srid, &null_value, func_name()))
+    if (validate_srid_arg(args[2], &m_user_srid, func_name())) {
       return error_str();
-    if (null_value) {
-      assert(is_nullable());
-      return nullptr;
     }
-
     m_user_provided_srid = true;
 
     if (verify_srid_is_defined(m_user_srid)) return error_str();
@@ -993,22 +982,31 @@ String *Item_func_geomfromgeojson::val_str(String *buf) {
   if (m_user_provided_srid) {
     write_at_position(0, m_user_srid, buf);
   } else if (m_srid_found_in_document > -1) {
-    Srs_fetcher fetcher(current_thd);
-    const dd::Spatial_reference_system *srs = nullptr;
-    std::unique_ptr<dd::cache::Dictionary_client::Auto_releaser> releaser(
-        new dd::cache::Dictionary_client ::Auto_releaser(
-            current_thd->dd_client()));
-    if (fetcher.acquire(m_srid_found_in_document, &srs)) {
-      return error_str(); /* purecov: inspected */
-    }
+    if (m_srid_found_in_document == 0) {
+      write_at_position(0, static_cast<uint32>(m_srid_found_in_document), buf);
+    } else {
+      Srs_fetcher fetcher(current_thd);
+      const dd::Spatial_reference_system *srs = nullptr;
+      std::unique_ptr<dd::cache::Dictionary_client::Auto_releaser> releaser(
+          new dd::cache::Dictionary_client ::Auto_releaser(
+              current_thd->dd_client()));
+      if (fetcher.acquire(m_srid_found_in_document, &srs)) {
+        /* purecov: begin inspected */
+        delete result_geometry;
+        return error_str();
+        /* purecov: end inspected */
+      }
 
-    if (srs == nullptr) {
-      delete result_geometry;
-      my_error(ER_SRS_NOT_FOUND, MYF(0), m_srid_found_in_document);
-      return error_str();
-    }
+      if (srs == nullptr) {
+        /* purecov: begin inspected */
+        delete result_geometry;
+        my_error(ER_SRS_NOT_FOUND, MYF(0), m_srid_found_in_document);
+        return error_str();
+        /* purecov: end inspected */
+      }
 
-    write_at_position(0, static_cast<uint32>(m_srid_found_in_document), buf);
+      write_at_position(0, static_cast<uint32>(m_srid_found_in_document), buf);
+    }
   }
 
   const bool return_result = result_geometry->as_wkb(buf, false);
@@ -1725,10 +1723,21 @@ bool Item_func_geomfromgeojson::parse_crs_object(
     size_t start_index;
     const size_t name_length = crs_name_member_str->size();
     const char *crs_name = crs_name_member_str->value().c_str();
-    if (native_strncasecmp(crs_name, SHORT_EPSG_PREFIX, 5) == 0) {
-      start_index = 5;
-    } else if (native_strncasecmp(crs_name, LONG_EPSG_PREFIX, 22) == 0) {
-      start_index = 22;
+    bool is_mysql_prefix = false;
+    if (native_strncasecmp(crs_name, SHORT_EPSG_PREFIX,
+                           strlen(SHORT_EPSG_PREFIX)) == 0) {
+      start_index = strlen(SHORT_EPSG_PREFIX);
+    } else if (native_strncasecmp(crs_name, LONG_EPSG_PREFIX,
+                                  strlen(LONG_EPSG_PREFIX)) == 0) {
+      start_index = strlen(LONG_EPSG_PREFIX);
+    } else if (native_strncasecmp(crs_name, SHORT_MYSQL_PREFIX,
+                                  strlen(SHORT_MYSQL_PREFIX)) == 0) {
+      is_mysql_prefix = true;
+      start_index = strlen(SHORT_MYSQL_PREFIX);
+    } else if (native_strncasecmp(crs_name, LONG_MYSQL_PREFIX,
+                                  strlen(LONG_MYSQL_PREFIX)) == 0) {
+      is_mysql_prefix = true;
+      start_index = strlen(LONG_MYSQL_PREFIX);
     } else {
       my_error(ER_INVALID_GEOJSON_UNSPECIFIED, MYF(0), func_name());
       return true;
@@ -1742,8 +1751,10 @@ bool Item_func_geomfromgeojson::parse_crs_object(
       Check that the whole ending got parsed, and that the value is within
       valid SRID range.
     */
-    if (end_of_parse == (crs_name + name_length) && parsed_value > 0 &&
-        parsed_value <= UINT_MAX32) {
+    if (end_of_parse == (crs_name + name_length) &&
+        parsed_value <= UINT_MAX32 &&
+        ((parsed_value > 0 && !is_mysql_prefix) ||
+         (parsed_value == 0 && is_mysql_prefix))) {
       parsed_srid = static_cast<uint32>(parsed_value);
     } else {
       my_error(ER_INVALID_GEOJSON_UNSPECIFIED, MYF(0), func_name());
@@ -1751,16 +1762,14 @@ bool Item_func_geomfromgeojson::parse_crs_object(
     }
   }
 
-  if (parsed_srid > 0) {
-    if (m_srid_found_in_document > 0 &&
-        parsed_srid != m_srid_found_in_document) {
-      // A SRID has already been found, which had a different value.
-      my_error(ER_INVALID_GEOJSON_UNSPECIFIED, MYF(0), func_name());
-      return true;
-    } else {
-      m_srid_found_in_document = parsed_srid;
-    }
+  if (m_srid_found_in_document > 0 && parsed_srid != m_srid_found_in_document) {
+    // A SRID has already been found, which had a different value.
+    my_error(ER_INVALID_GEOJSON_UNSPECIFIED, MYF(0), func_name());
+    return true;
   }
+
+  m_srid_found_in_document = parsed_srid;
+
   return false;
 }
 
@@ -2127,7 +2136,6 @@ static bool append_bounding_box(MBR *mbr, Json_object *geometry) {
 static bool append_crs(Json_object *geometry, bool add_short_crs_urn,
                        bool add_long_crs_urn, uint32 geometry_srid) {
   assert(add_long_crs_urn || add_short_crs_urn);
-  assert(geometry_srid > 0);
 
   Json_object *crs_object = new (std::nothrow) Json_object();
   if (crs_object == nullptr || geometry->add_alias("crs", crs_object) ||
@@ -2141,19 +2149,24 @@ static bool append_crs(Json_object *geometry, bool add_short_crs_urn,
     return true;
   }
 
-  // Max width of SRID + '\0'
-  char srid_string[MAX_INT_WIDTH + 1];
-  llstr(geometry_srid, srid_string);
+  StringBuffer<STRING_BUFFER_USUAL_SIZE> crs_name;
+  if (add_long_crs_urn) {
+    if (geometry_srid == 0) {
+      crs_name.append(Item_func_geomfromgeojson::LONG_MYSQL_PREFIX);
+    } else {
+      crs_name.append(Item_func_geomfromgeojson::LONG_EPSG_PREFIX);
+    }
+  } else if (add_short_crs_urn) {
+    if (geometry_srid == 0) {
+      crs_name.append(Item_func_geomfromgeojson::SHORT_MYSQL_PREFIX);
+    } else {
+      crs_name.append(Item_func_geomfromgeojson::SHORT_EPSG_PREFIX);
+    }
+  }
+  crs_name.append_ulonglong(geometry_srid);
 
-  char crs_name[MAX_CRS_WIDTH];
-  if (add_long_crs_urn)
-    strcpy(crs_name, Item_func_geomfromgeojson::LONG_EPSG_PREFIX);
-  else if (add_short_crs_urn)
-    strcpy(crs_name, Item_func_geomfromgeojson::SHORT_EPSG_PREFIX);
-
-  strcat(crs_name, srid_string);
-  if (crs_properties->add_alias("name",
-                                new (std::nothrow) Json_string(crs_name))) {
+  if (crs_properties->add_alias(
+          "name", new (std::nothrow) Json_string{to_string(crs_name)})) {
     return true;
   }
 
@@ -2316,9 +2329,7 @@ static bool append_geometry(Geometry::wkb_parser *parser, Json_object *geometry,
     }
   }
 
-  // Only add a CRS object if the SRID of the GEOMETRY is not 0.
-  if (is_root_object && (add_long_crs_urn || add_short_crs_urn) &&
-      geometry_srid > 0) {
+  if (is_root_object && (add_long_crs_urn || add_short_crs_urn)) {
     append_crs(geometry, add_short_crs_urn, add_long_crs_urn, geometry_srid);
   }
 
@@ -2580,25 +2591,28 @@ bool Item_func_geohash::check_valid_latlong_type(Item *arg) {
 */
 bool Item_func_geohash::fill_and_check_fields() {
   longlong geohash_length_arg = -1;
+  null_value = false;
+
   if (arg_count == 2) {
-    Geometry *geom = nullptr;
-    Geometry_buffer geometry_buffer;
     // First argument is point, second argument is geohash output length.
     String string_buffer;
     String *swkb = args[0]->val_str(&string_buffer);
+    if (swkb == nullptr) return (null_value = true);
     geohash_length_arg = args[1]->val_int();
 
-    if ((null_value = args[0]->null_value || args[1]->null_value || !swkb)) {
+    if ((null_value = args[1]->null_value)) {
       return true;
-    } else {
-      if (!(geom = Geometry::construct(&geometry_buffer, swkb))) {
-        my_error(ER_GIS_INVALID_DATA, MYF(0), func_name());
-        return true;
-      } else if (geom->get_type() != Geometry::wkb_point ||
-                 geom->get_x(&longitude) || geom->get_y(&latitude)) {
-        my_error(ER_INCORRECT_TYPE, MYF(0), "point", func_name());
-        return true;
-      }
+    }
+    Geometry_buffer geometry_buffer;
+    Geometry *geom = Geometry::construct(&geometry_buffer, swkb);
+    if (geom == nullptr) {
+      my_error(ER_GIS_INVALID_DATA, MYF(0), func_name());
+      return true;
+    }
+    if (geom->get_type() != Geometry::wkb_point || geom->get_x(&longitude) ||
+        geom->get_y(&latitude)) {
+      my_error(ER_INCORRECT_TYPE, MYF(0), "point", func_name());
+      return true;
     }
 
     if (geom != nullptr && geom->get_srid() != 0) {
@@ -2626,12 +2640,11 @@ bool Item_func_geohash::fill_and_check_fields() {
       and third argument is geohash output length.
     */
     longitude = args[0]->val_real();
+    if (args[0]->null_value) return (null_value = true);
     latitude = args[1]->val_real();
+    if (args[1]->null_value) return (null_value = true);
     geohash_length_arg = args[2]->val_int();
-
-    if ((null_value =
-             args[0]->null_value || args[1]->null_value || args[2]->null_value))
-      return true;
+    if (args[2]->null_value) return (null_value = true);
   }
 
   // Check if supplied arguments are within allowed range.
@@ -3927,9 +3940,15 @@ String *Item_func_convex_hull::val_str(String *str) {
   // By taking over, str owns swkt->ptr and the memory will be released when
   // str points to another buffer in next call of this function
   // (done in post_fix_result), or when str's owner Item_xxx node is destroyed.
-  if (geom->get_type() == Geometry::wkb_point) str->takeover(*swkb);
-
-  return str;
+  if (geom->get_type() == Geometry::wkb_point) {
+    str->takeover(*swkb);
+    return str;
+  }
+  // Return a different String pointer than the input argument. This shows our
+  // callers, in particular in_string::set(), that the result is not stored or
+  // maintained by 'str' and may need to be copied.
+  tmp_value.set(str->ptr(), str->length(), &my_charset_bin);
+  return &tmp_value;
 }
 
 template <typename Coordsys>
@@ -4233,14 +4252,15 @@ String *Item_func_point::val_str(String *str) {
   }
 
   const double x = args[0]->val_real();
+  if (args[0]->null_value || current_thd->is_error()) return error_str();
   const double y = args[1]->val_real();
+  if (args[1]->null_value || current_thd->is_error()) return error_str();
+
   gis::srid_t srid = 0;
 
-  if ((null_value =
-           (args[0]->null_value || args[1]->null_value ||
-            str->mem_realloc(4 /*SRID*/ + 1 + 4 + SIZEOF_STORED_DOUBLE * 2))))
-    return nullptr;
-
+  if (str->mem_realloc(4 /*SRID*/ + 1 + 4 + SIZEOF_STORED_DOUBLE * 2)) {
+    return error_str();
+  }
   str->set_charset(&my_charset_bin);
   str->length(0);
   q_append(srid, str);
@@ -4307,16 +4327,17 @@ bool Item_func_pointfromgeohash::resolve_type(THD *thd) {
 String *Item_func_pointfromgeohash::val_str(String *str) {
   assert(fixed);
 
+  null_value = false;
+
   String argument_value;
   String *geohash = args[0]->val_str_ascii(&argument_value);
+  if (geohash == nullptr) return error_str();
+
   gis::srid_t srid = 0;
 
-  if (validate_srid_arg(args[1], &srid, &null_value, func_name()))
+  if (validate_srid_arg(args[1], &srid, func_name())) {
     return error_str();
-
-  // Return null if one or more of the input arguments is null.
-  if ((null_value = (args[0]->null_value || args[1]->null_value)))
-    return nullptr;
+  }
 
   if (verify_srid_is_defined(srid)) return error_str();
 
@@ -5412,22 +5433,17 @@ longlong Item_func_st_srid_observer::val_int() {
 
 String *Item_func_st_srid_mutator::val_str(String *str) {
   assert(fixed);
+
+  null_value = false;
+
   String *swkb = args[0]->val_str(str);
-  gis::srid_t target_srid = 0;
-  if (validate_srid_arg(args[1], &target_srid, &null_value, func_name()))
+  if (swkb == nullptr) {
     return error_str();
-
-  if ((null_value = (args[0]->null_value || args[1]->null_value)))
-    return nullptr;
-
-  if (!swkb) {
-    /* purecov: begin deadcode */
-    assert(false);
-    my_error(ER_GIS_INVALID_DATA, MYF(0), func_name());
-    return error_str();
-    /* purecov: end */
   }
-
+  gis::srid_t target_srid = 0;
+  if (validate_srid_arg(args[1], &target_srid, func_name())) {
+    return error_str();
+  }
   if (target_srid != 0) {
     bool srs_exists = false;
     if (Srs_fetcher::srs_exists(current_thd, target_srid, &srs_exists))

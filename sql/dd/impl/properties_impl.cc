@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,7 +23,7 @@
 
 #include "sql/dd/impl/properties_impl.h"
 
-#include <stddef.h>
+#include <cstddef>
 #include <iterator>
 #include <new>
 
@@ -58,11 +58,11 @@ Properties *Properties::parse_properties(const String_type &raw_properties) {
 }
 
 const String_type Properties_impl::raw_string() const {
-  String_type str("");
+  String_type str;
   str.reserve(16 * m_map.size());
 
   // Iterate over all valid map entries.
-  for (auto &it : m_map) {
+  for (const auto &it : m_map) {
     assert(valid_key(it.first));
     if (valid_key(it.first)) {
       escape(&str, it.first);
@@ -81,7 +81,7 @@ bool Properties_impl::get(const String_type &key, String_type *value) const {
     assert(false);
     return true;
   }
-  const_iterator it = m_map.find(key);
+  auto it = m_map.find(key);
   if (it == m_map.end()) {
     // Key is not present.
     assert(false); /* purecov: inspected */

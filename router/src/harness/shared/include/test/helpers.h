@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -118,6 +118,7 @@ void register_test_logger();
  */
 void init_test_logger(const std::list<std::string> &additional_log_domains = {},
                       const std::string &log_folder = "",
-                      const std::string &log_filename = "");
+                      const std::string &log_filename = "",
+                      const std::string &log_level = "debug");
 
 #endif /* MYSQL_HARNESS_HELPERS_INCLUDED */

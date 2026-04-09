@@ -269,7 +269,7 @@ eval CHANGE REPLICATION SOURCE TO
 # Grep only after the message that the server_2 has connected to the master
 --let $assert_only_after=Start binlog_dump to source_thread_id\($replica_thread_id\)
 --let $assert_count= 1
---let $assert_select=found a zombie dump thread with the same UUID
+--let $assert_select=Upon reconnection with the replica, while initializing the dump thread for.*, an existing dump thread with the same.* was detected.*
 --let $assert_text= Found the expected line in master's error log for server 2 disconnection
 --source include/assert_grep.inc
 

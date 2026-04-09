@@ -7,7 +7,7 @@ c3 varchar(10) COLLATE utf8mb3_bin DEFAULT NULL,
 spatial_point point NOT NULL SRID 0,
 PRIMARY KEY(id),
 SPATIAL KEY (spatial_point)
-) ROW_FORMAT=REDUNDANT ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8_bin;
+) ROW_FORMAT=REDUNDANT ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
@@ -405,7 +405,7 @@ c3 varchar(10) COLLATE utf8mb3_bin DEFAULT NULL,
 spatial_point point NOT NULL SRID 0,
 PRIMARY KEY(id),
 SPATIAL KEY (spatial_point)
-) ROW_FORMAT=COMPRESSED ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8_bin;
+) ROW_FORMAT=COMPRESSED ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
@@ -803,7 +803,7 @@ c3 varchar(10) COLLATE utf8mb3_bin DEFAULT NULL,
 spatial_point point NOT NULL SRID 0,
 PRIMARY KEY(id),
 SPATIAL KEY (spatial_point)
-) ROW_FORMAT=DYNAMIC ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8_bin;
+) ROW_FORMAT=DYNAMIC ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
@@ -1201,7 +1201,7 @@ c3 varchar(10) COLLATE utf8mb3_bin DEFAULT NULL,
 spatial_point point NOT NULL SRID 0,
 PRIMARY KEY(id),
 SPATIAL KEY (spatial_point)
-) ROW_FORMAT=COMPACT ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8_bin;
+) ROW_FORMAT=COMPACT ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_bin;
 Warnings:
 Warning	1681	Integer display width is deprecated and will be removed in a future release.
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.

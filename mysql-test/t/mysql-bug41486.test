@@ -10,6 +10,9 @@
 #
 
 
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 --disable_warnings
 DROP TABLE IF EXISTS t1;
 --enable_warnings
@@ -47,3 +50,5 @@ disconnect con1;
 remove_file $outfile;
 connection default;
 SET @@global.max_allowed_packet = @old_max_allowed_packet;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

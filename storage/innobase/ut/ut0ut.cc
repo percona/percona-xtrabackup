@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -42,10 +42,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifdef HAVE_SYS_TIME_H
 #include <sys/time.h>
 #endif
-
-#ifndef UNIV_HOTBACKUP
-#include <mysql_com.h>
-#endif /* !UNIV_HOTBACKUP */
 
 #include "my_compiler.h"
 #include "mysql_com.h"
@@ -490,6 +486,8 @@ const char *ut_strerr(dberr_t num) {
       return "Data is not sorted.";
     case DB_BULK_TOO_BIG_RECORD:
       return "Row is too big for LOAD BULK DATA operation.";
+    case DB_BULK_GCOL_INVALID_DATA:
+      return "Data for generated column is invalid";
     case DB_ERROR_UNSET:;
       /* Fall through. */
 

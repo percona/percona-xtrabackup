@@ -1,0 +1,23 @@
+# ----------------------------------------------------------------------
+# Setup
+# Creating local configuration file for keyring component: component_keyring_file
+# Creating manifest file for current MySQL server instance
+# Re-starting mysql server with manifest file
+# ----------------------------------------------------------------------
+=== Config parse error
+# Creating local configuration file for keyring component: component_keyring_file
+ALTER INSTANCE RELOAD KEYRING;
+ERROR HY000: Keyring reload failed. Please check error log for more details.
+Pattern "has not valid format" found
+=== Missing config file
+# Removing local configuration file for keyring component: component_keyring_file
+ALTER INSTANCE RELOAD KEYRING;
+ERROR HY000: Keyring reload failed. Please check error log for more details.
+Pattern "cannot read config file" found
+# ----------------------------------------------------------------------
+# Teardown
+# Removing manifest file for current MySQL server instance
+# Removing local keyring file for keyring component: component_keyring_file
+# Removing local configuration file for keyring component: component_keyring_file
+# Restarting server without the manifest file
+# ----------------------------------------------------------------------

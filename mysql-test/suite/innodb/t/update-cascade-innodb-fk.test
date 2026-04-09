@@ -1,0 +1,10 @@
+--echo # Run innodb/update-cascade.test with default innodb_native_foreign_keys=on
+--let $restart_parameters = restart: --innodb-native-foreign_keys=ON
+--source include/restart_mysqld.inc
+
+show variables like 'innodb_native_foreign_keys';
+
+--source suite/innodb/t/update-cascade.test
+
+--let $restart_parameters= restart:
+--source include/restart_mysqld.inc

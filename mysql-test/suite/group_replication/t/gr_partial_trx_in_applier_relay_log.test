@@ -93,6 +93,10 @@ SET GLOBAL DEBUG="-d,stop_applier_channel_after_reading_write_rows_log_event";
 --let $wait_timeout=120
 --source include/start_group_replication.inc
 
+--let $assert_text= Certifier broadcast thread must be running
+--let $assert_cond= [SELECT COUNT(*) FROM performance_schema.threads WHERE name = "thread/group_rpl/THD_certifier_broadcast"] = 1
+--source include/assert.inc
+
 --echo ########################################################################
 --echo # 5. On M1: Insert another tuple and do a diff tables with other nodes.
 --echo #           (just to check that everything is working fine).

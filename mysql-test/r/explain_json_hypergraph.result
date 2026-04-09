@@ -22,73 +22,76 @@ EXPLAIN FORMAT=JSON SELECT * FROM t1 WHERE f1 = ( SELECT MIN(f1) FROM t1 AS i WH
 EXPLAIN
 {
   "query": "/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where (`test`.`t1`.`f1` = (/* select#2 */ select min(`i`.`f1`) from `test`.`t1` `i` where (`i`.`f1` > `test`.`t1`.`f1`)))",
-  "inputs": [
-    {
-      "operation": "Table scan on t1",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "f1"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "inputs": [
-        {
-          "inputs": [
-            {
-              "alias": "i",
-              "operation": "Table scan on i",
-              "table_name": "t1",
-              "access_type": "table",
-              "schema_name": "test",
-              "used_columns": [
-                "f1"
-              ],
-              "estimated_rows": "elided",
-              "estimated_total_cost": "elided",
-              "estimated_first_row_cost": "elided"
-            }
-          ],
-          "condition": "(i.f1 > t1.f1)",
-          "operation": "Filter: (i.f1 > t1.f1)",
-          "access_type": "filter",
-          "estimated_rows": "elided",
-          "filter_columns": [
-            "i.f1",
-            "test.t1.f1"
-          ],
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "heading": "Select #2 (subquery in condition; dependent)",
-      "subquery": true,
-      "dependent": true,
-      "functions": [
-        "min(i.f1)"
-      ],
-      "operation": "Aggregate: min(i.f1)",
-      "access_type": "aggregate",
-      "estimated_rows": "elided",
-      "subquery_location": "condition",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "condition": "(t1.f1 = (select #2))",
-  "operation": "Filter: (t1.f1 = (select #2))",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Table scan on t1",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "f1"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "inputs": [
+          {
+            "inputs": [
+              {
+                "alias": "i",
+                "operation": "Table scan on i",
+                "table_name": "t1",
+                "access_type": "table",
+                "schema_name": "test",
+                "used_columns": [
+                  "f1"
+                ],
+                "estimated_rows": "elided",
+                "estimated_total_cost": "elided",
+                "estimated_first_row_cost": "elided"
+              }
+            ],
+            "condition": "(i.f1 > t1.f1)",
+            "operation": "Filter: (i.f1 > t1.f1)",
+            "access_type": "filter",
+            "estimated_rows": "elided",
+            "filter_columns": [
+              "i.f1",
+              "test.t1.f1"
+            ],
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "heading": "Select #2 (subquery in condition; dependent)",
+        "subquery": true,
+        "dependent": true,
+        "functions": [
+          "min(i.f1)"
+        ],
+        "operation": "Aggregate: min(i.f1)",
+        "access_type": "aggregate",
+        "estimated_rows": "elided",
+        "subquery_location": "condition",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "condition": "(t1.f1 = (select #2))",
+    "operation": "Filter: (t1.f1 = (select #2))",
+    "access_type": "filter",
+    "estimated_rows": "elided",
+    "filter_columns": [
+      "test.t1.f1"
+    ],
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "filter",
-  "estimated_rows": "elided",
-  "filter_columns": [
-    "test.t1.f1"
-  ],
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 Warnings:
 Note	1276	Field or reference 'test.t1.f1' of SELECT #2 was resolved in SELECT #1
@@ -104,57 +107,60 @@ EXPLAIN FORMAT=JSON SELECT * FROM t1 WHERE f1 > ( SELECT f1 FROM t1 LIMIT 1 );
 EXPLAIN
 {
   "query": "/* select#1 */ select `test`.`t1`.`f1` AS `f1` from `test`.`t1` where (`test`.`t1`.`f1` > (/* select#2 */ select `test`.`t1`.`f1` from `test`.`t1` limit 1))",
-  "inputs": [
-    {
-      "operation": "Table scan on t1",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "f1"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "limit": 1,
-      "inputs": [
-        {
-          "operation": "Table scan on t1",
-          "table_name": "t1",
-          "access_type": "table",
-          "schema_name": "test",
-          "used_columns": [
-            "f1"
-          ],
-          "estimated_rows": "elided",
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "heading": "Select #2 (subquery in condition; run only once)",
-      "subquery": true,
-      "cacheable": true,
-      "operation": "Limit: 1 row(s)",
-      "access_type": "limit",
-      "limit_offset": 0,
-      "estimated_rows": "elided",
-      "subquery_location": "condition",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "condition": "(t1.f1 > (select #2))",
-  "operation": "Filter: (t1.f1 > (select #2))",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Table scan on t1",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "f1"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "limit": 1,
+        "inputs": [
+          {
+            "operation": "Table scan on t1",
+            "table_name": "t1",
+            "access_type": "table",
+            "schema_name": "test",
+            "used_columns": [
+              "f1"
+            ],
+            "estimated_rows": "elided",
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "heading": "Select #2 (subquery in condition; run only once)",
+        "subquery": true,
+        "cacheable": true,
+        "operation": "Limit: 1 row(s)",
+        "access_type": "limit",
+        "limit_offset": 0,
+        "estimated_rows": "elided",
+        "subquery_location": "condition",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "condition": "(t1.f1 > (select #2))",
+    "operation": "Filter: (t1.f1 > (select #2))",
+    "access_type": "filter",
+    "estimated_rows": "elided",
+    "filter_columns": [
+      "test.t1.f1"
+    ],
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "filter",
-  "estimated_rows": "elided",
-  "filter_columns": [
-    "test.t1.f1"
-  ],
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 drop table t1;
 #
@@ -174,29 +180,32 @@ explain format=JSON select * from t1 where a > 2;
 EXPLAIN
 {
   "query": "/* select#1 */ select `test`.`t1`.`a` AS `a`,`test`.`t1`.`b` AS `b`,`test`.`t1`.`c` AS `c`,`test`.`t1`.`d` AS `d` from `test`.`t1` where (`test`.`t1`.`a` > 2)",
-  "ranges": [
-    "(2 < a)"
-  ],
-  "covering": false,
-  "operation": "Index range scan on t1 using PRIMARY over (2 < a)",
-  "index_name": "PRIMARY",
+  "query_plan": {
+    "ranges": [
+      "(2 < a)"
+    ],
+    "covering": false,
+    "operation": "Index range scan on t1 using PRIMARY over (2 < a)",
+    "index_name": "PRIMARY",
+    "table_name": "t1",
+    "access_type": "index",
+    "key_columns": [
+      "a"
+    ],
+    "schema_name": "test",
+    "used_columns": [
+      "a",
+      "b",
+      "c",
+      "d"
+    ],
+    "estimated_rows": "elided",
+    "index_access_type": "index_range_scan",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "table_name": "t1",
-  "access_type": "index",
-  "key_columns": [
-    "a"
-  ],
-  "schema_name": "test",
-  "used_columns": [
-    "a",
-    "b",
-    "c",
-    "d"
-  ],
-  "estimated_rows": "elided",
-  "index_access_type": "index_range_scan",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 drop table t1;
 # Index lookup. Nested loop join
@@ -221,69 +230,78 @@ EXPLAIN format=JSON SELECT * FROM t1 WHERE t1.i IN (SELECT t2.i FROM t2);
 EXPLAIN
 {
   "query": "/* select#1 */ select `test`.`t1`.`i` AS `i` from `test`.`t1` semi join (`test`.`t2`) where multiple equal(`test`.`t1`.`i`, `test`.`t2`.`i`)",
-  "inputs": [
-    {
-      "inputs": [
-        {
-          "covering": true,
-          "operation": "Covering index scan on t2 using i1",
-          "index_name": "i1",
-          "table_name": "t2",
-          "access_type": "index",
-          "schema_name": "test",
-          "used_columns": [
-            "i"
-          ],
-          "estimated_rows": "elided",
-          "index_access_type": "index_scan",
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "operation": "Remove duplicates from input grouped on t2.i",
-      "access_type": "remove_duplicates_from_groups",
-      "group_items": [
-        "t2.i"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "covering": true,
-      "operation": "Single-row covering index lookup on t1 using PRIMARY (i = t2.i)",
-      "index_name": "PRIMARY",
-      "table_name": "t1",
-      "access_type": "index",
-      "key_columns": [
-        "i"
-      ],
-      "schema_name": "test",
-      "used_columns": [
-        "i"
-      ],
-      "estimated_rows": "elided",
-      "lookup_condition": "i = t2.i",
-      "index_access_type": "index_lookup",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "join_type": "inner join",
-  "operation": "Nested loop inner join (LooseScan)",
+  "query_plan": {
+    "inputs": [
+      {
+        "inputs": [
+          {
+            "covering": true,
+            "operation": "Covering index scan on t2 using i1",
+            "index_name": "i1",
+            "table_name": "t2",
+            "access_type": "index",
+            "schema_name": "test",
+            "used_columns": [
+              "i"
+            ],
+            "estimated_rows": "elided",
+            "index_access_type": "index_scan",
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "operation": "Remove duplicates from input grouped on t2.i",
+        "access_type": "remove_duplicates_from_groups",
+        "group_items": [
+          "t2.i"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "covering": true,
+        "operation": "Single-row covering index lookup on t1 using PRIMARY (i = t2.i)",
+        "index_name": "PRIMARY",
+        "table_name": "t1",
+        "access_type": "index",
+        "key_columns": [
+          "i"
+        ],
+        "schema_name": "test",
+        "used_columns": [
+          "i"
+        ],
+        "estimated_rows": "elided",
+        "lookup_condition": "i = t2.i",
+        "index_access_type": "index_lookup",
+        "lookup_references": [
+          "test.t2.i"
+        ],
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "join_type": "inner join",
+    "operation": "Nested loop inner join (LooseScan)",
+    "access_type": "join",
+    "estimated_rows": "elided",
+    "join_algorithm": "nested_loop",
+    "semijoin_strategy": "loosescan",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "join",
-  "estimated_rows": "elided",
-  "join_algorithm": "nested_loop",
-  "semijoin_strategy": "loosescan",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 DROP TABLE t1,t2;
 set optimizer_switch=@old_opt_switch;
 # Index lookup. Nested loop join. Filter.
 CREATE TABLE t1 (col_int INT, pk INT) ENGINE=InnoDB STATS_PERSISTENT=0;
 INSERT INTO t1 VALUES (-100,1),(1,6);
+ANALYZE TABLE t1;
+Table	Op	Msg_type	Msg_text
+test.t1	analyze	status	OK
 CREATE TABLE t2 (
 col_int_key INT,
 col_varchar VARCHAR(100) NOT NULL DEFAULT "DEFAULT",
@@ -291,79 +309,90 @@ pk INT NOT NULL,
 PRIMARY KEY (pk),
 KEY (col_int_key)
 ) ENGINE=InnoDB STATS_PERSISTENT=0;
-INSERT INTO t2 VALUES
-(1,"GOOD",1),(100,"",2),(200,"",3),(300,"",4),(400,"",5),(500,"",8);
+ANALYZE TABLE t2;
+Table	Op	Msg_type	Msg_text
+test.t2	analyze	status	OK
+INSERT INTO t2
+WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<99)
+SELECT n, "XXX", n FROM qn;
 EXPLAIN FORMAT=TREE SELECT t1.*,t2.* FROM t1 straight_join t2
 ON t2.col_int_key = t1.col_int WHERE t2.pk < t1.pk;
 EXPLAIN
--> Nested loop inner join  (rows=0.667)
+-> Nested loop inner join  (rows=0.803)
     -> Table scan on t1  (rows=2)
-    -> Filter: (t2.pk < t1.pk)  (rows=0.333)
-        -> Index lookup on t2 using col_int_key (col_int_key = t1.col_int)  (rows=1)
+    -> Filter: (t2.pk < t1.pk)  (rows=0.402)
+        -> Index lookup on t2 using col_int_key (col_int_key = t1.col_int)  (rows=1.2)
 
 EXPLAIN FORMAT=JSON SELECT t1.*,t2.* FROM t1 straight_join t2
 ON t2.col_int_key = t1.col_int WHERE t2.pk < t1.pk;
 EXPLAIN
 {
   "query": "/* select#1 */ select `test`.`t1`.`col_int` AS `col_int`,`test`.`t1`.`pk` AS `pk`,`test`.`t2`.`col_int_key` AS `col_int_key`,`test`.`t2`.`col_varchar` AS `col_varchar`,`test`.`t2`.`pk` AS `pk` from `test`.`t1` straight_join `test`.`t2` where ((`test`.`t2`.`pk` < `test`.`t1`.`pk`) and (`test`.`t2`.`col_int_key` = `test`.`t1`.`col_int`))",
-  "inputs": [
-    {
-      "operation": "Table scan on t1",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "col_int",
-        "pk"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "inputs": [
-        {
-          "covering": false,
-          "operation": "Index lookup on t2 using col_int_key (col_int_key = t1.col_int)",
-          "index_name": "col_int_key",
-          "table_name": "t2",
-          "access_type": "index",
-          "key_columns": [
-            "col_int_key"
-          ],
-          "schema_name": "test",
-          "used_columns": [
-            "col_int_key",
-            "col_varchar",
-            "pk"
-          ],
-          "estimated_rows": "elided",
-          "lookup_condition": "col_int_key = t1.col_int",
-          "index_access_type": "index_lookup",
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "condition": "(t2.pk < t1.pk)",
-      "operation": "Filter: (t2.pk < t1.pk)",
-      "access_type": "filter",
-      "estimated_rows": "elided",
-      "filter_columns": [
-        "test.t1.pk",
-        "test.t2.pk"
-      ],
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "join_type": "inner join",
-  "operation": "Nested loop inner join",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Table scan on t1",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "col_int",
+          "pk"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "inputs": [
+          {
+            "covering": false,
+            "operation": "Index lookup on t2 using col_int_key (col_int_key = t1.col_int)",
+            "index_name": "col_int_key",
+            "table_name": "t2",
+            "access_type": "index",
+            "key_columns": [
+              "col_int_key"
+            ],
+            "schema_name": "test",
+            "used_columns": [
+              "col_int_key",
+              "col_varchar",
+              "pk"
+            ],
+            "estimated_rows": "elided",
+            "lookup_condition": "col_int_key = t1.col_int",
+            "index_access_type": "index_lookup",
+            "lookup_references": [
+              "test.t1.col_int"
+            ],
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "condition": "(t2.pk < t1.pk)",
+        "operation": "Filter: (t2.pk < t1.pk)",
+        "access_type": "filter",
+        "estimated_rows": "elided",
+        "filter_columns": [
+          "test.t1.pk",
+          "test.t2.pk"
+        ],
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "join_type": "inner join",
+    "operation": "Nested loop inner join",
+    "access_type": "join",
+    "estimated_rows": "elided",
+    "join_algorithm": "nested_loop",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "join",
-  "estimated_rows": "elided",
-  "join_algorithm": "nested_loop",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 DROP TABLE t1,t2;
 # Group aggregates, hash join, sort.
@@ -379,122 +408,133 @@ INSERT INTO t1 VALUES (1,'n','X'),(2,'Y','8'),(3,'R','l');
 ANALYZE TABLE t1;
 Table	Op	Msg_type	Msg_text
 test.t1	analyze	status	OK
-EXPLAIN FORMAT=TREE SELECT
+EXPLAIN FORMAT=TREE SELECT SQL_BIG_RESULT
 t1.col_varchar_key AS field1 FROM (t1, t1 as alias1)
 WHERE NOT EXISTS( SELECT alias2.col_varchar_key FROM t1 AS alias2
 WHERE alias2.col_varchar_key >= t1.col_varchar)
 GROUP BY field1;
 EXPLAIN
--> Table scan on <temporary>  (rows=1.95)
-    -> Temporary table with deduplication  (rows=1.95)
+-> Group (no aggregates)  (rows=1.95)
+    -> Sort: t1.col_varchar_key  (rows=3.8)
         -> Inner hash join (no condition)  (rows=3.8)
-            -> Table scan on alias1  (rows=3)
+            -> Covering index scan on alias1 using idx_CC_col_varchar_key  (rows=3)
             -> Hash
                 -> Hash antijoin (no condition), extra conditions: (alias2.col_varchar_key >= t1.col_varchar)  (rows=1.27)
                     -> Table scan on t1  (rows=3)
                     -> Hash
-                        -> Table scan on alias2  (rows=3)
+                        -> Covering index scan on alias2 using idx_CC_col_varchar_key  (rows=3)
 
 Warnings:
 Note	1276	Field or reference 'test.t1.col_varchar' of SELECT #2 was resolved in SELECT #1
-EXPLAIN FORMAT=JSON SELECT
+EXPLAIN FORMAT=JSON SELECT SQL_BIG_RESULT
 t1.col_varchar_key AS field1 FROM (t1, t1 as alias1)
 WHERE NOT EXISTS( SELECT alias2.col_varchar_key FROM t1 AS alias2
 WHERE alias2.col_varchar_key >= t1.col_varchar)
 GROUP BY field1;
 EXPLAIN
 {
-  "query": "/* select#1 */ select `test`.`t1`.`col_varchar_key` AS `field1` from `test`.`t1` join `test`.`t1` `alias1` anti join (`test`.`t1` `alias2`) on(((`alias2`.`col_varchar_key` >= `test`.`t1`.`col_varchar`))) where true group by `field1`",
-  "inputs": [
-    {
-      "inputs": [
-        {
-          "inputs": [
-            {
-              "alias": "alias1",
-              "operation": "Table scan on alias1",
-              "table_name": "t1",
-              "access_type": "table",
-              "schema_name": "test",
-              "estimated_rows": "elided",
-              "estimated_total_cost": "elided",
-              "estimated_first_row_cost": "elided"
-            },
-            {
-              "inputs": [
-                {
-                  "operation": "Table scan on t1",
-                  "table_name": "t1",
-                  "access_type": "table",
-                  "schema_name": "test",
-                  "used_columns": [
-                    "col_varchar",
-                    "col_varchar_key"
-                  ],
-                  "estimated_rows": "elided",
-                  "estimated_total_cost": "elided",
-                  "estimated_first_row_cost": "elided"
-                },
-                {
-                  "alias": "alias2",
-                  "heading": "Hash",
-                  "operation": "Table scan on alias2",
-                  "table_name": "t1",
-                  "access_type": "table",
-                  "schema_name": "test",
-                  "used_columns": [
-                    "col_varchar_key"
-                  ],
-                  "estimated_rows": "elided",
-                  "estimated_total_cost": "elided",
-                  "estimated_first_row_cost": "elided"
-                }
-              ],
-              "heading": "Hash",
-              "join_type": "antijoin",
-              "operation": "Hash antijoin (no condition), extra conditions: (alias2.col_varchar_key >= t1.col_varchar)",
-              "access_type": "join",
-              "join_columns": [
-                "alias2.col_varchar_key",
-                "test.t1.col_varchar"
-              ],
-              "estimated_rows": "elided",
-              "hash_condition": [],
-              "join_algorithm": "hash",
-              "extra_condition": [
-                "(alias2.col_varchar_key >= t1.col_varchar)"
-              ],
-              "estimated_total_cost": "elided",
-              "estimated_first_row_cost": "elided"
-            }
-          ],
-          "join_type": "inner join",
-          "operation": "Inner hash join (no condition)",
-          "access_type": "join",
-          "join_columns": [],
-          "estimated_rows": "elided",
-          "hash_condition": [],
-          "join_algorithm": "hash",
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "operation": "Temporary table with deduplication",
-      "temp_table": true,
-      "access_type": "materialize",
-      "deduplication": true,
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "operation": "Table scan on <temporary>",
+  "query": "/* select#1 */ select sql_big_result `test`.`t1`.`col_varchar_key` AS `field1` from `test`.`t1` join `test`.`t1` `alias1` anti join (`test`.`t1` `alias2`) on(((`alias2`.`col_varchar_key` >= `test`.`t1`.`col_varchar`))) where true group by `field1`",
+  "query_plan": {
+    "inputs": [
+      {
+        "inputs": [
+          {
+            "inputs": [
+              {
+                "alias": "alias1",
+                "covering": true,
+                "operation": "Covering index scan on alias1 using idx_CC_col_varchar_key",
+                "index_name": "idx_CC_col_varchar_key",
+                "table_name": "t1",
+                "access_type": "index",
+                "schema_name": "test",
+                "estimated_rows": "elided",
+                "index_access_type": "index_scan",
+                "estimated_total_cost": "elided",
+                "estimated_first_row_cost": "elided"
+              },
+              {
+                "inputs": [
+                  {
+                    "operation": "Table scan on t1",
+                    "table_name": "t1",
+                    "access_type": "table",
+                    "schema_name": "test",
+                    "used_columns": [
+                      "col_varchar",
+                      "col_varchar_key"
+                    ],
+                    "estimated_rows": "elided",
+                    "estimated_total_cost": "elided",
+                    "estimated_first_row_cost": "elided"
+                  },
+                  {
+                    "alias": "alias2",
+                    "heading": "Hash",
+                    "covering": true,
+                    "operation": "Covering index scan on alias2 using idx_CC_col_varchar_key",
+                    "index_name": "idx_CC_col_varchar_key",
+                    "table_name": "t1",
+                    "access_type": "index",
+                    "schema_name": "test",
+                    "used_columns": [
+                      "col_varchar_key"
+                    ],
+                    "estimated_rows": "elided",
+                    "index_access_type": "index_scan",
+                    "estimated_total_cost": "elided",
+                    "estimated_first_row_cost": "elided"
+                  }
+                ],
+                "heading": "Hash",
+                "join_type": "antijoin",
+                "operation": "Hash antijoin (no condition), extra conditions: (alias2.col_varchar_key >= t1.col_varchar)",
+                "access_type": "join",
+                "join_columns": [
+                  "alias2.col_varchar_key",
+                  "test.t1.col_varchar"
+                ],
+                "estimated_rows": "elided",
+                "hash_condition": [],
+                "join_algorithm": "hash",
+                "extra_condition": [
+                  "(alias2.col_varchar_key >= t1.col_varchar)"
+                ],
+                "estimated_total_cost": "elided",
+                "estimated_first_row_cost": "elided"
+              }
+            ],
+            "join_type": "inner join",
+            "operation": "Inner hash join (no condition)",
+            "access_type": "join",
+            "join_columns": [],
+            "estimated_rows": "elided",
+            "hash_condition": [],
+            "join_algorithm": "hash",
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "operation": "Sort: t1.col_varchar_key",
+        "access_type": "sort",
+        "sort_fields": [
+          "t1.col_varchar_key"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "group_by": true,
+    "functions": [],
+    "operation": "Group (no aggregates)",
+    "access_type": "aggregate",
+    "estimated_rows": "elided",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "table_name": "<temporary>",
-  "access_type": "table",
-  "estimated_rows": "elided",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 Warnings:
 Note	1276	Field or reference 'test.t1.col_varchar' of SELECT #2 was resolved in SELECT #1
@@ -510,52 +550,55 @@ explain format=JSON select * from information_schema.engines e WHERE e.ENGINE="M
 EXPLAIN
 {
   "query": "/* select#1 */ select `e`.`ENGINE` AS `ENGINE`,`e`.`SUPPORT` AS `SUPPORT`,`e`.`COMMENT` AS `COMMENT`,`e`.`TRANSACTIONS` AS `TRANSACTIONS`,`e`.`XA` AS `XA`,`e`.`SAVEPOINTS` AS `SAVEPOINTS` from `information_schema`.`ENGINES` `e` where (`e`.`ENGINE` = 'MyISAM')",
-  "inputs": [
-    {
-      "inputs": [
-        {
-          "operation": "Fill information schema table e",
-          "table_name": "e",
-          "access_type": "materialize_information_schema",
-          "used_columns": [
-            "ENGINE",
-            "SUPPORT",
-            "COMMENT",
-            "TRANSACTIONS",
-            "XA",
-            "SAVEPOINTS"
-          ],
-          "estimated_rows": "elided",
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "operation": "Table scan on e",
-      "table_name": "e",
-      "access_type": "table",
-      "used_columns": [
-        "ENGINE",
-        "SUPPORT",
-        "COMMENT",
-        "TRANSACTIONS",
-        "XA",
-        "SAVEPOINTS"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "condition": "(e.`ENGINE` = 'MyISAM')",
-  "operation": "Filter: (e.`ENGINE` = 'MyISAM')",
+  "query_plan": {
+    "inputs": [
+      {
+        "inputs": [
+          {
+            "operation": "Fill information schema table e",
+            "table_name": "e",
+            "access_type": "materialize_information_schema",
+            "used_columns": [
+              "ENGINE",
+              "SUPPORT",
+              "COMMENT",
+              "TRANSACTIONS",
+              "XA",
+              "SAVEPOINTS"
+            ],
+            "estimated_rows": "elided",
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "operation": "Table scan on e",
+        "table_name": "e",
+        "access_type": "table",
+        "used_columns": [
+          "ENGINE",
+          "SUPPORT",
+          "COMMENT",
+          "TRANSACTIONS",
+          "XA",
+          "SAVEPOINTS"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "condition": "(e.`ENGINE` = 'MyISAM')",
+    "operation": "Filter: (e.`ENGINE` = 'MyISAM')",
+    "access_type": "filter",
+    "estimated_rows": "elided",
+    "filter_columns": [
+      "e.`ENGINE`"
+    ],
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "filter",
-  "estimated_rows": "elided",
-  "filter_columns": [
-    "e.`ENGINE`"
-  ],
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 # Materialize, window aggregates, Stream
 CREATE TABLE t0 (i0 INTEGER);
@@ -586,7 +629,8 @@ EXPLAIN
         -> Materialize  (rows=2.45)
             -> Window aggregate with buffering: sum(t1.f2) OVER ()   (rows=2.45)
                 -> Stream results  (rows=2.45)
-                    -> Covering index skip scan for deduplication on t1 using f1_2  (rows=2.45)
+                    -> Group (no aggregates)  (rows=2.45)
+                        -> Covering index scan on t1 using f1_2  (rows=12)
 
 EXPLAIN FORMAT=JSON SELECT * FROM
 (SELECT SQL_BIG_RESULT f1, SUM(f2) OVER() FROM t1 GROUP BY f1) as dt
@@ -594,83 +638,93 @@ WHERE f1 > 2;
 EXPLAIN
 {
   "query": "/* select#1 */ select `dt`.`f1` AS `f1`,`dt`.`SUM(f2) OVER()` AS `SUM(f2) OVER()` from (/* select#2 */ select sql_big_result `test`.`t1`.`f1` AS `f1`,sum(`test`.`t1`.`f2`) OVER ()  AS `SUM(f2) OVER()` from `test`.`t1` group by `test`.`t1`.`f1`) `dt` where (`dt`.`f1` > 2)",
-  "inputs": [
-    {
-      "inputs": [
-        {
-          "inputs": [
-            {
-              "inputs": [
-                {
-                  "inputs": [
-                    {
-                      "ranges": [],
-                      "covering": true,
-                      "operation": "Covering index skip scan for deduplication on t1 using f1_2",
-                      "index_name": "f1_2",
-                      "table_name": "t1",
-                      "access_type": "index",
-                      "key_columns": [
-                        "f1"
-                      ],
-                      "schema_name": "test",
-                      "used_columns": [
-                        "f1",
-                        "f2"
-                      ],
-                      "estimated_rows": "elided",
-                      "index_access_type": "group_index_skip_scan",
-                      "estimated_total_cost": "elided",
-                      "estimated_first_row_cost": "elided"
-                    }
-                  ],
-                  "operation": "Stream results",
-                  "access_type": "stream",
-                  "estimated_rows": "elided",
-                  "estimated_total_cost": "elided",
-                  "estimated_first_row_cost": "elided"
-                }
-              ],
-              "buffering": true,
-              "functions": [
-                "sum(t1.f2) OVER () "
-              ],
-              "operation": "Window aggregate with buffering: sum(t1.f2) OVER () ",
-              "access_type": "window",
-              "estimated_rows": "elided",
-              "estimated_total_cost": "elided",
-              "estimated_first_row_cost": "elided"
-            }
-          ],
-          "operation": "Materialize",
-          "access_type": "materialize",
-          "estimated_rows": "elided",
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "operation": "Table scan on dt",
-      "table_name": "dt",
-      "access_type": "table",
-      "used_columns": [
-        "f1",
-        "SUM(f2) OVER()"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "condition": "(dt.f1 > 2)",
-  "operation": "Filter: (dt.f1 > 2)",
+  "query_plan": {
+    "inputs": [
+      {
+        "inputs": [
+          {
+            "inputs": [
+              {
+                "inputs": [
+                  {
+                    "inputs": [
+                      {
+                        "inputs": [
+                          {
+                            "covering": true,
+                            "operation": "Covering index scan on t1 using f1_2",
+                            "index_name": "f1_2",
+                            "table_name": "t1",
+                            "access_type": "index",
+                            "schema_name": "test",
+                            "used_columns": [
+                              "f1",
+                              "f2"
+                            ],
+                            "estimated_rows": "elided",
+                            "index_access_type": "index_scan",
+                            "estimated_total_cost": "elided",
+                            "estimated_first_row_cost": "elided"
+                          }
+                        ],
+                        "group_by": true,
+                        "functions": [],
+                        "operation": "Group (no aggregates)",
+                        "access_type": "aggregate",
+                        "estimated_rows": "elided",
+                        "estimated_total_cost": "elided",
+                        "estimated_first_row_cost": "elided"
+                      }
+                    ],
+                    "operation": "Stream results",
+                    "access_type": "stream",
+                    "estimated_rows": "elided",
+                    "estimated_total_cost": "elided",
+                    "estimated_first_row_cost": "elided"
+                  }
+                ],
+                "buffering": true,
+                "functions": [
+                  "sum(t1.f2) OVER () "
+                ],
+                "operation": "Window aggregate with buffering: sum(t1.f2) OVER () ",
+                "access_type": "window",
+                "estimated_rows": "elided",
+                "estimated_total_cost": "elided",
+                "estimated_first_row_cost": "elided"
+              }
+            ],
+            "operation": "Materialize",
+            "access_type": "materialize",
+            "estimated_rows": "elided",
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "operation": "Table scan on dt",
+        "table_name": "dt",
+        "access_type": "table",
+        "used_columns": [
+          "f1",
+          "SUM(f2) OVER()"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "condition": "(dt.f1 > 2)",
+    "operation": "Filter: (dt.f1 > 2)",
+    "access_type": "filter",
+    "estimated_rows": "elided",
+    "filter_columns": [
+      "dt.f1"
+    ],
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "filter",
-  "estimated_rows": "elided",
-  "filter_columns": [
-    "dt.f1"
-  ],
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 drop table t0, t1;
 # Explain analyze; Temporary table.
@@ -688,115 +742,120 @@ EXPLAIN
     -> Table scan on <temporary>
         -> Temporary table
             -> Group aggregate: group_concat(t2.b separator ',')
-                -> Nested loop left join
-                    -> Sort: t1.a
+                -> Sort: t1.a
+                    -> Left hash join (t1.a = t2.a)
                         -> Table scan on t1
-                    -> Covering index lookup on t2 using PRIMARY (a = t1.a)
+                        -> Hash
+                            -> Table scan on t2
 
 EXPLAIN FORMAT=JSON SELECT t1.a, GROUP_CONCAT(t2.b) AS b FROM t1 LEFT JOIN t2 ON t1.a=t2.a GROUP BY t1.a ORDER BY t1.b;
 EXPLAIN
 {
   "query": "/* select#1 */ select `test`.`t1`.`a` AS `a`,group_concat(`test`.`t2`.`b` separator ',') AS `b` from `test`.`t1` left join `test`.`t2` on(multiple equal(`test`.`t1`.`a`, `test`.`t2`.`a`)) group by `test`.`t1`.`a` order by `test`.`t1`.`b`",
-  "inputs": [
-    {
-      "inputs": [
-        {
-          "inputs": [
-            {
-              "inputs": [
-                {
-                  "inputs": [
-                    {
-                      "inputs": [
-                        {
-                          "operation": "Table scan on t1",
-                          "table_name": "t1",
-                          "access_type": "table",
-                          "schema_name": "test",
-                          "used_columns": [
-                            "a",
-                            "b"
-                          ],
-                          "estimated_rows": "elided",
-                          "estimated_total_cost": "elided",
-                          "estimated_first_row_cost": "elided"
-                        }
-                      ],
-                      "operation": "Sort: t1.a",
-                      "access_type": "sort",
-                      "sort_fields": [
-                        "t1.a"
-                      ],
-                      "estimated_rows": "elided",
-                      "estimated_total_cost": "elided",
-                      "estimated_first_row_cost": "elided"
-                    },
-                    {
-                      "covering": true,
-                      "operation": "Covering index lookup on t2 using PRIMARY (a = t1.a)",
-                      "index_name": "PRIMARY",
-                      "table_name": "t2",
-                      "access_type": "index",
-                      "key_columns": [
-                        "a"
-                      ],
-                      "schema_name": "test",
-                      "used_columns": [
-                        "a",
-                        "b"
-                      ],
-                      "estimated_rows": "elided",
-                      "lookup_condition": "a = t1.a",
-                      "index_access_type": "index_lookup",
-                      "estimated_total_cost": "elided",
-                      "estimated_first_row_cost": "elided"
-                    }
-                  ],
-                  "join_type": "left join",
-                  "operation": "Nested loop left join",
-                  "access_type": "join",
-                  "estimated_rows": "elided",
-                  "join_algorithm": "nested_loop",
-                  "estimated_total_cost": "elided",
-                  "estimated_first_row_cost": "elided"
-                }
-              ],
-              "group_by": true,
-              "functions": [
-                "group_concat(t2.b separator ',')"
-              ],
-              "operation": "Group aggregate: group_concat(t2.b separator ',')",
-              "access_type": "aggregate",
-              "estimated_rows": "elided",
-              "estimated_total_cost": "elided",
-              "estimated_first_row_cost": "elided"
-            }
-          ],
-          "operation": "Temporary table",
-          "temp_table": true,
-          "access_type": "materialize",
-          "estimated_rows": "elided",
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "operation": "Table scan on <temporary>",
-      "table_name": "<temporary>",
-      "access_type": "table",
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "operation": "Sort: t1.b",
+  "query_plan": {
+    "inputs": [
+      {
+        "inputs": [
+          {
+            "inputs": [
+              {
+                "inputs": [
+                  {
+                    "inputs": [
+                      {
+                        "inputs": [
+                          {
+                            "operation": "Table scan on t1",
+                            "table_name": "t1",
+                            "access_type": "table",
+                            "schema_name": "test",
+                            "used_columns": [
+                              "a",
+                              "b"
+                            ],
+                            "estimated_rows": "elided",
+                            "estimated_total_cost": "elided",
+                            "estimated_first_row_cost": "elided"
+                          },
+                          {
+                            "heading": "Hash",
+                            "operation": "Table scan on t2",
+                            "table_name": "t2",
+                            "access_type": "table",
+                            "schema_name": "test",
+                            "used_columns": [
+                              "a",
+                              "b"
+                            ],
+                            "estimated_rows": "elided",
+                            "estimated_total_cost": "elided",
+                            "estimated_first_row_cost": "elided"
+                          }
+                        ],
+                        "join_type": "left join",
+                        "operation": "Left hash join (t1.a = t2.a)",
+                        "access_type": "join",
+                        "join_columns": [
+                          "test.t1.a",
+                          "test.t2.a"
+                        ],
+                        "estimated_rows": "elided",
+                        "hash_condition": [
+                          "(t1.a = t2.a)"
+                        ],
+                        "join_algorithm": "hash",
+                        "estimated_total_cost": "elided",
+                        "estimated_first_row_cost": "elided"
+                      }
+                    ],
+                    "operation": "Sort: t1.a",
+                    "access_type": "sort",
+                    "sort_fields": [
+                      "t1.a"
+                    ],
+                    "estimated_rows": "elided",
+                    "estimated_total_cost": "elided",
+                    "estimated_first_row_cost": "elided"
+                  }
+                ],
+                "group_by": true,
+                "functions": [
+                  "group_concat(t2.b separator ',')"
+                ],
+                "operation": "Group aggregate: group_concat(t2.b separator ',')",
+                "access_type": "aggregate",
+                "estimated_rows": "elided",
+                "estimated_total_cost": "elided",
+                "estimated_first_row_cost": "elided"
+              }
+            ],
+            "operation": "Temporary table",
+            "temp_table": true,
+            "access_type": "materialize",
+            "estimated_rows": "elided",
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "operation": "Table scan on <temporary>",
+        "table_name": "<temporary>",
+        "access_type": "table",
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "operation": "Sort: t1.b",
+    "access_type": "sort",
+    "sort_fields": [
+      "t1.b"
+    ],
+    "estimated_rows": "elided",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "sort",
-  "sort_fields": [
-    "t1.b"
-  ],
-  "estimated_rows": "elided",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 drop table t1;
 drop table t2;
@@ -818,37 +877,40 @@ LEFT JOIN t1 AS c ON b.a=c.a;
 EXPLAIN
 {
   "query": "/* select#1 */ select `a`.`a` AS `a`,`b`.`a` AS `a`,`c`.`a` AS `a` from `test`.`t1` `a` left join `test`.`t1` `b` on(false) left join `test`.`t1` `c` on(multiple equal(`b`.`a`, `c`.`a`))",
-  "inputs": [
-    {
-      "alias": "a",
-      "operation": "Table scan on a",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "a"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "operation": "Zero rows (Join condition rejects all rows)",
-      "access_type": "zero_rows",
-      "estimated_rows": "elided",
-      "zero_rows_cause": "Join condition rejects all rows",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "join_type": "left join",
-  "operation": "Nested loop left join",
+  "query_plan": {
+    "inputs": [
+      {
+        "alias": "a",
+        "operation": "Table scan on a",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "a"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "operation": "Zero rows (Join condition rejects all rows)",
+        "access_type": "zero_rows",
+        "estimated_rows": "elided",
+        "zero_rows_cause": "Join condition rejects all rows",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "join_type": "left join",
+    "operation": "Nested loop left join",
+    "access_type": "join",
+    "estimated_rows": "elided",
+    "join_algorithm": "nested_loop",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "join",
-  "estimated_rows": "elided",
-  "join_algorithm": "nested_loop",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 DROP TABLE t1;
 #
@@ -888,94 +950,97 @@ EXPLAIN FORMAT=JSON SELECT * FROM t1 x1 JOIN t1 x2 ON x2.a=
 EXPLAIN
 {
   "query": "/* select#1 */ select `x1`.`a` AS `a`,`x1`.`b` AS `b`,`x2`.`a` AS `a`,`x2`.`b` AS `b` from `test`.`t1` `x1` join `test`.`t1` `x2` where (`x2`.`a` = (/* select#2 */ select min(`x3`.`a`) from `test`.`t1` `x3` where (`x1`.`a` = `x3`.`a`)))",
-  "inputs": [
-    {
-      "alias": "x1",
-      "operation": "Table scan on x1",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "a",
-        "b"
-      ],
-      "estimated_rows": 1.0,
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "alias": "x2",
-      "heading": "Hash",
-      "operation": "Table scan on x2",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "a",
-        "b"
-      ],
-      "estimated_rows": 1.0,
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "inputs": [
-        {
-          "inputs": [
-            {
-              "alias": "x3",
-              "operation": "Table scan on x3",
-              "table_name": "t1",
-              "access_type": "table",
-              "schema_name": "test",
-              "used_columns": [
-                "a"
-              ],
-              "estimated_rows": 1.0,
-              "estimated_total_cost": "elided",
-              "estimated_first_row_cost": "elided"
-            }
-          ],
-          "condition": "(x1.a = x3.a)",
-          "operation": "Filter: (x1.a = x3.a)",
-          "access_type": "filter",
-          "estimated_rows": 0.10000000149011612,
-          "filter_columns": [
-            "x1.a",
-            "x3.a"
-          ],
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "heading": "Select #2 (subquery in condition; dependent)",
-      "subquery": true,
-      "dependent": true,
-      "functions": [
-        "min(x3.a)"
-      ],
-      "operation": "Aggregate: min(x3.a)",
-      "access_type": "aggregate",
-      "estimated_rows": 1.0,
-      "subquery_location": "condition",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "join_type": "inner join",
-  "operation": "Inner hash join (x2.a = (select #2))",
+  "query_plan": {
+    "inputs": [
+      {
+        "alias": "x1",
+        "operation": "Table scan on x1",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "a",
+          "b"
+        ],
+        "estimated_rows": 1.0,
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "alias": "x2",
+        "heading": "Hash",
+        "operation": "Table scan on x2",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "a",
+          "b"
+        ],
+        "estimated_rows": 1.0,
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "inputs": [
+          {
+            "inputs": [
+              {
+                "alias": "x3",
+                "operation": "Table scan on x3",
+                "table_name": "t1",
+                "access_type": "table",
+                "schema_name": "test",
+                "used_columns": [
+                  "a"
+                ],
+                "estimated_rows": 1.0,
+                "estimated_total_cost": "elided",
+                "estimated_first_row_cost": "elided"
+              }
+            ],
+            "condition": "(x1.a = x3.a)",
+            "operation": "Filter: (x1.a = x3.a)",
+            "access_type": "filter",
+            "estimated_rows": 0.10000000149011612,
+            "filter_columns": [
+              "x1.a",
+              "x3.a"
+            ],
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "heading": "Select #2 (subquery in condition; dependent)",
+        "subquery": true,
+        "dependent": true,
+        "functions": [
+          "min(x3.a)"
+        ],
+        "operation": "Aggregate: min(x3.a)",
+        "access_type": "aggregate",
+        "estimated_rows": 1.0,
+        "subquery_location": "condition",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "join_type": "inner join",
+    "operation": "Inner hash join (x2.a = (select #2))",
+    "access_type": "join",
+    "join_columns": [
+      "x2.a"
+    ],
+    "estimated_rows": 1.0,
+    "hash_condition": [
+      "(x2.a = (select #2))"
+    ],
+    "join_algorithm": "hash",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "join",
-  "join_columns": [
-    "x2.a"
-  ],
-  "estimated_rows": 1.0,
-  "hash_condition": [
-    "(x2.a = (select #2))"
-  ],
-  "join_algorithm": "hash",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 Warnings:
 Note	1276	Field or reference 'test.x1.a' of SELECT #2 was resolved in SELECT #1
@@ -998,95 +1063,98 @@ EXPLAIN FORMAT=JSON SELECT * FROM t1 x1 JOIN t1 x2 ON x2.a<
 EXPLAIN
 {
   "query": "/* select#1 */ select `x1`.`a` AS `a`,`x1`.`b` AS `b`,`x2`.`a` AS `a`,`x2`.`b` AS `b` from `test`.`t1` `x1` join `test`.`t1` `x2` where (`x2`.`a` < (/* select#2 */ select min(`x3`.`a`) from `test`.`t1` `x3` where (`x1`.`a` = `x3`.`a`)))",
-  "inputs": [
-    {
-      "alias": "x1",
-      "operation": "Table scan on x1",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "a",
-        "b"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "alias": "x2",
-      "heading": "Hash",
-      "operation": "Table scan on x2",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "used_columns": [
-        "a",
-        "b"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "inputs": [
-        {
-          "inputs": [
-            {
-              "alias": "x3",
-              "operation": "Table scan on x3",
-              "table_name": "t1",
-              "access_type": "table",
-              "schema_name": "test",
-              "used_columns": [
-                "a"
-              ],
-              "estimated_rows": "elided",
-              "estimated_total_cost": "elided",
-              "estimated_first_row_cost": "elided"
-            }
-          ],
-          "condition": "(x1.a = x3.a)",
-          "operation": "Filter: (x1.a = x3.a)",
-          "access_type": "filter",
-          "estimated_rows": "elided",
-          "filter_columns": [
-            "x1.a",
-            "x3.a"
-          ],
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "heading": "Select #2 (subquery in extra conditions; dependent)",
-      "subquery": true,
-      "dependent": true,
-      "functions": [
-        "min(x3.a)"
-      ],
-      "operation": "Aggregate: min(x3.a)",
-      "access_type": "aggregate",
-      "estimated_rows": "elided",
-      "subquery_location": "extra conditions",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "join_type": "inner join",
-  "operation": "Inner hash join (no condition), extra conditions: (x2.a < (select #2))",
+  "query_plan": {
+    "inputs": [
+      {
+        "alias": "x1",
+        "operation": "Table scan on x1",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "a",
+          "b"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "alias": "x2",
+        "heading": "Hash",
+        "operation": "Table scan on x2",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "used_columns": [
+          "a",
+          "b"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "inputs": [
+          {
+            "inputs": [
+              {
+                "alias": "x3",
+                "operation": "Table scan on x3",
+                "table_name": "t1",
+                "access_type": "table",
+                "schema_name": "test",
+                "used_columns": [
+                  "a"
+                ],
+                "estimated_rows": "elided",
+                "estimated_total_cost": "elided",
+                "estimated_first_row_cost": "elided"
+              }
+            ],
+            "condition": "(x1.a = x3.a)",
+            "operation": "Filter: (x1.a = x3.a)",
+            "access_type": "filter",
+            "estimated_rows": "elided",
+            "filter_columns": [
+              "x1.a",
+              "x3.a"
+            ],
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "heading": "Select #2 (subquery in extra conditions; dependent)",
+        "subquery": true,
+        "dependent": true,
+        "functions": [
+          "min(x3.a)"
+        ],
+        "operation": "Aggregate: min(x3.a)",
+        "access_type": "aggregate",
+        "estimated_rows": "elided",
+        "subquery_location": "extra conditions",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "join_type": "inner join",
+    "operation": "Inner hash join (no condition), extra conditions: (x2.a < (select #2))",
+    "access_type": "join",
+    "join_columns": [
+      "x2.a"
+    ],
+    "estimated_rows": "elided",
+    "hash_condition": [],
+    "join_algorithm": "hash",
+    "extra_condition": [
+      "(x2.a < (select #2))"
+    ],
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "join",
-  "join_columns": [
-    "x2.a"
-  ],
-  "estimated_rows": "elided",
-  "hash_condition": [],
-  "join_algorithm": "hash",
-  "extra_condition": [
-    "(x2.a < (select #2))"
-  ],
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 Warnings:
 Note	1276	Field or reference 'test.x1.a' of SELECT #2 was resolved in SELECT #1
@@ -1114,57 +1182,60 @@ OVER (PARTITION BY b) FROM t1 x1;
 EXPLAIN
 {
   "query": "/* select#1 */ select last_value(`(select #2)`) OVER (PARTITION BY `x1`.`b` )  AS `LAST_VALUE((SELECT x1.a FROM t1))\nOVER (PARTITION BY b)` from `test`.`t1` `x1`",
-  "inputs": [
-    {
-      "inputs": [
-        {
-          "alias": "x1",
-          "operation": "Table scan on x1",
-          "table_name": "t1",
-          "access_type": "table",
-          "schema_name": "test",
-          "used_columns": [
-            "a",
-            "b"
-          ],
-          "estimated_rows": "elided",
-          "estimated_total_cost": "elided",
-          "estimated_first_row_cost": "elided"
-        }
-      ],
-      "operation": "Sort: x1.b",
-      "access_type": "sort",
-      "sort_fields": [
-        "x1.b"
-      ],
-      "estimated_rows": "elided",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    },
-    {
-      "heading": "Select #2 (subquery in projection; dependent)",
-      "subquery": true,
-      "dependent": true,
-      "operation": "Table scan on t1",
-      "table_name": "t1",
-      "access_type": "table",
-      "schema_name": "test",
-      "estimated_rows": "elided",
-      "subquery_location": "projection",
-      "estimated_total_cost": "elided",
-      "estimated_first_row_cost": "elided"
-    }
-  ],
-  "buffering": true,
-  "functions": [
-    "last_value(`(select #2)`) OVER (PARTITION BY x1.b ) "
-  ],
-  "operation": "Window aggregate with buffering: last_value(`(select #2)`) OVER (PARTITION BY x1.b ) ",
+  "query_plan": {
+    "inputs": [
+      {
+        "inputs": [
+          {
+            "alias": "x1",
+            "operation": "Table scan on x1",
+            "table_name": "t1",
+            "access_type": "table",
+            "schema_name": "test",
+            "used_columns": [
+              "a",
+              "b"
+            ],
+            "estimated_rows": "elided",
+            "estimated_total_cost": "elided",
+            "estimated_first_row_cost": "elided"
+          }
+        ],
+        "operation": "Sort: x1.b",
+        "access_type": "sort",
+        "sort_fields": [
+          "x1.b"
+        ],
+        "estimated_rows": "elided",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      },
+      {
+        "heading": "Select #2 (subquery in projection; dependent)",
+        "subquery": true,
+        "dependent": true,
+        "operation": "Table scan on t1",
+        "table_name": "t1",
+        "access_type": "table",
+        "schema_name": "test",
+        "estimated_rows": "elided",
+        "subquery_location": "projection",
+        "estimated_total_cost": "elided",
+        "estimated_first_row_cost": "elided"
+      }
+    ],
+    "buffering": true,
+    "functions": [
+      "last_value(`(select #2)`) OVER (PARTITION BY x1.b ) "
+    ],
+    "operation": "Window aggregate with buffering: last_value(`(select #2)`) OVER (PARTITION BY x1.b ) ",
+    "access_type": "window",
+    "estimated_rows": "elided",
+    "estimated_total_cost": "elided",
+    "estimated_first_row_cost": "elided"
+  },
   "query_type": "select",
-  "access_type": "window",
-  "estimated_rows": "elided",
-  "estimated_total_cost": "elided",
-  "estimated_first_row_cost": "elided"
+  "json_schema_version": "2.0"
 }
 Warnings:
 Note	1276	Field or reference 'test.x1.a' of SELECT #2 was resolved in SELECT #1
@@ -1182,39 +1253,45 @@ EXPLAIN FORMAT=JSON INSERT INTO t VALUES (4), (5), (6);
 EXPLAIN
 {
   "query": "insert into `test`.`t` values (4),(5),(6)",
-  "inputs": [
-    {
-      "operation": "Rows fetched before execution",
-      "access_type": "rows_fetched_before_execution"
-    }
-  ],
-  "operation": "Insert into t",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Rows fetched before execution",
+        "access_type": "rows_fetched_before_execution"
+      }
+    ],
+    "operation": "Insert into t",
+    "table_name": "t",
+    "access_type": "insert_values",
+    "schema_name": "test",
+    "used_columns": [
+      "i"
+    ]
+  },
   "query_type": "insert",
-  "table_name": "t",
-  "access_type": "insert_values",
-  "schema_name": "test",
-  "used_columns": [
-    "i"
-  ]
+  "json_schema_version": "2.0"
 }
 EXPLAIN FORMAT=JSON REPLACE INTO t VALUES (7), (8), (9);
 EXPLAIN
 {
   "query": "replace into `test`.`t` values (7),(8),(9)",
-  "inputs": [
-    {
-      "operation": "Rows fetched before execution",
-      "access_type": "rows_fetched_before_execution"
-    }
-  ],
-  "operation": "Replace into t",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Rows fetched before execution",
+        "access_type": "rows_fetched_before_execution"
+      }
+    ],
+    "operation": "Replace into t",
+    "table_name": "t",
+    "access_type": "replace_values",
+    "schema_name": "test",
+    "used_columns": [
+      "i"
+    ]
+  },
   "query_type": "replace",
-  "table_name": "t",
-  "access_type": "replace_values",
-  "schema_name": "test",
-  "used_columns": [
-    "i"
-  ]
+  "json_schema_version": "2.0"
 }
 DROP TABLE t;
 #
@@ -1280,6 +1357,7 @@ SET @v1=NULL;
 SET @saved_optimizer_switch = @@optimizer_switch;
 CREATE TABLE t1 (i int);
 SET optimizer_switch="hypergraph_optimizer=OFF";
+SET explain_json_format_version = 1;
 EXPLAIN FORMAT=JSON INTO @v1 SELECT /*+ SET_VAR(optimizer_switch='hypergraph_optimizer=OFF')*/ * FROM t1;
 SELECT JSON_CONTAINS_PATH(@v1, 'one', '$.query_type') AS using_hypergraph;
 using_hypergraph
@@ -1300,3 +1378,117 @@ using_hypergraph
 DROP TABLE t1;
 SET @v1 = NULL;
 SET optimizer_switch = @saved_optimizer_switch;
+SET explain_json_format_version = DEFAULT;
+#
+# Bug#37199800: EXPLAIN FORMAT=TREE doesn't show clustered primary key
+#               scan in ROR intersection
+#
+CREATE TABLE t(pk1 INT NOT NULL,
+pk2 INT NOT NULL,
+f1 INT,
+f2 INT,
+PRIMARY KEY (pk1, pk2),
+KEY k(f1));
+INSERT INTO t(pk1, pk2, f1) VALUES (1, 1, 1), (1, 2, 2), (1, 3, 3), (1, 4, 4),
+(1, 5, 5), (1, 6, 6), (1, 7, 7), (1, 8, 8), (1, 9, 9), (1, 10, 10);
+INSERT INTO t(pk1, pk2, f1) SELECT 2, pk2, f1 FROM t;
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @explain
+SELECT /*+ SET_VAR(optimizer_switch='use_index_extensions=off')
+INDEX_MERGE(t) */
+* FROM t WHERE pk1 = 1 AND f1 = 1;
+SELECT JSON_PRETTY(JSON_EXTRACT(@explain, '$**.operation'));
+JSON_PRETTY(JSON_EXTRACT(@explain, '$**.operation'))
+[
+  "Intersect rows sorted by row ID",
+  "Index range scan on t using k over (f1 = 1)",
+  "Index range scan on t using PRIMARY over (pk1 = 1)"
+]
+DROP TABLE t;
+#
+# Bug#37126176 Add lookup references to iterator-based EXPLAIN FORMAT=JSON for index lookups
+#
+SET @v1 = NULL;
+CREATE TABLE t (pk INT PRIMARY KEY AUTO_INCREMENT, i INT DEFAULT NULL, INDEX idx(i));
+INSERT INTO t(i)
+WITH RECURSIVE qn(n) AS
+(SELECT 0 UNION ALL SELECT n+1 FROM qn WHERE n<19)
+SELECT 19 - n FROM qn;
+INSERT INTO t(i) VALUES (NULL);
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+# Index lookup shows correct reference type in "lookup_references".
+EXPLAIN FORMAT=JSON INTO @v1 SELECT pk FROM t WHERE pk = 1;
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references[0]'))
+= "const"
+  AS index_lookup_references_const
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+index_lookup_references_const
+1
+SET @v1 = NULL;
+EXPLAIN FORMAT=JSON INTO @v1 SELECT t1.i FROM t t1, t t2
+WHERE t1.i = t2.i + 1 LIMIT 1;
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references[0]'))
+= "func"
+  AS index_lookup_references_func
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+index_lookup_references_func
+1
+SET @v1 = NULL;
+EXPLAIN FORMAT=JSON INTO @v1 SELECT t1.pk FROM t t1, t t2
+WHERE t1.pk = t2.pk LIMIT 1;
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references[0]'))
+IN ("test.t1.pk", "test.t2.pk")
+AS index_lookup_references_column
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'index_lookup')) AS index_access_type_path) AS t;
+index_lookup_references_column
+1
+SET @v1 = NULL;
+DROP TABLE t;
+# Fulltext search has "lookup_references", should only show "const"
+CREATE TABLE t (a VARCHAR(200), b TEXT, FULLTEXT (a,b)) ENGINE = InnoDB charset utf8mb4;
+INSERT INTO t VALUES  ('This is a sample text', 'I made up for this test.'),
+('We want to show that fulltext', 'search references a constant in the "lookup_condition".'),
+('In this test the EXPLAIN output', 'should contain a field called "lookup_references".'),
+('"lookup_references" should be an array.', 'That array should contain an element that is "const".'),
+('Function MATCH ... AGAINST()','is used to do a fulltext search.'),
+('Fulltext search in MySQL', 'are confusing.');
+ANALYZE TABLE t;
+Table	Op	Msg_type	Msg_text
+test.t	analyze	status	OK
+EXPLAIN FORMAT=JSON INTO @v1 SELECT * FROM t WHERE MATCH(a,b) AGAINST ("fulltext");
+SELECT JSON_EXTRACT(@v1,
+CONCAT(
+SUBSTRING_INDEX(index_access_type_path, '.',
+CHAR_LENGTH(index_access_type_path)
+-
+CHAR_LENGTH(REPLACE(index_access_type_path, '.', ''))),
+'.lookup_references[0]'))
+= "const"
+  AS fulltext_search_references_const
+FROM (SELECT JSON_UNQUOTE(JSON_SEARCH(@v1, 'one', 'full_text_search')) AS index_access_type_path) AS t;
+fulltext_search_references_const
+1
+SET @v1 = NULL;
+DROP TABLE t;

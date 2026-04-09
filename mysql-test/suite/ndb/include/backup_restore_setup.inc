@@ -1,9 +1,6 @@
-# This inc-file should be called in all test case that does ndb_backup. This
-# inc-file define the path for backup directory.
+# This include file should be included at the beginning of all tests that uses
+# NDB backup, it will define the path for backup directory.
 
-# BACKUP_RESTORE SET-UP
-
---disable_query_log
 if (!$NDB_BACKUP_DIR)
 {
   --die Test requires NDB_BACKUP_DIR variable
@@ -19,4 +16,3 @@ if (!$NDB_BACKUP_DIR)
 --let $NDB_SAVED_BACKUPS=$MYSQL_TEST_DIR/suite/ndb/backups
 #echo NDB_SAVED_BACKUPS: $NDB_SAVED_BACKUPS;
 
---enable_query_log

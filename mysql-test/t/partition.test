@@ -478,14 +478,12 @@ EXPLAIN SELECT c1 FROM t1 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
 
 FLUSH STATUS;
 SELECT c1 FROM t1 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read_%';
 
 EXPLAIN SELECT c1 FROM t2 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
 
 FLUSH STATUS;
 SELECT c1 FROM t2 WHERE (c1 > 10 AND c1 < 13) OR (c1 > 17 AND c1 < 20);
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read_%';
 DROP TABLE t1,t2;
 
@@ -512,28 +510,24 @@ EXPLAIN SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 5);
 
 FLUSH STATUS;
 SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 5);
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read_%';
 
 EXPLAIN SELECT c1 FROM t2 WHERE (c1 > 2 AND c1 < 5);
 
 FLUSH STATUS;
 SELECT c1 FROM t2 WHERE (c1 > 2 AND c1 < 5);
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read_%';
 
 EXPLAIN SELECT c1 FROM t1 WHERE (c1 > 12 AND c1 < 15);
 
 FLUSH STATUS;
 SELECT c1 FROM t1 WHERE (c1 > 12 AND c1 < 15);
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read_%';
 
 EXPLAIN SELECT c1 FROM t2 WHERE (c1 > 12 AND c1 < 15);
 
 FLUSH STATUS;
 SELECT c1 FROM t2 WHERE (c1 > 12 AND c1 < 15);
---skip_if_hypergraph  # Depends on the query plan.
 SHOW STATUS LIKE 'Handler_read_%';
 DROP TABLE t1,t2;
 
@@ -2485,12 +2479,15 @@ CREATE TABLE t1 (c1 int(11) DEFAULT NULL, KEY c1 (c1))
 
 INSERT INTO t1 VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18),(19),(20);
 
+SET explain_json_format_version = 1;
+
 let $query=SELECT c1 FROM t1 WHERE (c1 > 2 AND c1 < 15);
 --eval EXPLAIN $query
 --eval EXPLAIN $query
 --skip_if_hypergraph  # Depends on the query plan.
 --eval EXPLAIN FORMAT=JSON $query
 
+SET explain_json_format_version = DEFAULT;
 DROP TABLE t1;
 
 --echo #

@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -32,13 +32,12 @@
 #include "sql/mysqld.h"
 #include "sql/stateless_allocator.h"
 
-namespace dd {
-namespace tables {
+namespace dd::tables {
 
 ///////////////////////////////////////////////////////////////////////////
 
 const View_table_usage &View_table_usage::instance() {
-  static View_table_usage *s_instance = new (std::nothrow) View_table_usage();
+  static auto *s_instance = new (std::nothrow) View_table_usage();
   return *s_instance;
 }
 
@@ -109,5 +108,4 @@ Object_key *View_table_usage::create_key_by_name(
       table_name);
 }
 
-}  // namespace tables
-}  // namespace dd
+}  // namespace dd::tables

@@ -1,0 +1,5 @@
+--echo # Wait for the Router to update the metadata after we created the Cluster
+--let $grep_pattern = .*Potential changes detected in cluster after metadata refresh.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../wait_for_pattern_in_file.inc

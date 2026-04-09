@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -55,7 +55,7 @@ bool printINDEX_STAT_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const IndexStatReq *sig = (const IndexStatReq *)theData;
+  const auto *sig = (const IndexStatReq *)theData;
   fprintf(output, " clientRef: 0x%x", sig->clientRef);
   fprintf(output, " clientData: %u", sig->clientData);
   fprintf(output, "\n");
@@ -79,7 +79,7 @@ bool printINDEX_STAT_IMPL_REQ(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const IndexStatImplReq *sig = (const IndexStatImplReq *)theData;
+  const auto *sig = (const IndexStatImplReq *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");
@@ -105,7 +105,7 @@ bool printINDEX_STAT_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const IndexStatConf *sig = (const IndexStatConf *)theData;
+  const auto *sig = (const IndexStatConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");
@@ -119,7 +119,7 @@ bool printINDEX_STAT_IMPL_CONF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const IndexStatImplConf *sig = (const IndexStatImplConf *)theData;
+  const auto *sig = (const IndexStatImplConf *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");
@@ -133,7 +133,7 @@ bool printINDEX_STAT_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const IndexStatRef *sig = (const IndexStatRef *)theData;
+  const auto *sig = (const IndexStatRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, " errorCode: %u", sig->errorCode);
@@ -149,7 +149,7 @@ bool printINDEX_STAT_IMPL_REF(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const IndexStatImplRef *sig = (const IndexStatImplRef *)theData;
+  const auto *sig = (const IndexStatImplRef *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, " errorCode: %u", sig->errorCode);
@@ -165,7 +165,7 @@ bool printINDEX_STAT_REP(FILE *output, const Uint32 *theData, Uint32 len,
     return false;
   }
 
-  const IndexStatRep *sig = (const IndexStatRep *)theData;
+  const auto *sig = (const IndexStatRep *)theData;
   fprintf(output, " senderRef: 0x%x", sig->senderRef);
   fprintf(output, " senderData: %u", sig->senderData);
   fprintf(output, "\n");

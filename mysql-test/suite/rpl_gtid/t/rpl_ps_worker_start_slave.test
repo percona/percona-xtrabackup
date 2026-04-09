@@ -24,7 +24,6 @@
 
 # the test is binlog format agnostic
 --source include/have_binlog_format_row.inc
---source include/have_replica_parallel_type_logical_clock.inc
 --source include/rpl/init_source_replica.inc
 
 --source include/rpl/connection_replica.inc

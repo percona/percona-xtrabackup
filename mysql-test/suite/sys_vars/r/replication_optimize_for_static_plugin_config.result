@@ -18,6 +18,8 @@ GRANT SUPER ON *.* TO user1@'%';
 Warnings:
 Warning	1287	The SUPER privilege identifier is deprecated
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SET GLOBAL replication_optimize_for_static_plugin_config = 1;
 DROP USER user1;
 BEGIN;

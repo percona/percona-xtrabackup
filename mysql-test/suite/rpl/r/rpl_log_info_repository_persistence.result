@@ -12,7 +12,6 @@ CALL mtr.add_suppression("Replica: Failed to initialize the connection metadata 
 CALL mtr.add_suppression("Replica SQL for channel 'ch1': Replica failed to initialize applier metadata structure from the repository");
 CREATE USER 'replication_applier'@'localhost' IDENTIFIED BY 'password';
 GRANT REPLICATION_APPLIER ON * . * TO 'replication_applier'@'localhost';
-FLUSH PRIVILEGES;
 STOP REPLICA FOR CHANNEL "";
 CHANGE REPLICATION SOURCE TO SOURCE_HOST="localhost", SOURCE_PORT=10, PRIVILEGE_CHECKS_USER='replication_applier'@'localhost';
 #

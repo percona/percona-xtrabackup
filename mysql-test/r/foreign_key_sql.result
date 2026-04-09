@@ -1,0 +1,950 @@
+# FR 1.1) Test foreign key during INSERT operation on the child table
+# FR 1.1.1) Test FK reference on integer primary key
+# Create parent table referenced and child table referencing with foreign key constraints.
+# Insert data into the parent table and verify that inserting invalid foreign key values into
+#  the child table reports ER_NO_REFERENCED_ROW_2.
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1));
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referencing VALUES (1, 1);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+INSERT INTO referencing VALUES (1, 10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+INSERT INTO referencing VALUES (10, 1);
+INSERT INTO referencing VALUES (10, 10);
+DROP TABLE referencing, referenced;
+# FR 1.1.2) Test FK on VARCHAR types with multiple indexes
+# Create parent table referenced with multiple unique indexes and child table referencing with
+#  a foreign key constraint referencing one of the unique indexes.
+# Insert data into the parent table and verify that inserting invalid foreign key values into
+#  the child table reports ER_NO_REFERENCED_ROW_2.
+CREATE TABLE referenced(id1 INT, id2 VARCHAR(20), id3 INT, UNIQUE KEY(id1), unique key(id2), unique key(id3)) engine=innodb;
+CREATE TABLE referencing(idd1 INT, idd2 VARCHAR(20), FOREIGN KEY(idd2) REFERENCES referenced(id2));
+INSERT INTO referenced VALUES (1, 'SomeValue', 10);
+INSERT INTO referencing VALUES (1, 'NoValue') ;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd2`) REFERENCES `referenced` (`id2`))
+INSERT INTO referencing VALUES (5, 'SomeValue');
+DROP TABLE referencing, referenced;
+# FR 1.1.3) Test FK with multiple references
+# Create multiple parent tables (referenced1, referenced2, referenced3) and a child table referencing
+#  with multiple foreign key constraints referencing the parent tables.
+# Insert data into the parent tables and verify that inserting invalid foreign key values into the
+#  child table reports ER_NO_REFERENCED_ROW_2.
+CREATE TABLE referenced1(id11 INT, UNIQUE KEY(id11)) engine=innodb;
+CREATE TABLE referenced2(id12 INT, UNIQUE KEY(id12)) engine=innodb;
+CREATE TABLE referenced3(id13 INT, UNIQUE KEY(id13)) engine=innodb;
+CREATE TABLE referencing(idd1 INT, idd2 INT, idd3 INT,
+FOREIGN KEY(idd1) REFERENCES referenced1(id11),
+FOREIGN KEY(idd2) REFERENCES referenced2(id12),
+FOREIGN KEY(idd3) REFERENCES referenced3(id13));
+insert INTO referenced1 VALUES (1);
+insert INTO referenced2 VALUES (2);
+insert INTO referenced3 VALUES (3);
+insert INTO referencing VALUES (1,1,1);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_2` FOREIGN KEY (`idd2`) REFERENCES `referenced2` (`id12`))
+insert INTO referencing VALUES (1,2,3);
+insert INTO referencing VALUES (1,2,1);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_3` FOREIGN KEY (`idd3`) REFERENCES `referenced3` (`id13`))
+DROP TABLE referencing, referenced1, referenced2, referenced3;
+# FR 1.1.4) Test multiple references for same column from different tables
+# Create multiple parent tables (t1, t2) and a child table t3 with multiple foreign key constraints
+#  referencing the same column in the parent tables.
+# Insert data into the parent tables and verify that inserting invalid foreign key values into
+#  the child table reports ER_NO_REFERENCED_ROW_2.
+CREATE TABLE t1(f1 INT PRIMARY KEY);
+CREATE TABLE t2(f1 INT PRIMARY KEY);
+CREATE TABLE t3(f1 INT PRIMARY KEY, FOREIGN KEY (f1) REFERENCES t1(f1), FOREIGN KEY(f1) REFERENCES t2(f1));
+INSERT INTO t1 VALUES (1);
+INSERT INTO t1 VALUES (2);
+INSERT INTO t2 VALUES (1);
+INSERT INTO t2 VALUES (3);
+INSERT INTO t3 VALUES (1);
+INSERT INTO t3 VALUES (2);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t3`, CONSTRAINT `t3_ibfk_2` FOREIGN KEY (`f1`) REFERENCES `t2` (`f1`))
+INSERT INTO t3 VALUES (3);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t3`, CONSTRAINT `t3_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `t1` (`f1`))
+DROP TABLE t1, t2, t3;
+# FR 1.1.5) Test INSERT with autoincrement on FK column
+# Create parent table t1 and child table t2 with a foreign key constraint and an auto-increment column
+#  in the child table.
+# Insert data into the parent table and verify that inserting data into the child table with an
+#  auto-increment value works correctly.
+CREATE TABLE t1 (f1 INT PRIMARY KEY, f2 CHAR(6)) ENGINE=InnoDB;
+CREATE TABLE t2 (f1 INT AUTO_INCREMENT, f2 INT, FOREIGN KEY(f1) REFERENCES t1(f1) ON DELETE CASCADE) ENGINE=InnoDB;
+INSERT INTO t1 VALUES (1, 'one'), (2, 'two'), (3, 'three');
+INSERT INTO t2 VALUES (NULL, 1);
+SELECT LAST_INSERT_ID();
+LAST_INSERT_ID()
+1
+INSERT INTO t2 VALUES (2, 2);
+INSERT INTO t2 VALUES (NULL, 3);
+SELECT LAST_INSERT_ID();
+LAST_INSERT_ID()
+3
+SELECT * FROM t2;
+f1	f2
+1	1
+2	2
+3	3
+DROP TABLE t2, t1;
+# FR 1.2) Test foreign key support during UPDATE operation on the child table.
+# Create parent table referenced and child table referencing with foreign key constraints.
+# Insert data into the parent and child tables and verify that updating the foreign key value
+#  in the child table to an invalid value reports ER_NO_REFERENCED_ROW_2.
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1));
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (20, 20);
+INSERT INTO referencing VALUES (10, 10);
+UPDATE referencing set idd2 = 30 WHERE idd2 = 10;
+UPDATE referencing set idd1 = 30 WHERE idd1 = 10;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+UPDATE referencing set idd1 = 20 WHERE idd1 = 10;
+SELECT * FROM referencing;
+idd1	idd2
+20	30
+DROP TABLE referencing, referenced;
+# FR 1.3) Test foreign key support with DELETE RESTRICT clause on the parent table.
+# FR 1.3.1) Test FK reference on PRIMARY key with ON DELETE RESTRICT
+# Create parent table referenced and child table referencing with foreign key constraints and
+#  ON DELETE RESTRICT.
+# Insert data into the parent and child tables and verify that deleting a row from the parent table
+#  that has a corresponding foreign key value in the child table reports ER_ROW_IS_REFERENCED_2.
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1) ON DELETE RESTRICT);
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (20, 20);
+INSERT INTO referencing VALUES (10, 10);
+DELETE FROM referenced WHERE id1 = 20;
+DELETE FROM referenced WHERE id1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`) ON DELETE RESTRICT)
+DROP TABLE referencing, referenced;
+# FR 1.3.2) Test FK reference with ON DELETE NO ACTION and existing partial key
+CREATE TABLE referenced(id1 INT, id2 INT, UNIQUE KEY(id1));
+CREATE TABLE referencing(idd1 INT, idd2 INT, UNIQUE KEY(idd1, idd2), 
+FOREIGN KEY (idd1) REFERENCES referenced(id1) ON DELETE NO ACTION);
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (20, 20);
+INSERT INTO referencing VALUES (10, 10);
+DELETE FROM referenced WHERE id1 = 20;
+DELETE FROM referenced WHERE id1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+DROP TABLE referencing, referenced;
+# FR 1.4) Test foreign key support with UPDATE RESTRICT clause on the parent table
+# Create parent table referenced and child table referencing with foreign key constraints
+#  and ON UPDATE RESTRICT.
+# Insert data into the parent and child tables and verify that updating a row in the parent table
+#  that has a corresponding foreign key value in the child table reports ER_ROW_IS_REFERENCED_2.
+# operation on the parent table, if foreign key value exist in the
+# child table, an error ER_ROW_IS_REFERENCED_2 must be reported.
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1) ON UPDATE RESTRICT);
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (20, 20);
+INSERT INTO referenced VALUES (30, 30);
+INSERT INTO referencing VALUES (10, 10);
+INSERT INTO referencing VALUES (20, 20);
+UPDATE referenced set id2 = 40 WHERE id2 = 30;
+UPDATE referenced set id1 = 40 WHERE id1 = 30;
+UPDATE referenced set id1 = 20 WHERE id1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`) ON UPDATE RESTRICT)
+SELECT * from referenced;
+id1	id2
+10	10
+20	20
+40	40
+SELECT * from referencing;
+idd1	idd2
+10	10
+20	20
+DROP TABLE referencing, referenced;
+# FR 1.5) Test foreign key support with DELETE CASCADE clause on the parent table.
+# Create parent table referenced and child table referencing with foreign key constraints
+#  and ON DELETE CASCADE.
+# Insert data into the parent and child tables and verify that deleting a row from the parent table
+#  cascades the deletion to the child table.
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1) ON DELETE CASCADE);
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (20, 20);
+INSERT INTO referenced VALUES (30, 30);
+INSERT INTO referencing VALUES (10, 10);
+INSERT INTO referencing VALUES (10, 20);
+INSERT INTO referencing VALUES (20, 10);
+INSERT INTO referencing VALUES (20, 20);
+DELETE FROM referenced WHERE id1 = 30;
+DELETE FROM referenced WHERE id1 = 10;
+SELECT * FROM referencing;
+idd1	idd2
+20	10
+20	20
+SELECT * FROM referenced;
+id1	id2
+20	20
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+referenced	0	2
+referencing	0	2
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_index_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+referenced	0	2
+referencing	0	2
+DROP TABLE referencing, referenced;
+# FR 1.6) Test foreign key support with DELETE SET NULL clause on the parent table.
+# Create parent table referenced and child table referencing with foreign key constraints
+#  and ON DELETE SET NULL.
+# Insert data into the parent and child tables and verify that deleting a row from the
+#  parent table sets the corresponding foreign key value to NULL in the child table.
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1) ON DELETE SET NULL);
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (20, 20);
+INSERT INTO referenced VALUES (30, 30);
+INSERT INTO referencing VALUES (10, 10);
+INSERT INTO referencing VALUES (10, 20);
+INSERT INTO referencing VALUES (20, 10);
+INSERT INTO referencing VALUES (20, 20);
+DELETE FROM referenced WHERE id1 = 30;
+DELETE FROM referenced WHERE id1 = 10;
+SELECT * FROM referencing;
+idd1	idd2
+NULL	10
+NULL	20
+20	10
+20	20
+SELECT * FROM referenced;
+id1	id2
+20	20
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+referenced	0	2
+referencing	2	0
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_index_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+referenced	0	2
+referencing	2	0
+DROP TABLE referencing, referenced;
+# FR 1.7) Test foreign key support with UPDATE CASCADE clause on the parent table
+# Create parent table referenced and child table referencing with foreign key constraints
+#  and ON UPDATE CASCADE.
+# Insert data into the parent and child tables and verify that updating a row in the parent table
+#  cascades the update to the child table.
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1) ON UPDATE CASCADE);
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (20, 20);
+INSERT INTO referenced VALUES (30, 30);
+INSERT INTO referencing VALUES (10, 10);
+INSERT INTO referencing VALUES (20, 20);
+INSERT INTO referencing VALUES (30, 30);
+UPDATE referenced set id1 = 40 WHERE id1 = 30;
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+referenced	1	0
+referencing	1	0
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_index_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+referenced	1	0
+referencing	1	0
+UPDATE referenced set id1 = 20 WHERE id1 = 10;
+ERROR 23000: Duplicate entry '20' for key 'referenced.PRIMARY'
+SELECT * from referenced;
+id1	id2
+10	10
+20	20
+40	30
+SELECT * from referencing;
+idd1	idd2
+10	10
+20	20
+40	30
+DROP TABLE referencing, referenced;
+# FR 1.8) Test foreign key support with UPDATE SET NULL clause on the parent table
+# Create parent table referenced and child table referencing with foreign key constraints
+#  and ON UPDATE SET NULL.
+# Insert data into the parent and child tables and verify that updating a row in the parent table
+#  sets the corresponding foreign key value to NULL in the child table.
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1) ON UPDATE SET NULL);
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (20, 20);
+INSERT INTO referenced VALUES (30, 30);
+INSERT INTO referencing VALUES (10, 10);
+INSERT INTO referencing VALUES (20, 20);
+INSERT INTO referencing VALUES (30, 30);
+UPDATE referenced set id1 = 40 WHERE id1 = 30;
+UPDATE referenced set id1 = 20 WHERE id1 = 10;
+ERROR 23000: Duplicate entry '20' for key 'referenced.PRIMARY'
+SELECT * from referenced;
+id1	id2
+10	10
+20	20
+40	30
+SELECT * from referencing;
+idd1	idd2
+10	10
+20	20
+NULL	30
+DROP TABLE referencing, referenced;
+# FR 2.3) Foreign key cascade must be supported for stored generated columns.
+# FR 2.3.1) Test foreign key cascade for stored generated columns
+# Create parent table parent with a stored generated column and child table child
+#  with a foreign key constraint referencing the generated column.
+# Insert data into the parent and child tables and verify that UPDATE CASCADE works correctly
+CREATE TABLE parent(fname CHAR(64), lname CHAR(64), fullname VARCHAR(128)
+GENERATED ALWAYS AS (CONCAT(fname, ' ', lname))STORED);
+CREATE UNIQUE INDEX parentidx_fullname ON parent(fullname);
+CREATE TABLE child(fullname CHAR(128) REFERENCES parent(fullname) ON UPDATE CASCADE);
+INSERT INTO parent (fname, lname) VALUES ('fname', 'lname');
+INSERT INTO child (fullname) VALUES ('fname lname');
+UPDATE parent SET fname='newname' WHERE fname='fname';
+SELECT * FROM parent;
+fname	lname	fullname
+newname	lname	newname lname
+SELECT * FROM child;
+fullname
+fname lname
+DROP TABLE parent, child;
+# FR 2.3.2) Test foreign key cascade referring to base column of stored generated column
+CREATE TABLE parent(fname CHAR(64), lname CHAR(64), fullname VARCHAR(128)
+GENERATED ALWAYS AS (CONCAT(fname, ' ', lname)) STORED, UNIQUE(fname));
+CREATE TABLE child(fname CHAR(128) REFERENCES parent(fname) ON UPDATE CASCADE);
+INSERT INTO parent (fname, lname) VALUES ('fname', 'lname');
+INSERT INTO child (fname) VALUES ('fname');
+UPDATE parent SET fname='newname' WHERE fname='fname';
+SELECT * FROM parent;
+fname	lname	fullname
+newname	lname	newname lname
+SELECT * FROM child;
+fname
+newname
+DROP TABLE parent, child;
+# FR 2.3.3) Test foreign key cascade on base column of virtual generated column
+CREATE TABLE parent(fname VARCHAR(64) PRIMARY KEY);
+CREATE TABLE child (fname VARCHAR(64) REFERENCES parent(fname) ON UPDATE CASCADE, lname CHAR(64),
+fullname VARCHAR(128) GENERATED ALWAYS AS (CONCAT(fname, ' ', lname)) VIRTUAL);
+INSERT INTO parent (fname) VALUES ('fname');
+INSERT INTO child (fname, lname) VALUES ('fname', 'lname');
+UPDATE parent SET fname='newname' WHERE fname='fname';
+SELECT * FROM parent;
+fname
+newname
+SELECT * FROM child;
+fname	lname	fullname
+newname	lname	newname lname
+DROP TABLE parent, child;
+# Bug#38691473 WL#11249: Foreign key constraint on generated column with ON UPDATE CASCADE does not work
+CREATE TABLE author (author_id INT, author_gcol INT AS (author_id*2) STORED, PRIMARY KEY(author_gcol),
+first_name VARCHAR(50) NOT NULL, last_name VARCHAR(50) NOT NULL);
+INSERT INTO author(author_id, first_name, last_name) VALUES('1', 'Jules', 'Verne');
+INSERT INTO author(author_id, first_name, last_name) VALUES('3', 'Sidney', 'Sheldon');
+CREATE TABLE book (book_id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(200) NOT NULL, pub_year INT,
+author_id INT, FOREIGN KEY (author_id) REFERENCES author(author_gcol) ON UPDATE CASCADE);
+INSERT INTO book VALUES('1', 'Master of the Game', 1982, 6);
+UPDATE author SET author_id = 4 WHERE author_id = 3;
+SELECT * FROM author;
+author_id	author_gcol	first_name	last_name
+1	2	Jules	Verne
+4	8	Sidney	Sheldon
+SELECT * FROM book;
+book_id	title	pub_year	author_id
+1	Master of the Game	1982	8
+DROP TABLE author, book;
+# FR 2.4) Test foreign key on composite columns
+# FR 2.4.1) Test insert on composite foreign key
+# Create parent table referenced with a composite unique key and child table
+#  referencing with a foreign key constraint referencing the composite key.
+# Insert data into the parent and child tables and verify that foreign key
+#  checks work correctly.
+CREATE TABLE referenced(id1 INT, id2 INT, id3 INT, UNIQUE KEY(id1, id2), UNIQUE KEY(id2, id3), UNIQUE KEY(id1, id3));
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1, idd2) REFERENCES referenced(id1, id2));
+INSERT INTO referenced VALUES (10, 20, 30);
+INSERT INTO referencing VALUES (10, 10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`, `idd2`) REFERENCES `referenced` (`id1`, `id2`))
+INSERT INTO referencing VALUES (10, 20);
+INSERT INTO referencing VALUES (10, 30);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`, `idd2`) REFERENCES `referenced` (`id1`, `id2`))
+DROP TABLE referencing, referenced;
+# FR 2.4.2) Test foreign key with multi key for UPDATE and DELETE CASCADE
+CREATE TABLE t1 (f1 INT NOT NULL, f2 VARCHAR(10), f3 CHAR(4), f4 BINARY(3),
+f5 VARBINARY(2), f6 INT, CONSTRAINT PRIMARY KEY (f1,f2,f3,f4,f5,f6))
+ENGINE=InnoDB;
+CREATE TABLE t2 (f1 int not null, f2 varchar(10), f3 char(4), f4 BINARY(3),
+f5 VARBINARY(2), f6 INT,CONSTRAINT t2_t1_fk FOREIGN KEY (f1,f2,f3,f4,f5,f6)
+REFERENCES t1(f1,f2,f3,f4,f5,f6) ON UPDATE CASCADE ON DELETE CASCADE)
+ENGINE=InnoDB;
+INSERT INTO t1 VALUES (1, 'aa', 'bb', 0x123456, 0x55, -1),
+(2, 'cc', 'dd  ', 0x123400, 0x55, -2),(3, 'ee', 'f', 0x123456, 0x55, -2);
+INSERT INTO t2 VALUES (1, 'aa', 'bb', 0x123456, 0x55, -1),
+(2, 'cc', 'dd', 0x1234, 0x55, -2),(3, 'ee', 'f   ', 0x123456, 0x55, -2);
+SELECT * FROM t1;
+f1	f2	f3	f4	f5	f6
+1	aa	bb	4V	U	-1
+2	cc	dd	4 	U	-2
+3	ee	f	4V	U	-2
+SELECT * FROM t2 order by f1,f2,f3,f4,f5,f6;
+f1	f2	f3	f4	f5	f6
+1	aa	bb	4V	U	-1
+2	cc	dd	4 	U	-2
+3	ee	f	4V	U	-2
+UPDATE t1 SET f2='modified' WHERE f6=-2;
+SELECT * FROM t1;
+f1	f2	f3	f4	f5	f6
+1	aa	bb	4V	U	-1
+2	modified	dd	4 	U	-2
+3	modified	f	4V	U	-2
+SELECT * FROM t2 order by f1,f2,f3,f4,f5,f6;
+f1	f2	f3	f4	f5	f6
+1	aa	bb	4V	U	-1
+2	modified	dd	4 	U	-2
+3	modified	f	4V	U	-2
+DELETE FROM t1 WHERE f1 = 1;
+SELECT * FROM t1;
+f1	f2	f3	f4	f5	f6
+2	modified	dd	4 	U	-2
+3	modified	f	4V	U	-2
+SELECT * FROM t2 order by f1,f2,f3,f4,f5,f6;
+f1	f2	f3	f4	f5	f6
+2	modified	dd	4 	U	-2
+3	modified	f	4V	U	-2
+INSERT INTO t2 VALUES (2, 'cc', 'dd', 0x1234, 0x55, -2);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_t1_fk` FOREIGN KEY (`f1`, `f2`, `f3`, `f4`, `f5`, `f6`) REFERENCES `t1` (`f1`, `f2`, `f3`, `f4`, `f5`, `f6`) ON DELETE CASCADE ON UPDATE CASCADE)
+ALTER TABLE t2 DROP CONSTRAINT t2_t1_fk;
+ALTER TABLE t2 ADD CONSTRAINT t2_t1_fk FOREIGN KEY (f1,f2,f3,f4,f5,f6)
+REFERENCES t1(f1,f2,f3,f4,f5,f6);
+DELETE FROM t1 WHERE f1=2;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_t1_fk` FOREIGN KEY (`f1`, `f2`, `f3`, `f4`, `f5`, `f6`) REFERENCES `t1` (`f1`, `f2`, `f3`, `f4`, `f5`, `f6`))
+SELECT * FROM t1;
+f1	f2	f3	f4	f5	f6
+2	modified	dd	4 	U	-2
+3	modified	f	4V	U	-2
+SELECT * FROM t2 order by f1,f2,f3,f4,f5,f6;
+f1	f2	f3	f4	f5	f6
+2	modified	dd	4 	U	-2
+3	modified	f	4V	U	-2
+DROP TABLE t2,t1;
+# FR 2.5) Foreign key on unique key columns in parent and child must be
+# supported.
+# FR 2.5.1) Test foreign key support on unique key columns in parent tables.
+# Create parent table referenced with a unique key and child table referencing with
+#  a foreign key constraint referencing the unique key.
+# Insert data into the parent and child tables and verify that foreign key checks
+#  work correctly.
+CREATE TABLE referenced(id1 INT UNIQUE KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1));
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referencing VALUES (1, 10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+INSERT INTO referencing VALUES (10, 1);
+INSERT INTO referencing VALUES (10, 10);
+DROP TABLE referencing, referenced;
+# FR 2.5.2) Test foreign key support on unique key columns in child tables.
+CREATE TABLE referenced(id1 INT UNIQUE KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT UNIQUE, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1));
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referencing VALUES (10, 10);
+UPDATE referenced SET id1 = 100 WHERE id1 = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+DROP TABLE referencing, referenced;
+# FR 2.6) Foreign key must be supported on non-unique key columns in parent
+# and child must be supported.
+# FR 2.6.1) Test foreign key support on non-unique key columns in parent tables
+# Create parent table referenced with a non-unique key and child table referencing with a
+#  foreign key constraint referencing the non-unique key.
+# Insert data into the parent and child tables and verify that foreign key checks work correctly
+CREATE TABLE referenced(id1 INT, id2 INT, KEY(id1));
+SET restrict_fk_on_non_standard_key = OFF;
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1));
+Warnings:
+Warning	6124	Foreign key 'referencing_ibfk_1' refers to non-unique key or partial key. This is deprecated and will be removed in a future release.
+SET restrict_fk_on_non_standard_key = ON;
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (40, 40);
+INSERT INTO referencing VALUES (1, 10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+INSERT INTO referencing VALUES (10, 1);
+INSERT INTO referencing VALUES (10, 10);
+UPDATE referencing SET idd1 = 40 where idd2 = 1;
+SELECT * FROM referencing;
+idd1	idd2
+40	1
+10	10
+DROP TABLE referencing, referenced;
+# FR 2.6.2) Test foreign key support on non-unique key column in parent and unique
+# column in child table
+CREATE TABLE referenced(id1 INT, id2 INT, KEY(id1));
+SET restrict_fk_on_non_standard_key = OFF;
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
+CREATE TABLE referencing(idd1 INT UNIQUE, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1));
+Warnings:
+Warning	6124	Foreign key 'referencing_ibfk_1' refers to non-unique key or partial key. This is deprecated and will be removed in a future release.
+SET restrict_fk_on_non_standard_key = ON;
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (40, 40);
+INSERT INTO referencing VALUES (1, 10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+INSERT INTO referencing VALUES (10, 1);
+UPDATE referencing SET idd1 = 40 where idd2 = 1;
+SELECT * FROM referencing;
+idd1	idd2
+40	1
+DROP TABLE referencing, referenced;
+# FR 2.7) Foreign key must be supported on partial columns of the key in
+# parent and child.
+# FR 2.7.1) Test foreign key support on partial columns of the key in parent table
+CREATE TABLE referenced(id1 INT, id2 INT, KEY(id1, id2));
+SET restrict_fk_on_non_standard_key = OFF;
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
+CREATE TABLE referencing(idd1 INT, idd2 INT, FOREIGN KEY (idd1) REFERENCES referenced(id1));
+Warnings:
+Warning	6124	Foreign key 'referencing_ibfk_1' refers to non-unique key or partial key. This is deprecated and will be removed in a future release.
+SET restrict_fk_on_non_standard_key = ON;
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (40, 40);
+INSERT INTO referencing VALUES (1, 10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+INSERT INTO referencing VALUES (10, 1);
+INSERT INTO referencing VALUES (10, 10);
+UPDATE referencing SET idd1 = 40 where idd1 = 10;
+SELECT * FROM referencing;
+idd1	idd2
+40	1
+40	10
+DROP TABLE referencing, referenced;
+# FR 2.7.2) Test foreign key support on partial columns of the key in child table
+CREATE TABLE referenced(id1 INT PRIMARY KEY, id2 INT);
+SET restrict_fk_on_non_standard_key = OFF;
+Warnings:
+Warning	4166	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release. Foreign key referring to non-unique or partial keys is unsafe and may break replication.
+CREATE TABLE referencing(idd1 INT, idd2 INT, UNIQUE(idd1, idd2),
+FOREIGN KEY (idd1) REFERENCES referenced(id1));
+SET restrict_fk_on_non_standard_key = ON;
+Warnings:
+Warning	1681	'restrict_fk_on_non_standard_key' is deprecated and will be removed in a future release.
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (40, 40);
+INSERT INTO referencing VALUES (1, 10);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`) REFERENCES `referenced` (`id1`))
+INSERT INTO referencing VALUES (10, 1);
+INSERT INTO referencing VALUES (10, 10);
+UPDATE referencing SET idd1 = 40 where idd1 = 10;
+SELECT * FROM referencing;
+idd1	idd2
+40	1
+40	10
+DROP TABLE referencing, referenced;
+# FR 2.8) If any one of the column value in composite foreign key is NULL,
+# foreign key check must not be performed for other columns.
+# FR 2.8.1) Test MATCH SIMPLE
+# Create parent table referenced with a composite unique key and child table
+#  referencing with a foreign key constraint referencing the composite key.
+# Insert data into the parent and child tables and verify that foreign key
+#  checks are not performed when one of the column values is NULL.
+CREATE TABLE referenced(id1 INT, id2 INT, UNIQUE KEY(id1, id2));
+CREATE TABLE referencing(idd1 INT, idd2 INT,
+FOREIGN KEY (idd1, idd2) REFERENCES referenced(id1, id2));
+INSERT INTO referenced VALUES (10, 10);
+INSERT INTO referenced VALUES (15, 15);
+INSERT INTO referenced VALUES (30, 30);
+INSERT INTO referenced VALUES (30, 35);
+INSERT INTO referenced VALUES (40, 40);
+INSERT INTO referencing VALUES (10, 10);
+INSERT INTO referencing VALUES (15, 15);
+INSERT INTO referencing VALUES (30, 30);
+INSERT INTO referencing VALUES (10, 20);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`, `idd2`) REFERENCES `referenced` (`id1`, `id2`))
+INSERT INTO referencing VALUES (20, 20);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`, `idd2`) REFERENCES `referenced` (`id1`, `id2`))
+INSERT INTO referencing VALUES (NULL, 20);
+INSERT INTO referencing VALUES (20, NULL);
+UPDATE referencing SET idd1 = NULL, idd2=50  where idd1 = 10;
+UPDATE referencing SET idd1 = 150, idd2=NULL  where idd1 = 15;
+UPDATE referencing SET idd1 = 40,  idd2=50  where idd1 = 30;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`referencing`, CONSTRAINT `referencing_ibfk_1` FOREIGN KEY (`idd1`, `idd2`) REFERENCES `referenced` (`id1`, `id2`))
+SELECT * FROM referencing ORDER BY idd1, idd2;
+idd1	idd2
+NULL	20
+NULL	50
+20	NULL
+30	30
+150	NULL
+INSERT INTO referencing VALUES (30, 35);
+DELETE FROM referenced where id1=30 and id2=NULL;
+SELECT * FROM referencing ORDER BY idd1, idd2;
+idd1	idd2
+NULL	20
+NULL	50
+20	NULL
+30	30
+30	35
+150	NULL
+DROP TABLE referencing, referenced;
+Bug#38718457 - Composite foreign key with one column containing NULL is allowed
+When composite unique key contains NULL values, RESTRICT as well as CASCADE
+updates the parent table and leaves the child table in inconsistent state
+InnoDB neglects NULL values for both DELETE and UPDATE but SQL FK neglets
+only for UPDATE. Fixed by neglecting FK check/cascade for DELETE to mimic
+InnoDB FK behavior.
+CASE 1: UPDATE RESTRICT
+CREATE TABLE author (author_id INT, first_name VARCHAR(50), last_name VARCHAR(50), UNIQUE KEY(author_id, first_name));
+INSERT INTO author(author_id, first_name, last_name) VALUES('1', NULL, 'Verne');
+INSERT INTO author(author_id, first_name, last_name) VALUES('3', NULL, 'Sheldon');
+CREATE TABLE book (book_id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(200) NOT NULL, pub_year INT, author_id INT, first_name VARCHAR(50),
+FOREIGN KEY (author_id, first_name) REFERENCES author(author_id, first_name) ON DELETE RESTRICT ON UPDATE RESTRICT);
+INSERT INTO book VALUES('1', 'Master of the Game', 1982, 3, NULL);
+UPDATE author SET author_id = 4 where author_id = 3;
+SELECT * FROM author;
+author_id	first_name	last_name
+1	NULL	Verne
+4	NULL	Sheldon
+SELECT * FROM book;
+book_id	title	pub_year	author_id	first_name
+1	Master of the Game	1982	3	NULL
+DROP TABLE author, book;
+CASE 2: DELETE RESTRICT
+CREATE TABLE author (author_id INT, first_name VARCHAR(50), last_name VARCHAR(50), UNIQUE KEY(author_id, first_name));
+INSERT INTO author(author_id, first_name, last_name) VALUES('1', NULL, 'Verne');
+INSERT INTO author(author_id, first_name, last_name) VALUES('3', NULL, 'Sheldon');
+CREATE TABLE book ( book_id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(200) NOT NULL, pub_year INT, author_id INT, first_name VARCHAR(50),
+FOREIGN KEY (author_id, first_name) REFERENCES author(author_id, first_name) ON DELETE RESTRICT ON UPDATE RESTRICT);
+INSERT INTO book VALUES('1', 'Master of the Game', 1982, 3, NULL);
+DELETE FROM author WHERE author_id = 3;
+SELECT * FROM author;
+author_id	first_name	last_name
+1	NULL	Verne
+SELECT * FROM book;
+book_id	title	pub_year	author_id	first_name
+1	Master of the Game	1982	3	NULL
+DROP TABLE author, book;
+CASE 3: UPDATE CASCADE
+CREATE TABLE author (author_id INT, first_name VARCHAR(50), last_name VARCHAR(50), UNIQUE KEY(author_id, first_name));
+INSERT INTO author(author_id, first_name, last_name) VALUES('1', NULL, 'Verne');
+INSERT INTO author(author_id, first_name, last_name) VALUES('3', NULL, 'Sheldon');
+CREATE TABLE book (book_id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(200) NOT NULL, pub_year INT, author_id INT, first_name VARCHAR(50),
+FOREIGN KEY (author_id, first_name) REFERENCES author(author_id, first_name) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO book VALUES('1', 'Master of the Game', 1982, 3, NULL);
+UPDATE author SET author_id = 4 where author_id = 3;
+SELECT * FROM author;
+author_id	first_name	last_name
+1	NULL	Verne
+4	NULL	Sheldon
+SELECT * FROM book;
+book_id	title	pub_year	author_id	first_name
+1	Master of the Game	1982	3	NULL
+DROP TABLE author, book;
+CASE 4: DELETE CASCADE
+CREATE TABLE author (author_id INT, first_name VARCHAR(50), last_name VARCHAR(50), UNIQUE KEY(author_id, first_name));
+INSERT INTO author(author_id, first_name, last_name) VALUES('1', NULL, 'Verne');
+INSERT INTO author(author_id, first_name, last_name) VALUES('3', NULL, 'Sheldon');
+CREATE TABLE book (book_id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(200) NOT NULL, pub_year INT, author_id INT, first_name VARCHAR(50),
+FOREIGN KEY (author_id, first_name) REFERENCES author(author_id, first_name) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO book VALUES('1', 'Master of the Game', 1982, 3, NULL);
+DELETE FROM author WHERE author_id = 3;
+SELECT * FROM author;
+author_id	first_name	last_name
+1	NULL	Verne
+SELECT * FROM book;
+book_id	title	pub_year	author_id	first_name
+1	Master of the Game	1982	3	NULL
+DROP TABLE author, book;
+CASE 5: UPDATE SET NULL
+CREATE TABLE author (author_id INT, first_name VARCHAR(50), last_name VARCHAR(50), UNIQUE KEY(author_id, first_name));
+INSERT INTO author(author_id, first_name, last_name) VALUES('1', NULL, 'Verne');
+INSERT INTO author(author_id, first_name, last_name) VALUES('3', NULL, 'Sheldon');
+CREATE TABLE book (book_id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(200) NOT NULL, pub_year INT, author_id INT, first_name VARCHAR(50),
+FOREIGN KEY (author_id, first_name) REFERENCES author(author_id, first_name) ON DELETE SET NULL ON UPDATE SET NULL);
+INSERT INTO book VALUES('1', 'Master of the Game', 1982, 3, NULL);
+UPDATE author SET author_id = 4 where author_id = 3;
+SELECT * FROM author;
+author_id	first_name	last_name
+1	NULL	Verne
+4	NULL	Sheldon
+SELECT * FROM book;
+book_id	title	pub_year	author_id	first_name
+1	Master of the Game	1982	3	NULL
+DROP TABLE author, book;
+CASE 6: DELETE SET NULL
+CREATE TABLE author (author_id INT, first_name VARCHAR(50), last_name VARCHAR(50), UNIQUE KEY(author_id, first_name));
+INSERT INTO author(author_id, first_name, last_name) VALUES('1', NULL, 'Verne');
+INSERT INTO author(author_id, first_name, last_name) VALUES('3', NULL, 'Sheldon');
+CREATE TABLE book (book_id INT PRIMARY KEY AUTO_INCREMENT, title VARCHAR(200) NOT NULL, pub_year INT, author_id INT, first_name VARCHAR(50),
+FOREIGN KEY (author_id, first_name) REFERENCES author(author_id, first_name) ON DELETE SET NULL ON UPDATE SET NULL);
+INSERT INTO book VALUES('1', 'Master of the Game', 1982, 3, NULL);
+DELETE FROM author WHERE author_id = 3;
+SELECT * FROM author;
+author_id	first_name	last_name
+1	NULL	Verne
+SELECT * FROM book;
+book_id	title	pub_year	author_id	first_name
+1	Master of the Game	1982	3	NULL
+DROP TABLE author, book;
+# FR 2.9) REPLACE statement must be supported on the tables with FK constraint.
+# FR 2.9.1) Test foreign key support with REPLACE statement
+# Create parent table t1 and child table t2 with foreign key constraints.
+# Insert data into the parent and child tables and verify that REPLACE statement
+#  works correctly.
+CREATE TABLE t1(f1 INT PRIMARY KEY, f2 INT);
+CREATE TABLE t2(f1 INT PRIMARY KEY, f2 INT, FOREIGN KEY (f2) REFERENCES t1(f1) ON UPDATE CASCADE ON DELETE CASCADE);
+REPLACE INTO t1 VALUES (1, 1);
+REPLACE INTO t1 VALUES (2, 2);
+REPLACE INTO t2 VALUES (1, 1);
+REPLACE INTO t2 VALUES (1, 5);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`f2`) REFERENCES `t1` (`f1`) ON DELETE CASCADE ON UPDATE CASCADE)
+REPLACE INTO t2 VALUES (1, 2);
+REPLACE INTO t1 VALUES (1, 10);
+SELECT * FROM t1 order by f1;
+f1	f2
+1	10
+2	2
+SELECT * FROM t2 order by f1;
+f1	f2
+1	2
+DROP TABLE t1, t2;
+# FR 2.9.2) Test REPLACE ON parent table FK column performs UPDATE CASCADE
+CREATE TABLE t1(f1 INT PRIMARY KEY, f2 INT, UNIQUE(f2));
+CREATE TABLE t2(f1 INT PRIMARY KEY, f2 INT, FOREIGN KEY (f2) REFERENCES t1(f2) ON DELETE CASCADE ON UPDATE CASCADE);
+REPLACE INTO t1 VALUES (1, 1);
+REPLACE INTO t1 VALUES (2, 2);
+REPLACE INTO t2 VALUES (1, 1);
+REPLACE INTO t1 VALUES (1, 5);
+SELECT * FROM t1 order by f1;
+f1	f2
+1	5
+2	2
+SELECT * FROM t2 order by f1;
+f1	f2
+DROP TABLE t1, t2;
+# FR 2.10) INSERT ... ON DUPLICATE KEY UPDATE must be supported on the
+# tables with FK constraint
+# FR 2.10.1) Test INSERT ON DUPLICATE KEY UPDATE with FK column update on child
+# Create parent table t1 and child table t2 with foreign key constraints.
+# Insert data into the parent and child tables and verify that
+#  INSERT ... ON DUPLICATE KEY UPDATE statement works correctly
+CREATE TABLE t1(f1 INT PRIMARY KEY, f2 INT);
+CREATE TABLE t2(f1 INT PRIMARY KEY, f2 INT, FOREIGN KEY (f2) REFERENCES t1(f1) ON UPDATE CASCADE);
+INSERT INTO t1 VALUES (1, 1);
+INSERT INTO t1 VALUES (2, 2);
+INSERT INTO t2 VALUES (1, 1);
+INSERT INTO t2 values (1, 1) ON DUPLICATE KEY UPDATE f2=5;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`f2`) REFERENCES `t1` (`f1`) ON UPDATE CASCADE)
+INSERT INTO t2 values (1, 1) ON DUPLICATE KEY UPDATE f2=2;
+SELECT * FROM t1 order by f1;
+f1	f2
+1	1
+2	2
+SELECT * FROM t2 order by f1;
+f1	f2
+1	2
+DROP TABLE t1, t2;
+# FR 2.10.2) Test INSERT ON DUPLICATE KEY UPDATE with FK column update on parent
+CREATE TABLE t1(f1 INT PRIMARY KEY, f2 INT, UNIQUE(f2));
+CREATE TABLE t2(f1 INT PRIMARY KEY, f2 INT, FOREIGN KEY (f2) REFERENCES t1(f2) ON DELETE CASCADE ON UPDATE CASCADE);
+INSERT INTO t1 VALUES (1, 1);
+INSERT INTO t1 VALUES (2, 2);
+INSERT INTO t2 VALUES (1, 1);
+INSERT INTO t1 values (1, 1) ON DUPLICATE KEY UPDATE f2=5;
+SELECT * FROM t1 order by f1;
+f1	f2
+1	5
+2	2
+SELECT * FROM t2 order by f1;
+f1	f2
+1	5
+DROP TABLE t1, t2;
+# FR 2.11) CREATE TABLE..AS SELECT must be supported on the tables with FK
+# constraint
+# Create parent table parent and child table child with foreign key constraints.
+# Insert data into the parent and child tables and verify that CREATE TABLE..AS SELECT
+#  statement works correctly
+CREATE TABLE parent (id INT PRIMARY KEY, val INT);
+CREATE TABLE child (id INT PRIMARY KEY, pid INT,
+FOREIGN KEY (pid) REFERENCES parent(id) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO parent VALUES (1, 100), (2, 200), (3, 300);
+INSERT INTO child  VALUES (10, 1), (11, 2);
+CREATE TABLE backup_parent AS SELECT * FROM parent;
+CREATE TABLE backup_child  AS SELECT * FROM child;
+SELECT * FROM backup_parent ORDER BY id;
+id	val
+1	100
+2	200
+3	300
+SELECT * FROM backup_child  ORDER BY id;
+id	pid
+10	1
+11	2
+DELETE FROM backup_parent WHERE id=2;
+DROP TABLE backup_child;
+CREATE TABLE backup_child  AS SELECT * FROM child;
+SELECT * FROM backup_parent ORDER BY id;
+id	val
+1	100
+3	300
+SELECT * FROM backup_child  ORDER BY id;
+id	pid
+10	1
+11	2
+# FR 2.12) INSERT INTO AS SELECT must be supported on the tables with FK
+# constraint
+# Insert legal rows from parent into child via SELECT
+INSERT INTO child (id, pid) SELECT 12, 3;
+SELECT * FROM child ORDER BY id;
+id	pid
+10	1
+11	2
+12	3
+# Attempt to insert illegal FK via SELECT -> ER_NO_REFERENCED_ROW_2
+INSERT INTO child (id, pid) SELECT 13, 99;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`pid`) REFERENCES `parent` (`id`) ON DELETE CASCADE ON UPDATE CASCADE)
+SELECT * from parent;
+id	val
+1	100
+2	200
+3	300
+# Additional legal multi-row INSERT ... SELECT
+INSERT INTO child (id, pid) SELECT val, id FROM parent WHERE id IN (1,2);
+SELECT * FROM child ORDER BY id;
+id	pid
+10	1
+11	2
+12	3
+100	1
+200	2
+# FR 2.13) Test foreign key support with LOAD DATA statement.
+# Prepare a temp data file with mixed valid and invalid rows
+# Load with an invalid FK row -> ER_NO_REFERENCED_ROW_2
+LOAD DATA INFILE '<path>' INTO TABLE child
+FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n' (id, pid);
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`child`, CONSTRAINT `child_ibfk_1` FOREIGN KEY (`pid`) REFERENCES `parent` (`id`) ON DELETE CASCADE ON UPDATE CASCADE)
+# Verify no partial rows from failing batch were loaded
+SELECT * FROM child ORDER BY id;
+id	pid
+10	1
+11	2
+12	3
+100	1
+200	2
+# Prepare a valid load file and load it successfully
+LOAD DATA INFILE '<path>' INTO TABLE child
+FIELDS TERMINATED BY ',' LINES TERMINATED BY '\n' (id, pid);
+SELECT * FROM child ORDER BY id;
+id	pid
+10	1
+11	2
+12	3
+15	1
+16	2
+17	3
+100	1
+200	2
+# Clean up
+DROP TABLE backup_child;
+DROP TABLE backup_parent;
+DROP TABLE child;
+DROP TABLE parent;
+# FR 2.14) With a foreign key CASCADE clause, during DELETE and UPDATE
+# operation on the parent table, schema_table_statistics must be
+# updated for both parent and child table
+CREATE TABLE referenced(id1 INT UNIQUE KEY, id2 INT);
+CREATE TABLE referencing(idd1 INT, idd2 INT,
+FOREIGN KEY (idd1) REFERENCES referenced(id1) ON UPDATE CASCADE ON DELETE CASCADE);
+INSERT INTO referenced VALUES (10, 10),(20, 20), (30, 30);
+INSERT INTO referencing VALUES (10, 10), (10, 20), (20, 10), (20,20);
+SELECT table_name, rows_inserted, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_inserted	rows_updated	rows_deleted
+referenced	3	0	0
+referencing	4	0	0
+SELECT table_name, rows_inserted, rows_updated, rows_deleted FROM sys.schema_index_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_inserted	rows_updated	rows_deleted
+referenced	0	0	0
+referencing	0	0	0
+UPDATE referenced SET id1 = 50 WHERE id1 = 30;
+DELETE FROM referenced WHERE id1 = 20;
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_table_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+referenced	1	1
+referencing	0	2
+SELECT table_name, rows_updated, rows_deleted FROM sys.schema_index_statistics
+WHERE table_schema='test' ORDER BY table_name;
+table_name	rows_updated	rows_deleted
+referenced	1	1
+referencing	0	2
+DROP TABLE referencing, referenced;
+# Bug#38668861 WL#11249: ON DELETE/UPDATE SET DEFAULT does not work as expected
+# ON DELETE/UPDATE SET DEFAULT is not supported. It should behave like RESTRICT
+CREATE TABLE author (author_id INT PRIMARY KEY,
+first_name VARCHAR(50) NOT NULL, last_name VARCHAR(50) NOT NULL);
+CREATE TABLE book (book_id INT PRIMARY KEY AUTO_INCREMENT,
+title VARCHAR(200) NOT NULL, pub_year INT, author_id INT DEFAULT 1,
+FOREIGN KEY (author_id) REFERENCES author(author_id) ON UPDATE SET DEFAULT ON DELETE SET DEFAULT);
+INSERT INTO author VALUES(1, 'Jules', 'Verne');
+INSERT INTO author VALUES(3, 'Sidney', 'Sheldon');
+INSERT INTO book VALUES(1, 'Master of the Game', 1982, 3);
+UPDATE author SET author_id = 2 WHERE author_id = 3;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`book`, CONSTRAINT `book_ibfk_1` FOREIGN KEY (`author_id`) REFERENCES `author` (`author_id`))
+DELETE FROM author WHERE author_id = 3;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`book`, CONSTRAINT `book_ibfk_1` FOREIGN KEY (`author_id`) REFERENCES `author` (`author_id`))
+DROP TABLE author, book;
+# LOCK TABLE on parent with ON DELETE RESTRICT
+# LOCK TABLE must take corresponding lock on parent/child
+CREATE TABLE t1 (p INT PRIMARY KEY);
+CREATE TABLE t2 (c INT, INDEX(c), CONSTRAINT fk_t2_c FOREIGN KEY (c) REFERENCES t1(p) ON DELETE RESTRICT);
+INSERT INTO t1 VALUES (1),(2);
+INSERT INTO t2 VALUES (1);
+LOCK TABLES t1 WRITE;
+DELETE FROM t1 WHERE p=1;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `fk_t2_c` FOREIGN KEY (`c`) REFERENCES `t1` (`p`) ON DELETE RESTRICT)
+UNLOCK TABLES;
+LOCK TABLES t2 WRITE;
+INSERT INTO t2 VALUES (2);
+UNLOCK TABLES;
+SELECT * FROM t1;
+p
+1
+2
+SELECT * FROM t2;
+c
+1
+2
+DROP TABLE t2, t1;
+# LOAD DATA Test for FK
+CREATE TABLE t1(f1 INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1), (2);
+CREATE TABLE t2(f1 INT REFERENCES t1(f1));
+INSERT INTO t2 VALUES(1);
+SET FOREIGN_KEY_CHECKS=0;
+INSERT INTO t2 VALUES(5);
+SET FOREIGN_KEY_CHECKS=1;
+INSERT INTO t2 VALUES(2);
+SELECT * FROM t2 INTO OUTFILE 'tmp1.txt';
+DELETE FROM t2;
+LOAD DATA INFILE 'tmp1.txt' INTO TABLE t2;
+ERROR 23000: Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `t1` (`f1`))
+SELECT * FROM t2;
+f1
+LOAD DATA INFILE 'tmp1.txt' IGNORE INTO TABLE t2;
+Warnings:
+Warning	1452	Cannot add or update a child row: a foreign key constraint fails (`test`.`t2`, CONSTRAINT `t2_ibfk_1` FOREIGN KEY (`f1`) REFERENCES `t1` (`f1`))
+SELECT * FROM t2;
+f1
+1
+2
+DROP TABLE t1, t2;

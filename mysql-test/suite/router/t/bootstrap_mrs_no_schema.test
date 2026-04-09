@@ -1,0 +1,45 @@
+# Checks that when the Router is bootsrapped against both InnoDB Cluster and MRS
+# the InnoDB Cluster part is cleaned up properly if the MRS part fails (due to
+# the missing MRS schema)
+--source include/have_router_bootstrap.inc
+--source include/have_group_replication_plugin.inc
+
+--source ../include/predefined_setup/configure_innodb_cluster_gr.inc
+
+#create a b/s user, make sure it has required priviledges
+CREATE USER mrs_bootstrap_user IDENTIFIED BY 'pass';
+GRANT ALL PRIVILEGES ON *.* TO 'mrs_bootstrap_user'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+
+--source include/rpl/sync.inc
+
+replace_regex
+   / Bootstrapping MySQL Router.* instance at \'.*/ Bootstrapping MySQL Router instance at 'DIRECTORY'/
+   /Creating configuration .*mysqlrouter.conf/Creating configuration ...\/mysqlrouter.conf/
+   /.*mysqlrouter.* -c .*mysqlrouter.conf/$ mysqlrouter -c ...\/mysqlrouter.conf/
+   /\(mysql_router1_[^)]+\)/(mysql_router1_RANDOM)/
+   / Using existing certificates from the '.*' directory/Using existing certificates from the 'TEMP_DIRECTORY' directory/
+   /Reconfiguring MySQL Router.* instance at \'.*\'/Reconfiguring MySQL Router instance at 'DIRECTORY'/
+   /.*Adjusting permissions of generated files.*\n//
+   ;
+
+--error 1,2,256
+
+exec $MYSQLROUTER_BOOTSTRAP
+   --conf-set-option=DEFAULT.plugin_folder=$ROUTER_PLUGIN_DIRECTORY
+   -B mrs_bootstrap_user:pass@127.0.0.1:$MASTER_MYPORT
+   --directory $MYSQL_TMP_DIR/bootstrap_folder/
+   --mrs --mrs-global-secret something_important 2>&1;
+
+# Make sure the user(s) autocreated by the boorstrap were deleted
+--assert(`SELECT count(*)=0 from mysql.user WHERE user like "mysql_router1_%"`)
+--assert(`SELECT count(*)=0 from mysql.user WHERE user like "mysql_router_mrs1_%"`)
+
+# NOTE: we do not remove `bootstrap_folder` in the cleanup as it should be
+# cleaned up by the failed bootstrap. The MTR will check that.
+
+# Cleanup
+DROP USER 'mrs_bootstrap_user'@'%';
+--source ../include/innodb_cluster/cleanup.inc
+--source include/rpl/sync.inc
+--source include/group_replication_end.inc

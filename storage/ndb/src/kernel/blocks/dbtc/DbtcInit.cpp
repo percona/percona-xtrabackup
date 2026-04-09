@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -582,6 +582,7 @@ Dbtc::Dbtc(Block_context &ctx, Uint32 instanceNo)
   tcFailRecord = 0;
   m_deferred_enabled = ~Uint32(0);
   m_max_writes_per_trans = ~Uint32(0);
+  m_dbinfo_full_apiconnectrecord = false;
 
   c_transient_pools[DBTC_ATTRIBUTE_BUFFER_TRANSIENT_POOL_INDEX] =
       &c_theAttributeBufferPool;

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -40,10 +40,9 @@ class HttpAuthMethodBasicTest
       public ::testing::WithParamInterface<HttpAuthMethodBasicParams> {};
 
 TEST_P(HttpAuthMethodBasicTest, ensure) {
-  HttpAuthMethodBasic m;
-
   std::error_code ec;
-  auto auth_data = m.decode_authorization(GetParam().input, ec);
+  auto auth_data =
+      HttpAuthMethodBasic::decode_authorization(GetParam().input, ec);
   EXPECT_EQ(ec, GetParam().ec) << ec.message();
   if (!ec) {
     EXPECT_EQ(auth_data.username, GetParam().username);

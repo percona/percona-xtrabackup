@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,9 +33,9 @@
 
 #include "storage/myisam/queues.h"
 
-#include <stddef.h>
-#include <stdio.h>
 #include <sys/types.h>
+#include <cstddef>
+#include <cstdio>
 
 #include <algorithm>
 
@@ -212,7 +212,7 @@ void _downheap(QUEUE *queue, uint idx) {
   uchar *element;
   uint elements, half_queue, offset_to_key, next_index;
   bool first = true;
-  uint start_idx = idx;
+  uint const start_idx = idx;
 
   offset_to_key = queue->offset_to_key;
   element = queue->root[idx];

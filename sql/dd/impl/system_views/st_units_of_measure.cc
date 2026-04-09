@@ -1,4 +1,4 @@
-/* Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,13 +31,12 @@
 #include "mysql/strings/dtoa.h"
 #include "sql/gis/st_units_of_measure.h"
 
-namespace dd {
-namespace system_views {
+namespace dd::system_views {
 
 /// Escapes (only) apostrophes
 /// @return string with apostrophes escaped with backslash
 static std::string escape(const std::string &str) {
-  std::string res = "";
+  std::string res;
   for (auto letter : str) {
     if (letter == '\'') {
       res += "\\'";
@@ -54,14 +53,13 @@ static std::string escape(const std::string &str) {
 static std::string to_string(const gis::Unit_Type unit_type) {
   if (unit_type == gis::Unit_Type::kLinear) {
     return "LINEAR";
-  } else {
-    assert(false);
-    return "";
   }
+  assert(false);
+  return "";
 }
 
 const St_units_of_measure &St_units_of_measure::instance() {
-  static St_units_of_measure *m_instance = new St_units_of_measure();
+  static auto *m_instance = new St_units_of_measure();
   return *m_instance;
 }
 
@@ -70,7 +68,7 @@ St_units_of_measure::St_units_of_measure() {
   ss << "JSON_TABLE('[";
   collation_unordered_map<std::string, gis::Unit> units = gis::units();
   char buffer[FLOATING_POINT_BUFFER];
-  for (std::pair<const std::string, gis::Unit> &unit_conversion : units) {
+  for (std::pair<const std::string, gis::Unit> const &unit_conversion : units) {
     if (unit_conversion != *units.begin()) {
       ss << ",";
     }
@@ -97,5 +95,4 @@ St_units_of_measure::St_units_of_measure() {
   m_target_def.add_field(FIELD_DESCRIPTION, "DESCRIPTION", "DESCRIPTION");
   m_target_def.add_from(ss.str());
 }
-}  // namespace system_views
-}  // namespace dd
+}  // namespace dd::system_views

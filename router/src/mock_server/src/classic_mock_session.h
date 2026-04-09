@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -37,6 +37,7 @@
 
 #include "mysql/harness/logging/logger.h"
 #include "mysql/harness/tls_context.h"
+#include "mysql/harness/tls_server_context.h"
 #include "mysqlrouter/classic_protocol_constants.h"
 #include "mysqlrouter/classic_protocol_message.h"
 
@@ -100,12 +101,12 @@ class MySQLClassicProtocol : public ProtocolBase {
 class MySQLServerMockSessionClassic : public MySQLServerMockSession {
  public:
   MySQLServerMockSessionClassic(
-      ProtocolBase::socket_type client_sock,
-      ProtocolBase::endpoint_type client_ep, TlsServerContext &tls_server_ctx,
+      mysql_harness::DestinationSocket sock,
+      mysql_harness::DestinationEndpoint ep, TlsServerContext &tls_ctx,
       std::unique_ptr<StatementReaderBase> statement_processor,
       const bool debug_mode, const bool with_tls)
       : MySQLServerMockSession(std::move(statement_processor), debug_mode),
-        protocol_{std::move(client_sock), client_ep, tls_server_ctx},
+        protocol_(std::move(sock), std::move(ep), tls_ctx),
         with_tls_{with_tls} {}
 
   void run() override;

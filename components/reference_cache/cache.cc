@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -34,7 +34,7 @@ cache_imp *cache_imp::create(channel_imp *channel,
                              SERVICE_TYPE(registry) * registry) {
   assert(channel != nullptr);
   mysql_rwlock_rdlock(&LOCK_channels);
-  cache_imp *retval = new cache_imp(channel, registry);
+  auto *retval = new cache_imp(channel, registry);
   mysql_rwlock_unlock(&LOCK_channels);
   return retval;
 }
@@ -58,7 +58,7 @@ bool cache_imp::get(unsigned service_name_index, const my_h_service **out_ref) {
       // cache hit
       *out_ref = m_cache[service_name_index];
     }
-    return *out_ref ? false : true;
+    return *out_ref == nullptr;
   }
 
   // cache miss
@@ -83,7 +83,7 @@ bool cache_imp::get(unsigned service_name_index, const my_h_service **out_ref) {
   m_cache_version = m_channel->version();
 
   bool no_op = true;
-  for (auto service_name : m_service_names) {
+  for (const auto &service_name : m_service_names) {
     no_op &= (service_name.count_.load() == 0);
   }
 
@@ -93,7 +93,7 @@ bool cache_imp::get(unsigned service_name_index, const my_h_service **out_ref) {
         m_service_names.size() * sizeof(my_h_service *), MY_ZEROFILL);
 
     unsigned offset = 0;
-    for (auto service_name : m_service_names) {
+    for (const auto &service_name : m_service_names) {
       if (service_name.count_.load() == 0) continue;
       std::set<my_h_service> cache_set;
 
@@ -107,12 +107,12 @@ bool cache_imp::get(unsigned service_name_index, const my_h_service **out_ref) {
           if (current_registry_query->get(iter, &implementation_name)) break;
 
           const char *dot = strchr(implementation_name, '.');
-          size_t service_name_length = (dot - implementation_name);
+          size_t const service_name_length = (dot - implementation_name);
 
           // not the same service
           if ((service_name_length != service_name.name_.length()) ||
               strncmp(implementation_name, service_name.name_.c_str(),
-                      service_name.name_.length()))
+                      service_name.name_.length()) != 0)
             break;
 
           // not in the ignore list
@@ -142,7 +142,7 @@ bool cache_imp::get(unsigned service_name_index, const my_h_service **out_ref) {
         continue;
       }
 
-      my_h_service *cache_row = (my_h_service *)my_malloc(
+      auto *cache_row = (my_h_service *)my_malloc(
           KEY_mem_reference_cache,
           (cache_set.size() + 1) * sizeof(my_h_service), MY_ZEROFILL);
 
@@ -155,7 +155,7 @@ bool cache_imp::get(unsigned service_name_index, const my_h_service **out_ref) {
     }
   }
   m_populated = true;
-  return *out_ref ? false : true;
+  return *out_ref == nullptr;
 }
 
 bool cache_imp::flush() {

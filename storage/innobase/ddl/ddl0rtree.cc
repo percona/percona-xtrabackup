@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -106,6 +106,9 @@ dberr_t RTree_inserter::batch_insert(trx_id_t trx_id,
 
     ut_ad(dtuple != nullptr);
 
+    /* If there is no sufficient space in the redo logs then deep copy the
+    cached records and release the page(s) latches as that would be required to
+    commit the mini-transaction. */
     if (log_free_check_is_required() IF_DEBUG(|| force_log_free_check)) {
       if (!latches_released) {
         deep_copy_tuples(it);

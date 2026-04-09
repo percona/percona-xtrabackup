@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -81,7 +81,7 @@ int Rpl_sys_key_access::init(TABLE *table, uint index, bool sorted,
   return m_error;
 }
 
-int Rpl_sys_key_access::init(TABLE *table, std::string pos) {
+int Rpl_sys_key_access::init(TABLE *table, const std::string &pos) {
   m_table = table;
   m_key_type = enum_key_type::RND_POS;
   table->use_all_columns();
@@ -153,8 +153,5 @@ int Rpl_sys_key_access::next() {
 }
 
 bool Rpl_sys_key_access::is_read_error() {
-  if (m_error != HA_ERR_END_OF_FILE && m_error != HA_ERR_KEY_NOT_FOUND)
-    return true;
-
-  return false;
+  return m_error != HA_ERR_END_OF_FILE && m_error != HA_ERR_KEY_NOT_FOUND;
 }

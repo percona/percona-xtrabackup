@@ -211,3 +211,23 @@ create table test (
 
 --echo #Cleanup
 drop table test;
+
+--echo #
+--echo # Bug#38534367 : Dropping foreign key (with drop constraint) causes assertion failure (bad dereference)
+--echo #
+
+create table parent (
+  a int primary key,
+  b int
+) engine ndb;
+
+create table child (
+  a int primary key,
+  b int,
+  c int
+) engine = ndb;
+
+alter table child add foreign key(c) references parent(a);
+alter table child drop constraint child_fk_1;
+
+drop table parent, child;

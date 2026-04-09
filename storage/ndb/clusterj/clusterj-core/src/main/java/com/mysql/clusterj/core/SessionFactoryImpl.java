@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,24 +25,24 @@
 
 package com.mysql.clusterj.core;
 
+import com.mysql.clusterj.annotation.PersistenceCapable;
 import com.mysql.clusterj.ClusterJDatastoreException;
 import com.mysql.clusterj.ClusterJException;
 import com.mysql.clusterj.ClusterJFatalException;
 import com.mysql.clusterj.ClusterJFatalInternalException;
 import com.mysql.clusterj.ClusterJFatalUserException;
-import com.mysql.clusterj.ClusterJHelper;
 import com.mysql.clusterj.ClusterJUserException;
-import com.mysql.clusterj.Constants;
+import com.mysql.clusterj.Connection;
+import com.mysql.clusterj.DynamicObject;
 import com.mysql.clusterj.Session;
 import com.mysql.clusterj.SessionFactory;
 import com.mysql.clusterj.core.spi.DomainTypeHandler;
 import com.mysql.clusterj.core.spi.DomainTypeHandlerFactory;
 import com.mysql.clusterj.core.spi.ValueHandlerFactory;
 import com.mysql.clusterj.core.metadata.DomainTypeHandlerFactoryImpl;
-
 import com.mysql.clusterj.core.store.Db;
-import com.mysql.clusterj.core.store.ClusterConnection;
-import com.mysql.clusterj.core.store.ClusterConnectionService;
+import com.mysql.clusterj.core.store.DbFactory;
+import com.mysql.clusterj.core.store.ConnectionHandle;
 import com.mysql.clusterj.core.store.Dictionary;
 import com.mysql.clusterj.core.store.Table;
 
@@ -52,11 +52,13 @@ import com.mysql.clusterj.core.util.LoggerFactoryService;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class SessionFactoryImpl implements SessionFactory, Constants {
+public class SessionFactoryImpl implements SessionFactory {
 
     /** My message translator */
     static final I18NHelper local = I18NHelper.getInstance(SessionFactoryImpl.class);
@@ -71,71 +73,185 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
     protected State state;
 
     /** The properties */
-    protected Map<?, ?> props;
+    private final Map<?, ?> props;
 
     /** NdbCluster connect properties */
-    String CLUSTER_CONNECTION_SERVICE;
-    String CLUSTER_CONNECT_STRING;
-    String CLUSTER_TLS_SEARCH_PATH;
-    int CLUSTER_STRICT_TLS;
-    int CLUSTER_CONNECT_TIMEOUT_MGM;
-    int CLUSTER_CONNECT_RETRIES;
-    int CLUSTER_CONNECT_DELAY;
-    int CLUSTER_CONNECT_VERBOSE;
-    int CLUSTER_CONNECT_TIMEOUT_BEFORE;
-    int CLUSTER_CONNECT_TIMEOUT_AFTER;
-    String CLUSTER_DATABASE;
-    int CLUSTER_MAX_TRANSACTIONS;
-    int CLUSTER_CONNECT_AUTO_INCREMENT_BATCH_SIZE;
-    long CLUSTER_CONNECT_AUTO_INCREMENT_STEP;
-    long CLUSTER_CONNECT_AUTO_INCREMENT_START;
-    int[] CLUSTER_BYTE_BUFFER_POOL_SIZES;
-    int CLUSTER_RECONNECT_TIMEOUT;
-    int CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD;
+    static class Spec extends PropertyReader {
+        final int CONNECTION_POOL_SIZE;
+        final String CONNECT_STRING;
+        final String DATABASE;
+        final int MAX_TRANSACTIONS;
+        final int RECONNECT_TIMEOUT;
+        final int RECV_THREAD_ACTIVATION_THRESHOLD;
+        final String BUFFER_POOL_SIZE_LIST;
+        final int[] BYTE_BUFFER_POOL_SIZES;
+        final int SESSION_CACHE_SIZE;
+        final int TABLE_WAIT_MSEC;
+        final boolean MULTI_DB;
 
+        Spec(Map<?, ?> props) {
+            CONNECTION_POOL_SIZE = getIntProperty(props, PROPERTY_CONNECTION_POOL_SIZE,
+                                                  DEFAULT_PROPERTY_CONNECTION_POOL_SIZE);
+            CONNECT_STRING = getRequiredStringProperty(props, PROPERTY_CLUSTER_CONNECTSTRING);
+            DATABASE = getStringProperty(props, PROPERTY_CLUSTER_DATABASE,
+                                         DEFAULT_PROPERTY_CLUSTER_DATABASE);
+            MAX_TRANSACTIONS = getIntProperty(props, PROPERTY_CLUSTER_MAX_TRANSACTIONS,
+                                              DEFAULT_PROPERTY_CLUSTER_MAX_TRANSACTIONS);
+            RECONNECT_TIMEOUT = getIntProperty(props, PROPERTY_CONNECTION_RECONNECT_TIMEOUT,
+                                               DEFAULT_PROPERTY_CONNECTION_RECONNECT_TIMEOUT);
+            RECV_THREAD_ACTIVATION_THRESHOLD = getIntProperty(props, PROPERTY_CONNECTION_POOL_RECV_THREAD_ACTIVATION_THRESHOLD,
+                                                              DEFAULT_PROPERTY_CONNECTION_POOL_RECV_THREAD_ACTIVATION_THRESHOLD);
+            BUFFER_POOL_SIZE_LIST = getStringProperty(props, PROPERTY_CLUSTER_BYTE_BUFFER_POOL_SIZES,
+                                                      DEFAULT_PROPERTY_CLUSTER_BYTE_BUFFER_POOL_SIZES);
+            BYTE_BUFFER_POOL_SIZES = getByteBufferPoolSizes();
+            SESSION_CACHE_SIZE = getIntProperty(props, PROPERTY_CLUSTER_MAX_CACHED_SESSIONS,
+                                                DEFAULT_PROPERTY_CLUSTER_MAX_CACHED_SESSIONS);
+            TABLE_WAIT_MSEC = getIntProperty(props, PROPERTY_TABLE_WAIT_MSEC,
+                                             DEFAULT_PROPERTY_TABLE_WAIT_MSEC);
+            MULTI_DB = getBooleanProperty(props, PROPERTY_CLUSTER_MULTI_DB,
+                                          DEFAULT_PROPERTY_CLUSTER_MULTI_DB);
+
+            if(SESSION_CACHE_SIZE < 0)
+                throw new ClusterJFatalUserException(
+                    local.message("ERR_value_low", PROPERTY_CLUSTER_MAX_CACHED_SESSIONS, 0));
+            if(TABLE_WAIT_MSEC < 0)
+                throw new ClusterJFatalUserException(
+                    local.message("ERR_value_low", PROPERTY_TABLE_WAIT_MSEC, 0));
+            if(TABLE_WAIT_MSEC > 1000)
+                throw new ClusterJFatalUserException(
+                    local.message("ERR_value_high", PROPERTY_TABLE_WAIT_MSEC, 1000));
+        }
+
+        Spec(Spec other, String database) {
+            CONNECTION_POOL_SIZE = other.CONNECTION_POOL_SIZE;
+            CONNECT_STRING = other.CONNECT_STRING;
+            MAX_TRANSACTIONS = other.MAX_TRANSACTIONS;
+            RECONNECT_TIMEOUT = other.RECONNECT_TIMEOUT;
+            RECV_THREAD_ACTIVATION_THRESHOLD = other.RECV_THREAD_ACTIVATION_THRESHOLD;
+            BUFFER_POOL_SIZE_LIST = other.BUFFER_POOL_SIZE_LIST;
+            BYTE_BUFFER_POOL_SIZES = other.BYTE_BUFFER_POOL_SIZES;
+            SESSION_CACHE_SIZE = other.SESSION_CACHE_SIZE;
+            TABLE_WAIT_MSEC = other.TABLE_WAIT_MSEC;
+            MULTI_DB = other.MULTI_DB;
+            DATABASE = database;
+        }
+
+        /** Get the byteBufferPoolSizes from properties */
+        private int[] getByteBufferPoolSizes() {
+            int[] result;
+            // separators are any combination of white space, commas, and semicolons
+            String[] byteBufferPoolSizesList = BUFFER_POOL_SIZE_LIST.split("[,; \t\n\r]+", 48);
+            int count = byteBufferPoolSizesList.length;
+            result = new int[count];
+            for (int i = 0; i < count; ++i) {
+                try {
+                    result[i] = Integer.parseInt(byteBufferPoolSizesList[i]);
+                } catch (NumberFormatException ex) {
+                    fail(local.message("ERR_Byte_Buffer_Pool_Sizes_Format",
+                                       BUFFER_POOL_SIZE_LIST), ex);
+                }
+            }
+            return result;
+        }
+
+        private static void fail(String msg, Throwable ex) {
+            logger.warn(msg);
+            throw new ClusterJFatalUserException(msg, ex);
+        }
+    }
+
+    private final Spec spec;
+    private int CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD = 0;
+    private int CLUSTER_RECONNECT_TIMEOUT = 0;
 
     /** Node ids obtained from the property PROPERTY_CONNECTION_POOL_NODEIDS */
     List<Integer> nodeIds = new ArrayList<Integer>();
 
-    /** Connection pool size obtained from the property PROPERTY_CONNECTION_POOL_SIZE */
+    /** Actual number of connection handles obtained from the global connection pool */
     int connectionPoolSize;
+
+    /** Internal class of one-per-connection data members.
+    */
+    static class PooledConnection {
+         final ConnectionHandle connection;
+         final DbFactory dbFactory;
+
+        PooledConnection(ConnectionHandle c, Spec spec) {
+            connection = c;
+            dbFactory = connection.createDbFactory(spec.DATABASE,
+                                                   spec.BYTE_BUFFER_POOL_SIZES);
+            dbFactory.useSessionCache(spec.SESSION_CACHE_SIZE);
+            dbFactory.setTableWaitTime(spec.TABLE_WAIT_MSEC);
+        }
+
+        Db createDb(int maxTransactions) {
+            return dbFactory.createDb(maxTransactions);
+        }
+
+        ConnectionHandle handle()         { return connection; }
+
+        State currentState()              { return connection.currentState(); }
+
+        void unloadSchema(String table)   { dbFactory.unloadSchema(table); }
+
+        int dbCount()                     { return dbFactory.dbCount(); }
+
+        ValueHandlerFactory getSmartValueHandlerFactory() {
+            return connection.getSmartValueHandlerFactory();
+        }
+
+        void setClosing()                 { dbFactory.closing(); }
+
+        void close() {
+            dbFactory.close();
+            connection.close();
+        }
+
+        void reconnect(int timeout)       { connection.reconnect(timeout); }
+
+        void setRecvThreadCPUid(short id) { connection.setRecvThreadCPUid(id); }
+
+        short getRecvThreadCPUid()        { return connection.getRecvThreadCPUid(); }
+
+        void setRecvThreadActivationThreshold(int t) {
+            connection.setRecvThreadActivationThreshold(t);
+        }
+
+        boolean isReconnecting() {
+            return connection.currentState().equals(State.Reconnecting);
+        }
+    }
 
     /** Boolean flag indicating if connection pool is disabled or not */
     boolean connectionPoolDisabled = false;
 
-    /** Map of Proxy Interfaces to Domain Class */
-    final private Map<String, Class<?>> proxyInterfacesToDomainClassMap = new HashMap<String, Class<?>>();
+    /** Map of Proxy to Class */
+    static private Map<Class<?>, Class<?>> proxyClassToDomainClass =
+            new ConcurrentHashMap<>();
 
-    /** Map of Domain Class to DomainTypeHandler. */
-    final private Map<Class<?>, DomainTypeHandler<?>> typeToHandlerMap =
+    /** Main map of Domain Class to DomainTypeHandler */
+    final private ConcurrentMap<Class<?>, DomainTypeHandler<?>> typeToHandlerMap =
+            new ConcurrentHashMap<Class<?>, DomainTypeHandler<?>>();
+
+    /** DomainTypeHandler map used only during schema change handling */
+    final private Map<Class<?>, DomainTypeHandler<?>> schemaLocks =
             new HashMap<Class<?>, DomainTypeHandler<?>>();
 
     /** DomainTypeHandlerFactory for this session factory. */
     DomainTypeHandlerFactory domainTypeHandlerFactory = new DomainTypeHandlerFactoryImpl();
 
     /** The session factories. */
-    static final protected Map<String, SessionFactoryImpl> sessionFactoryMap =
-            new HashMap<String, SessionFactoryImpl>();
+    static final protected Map<String, SessionFactory> sessionFactoryMap =
+            new HashMap<String, SessionFactory>();
 
     /** The key for this factory */
-    final String key;
+    final private String key;
 
     /** Cluster connections that together can be used to manage sessions */
-    private List<ClusterConnection> pooledConnections = new ArrayList<ClusterConnection>();
-
-    /** Get a cluster connection service.
-     * @return the cluster connection service
-     */
-    protected ClusterConnectionService getClusterConnectionService() {
-        return ClusterJHelper.getServiceInstance(ClusterConnectionService.class,
-                    CLUSTER_CONNECTION_SERVICE, SESSION_FACTORY_IMPL_CLASS_LOADER);
-    }
+    private List<PooledConnection> pooledConnections = new ArrayList<PooledConnection>();
 
     /** The smart value handler factory */
     protected ValueHandlerFactory smartValueHandlerFactory;
-
-    /** The cpuids to which the receive threads of the connections in the connection pools are locked */
-    short[] recvThreadCPUids;
 
     /** Get a session factory. If using connection pooling and there is already a session factory
      * with the same connect string and database, return it, regardless of whether other
@@ -144,33 +260,53 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
      * @param props properties of the session factory
      * @return the session factory
      */
-    static public SessionFactoryImpl getSessionFactory(Map<?, ?> props) {
-        int connectionPoolSize = getIntProperty(props, 
-                PROPERTY_CONNECTION_POOL_SIZE, DEFAULT_PROPERTY_CONNECTION_POOL_SIZE);
-        String sessionFactoryKey = getSessionFactoryKey(props);
-        SessionFactoryImpl result = null;
-        if (connectionPoolSize != 0) {
-            // if using connection pooling, see if already a session factory created
+    static public SessionFactory getSessionFactory(Map<?, ?> props) {
+        SessionFactory result = null;
+        Spec spec = new Spec(props);
+
+        if(spec.CONNECTION_POOL_SIZE > 0) {
+            String sessionFactoryKey = getSessionFactoryKey(spec);
             synchronized(sessionFactoryMap) {
                 result = sessionFactoryMap.get(sessionFactoryKey);
                 if (result == null) {
-                    result = new SessionFactoryImpl(props);
+                    if(spec.MULTI_DB) {
+                        result = new MultiDbSessionFactory(spec, props);
+                    } else {
+                        result = new SessionFactoryImpl(spec, props);
+                    }
                     sessionFactoryMap.put(sessionFactoryKey, result);
                 }
             }
         } else {
-            // if not using connection pooling, create a new session factory
-            result = new SessionFactoryImpl(props);
+            if(spec.MULTI_DB) {
+                throw new ClusterJFatalUserException(local.message("ERR_multidb_no_pool"));
+            }
+            // if not using connection pooling or multidb, create a new session factory
+            result = new SessionFactoryImpl(spec, props);
         }
         return result;
     }
 
-    private static String getSessionFactoryKey(Map<?, ?> props) {
-        String clusterConnectString = 
-            getRequiredStringProperty(props, PROPERTY_CLUSTER_CONNECTSTRING);
-        String clusterDatabase = getStringProperty(props, PROPERTY_CLUSTER_DATABASE,
-                Constants.DEFAULT_PROPERTY_CLUSTER_DATABASE);
-        return clusterConnectString + "+" + clusterDatabase;
+    static void removeFactoryFromMap(Spec spec) {
+        assert spec.MULTI_DB;
+        synchronized(sessionFactoryMap) {
+            sessionFactoryMap.remove(getSessionFactoryKey(spec));
+        }
+    }
+
+    private static String getSessionFactoryKey(Spec spec) {
+        String key = spec.CONNECT_STRING;
+        key += spec.MULTI_DB ? "+.MultiDB."
+                             : "+" + spec.DATABASE;
+        key = key + "+Csz" + spec.SESSION_CACHE_SIZE
+                  + "+wait" + spec.TABLE_WAIT_MSEC
+                  + "+Bbp" + Arrays.hashCode(spec.BYTE_BUFFER_POOL_SIZES);
+        return key;
+    }
+
+    /* Returns a ConnectionHandle to SessionImpl for session.getConnection() */
+    protected ConnectionHandle getConnectionHandle(int index) {
+        return pooledConnections.get(index).handle();
     }
 
     /** Create a new SessionFactoryImpl from the properties in the Map, and
@@ -178,160 +314,38 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
      *
      * @param props the properties for the factory
      */
-    protected SessionFactoryImpl(Map<?, ?> props) {
+    SessionFactoryImpl(Spec spec, Map<?, ?> props) {
+        this.spec = spec;
         this.props = props;
-        this.key = getSessionFactoryKey(props);
-        this.connectionPoolSize = getIntProperty(props, 
-                PROPERTY_CONNECTION_POOL_SIZE, DEFAULT_PROPERTY_CONNECTION_POOL_SIZE);
-        if (connectionPoolSize == 0) {
-            // Connection pool is disabled. This is handled internally almost
-            // same as a SessionFactory with a connection pool of size 1.
-            connectionPoolSize = 1;
-            connectionPoolDisabled = true;
-        }
-        CLUSTER_RECONNECT_TIMEOUT = getIntProperty(props,
-                PROPERTY_CONNECTION_RECONNECT_TIMEOUT, DEFAULT_PROPERTY_CONNECTION_RECONNECT_TIMEOUT);
-        CLUSTER_CONNECT_STRING = getRequiredStringProperty(props, PROPERTY_CLUSTER_CONNECTSTRING);
-        CLUSTER_TLS_SEARCH_PATH = getStringProperty(props, PROPERTY_TLS_SEARCH_PATH,
-                Constants.DEFAULT_PROPERTY_TLS_SEARCH_PATH);
-        CLUSTER_STRICT_TLS = getIntProperty(props, PROPERTY_MGM_STRICT_TLS,
-                Constants.DEFAULT_PROPERTY_MGM_STRICT_TLS);
-        CLUSTER_CONNECT_RETRIES = getIntProperty(props, PROPERTY_CLUSTER_CONNECT_RETRIES,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_RETRIES);
-        CLUSTER_CONNECT_TIMEOUT_MGM = getIntProperty(props, PROPERTY_CLUSTER_CONNECT_TIMEOUT_MGM,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_TIMEOUT_MGM);
-        CLUSTER_CONNECT_DELAY = getIntProperty(props, PROPERTY_CLUSTER_CONNECT_DELAY,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_DELAY);
-        CLUSTER_CONNECT_VERBOSE = getIntProperty(props, PROPERTY_CLUSTER_CONNECT_VERBOSE,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_VERBOSE);
-        CLUSTER_CONNECT_TIMEOUT_BEFORE = getIntProperty(props, PROPERTY_CLUSTER_CONNECT_TIMEOUT_BEFORE,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_TIMEOUT_BEFORE);
-        CLUSTER_CONNECT_TIMEOUT_AFTER = getIntProperty(props, PROPERTY_CLUSTER_CONNECT_TIMEOUT_AFTER,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_TIMEOUT_AFTER);
-        CLUSTER_DATABASE = getStringProperty(props, PROPERTY_CLUSTER_DATABASE,
-                Constants.DEFAULT_PROPERTY_CLUSTER_DATABASE);
-        CLUSTER_MAX_TRANSACTIONS = getIntProperty(props, PROPERTY_CLUSTER_MAX_TRANSACTIONS,
-                Constants.DEFAULT_PROPERTY_CLUSTER_MAX_TRANSACTIONS);
-        CLUSTER_CONNECT_AUTO_INCREMENT_BATCH_SIZE = getIntProperty(props, PROPERTY_CLUSTER_CONNECT_AUTO_INCREMENT_BATCH_SIZE,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_AUTO_INCREMENT_BATCH_SIZE);
-        CLUSTER_CONNECT_AUTO_INCREMENT_STEP = getLongProperty(props, PROPERTY_CLUSTER_CONNECT_AUTO_INCREMENT_STEP,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_AUTO_INCREMENT_STEP);
-        CLUSTER_CONNECT_AUTO_INCREMENT_START = getLongProperty(props, PROPERTY_CLUSTER_CONNECT_AUTO_INCREMENT_START,
-                Constants.DEFAULT_PROPERTY_CLUSTER_CONNECT_AUTO_INCREMENT_START);
-        CLUSTER_CONNECTION_SERVICE = getStringProperty(props, PROPERTY_CLUSTER_CONNECTION_SERVICE);
-        CLUSTER_BYTE_BUFFER_POOL_SIZES = getByteBufferPoolSizes(props);
-        CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD = getIntProperty(props, PROPERTY_CONNECTION_POOL_RECV_THREAD_ACTIVATION_THRESHOLD,
-                Constants.DEFAULT_PROPERTY_CONNECTION_POOL_RECV_THREAD_ACTIVATION_THRESHOLD);
-        if (CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD < 0) {
-            // threshold should be non negative
-            String msg = local.message("ERR_Invalid_Activation_Threshold",
-                    CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD);
-            logger.warn(msg);
-            throw new ClusterJFatalUserException(msg);
-        }
-        createClusterConnectionPool();
-        // now get a Session for each connection in the pool and
-        // complete a transaction to make sure that each connection is ready
+        key = getSessionFactoryKey(spec);
+        CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD = spec.RECV_THREAD_ACTIVATION_THRESHOLD;
+        CLUSTER_RECONNECT_TIMEOUT = spec.RECONNECT_TIMEOUT;
+        connectionPoolSize = createClusterConnectionPool();
         verifyConnectionPool();
         state = State.Open;
+        GlobalConnectionPool.registerSessionFactory(spec.CONNECT_STRING, this);
     }
 
-    protected void createClusterConnectionPool() {
-        String msg;
-        String nodeIdsProperty = getStringProperty(props, PROPERTY_CONNECTION_POOL_NODEIDS);
-        if (nodeIdsProperty != null) {
-            // separators are any combination of white space, commas, and semicolons
-            String[] nodeIdsStringArray = nodeIdsProperty.split("[,; \t\n\r]+", 48);
-            for (String nodeIdString : nodeIdsStringArray) {
-                try {
-                    int nodeId = Integer.parseInt(nodeIdString);
-                    nodeIds.add(nodeId);
-                } catch (NumberFormatException ex) {
-                    msg = local.message("ERR_Node_Ids_Format", nodeIdsProperty);
-                    logger.warn(msg);
-                    throw new ClusterJFatalUserException(msg, ex);
-                }
-            }
-            // validate the size of the node ids with the connection pool size
-            if (connectionPoolSize != DEFAULT_PROPERTY_CONNECTION_POOL_SIZE) {
-                // both are specified; they must match or nodeIds size must be 1
-                if (nodeIds.size() ==1) {
-                    // add new nodeIds to fill out array
-                    for (int i = 1; i < connectionPoolSize; ++i) {
-                        nodeIds.add(nodeIds.get(i - 1) + 1);
-                    }
-                }
-                if (connectionPoolSize != nodeIds.size()) {
-                    msg = local.message("ERR_Node_Ids_Must_Match_Connection_Pool_Size",
-                            nodeIdsProperty, connectionPoolSize);
-                    logger.warn(msg);
-                    throw new ClusterJFatalUserException(msg);
-                }
-            } else if (connectionPoolDisabled) {
-                if (nodeIds.size() != 1) {
-                    // Connection pool is disabled but more than one nodeId specified
-                    msg = local.message("ERR_Multiple_Node_Ids_For_Disabled_Connection_Pool",
-                            nodeIdsProperty);
-                    logger.warn(msg);
-                    throw new ClusterJFatalUserException(msg);
-                }
-            } else {
-                // only node ids are specified; make pool size match number of node ids
-                connectionPoolSize = nodeIds.size();
-            }
-        }
-        // parse and read the cpu ids given for binding with the recv threads
-        recvThreadCPUids = new short[connectionPoolSize];
-        String cpuIdsProperty = getStringProperty(props, PROPERTY_CONNECTION_POOL_RECV_THREAD_CPUIDS);
-        if (cpuIdsProperty != null) {
-            // separators are any combination of white space, commas, and semicolons
-            String[] cpuIdsStringArray = cpuIdsProperty.split("[,; \t\n\r]+", 64);
-            if (cpuIdsStringArray.length != connectionPoolSize) {
-                // cpu ids property didn't match connection pool size
-                if (connectionPoolDisabled) {
-                    msg = local.message("ERR_Multiple_CPU_Ids_For_Disabled_Connection_Pool",
-                        cpuIdsProperty);
-                } else {
-                    msg = local.message("ERR_CPU_Ids_Must_Match_Connection_Pool_Size",
-                        cpuIdsProperty, connectionPoolSize);
-                }
-                logger.warn(msg);
-                throw new ClusterJFatalUserException(msg);
-            }
-            int i = 0;
-            for (String cpuIdString : cpuIdsStringArray) {
-                try {
-                    recvThreadCPUids[i++] = Short.parseShort(cpuIdString);
-                } catch (NumberFormatException ex) {
-                    msg = local.message("ERR_CPU_Ids_Format", cpuIdsProperty);
-                    logger.warn(msg);
-                    throw new ClusterJFatalUserException(msg, ex);
-                }
-            }
-        } else {
-            // cpuids not present. fill in the default value -1
-            for (int i = 0; i < connectionPoolSize; i++) {
-                recvThreadCPUids[i] = -1;
-            }
-        }
-        ClusterConnectionService service = getClusterConnectionService();
-        if (nodeIds.size() == 0) {
-            // node ids were not specified
-            for (int i = 0; i < connectionPoolSize; ++i) {
-                createClusterConnection(service, props, 0, i);
-            }
-        } else {
-            for (int i = 0; i < connectionPoolSize; ++i) {
-                createClusterConnection(service, props, nodeIds.get(i), i);
-            }
-        }
-        // get the smart value handler factory for this connection; it will be the same for all connections
-        if (pooledConnections.size() != 0) {
-            smartValueHandlerFactory = pooledConnections.get(0).getSmartValueHandlerFactory();
-        }
+    private int createClusterConnectionPool() {
+        List<ConnectionHandle> handles = new ArrayList<ConnectionHandle>();
+
+        // Pass props to global pool to obtain a list of connection handles
+        GlobalConnectionPool.getConnections(handles, props);
+
+       // Move the handles into PooledConnections
+        for(ConnectionHandle handle : handles)
+            pooledConnections.add(new PooledConnection(handle, spec));
+
+        // get the smart value handler factory (it will be the same for all connections)
+        smartValueHandlerFactory = pooledConnections.get(0).getSmartValueHandlerFactory();
+
+        return pooledConnections.size();
     }
 
     protected void verifyConnectionPool() {
+        assert connectionPoolSize > 0;
+        // Get a Session for each connection in the pool and complete
+        // a transaction to make sure that each connection is ready
         List<Integer> sessionCounts = null;
         String msg;
         try {
@@ -361,77 +375,19 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
         }
     }
 
-    protected ClusterConnection createClusterConnection(
-            ClusterConnectionService service, Map<?, ?> props, int nodeId, int connectionId) {
-        ClusterConnection result = null;
-        boolean connected = false;
-        try {
-            result = service.create(CLUSTER_CONNECT_STRING, nodeId, CLUSTER_CONNECT_TIMEOUT_MGM);
-            result.setByteBufferPoolSizes(CLUSTER_BYTE_BUFFER_POOL_SIZES);
-            result.configureTls(CLUSTER_TLS_SEARCH_PATH, CLUSTER_STRICT_TLS);
-            result.connect(CLUSTER_CONNECT_RETRIES, CLUSTER_CONNECT_DELAY,true);
-            result.waitUntilReady(CLUSTER_CONNECT_TIMEOUT_BEFORE,CLUSTER_CONNECT_TIMEOUT_AFTER);
-            // Cluster connection successful.
-            // The connection has to be closed if the method fails after this point.
-            connected = true;
-            if (CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD !=
-                    DEFAULT_PROPERTY_CONNECTION_POOL_RECV_THREAD_ACTIVATION_THRESHOLD) {
-                // set the activation threshold iff the value passed is not default
-                result.setRecvThreadActivationThreshold(CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD);
-            }
-            // bind the connection's recv thread to cpu if the cpuid is passed in the property.
-            if (recvThreadCPUids[connectionId] != -1) {
-                result.setRecvThreadCPUid(recvThreadCPUids[connectionId]);
-            }
-        } catch (Exception ex) {
-            // close result if it has connected already
-            if (connected) {
-                result.closing();
-                result.close();
-            }
-            // need to clean up if some connections succeeded
-            for (ClusterConnection connection: pooledConnections) {
-                connection.close();
-            }
-            pooledConnections.clear();
-            throw new ClusterJFatalUserException(
-                    local.message("ERR_Connecting", props), ex);
-        }
-        this.pooledConnections.add(result);
-        result.initializeAutoIncrement(new long[] {
-                CLUSTER_CONNECT_AUTO_INCREMENT_BATCH_SIZE,
-                CLUSTER_CONNECT_AUTO_INCREMENT_STEP,
-                CLUSTER_CONNECT_AUTO_INCREMENT_START
-        });
-        return result;
-    }
-
-    /** Get the byteBufferPoolSizes from properties */
-    int[] getByteBufferPoolSizes(Map<?, ?> props) {
-        int[] result;
-        String byteBufferPoolSizesProperty = getStringProperty(props, PROPERTY_CLUSTER_BYTE_BUFFER_POOL_SIZES,
-                DEFAULT_PROPERTY_CLUSTER_BYTE_BUFFER_POOL_SIZES);
-        // separators are any combination of white space, commas, and semicolons
-        String[] byteBufferPoolSizesList = byteBufferPoolSizesProperty.split("[,; \t\n\r]+", 48);
-        int count = byteBufferPoolSizesList.length;
-        result = new int[count];
-        for (int i = 0; i < count; ++i) {
-            try {
-                result[i] = Integer.parseInt(byteBufferPoolSizesList[i]);
-            } catch (NumberFormatException ex) {
-                throw new ClusterJFatalUserException(local.message(
-                        "ERR_Byte_Buffer_Pool_Sizes_Format", byteBufferPoolSizesProperty), ex);
-            }
-        }
-        return result;
-    }
-
     /** Get a session to use with the cluster.
      *
      * @return the session
      */
     public Session getSession() {
         return getSession(null, false);
+    }
+
+    public Session getSession(String database) {
+        if(database == null) return getSession();
+        if(database.equals(spec.DATABASE)) return getSession();
+
+        throw new ClusterJUserException(local.message("ERR_Not_MultiDB"));
     }
 
     public Session getSession(Map properties) {
@@ -447,16 +403,17 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
     public Session getSession(Map properties, boolean internal) {
         try {
             Db db = null;
+            int idx = 0;
             synchronized(this) {
                 if (!(State.Open.equals(state)) && !internal) {
                     throw new ClusterJUserException(local.message("ERR_SessionFactory_not_open"));
                 }
-                ClusterConnection clusterConnection = getClusterConnectionFromPool();
-                checkConnection(clusterConnection);
-                db = clusterConnection.createDb(CLUSTER_DATABASE, CLUSTER_MAX_TRANSACTIONS);
+                idx = getIndexOfBestPooledConnection();
+                PooledConnection connection = pooledConnections.get(idx);
+                checkConnection(connection);
+                db = connection.createDb(spec.MAX_TRANSACTIONS);
             }
-            Dictionary dictionary = db.getDictionary();
-            return new SessionImpl(this, properties, db, dictionary);
+            return new SessionImpl(this, idx, db);
         } catch (ClusterJException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -465,27 +422,28 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
         }
     }
 
-    private ClusterConnection getClusterConnectionFromPool() {
+    private int getIndexOfBestPooledConnection() {
+        int result = 0;
         if (connectionPoolSize == 1) {
-            return pooledConnections.get(0);
+            return result;
         }
         // find the best pooled connection (the connection with the least active sessions)
         // this is not perfect without synchronization since a connection might close sessions
         // after getting the dbCount but we don't care about perfection here. 
-        ClusterConnection result = null;
         int bestCount = Integer.MAX_VALUE;
-        for (ClusterConnection pooledConnection: pooledConnections ) {
-            int count = pooledConnection.dbCount();
+        for (int i = 0 ; i < connectionPoolSize ; i++) {
+            PooledConnection connection = pooledConnections.get(i);
+            int count = connection.dbCount();
             if (count < bestCount) {
                 bestCount = count;
-                result = pooledConnection;
+                result = i;
             }
         }
         return result;
     }
 
-    private void checkConnection(ClusterConnection clusterConnection) {
-        if (clusterConnection == null) {
+    private void checkConnection(PooledConnection connection) {
+        if (connection == null) {
             throw new ClusterJUserException(local.message("ERR_Session_Factory_Closed"));
         }
     }
@@ -495,26 +453,12 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
      * @param cls the Class for which to get domain type handler
      * @return the DomainTypeHandler or null if not available
      */
-    public <T> DomainTypeHandler<T> getDomainTypeHandler(Class<T> cls) {
-        // synchronize here because the map is not synchronized
-        synchronized(typeToHandlerMap) {
-            @SuppressWarnings( "unchecked" )
-            DomainTypeHandler<T> domainTypeHandler = (DomainTypeHandler<T>) typeToHandlerMap.get(cls);
-            return domainTypeHandler;
-        }
-    }
-
-    /** Generate a key from the given interfaces to lookup the proxyInterfacesToDomainClass map
-     * @param proxyInterfaces List of proxy interfaces to generate the key from
-     * @return the generated lookup key
-     */
-    private static String generateProxyInterfacesKey(Class<?>[] proxyInterfaces) {
-        // The generated key is of form : CanonicalNameOfInterface1;CanonicalNameOfInterface2;...
-        StringBuilder key = new StringBuilder();
-        for (Class<?> proxyInterface : proxyInterfaces) {
-            key.append(proxyInterface.getCanonicalName()).append(';');
-        }
-        return key.toString();
+    <T> DomainTypeHandler<T> getDomainTypeHandler(Class<T> cls) {
+        @SuppressWarnings( "unchecked" )
+        DomainTypeHandler<T> domainTypeHandler = (DomainTypeHandler<T>) typeToHandlerMap.get(cls);
+        if(domainTypeHandler.isClosing())
+            throw ClusterJDatastoreException.forSchemaChange(domainTypeHandler);
+        return domainTypeHandler;
     }
 
     /** Create or get the DomainTypeHandler for a class.
@@ -523,30 +467,46 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
      * @param dictionary the dictionary to validate against
      * @return the type handler
      */
-    
     public <T> DomainTypeHandler<T> getDomainTypeHandler(Class<T> cls, Dictionary dictionary) {
-        // synchronize here because the map is not synchronized
-        synchronized(typeToHandlerMap) {
-            @SuppressWarnings("unchecked")
-            DomainTypeHandler<T> domainTypeHandler = (DomainTypeHandler<T>) typeToHandlerMap.get(cls);
-            if (logger.isDetailEnabled()) logger.detail("DomainTypeToHandler for "
-                    + cls.getName() + "(" + cls
-                    + ") returned " + domainTypeHandler);
-            if (domainTypeHandler == null) {
-                domainTypeHandler = domainTypeHandlerFactory.createDomainTypeHandler(cls,
-                        dictionary, smartValueHandlerFactory);
-                if (logger.isDetailEnabled()) logger.detail("createDomainTypeHandler for "
-                        + cls.getName() + "(" + cls
-                        + ") returned " + domainTypeHandler);
-                typeToHandlerMap.put(cls, domainTypeHandler);
-                Class<?>[] proxyInterfaces = domainTypeHandler.getProxyInterfaces();
-                if (proxyInterfaces != null) {
-                    String key = generateProxyInterfacesKey(proxyInterfaces);
-                    proxyInterfacesToDomainClassMap.put(key, cls);
-                }
-            }
-            return domainTypeHandler;
+        @SuppressWarnings("unchecked")
+        DomainTypeHandler<T> domainTypeHandler = (DomainTypeHandler<T>) typeToHandlerMap.get(cls);
+
+        if (domainTypeHandler == null) {
+            domainTypeHandler = createTypeHandlerInMaps(cls, dictionary);
+        } else if(domainTypeHandler.isClosing()) {
+            throw ClusterJDatastoreException.forSchemaChange(domainTypeHandler);
         }
+
+        return domainTypeHandler;
+    }
+
+    /* Creation of DomainTypeHandlers must be serialized, because there are
+       components (possibly gcreate() in jtie, possibly in NdbDictionary...) that
+       misbehave under concurrent use. After failing in getDomainTypeHandler()
+       above, a thread will wait for the lock here, and then check again in the
+       map, and, failing again, will create the DomainTypeHandler.
+
+       Some threads might delete an entry from typeToHandlerMap from outside this
+       function (and not holding the SessionFactoryImpl intrinsic lock), but no
+       thread may insert a value into the map except from this function.
+    */
+    synchronized <T> DomainTypeHandler<T> createTypeHandlerInMaps(Class<T> cls, Dictionary dictionary) {
+        @SuppressWarnings("unchecked")
+        DomainTypeHandler<T> domainTypeHandler = (DomainTypeHandler<T>) typeToHandlerMap.get(cls);
+
+        if(domainTypeHandler != null) return domainTypeHandler;
+
+        domainTypeHandler = domainTypeHandlerFactory.createDomainTypeHandler(
+            cls, dictionary, smartValueHandlerFactory);
+        typeToHandlerMap.put(cls, domainTypeHandler);
+        logger.detail(() -> "Created DomainTypeHandler for class " + cls.getName());
+
+        Class<?> proxyClass = domainTypeHandler.getProxyClass();
+        if (proxyClass != null) {
+            proxyClassToDomainClass.put(proxyClass, cls);
+        }
+
+        return domainTypeHandler;
     }
 
     /** Create or get the DomainTypeHandler for an instance.
@@ -555,7 +515,7 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
      * @param dictionary the dictionary for metadata access
      * @return the DomainTypeHandler for the object
      */
-    public <T> DomainTypeHandler<T> getDomainTypeHandler(T object, Dictionary dictionary) {
+    <T> DomainTypeHandler<T> getDomainTypeHandler(T object, Dictionary dictionary) {
         Class<T> cls = getClassForProxy(object);
         DomainTypeHandler<T> result = getDomainTypeHandler(cls, dictionary);
         return result;
@@ -569,136 +529,30 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
     protected <T> Class<T> getClassForProxy(T object) {
         Class<?> cls = object.getClass();
         if (java.lang.reflect.Proxy.isProxyClass(cls)) {
-            // The underlying class is a Proxy. Retrieve the interfaces implemented
-            // by the proxy class and use them to fetch the domain class from
-            // proxyInterfacesToDomainClass map.
-            Class<?>[] proxyInterfaces = cls.getInterfaces();
-            String key = generateProxyInterfacesKey(proxyInterfaces);
-            cls = proxyInterfacesToDomainClassMap.get(key);
+            cls = proxyClassToDomainClass.get(cls);
         }
         return (Class<T>)cls;
     }
 
-    public <T> T newInstance(Class<T> cls, Dictionary dictionary, Db db) {
-        DomainTypeHandler<T> domainTypeHandler = getDomainTypeHandler(cls, dictionary);
-        return domainTypeHandler.newInstance(db);
-    }
-
     public Table getTable(String tableName, Dictionary dictionary) {
-        Table result;
-        try {
-            result = dictionary.getTable(tableName);
-        } catch(Exception ex) {
-            throw new ClusterJFatalInternalException(
-                        local.message("ERR_Get_Table"), ex);
-        }
-        return result;
-    }
-
-    /** Get the property from the properties map as a String.
-     * @param props the properties
-     * @param propertyName the name of the property
-     * @return the value from the properties (may be null)
-     */
-    protected static String getStringProperty(Map<?, ?> props, String propertyName) {
-        return (String)props.get(propertyName);
-    }
-
-    /** Get the property from the properties map as a String. If the user has not
-     * provided a value in the props, use the supplied default value.
-     * @param props the properties
-     * @param propertyName the name of the property
-     * @param defaultValue the value to return if there is no property by that name
-     * @return the value from the properties or the default value
-     */
-    protected static String getStringProperty(Map<?, ?> props, String propertyName, String defaultValue) {
-        String result = (String)props.get(propertyName);
-        if (result == null) {
-            result = defaultValue;
-        }
-        return result;
-    }
-
-    /** Get the property from the properties map as a String. If the user has not
-     * provided a value in the props, throw an exception.
-     * @param props the properties
-     * @param propertyName the name of the property
-     * @return the value from the properties (may not be null)
-     */
-    protected static String getRequiredStringProperty(Map<?, ?> props, String propertyName) {
-        String result = (String)props.get(propertyName);
-        if (result == null) {
-                throw new ClusterJFatalUserException(
-                        local.message("ERR_NullProperty", propertyName));                            
-        }
-        return result;
-    }
-
-    /** Get the property from the properties map as an int. If the user has not
-     * provided a value in the props, use the supplied default value.
-     * @param props the properties
-     * @param propertyName the name of the property
-     * @param defaultValue the value to return if there is no property by that name
-     * @return the value from the properties or the default value
-     */
-    protected static int getIntProperty(Map<?, ?> props, String propertyName, int defaultValue) {
-        Object property = props.get(propertyName);
-        if (property == null) {
-            return defaultValue;
-        }
-        if (Number.class.isAssignableFrom(property.getClass())) {
-            return ((Number)property).intValue();
-        }
-        if (property instanceof String) {
-            try {
-                int result = Integer.parseInt((String)property);
-                return result;
-            } catch (NumberFormatException ex) {
-                throw new ClusterJFatalUserException(
-                        local.message("ERR_NumericFormat", propertyName, property));
-            }
-        }
-        throw new ClusterJUserException(local.message("ERR_NumericFormat", propertyName, property));
-    }
-
-    /** Get the property from the properties map as a long. If the user has not
-     * provided a value in the props, use the supplied default value.
-     * @param props the properties
-     * @param propertyName the name of the property
-     * @param defaultValue the value to return if there is no property by that name
-     * @return the value from the properties or the default value
-     */
-    protected static long getLongProperty(Map<?, ?> props, String propertyName, long defaultValue) {
-        Object property = props.get(propertyName);
-        if (property == null) {
-            return defaultValue;
-        }
-        if (Number.class.isAssignableFrom(property.getClass())) {
-            return ((Number)property).longValue();
-        }
-        if (property instanceof String) {
-            try {
-                long result = Long.parseLong((String)property);
-                return result;
-            } catch (NumberFormatException ex) {
-                throw new ClusterJFatalUserException(
-                        local.message("ERR_NumericFormat", propertyName, property));
-            }
-        }
-        throw new ClusterJUserException(local.message("ERR_NumericFormat", propertyName, property));
+        return dictionary.getTable(tableName);
     }
 
     public synchronized void close() {
         // close all of the cluster connections
-        for (ClusterConnection clusterConnection: pooledConnections) {
-            clusterConnection.close();
+        for (PooledConnection connection: pooledConnections) {
+            connection.close();
         }
         pooledConnections.clear();
-        synchronized(sessionFactoryMap) {
-            // now remove this from the map
-            sessionFactoryMap.remove(key);
+
+        // remove this from the map
+        if(! spec.MULTI_DB) {
+            synchronized(sessionFactoryMap) {
+                sessionFactoryMap.remove(key);
+            }
         }
         state = State.Closed;
+        GlobalConnectionPool.closeSessionFactory(spec.CONNECT_STRING, this);
     }
 
     public void setDomainTypeHandlerFactory(DomainTypeHandlerFactory domainTypeHandlerFactory) {
@@ -711,34 +565,135 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
 
     public List<Integer> getConnectionPoolSessionCounts() {
         List<Integer> result = new ArrayList<Integer>();
-        for (ClusterConnection connection: pooledConnections) {
+        for (PooledConnection connection: pooledConnections) {
             result.add(connection.dbCount());
         }
         return result;
     }
 
-    public String unloadSchema(Class<?> cls, Dictionary dictionary) {
-        synchronized(typeToHandlerMap) {
-            String tableName = null;
-            DomainTypeHandler<?> domainTypeHandler = typeToHandlerMap.remove(cls);
-            if (domainTypeHandler != null) {
-                // remove the ndb dictionary cached table definition
-                tableName = domainTypeHandler.getTableName();
-                if (tableName != null) {
-                    if (logger.isDebugEnabled())logger.debug("Removing dictionary entry for table " + tableName
-                            + " for class " + cls.getName());
-                    dictionary.removeCachedTable(tableName);
-                    for (ClusterConnection clusterConnection: pooledConnections) {
-                        clusterConnection.unloadSchema(tableName);
+    /*                    == Schema Change Handling ==
+
+       When stale metadata has caused a DomainTypeHandler to become unusable,
+       set the DomainTypeHandler to closing, copy it into the schemaLocks map,
+       and then use its intrinsic lock to ensure that schema change handling is
+       properly serialized. Handling consists of removing cached objects that
+       depend on the metadata, purging the metadata from the local dictionary,
+       and then reloading fresh metadata over the network.
+
+       getSchemaLock() is only called from unloadSchema().
+
+       After stale-metadata errors (like 241, 284...) the first thread
+       to call unloadSchema() creates the schema lock. Other threads in
+       getDomainTypeHandler() will see that the TypeHandler is closing and
+       throw a "schema change in progress" exception. Subsequent threads
+       that call into unloadSchema() and fetch the same schema lock will
+       block, waiting for the change to complete. The first thread completes
+       the schema change handling, sets the TypeHandler to closed, removes
+       it from the main map, and then releases the lock.
+    */
+    private DomainTypeHandler<?> getSchemaLock(Class<?> cls) {
+        synchronized(schemaLocks) {
+            DomainTypeHandler<?> handler = schemaLocks.get(cls);
+
+            if(handler == null) {
+                handler = typeToHandlerMap.get(cls);
+                if(handler == null) {
+                    String tableName = getTableNameForClass(cls);
+                    if(tableName != null) {
+                        for (DomainTypeHandler<?> entry : typeToHandlerMap.values()) {
+                            if(entry.getTableName().equals(tableName)) {
+                                handler = entry;
+                                break;
+                            }
+                        }
                     }
                 }
+                if(handler == null) {
+                    // The table has yet not been mapped to any class. The first
+                    // time here, SessionImpl will create a DomainTypeHandler
+                    // by calling newInstance(cls), and then retry.
+                    return null;
+                }
+                logger.debug(() -> "Creating schema lock");
+                handler.setClosing();
+                schemaLocks.put(cls, handler);
             }
+
+            return handler;
+        }
+    }
+
+    public String unloadSchema(Class<?> cls, Dictionary dictionary) {
+        DomainTypeHandler<?> typeHandler = getSchemaLock(cls);
+        if(typeHandler == null)
+            return null;
+
+        // Threads wait here, then run the following block one at a time
+        synchronized(typeHandler) {
+            cls = typeHandler.getDomainClass();
+            if(typeHandler.isClosed()) {
+                // Some other thread has done the work
+                return typeHandler.getTableName();
+            }
+
+            // The first thread to get here handles the schema change
+            String tableName = typeHandler.getTableName();
+            assert tableName != null;
+            String oldVer = typeHandler.getTableVersion();
+
+            // The DbFactories will remove cached NdbRecords, and
+            // flush the stale table from the global dictionary cache
+            for (PooledConnection connection: pooledConnections) {
+                connection.unloadSchema(tableName);
+            }
+
+            // Also remove the table from the session's local dictionary cache
+            dictionary.invalidateTable(tableName);
+
+            // Try to create a new DomainTypeHandler now, to force the metadata
+            // to be refreshed over the network; ignore any errors.
+            try {
+                DomainTypeHandler<?> dummy = domainTypeHandlerFactory
+                    .createDomainTypeHandler(cls, dictionary, smartValueHandlerFactory);
+                String newVer = dummy.getTableVersion();
+                logger.info(() -> "Schema change - replaced DomainTypeHandler for " +
+                            tableName + " version " + oldVer + " with version " + newVer);
+            } catch (ClusterJDatastoreException ex) {
+                logger.info(() -> "Schema change - removed DomainTypeHandler for " +
+                            tableName + " version " + oldVer);
+            }
+
+            // Remove the old handler from the main map
+            typeToHandlerMap.remove(cls);
+
+            // Close the old DomainTypeHandler
+            typeHandler.setClosed();
+
+            // Remove the schema lock
+            schemaLocks.remove(cls);
+
             return tableName;
         }
     }
-    protected ThreadGroup threadGroup = new ThreadGroup("Reconnect");
 
-    protected Thread reconnectThread;
+    private <T> String getTableNameForClass(Class<T> cls) {
+        String tableName = null;
+        if (DynamicObject.class.isAssignableFrom(cls)) {
+            try {
+                DynamicObject test = (DynamicObject) cls.getDeclaredConstructor().newInstance();
+                tableName = test.table();
+            } catch (Exception e) {
+                logger.warn(local.message("ERR_Create_Instance", cls.toString()));
+                return null;
+            }
+        } else {
+            PersistenceCapable persistenceCapable = cls.getAnnotation(PersistenceCapable.class);
+            if (persistenceCapable != null) {
+                tableName = persistenceCapable.table();
+            }
+        }
+        return tableName;
+    }
 
     /** Shut down the session factory by closing all pooled cluster connections
      * and restarting.
@@ -780,7 +735,6 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
      * @since 7.5.7
      */
     public void reconnect(int timeout) {
-        logger.warn(local.message("WARN_Reconnect", getConnectionPoolSessionCounts().toString()));
         synchronized(this) {
             // if already restarting, do nothing
             if (State.Reconnecting.equals(state)) {
@@ -793,23 +747,12 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
                 logger.warn(local.message("WARN_Reconnect_timeout0"));
                 return;
             }
-            // set the state of this session factory to reconnecting
-            state = State.Reconnecting;
-            // create a thread to manage the reconnect operation
-            // create thread group
-            threadGroup = new ThreadGroup("Stuff");
-            // create reconnect thread
-            reconnectThread = new Thread(threadGroup, new ReconnectThread(this));
-            reconnectThread.start();
-            logger.warn(local.message("WARN_Reconnect_started"));
+            logger.warn(local.message("WARN_Reconnect", getConnectionPoolSessionCounts().toString()));
+            pooledConnections.get(0).reconnect(timeout);
         }
     }
 
-    protected static int countSessions(SessionFactoryImpl factory) {
-        return countSessions(factory.getConnectionPoolSessionCounts());
-    }
-
-    protected static int countSessions(List<Integer> sessionCounts) {
+    private static int countSessions(List<Integer> sessionCounts) {
         int result = 0;
         for (int i: sessionCounts) {
             result += i;
@@ -817,91 +760,75 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
         return result;
     }
 
-    protected static class ReconnectThread implements Runnable {
-        SessionFactoryImpl factory;
-        ReconnectThread(SessionFactoryImpl factory) {
-            this.factory = factory;
-        }
-        public void run() {
-            List<Integer> sessionCounts = factory.getConnectionPoolSessionCounts();
-            boolean done = false;
-            int iterations = factory.CLUSTER_RECONNECT_TIMEOUT;
-            while (!done && iterations-- > 0) {
-                done = countSessions(sessionCounts) == 0;
-                if (!done) {
-                    logger.info(local.message("INFO_Reconnect_wait", sessionCounts.toString()));
-                    sleep(1000);
-                    sessionCounts = factory.getConnectionPoolSessionCounts();
-                }
-            }
-            if (!done) {
-                // timed out waiting for sessions to close
-                logger.warn(local.message("WARN_Reconnect_timeout", sessionCounts.toString()));
-            }
-            logger.warn(local.message("WARN_Reconnect_closing"));
-            // mark all cluster connections as closing
-            for (ClusterConnection clusterConnection: factory.pooledConnections) {
-                clusterConnection.closing();
-            }
-            // wait for connections to close on their own
-            sleep(1000);
-            // hard close connections that didn't close on their own
-            for (ClusterConnection clusterConnection: factory.pooledConnections) {
-                clusterConnection.close();
-            }
-            factory.pooledConnections.clear();
-            // remove all DomainTypeHandlers, as they embed references to
-            // Ndb dictionary objects which have been removed
-            factory.typeToHandlerMap.clear();
-            factory.proxyInterfacesToDomainClassMap.clear();
+    int disconnect_check_active_sessions() {
+        return countSessions(getConnectionPoolSessionCounts());
+    }
 
-            logger.warn(local.message("WARN_Reconnect_creating"));
-            factory.createClusterConnectionPool();
-            factory.verifyConnectionPool();
-            logger.warn(local.message("WARN_Reconnect_reopening"));
-            synchronized(factory) {
-                factory.state = State.Open;
-            }
+    synchronized boolean check_pool_for_disconnect() {
+        /* Check whether our own connections will be shutdown */
+        if(pooledConnections.get(0).currentState().equals(State.Reconnecting)) {
+            state = State.Reconnecting;
+            return true;
+        }
+        return false;
+    }
+
+    void disconnect_set_closing() {
+        List<Integer> sessionCounts = getConnectionPoolSessionCounts();
+        if (countSessions(sessionCounts) != 0)
+            logger.warn(local.message("WARN_Reconnect_timeout", sessionCounts.toString()));
+
+        logger.warn(local.message("WARN_Reconnect_closing"));
+        for (PooledConnection connection: pooledConnections) {
+            connection.setClosing();
         }
     }
 
-    public void setRecvThreadCPUids(short[] cpuids) {
-        // validate the size of the node ids with the connection pool size
-        if (connectionPoolSize != cpuids.length) {
+    void disconnect_close() {
+       for (PooledConnection connection: pooledConnections) {
+            connection.close();
+        }
+    }
+
+    synchronized void do_reconnect() {
+        pooledConnections.clear();
+        // remove all DomainTypeHandlers, as they embed references to
+        // Ndb dictionary objects which have been removed
+        typeToHandlerMap.clear();
+        schemaLocks.clear();
+
+        logger.warn(local.message("WARN_Reconnect_creating"));
+        createClusterConnectionPool();
+        verifyConnectionPool();
+        logger.warn(local.message("WARN_Reconnect_reopening"));
+        state = State.Open;
+    }
+
+    public void setRecvThreadCPUids(short[] newCpuId) {
+        if (connectionPoolSize != newCpuId.length) {
             throw new ClusterJUserException(
                     local.message("ERR_CPU_Ids_Must_Match_Connection_Pool_Size",
-                            Arrays.toString(cpuids), connectionPoolSize));
+                            Arrays.toString(newCpuId), connectionPoolSize));
         }
         // set cpuid to individual connections in the pool
-        short newRecvThreadCPUids[] = new short[cpuids.length];
+        short oldCpuId[] = new short[newCpuId.length];
+        int i = 0;
         try {
-            int i = 0;
-            for (ClusterConnection clusterConnection: pooledConnections) {
+            for (PooledConnection connection: pooledConnections) {
+                oldCpuId[i] = connection.getRecvThreadCPUid();
                 // No need to bind if the thread is already bound to same cpuid.
-                if (cpuids[i] != recvThreadCPUids[i]){
-                    if (cpuids[i] != -1) {
-                        clusterConnection.setRecvThreadCPUid(cpuids[i]);
-                    } else {
-                        // cpu id is -1 which is a request for unlocking the thread from cpu
-                        clusterConnection.unsetRecvThreadCPUid();
-                    }
+                if (newCpuId[i] != oldCpuId[i]) {
+                    connection.setRecvThreadCPUid(newCpuId[i]);
                 }
-                newRecvThreadCPUids[i] = cpuids[i];
                 i++;
             }
-            // binding success
-            recvThreadCPUids = newRecvThreadCPUids;
         } catch (Exception ex) {
             // Binding cpuid failed.
             // To avoid partial settings, restore back the cpu bindings to the old values.
-            for (int i = 0; newRecvThreadCPUids[i] != 0 && i < newRecvThreadCPUids.length; i++) {
-                ClusterConnection clusterConnection = pooledConnections.get(i);
-                if (recvThreadCPUids[i] != newRecvThreadCPUids[i]) {
-                    if (recvThreadCPUids[i] == -1) {
-                        clusterConnection.unsetRecvThreadCPUid();
-                    } else {
-                        clusterConnection.setRecvThreadCPUid(recvThreadCPUids[i]);
-                    }
+            for (; i >= 0; i--) {
+                PooledConnection connection = pooledConnections.get(i);
+                if (oldCpuId[i] != newCpuId[i]) {
+                    connection.setRecvThreadCPUid(oldCpuId[i]);
                 }
             }
             throw ex;
@@ -909,6 +836,9 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
     }
 
     public short[] getRecvThreadCPUids() {
+        short recvThreadCPUids[] = new short[pooledConnections.size()];
+        for (int i = 0; i < pooledConnections.size(); i++)
+            recvThreadCPUids[i] = pooledConnections.get(i).getRecvThreadCPUid();
         return recvThreadCPUids;
     }
 
@@ -920,8 +850,8 @@ public class SessionFactoryImpl implements SessionFactory, Constants {
         }
         // any threshold above 15 is interpreted as 256 internally
         CLUSTER_RECV_THREAD_ACTIVATION_THRESHOLD = (threshold >= 16)?256:threshold;
-        for (ClusterConnection clusterConnection: pooledConnections) {
-            clusterConnection.setRecvThreadActivationThreshold(threshold);
+        for (PooledConnection connection: pooledConnections) {
+            connection.setRecvThreadActivationThreshold(threshold);
         }
     }
 

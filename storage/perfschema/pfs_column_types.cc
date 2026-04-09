@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -59,6 +59,7 @@ static s_object_type_map object_type_map[] = {
     {OBJECT_TYPE_RESOURCE_GROUPS, {STRING_WITH_LEN("RESOURCE_GROUPS")}},
     {OBJECT_TYPE_FOREIGN_KEY, {STRING_WITH_LEN("FOREIGN KEY")}},
     {OBJECT_TYPE_CHECK_CONSTRAINT, {STRING_WITH_LEN("CHECK CONSTRAINT")}},
+    {OBJECT_TYPE_LIBRARY, {STRING_WITH_LEN("LIBRARY")}},
     {NO_OBJECT_TYPE, {STRING_WITH_LEN("")}}};
 
 void object_type_to_string(enum_object_type object_type, const char **string,

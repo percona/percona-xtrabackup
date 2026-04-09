@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CALL mtr.add_suppression("default_storage_engine is set to a disabled storage engine .*");
 CALL mtr.add_suppression("default_tmp_storage_engine is set to a disabled storage engine .*");
 CALL mtr.add_suppression("Plugin mysqlx reported: 'All I/O interfaces are disabled");
@@ -9,6 +10,7 @@ CREATE TABLE t1 (c1 int) ENGINE=MYISAM;
 INSERT INTO t1 VALUES(1);
 CREATE TABLESPACE tb1 ADD DATAFILE 't1.ibd' ENGINE=INNODB;
 CREATE TABLE tp1 (c1 int) PARTITION BY KEY (c1) PARTITIONS 1;
+include/rpl/set_gtid_mode_off.inc
 SHOW VARIABLES LIKE 'disabled_storage_engines';
 Variable_name	Value
 disabled_storage_engines	innodb,myisam,heap,example

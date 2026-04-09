@@ -80,6 +80,7 @@ COUNT(*)
 SET optimizer_switch = 'hypergraph_optimizer=off';
 PREPARE ps_set FROM 'SET @x = (SELECT COUNT(*) FROM t)';
 PREPARE ps_select FROM 'SELECT COUNT(*) FROM t';
+SET optimizer_switch = 'hypergraph_optimizer=on';
 EXECUTE ps_set;
 SELECT COUNT(*) FROM INFORMATION_SCHEMA.OPTIMIZER_TRACE
 WHERE TRACE LIKE '%Constructed hypergraph%';
@@ -117,6 +118,7 @@ SELECT @x;
 3
 # Clean up for Bug #33296454
 DROP TABLE t;
+SET optimizer_switch = 'hypergraph_optimizer=on';
 # Bug #33296454 done
 #
 # Bug #33296504: Use the hypergraph optimizer for subqueries in INSERT statements
@@ -171,6 +173,7 @@ COUNT(*)
 0
 # Clean up for Bug #33296504
 DROP TABLE t1, t2, t3;
+SET optimizer_switch = 'hypergraph_optimizer=on';
 # Bug #33296504 done
 #
 # WL#14673: Enable the hypergraph optimizer for DELETE

@@ -1,0 +1,2915 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `proc_schema` - created
+
+
+## I.1 Verify how PROCEDURES are represented using the OpenAPI in case when:
+# - one resultset is returned
+# - two resultsets are returned
+# - three resultsets are returned
+# - IN parameter is used
+# - INOUT parameter is used
+# - OUT parameter is used
+# - empty procedure
+# - parameters + resultset
+#
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/proc
+# Registred DB_OBJECT at path: /svc/proc/one
+# Registred DB_OBJECT at path: /svc/proc/two
+# Registred DB_OBJECT at path: /svc/proc/three
+# Registred DB_OBJECT at path: /svc/proc/report_back_mysql_error_if
+# Registred DB_OBJECT at path: /svc/proc/inc_enum
+# Registred DB_OBJECT at path: /svc/proc/no_resultset_out_param
+# Registred DB_OBJECT at path: /svc/proc/proc_do_nothing
+# Registred DB_OBJECT at path: /svc/proc/in_out_and_return
+# Registred SERVICE at path: /svc2
+
+
+## Verify open-api-catalog for MRS procedure Object
+#
+## I. Get OpenAPI at different levels
+#
+# 1. service level
+# 2. schema level
+# 3. object level.
+#
+#
+## II. Cross service
+#
+# 1. Check that spec is not leaked between services
+#
+#
+
+#
+# I.1
+GET /svc/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/proc/in_out_and_return": {
+            "put": {
+                "summary": "Call in_out_and_return procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "in_out_and_return results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_in_out_and_return"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call in_out_and_return procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "in_out_and_return results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_in_out_and_return"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/inc_enum": {
+            "put": {
+                "summary": "Call inc_enum procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "result": {
+                                        "type": "string",
+                                        "enum": [
+                                            "one",
+                                            "two",
+                                            "three"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "inc_enum results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_inc_enum"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call inc_enum procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "result": {
+                                        "type": "string",
+                                        "enum": [
+                                            "one",
+                                            "two",
+                                            "three"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "inc_enum results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_inc_enum"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/no_resultset_out_param": {
+            "put": {
+                "summary": "Call no_resultset_out_param procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "no_resultset_out_param results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_no_resultset_out_param"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call no_resultset_out_param procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "no_resultset_out_param results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_no_resultset_out_param"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/one": {
+            "put": {
+                "summary": "Call one_resultset procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "one_resultset results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_one_resultset"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call one_resultset procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "one_resultset results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_one_resultset"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/proc_do_nothing": {
+            "put": {
+                "summary": "Call proc_do_nothing procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "proc_do_nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_proc_do_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call proc_do_nothing procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "proc_do_nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_proc_do_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/report_back_mysql_error_if": {
+            "put": {
+                "summary": "Call report_back_mysql_error_if procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "error_out": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "report_back_mysql_error_if results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_report_back_mysql_error_if"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call report_back_mysql_error_if procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "error_out": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "report_back_mysql_error_if results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_report_back_mysql_error_if"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/three": {
+            "put": {
+                "summary": "Call three_resultsets procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "three_resultsets results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_three_resultsets"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call three_resultsets procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "three_resultsets results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_three_resultsets"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/two": {
+            "put": {
+                "summary": "Call two_resultsets procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "two_resultsets results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_two_resultsets"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call two_resultsets procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "two_resultsets results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_two_resultsets"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "proc_schema_in_out_and_return": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObject",
+                                "items": {
+                                    "max(id)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "max(id)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "description": "basicObject",
+                                    "properties": {
+                                        "last_id": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    },
+                    "outParams": {
+                        "type": "object",
+                        "properties": {
+                            "v": {
+                                "type": "integer",
+                                "format": "int32",
+                                "maximum": 2147483647,
+                                "minimum": -2147483648,
+                                "example": 0,
+                                "description": "OUT parameter"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_inc_enum": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    },
+                    "outParams": {
+                        "type": "object",
+                        "properties": {
+                            "result": {
+                                "type": "string",
+                                "enum": [
+                                    "one",
+                                    "two",
+                                    "three"
+                                ],
+                                "description": "INOUT parameter"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_no_resultset_out_param": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    },
+                    "outParams": {
+                        "type": "object",
+                        "properties": {
+                            "v": {
+                                "type": "integer",
+                                "format": "int32",
+                                "maximum": 2147483647,
+                                "minimum": -2147483648,
+                                "example": 0,
+                                "description": "OUT parameter"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_one_resultset": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObject",
+                                "items": {
+                                    "id": "",
+                                    "name": "",
+                                    "comments": "",
+                                    "date": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "id",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "name",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "comments",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "date",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "description": "basicObject",
+                                    "properties": {
+                                        "my_id": {
+                                            "type": "string"
+                                        },
+                                        "my_name": {
+                                            "type": "string"
+                                        },
+                                        "my_comments": {
+                                            "type": "string"
+                                        },
+                                        "my_date": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_proc_do_nothing": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_report_back_mysql_error_if": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObject",
+                                "items": {
+                                    "number": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "number",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "description": "basicObject",
+                                    "properties": {
+                                        "my_number": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_three_resultsets": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObjectFirst",
+                                "items": {
+                                    "max(id)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "max(id)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "type": "basicObjectSecond",
+                                "items": {
+                                    "min(id)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "min(id)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "type": "basicObjectThird",
+                                "items": {
+                                    "id": "",
+                                    "name": "",
+                                    "comments": "",
+                                    "date": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "id",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "name",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "comments",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "date",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectFirst",
+                                            "properties": {
+                                                "last_id": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectSecond",
+                                            "properties": {
+                                                "first_id": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectThird",
+                                            "properties": {
+                                                "my_id": {
+                                                    "type": "string"
+                                                },
+                                                "my_name": {
+                                                    "type": "string"
+                                                },
+                                                "my_comments": {
+                                                    "type": "string"
+                                                },
+                                                "my_date": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_two_resultsets": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObjectFirst",
+                                "items": {
+                                    "count(*)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "count(*)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "type": "basicObjectSecond",
+                                "items": {
+                                    "id": "",
+                                    "name": "",
+                                    "comments": "",
+                                    "date": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "id",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "name",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "comments",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "date",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectFirst",
+                                            "properties": {
+                                                "numberOfItems": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectSecond",
+                                            "properties": {
+                                                "my_id": {
+                                                    "type": "string"
+                                                },
+                                                "my_name": {
+                                                    "type": "string"
+                                                },
+                                                "my_comments": {
+                                                    "type": "string"
+                                                },
+                                                "my_date": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "procedure_metadata_def": {
+                "type": "object",
+                "properties": {
+                    "columns": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "description": "Column name"
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "description": "Column type"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# I.2
+GET /svc/proc/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/proc/in_out_and_return": {
+            "put": {
+                "summary": "Call in_out_and_return procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "in_out_and_return results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_in_out_and_return"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call in_out_and_return procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "in_out_and_return results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_in_out_and_return"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/inc_enum": {
+            "put": {
+                "summary": "Call inc_enum procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "result": {
+                                        "type": "string",
+                                        "enum": [
+                                            "one",
+                                            "two",
+                                            "three"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "inc_enum results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_inc_enum"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call inc_enum procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "result": {
+                                        "type": "string",
+                                        "enum": [
+                                            "one",
+                                            "two",
+                                            "three"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "inc_enum results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_inc_enum"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/no_resultset_out_param": {
+            "put": {
+                "summary": "Call no_resultset_out_param procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "no_resultset_out_param results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_no_resultset_out_param"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call no_resultset_out_param procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "no_resultset_out_param results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_no_resultset_out_param"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/one": {
+            "put": {
+                "summary": "Call one_resultset procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "one_resultset results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_one_resultset"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call one_resultset procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "one_resultset results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_one_resultset"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/proc_do_nothing": {
+            "put": {
+                "summary": "Call proc_do_nothing procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "proc_do_nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_proc_do_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call proc_do_nothing procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "proc_do_nothing results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_proc_do_nothing"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/report_back_mysql_error_if": {
+            "put": {
+                "summary": "Call report_back_mysql_error_if procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "error_out": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "report_back_mysql_error_if results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_report_back_mysql_error_if"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call report_back_mysql_error_if procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "error_out": {
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "report_back_mysql_error_if results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_report_back_mysql_error_if"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/three": {
+            "put": {
+                "summary": "Call three_resultsets procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "three_resultsets results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_three_resultsets"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call three_resultsets procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "three_resultsets results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_three_resultsets"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/svc/proc/two": {
+            "put": {
+                "summary": "Call two_resultsets procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "two_resultsets results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_two_resultsets"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call two_resultsets procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "two_resultsets results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_two_resultsets"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "proc_schema_in_out_and_return": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObject",
+                                "items": {
+                                    "max(id)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "max(id)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "description": "basicObject",
+                                    "properties": {
+                                        "last_id": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    },
+                    "outParams": {
+                        "type": "object",
+                        "properties": {
+                            "v": {
+                                "type": "integer",
+                                "format": "int32",
+                                "maximum": 2147483647,
+                                "minimum": -2147483648,
+                                "example": 0,
+                                "description": "OUT parameter"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_inc_enum": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    },
+                    "outParams": {
+                        "type": "object",
+                        "properties": {
+                            "result": {
+                                "type": "string",
+                                "enum": [
+                                    "one",
+                                    "two",
+                                    "three"
+                                ],
+                                "description": "INOUT parameter"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_no_resultset_out_param": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    },
+                    "outParams": {
+                        "type": "object",
+                        "properties": {
+                            "v": {
+                                "type": "integer",
+                                "format": "int32",
+                                "maximum": 2147483647,
+                                "minimum": -2147483648,
+                                "example": 0,
+                                "description": "OUT parameter"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_one_resultset": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObject",
+                                "items": {
+                                    "id": "",
+                                    "name": "",
+                                    "comments": "",
+                                    "date": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "id",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "name",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "comments",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "date",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "description": "basicObject",
+                                    "properties": {
+                                        "my_id": {
+                                            "type": "string"
+                                        },
+                                        "my_name": {
+                                            "type": "string"
+                                        },
+                                        "my_comments": {
+                                            "type": "string"
+                                        },
+                                        "my_date": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_proc_do_nothing": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {}
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_report_back_mysql_error_if": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObject",
+                                "items": {
+                                    "number": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "number",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "description": "basicObject",
+                                    "properties": {
+                                        "my_number": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_three_resultsets": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObjectFirst",
+                                "items": {
+                                    "max(id)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "max(id)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "type": "basicObjectSecond",
+                                "items": {
+                                    "min(id)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "min(id)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "type": "basicObjectThird",
+                                "items": {
+                                    "id": "",
+                                    "name": "",
+                                    "comments": "",
+                                    "date": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "id",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "name",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "comments",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "date",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectFirst",
+                                            "properties": {
+                                                "last_id": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectSecond",
+                                            "properties": {
+                                                "first_id": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectThird",
+                                            "properties": {
+                                                "my_id": {
+                                                    "type": "string"
+                                                },
+                                                "my_name": {
+                                                    "type": "string"
+                                                },
+                                                "my_comments": {
+                                                    "type": "string"
+                                                },
+                                                "my_date": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "proc_schema_two_resultsets": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObjectFirst",
+                                "items": {
+                                    "count(*)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "count(*)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            },
+                            {
+                                "type": "basicObjectSecond",
+                                "items": {
+                                    "id": "",
+                                    "name": "",
+                                    "comments": "",
+                                    "date": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "id",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "name",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "comments",
+                                            "type": "TEXT"
+                                        },
+                                        {
+                                            "name": "date",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "oneOf": [
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectFirst",
+                                            "properties": {
+                                                "numberOfItems": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        },
+                                        {
+                                            "type": "object",
+                                            "description": "basicObjectSecond",
+                                            "properties": {
+                                                "my_id": {
+                                                    "type": "string"
+                                                },
+                                                "my_name": {
+                                                    "type": "string"
+                                                },
+                                                "my_comments": {
+                                                    "type": "string"
+                                                },
+                                                "my_date": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    ]
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    }
+                }
+            },
+            "procedure_metadata_def": {
+                "type": "object",
+                "properties": {
+                    "columns": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "description": "Column name"
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "description": "Column type"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+
+#
+# I.3
+GET /svc/proc/open-api-catalog/in_out_and_return
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/svc/proc/in_out_and_return": {
+            "put": {
+                "summary": "Call in_out_and_return procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "in_out_and_return results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_in_out_and_return"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Call in_out_and_return procedure",
+                "tags": [
+                    "proc_schema procedures"
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "description": "Input parameters",
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "maxLength": 255
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "in_out_and_return results",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/proc_schema_in_out_and_return"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "proc_schema_in_out_and_return": {
+                "type": "object",
+                "properties": {
+                    "resultSets": {
+                        "type": "object",
+                        "example": [
+                            {
+                                "type": "basicObject",
+                                "items": {
+                                    "max(id)": ""
+                                },
+                                "_metadata": {
+                                    "columns": [
+                                        {
+                                            "name": "max(id)",
+                                            "type": "TEXT"
+                                        }
+                                    ]
+                                }
+                            }
+                        ],
+                        "properties": {
+                            "type": {
+                                "type": "string"
+                            },
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "description": "basicObject",
+                                    "properties": {
+                                        "last_id": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "_metadata": {
+                                "$ref": "#/components/schemas/procedure_metadata_def"
+                            }
+                        }
+                    },
+                    "outParams": {
+                        "type": "object",
+                        "properties": {
+                            "v": {
+                                "type": "integer",
+                                "format": "int32",
+                                "maximum": 2147483647,
+                                "minimum": -2147483648,
+                                "example": 0,
+                                "description": "OUT parameter"
+                            }
+                        }
+                    }
+                }
+            },
+            "procedure_metadata_def": {
+                "type": "object",
+                "properties": {
+                    "columns": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string",
+                                    "description": "Column name"
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "description": "Column type"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+OK
+
+#
+# II.1
+GET /svc2/open-api-catalog/
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "svc2 OpenAPI specification",
+        "version": "1.0.0"
+    },
+    "paths": {},
+    "components": {
+        "schemas": {},
+        "securitySchemes": {
+            "mrs_login": {
+                "type": "http",
+                "scheme": "custom"
+            }
+        }
+    }
+}
+OK
+DROP SCHEMA proc_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

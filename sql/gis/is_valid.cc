@@ -1,4 +1,4 @@
-// Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -110,7 +110,7 @@ bool is_valid(const dd::Spatial_reference_system *srs, const Geometry *g,
       smajor = srs->semi_major_axis();
       sminor = srs->semi_minor_axis();
     }
-    Is_valid is_valid_functor(smajor, sminor);
+    Is_valid const is_valid_functor(smajor, sminor);
     *is_valid = is_valid_functor(*g);
     return false;
   } catch (...) {

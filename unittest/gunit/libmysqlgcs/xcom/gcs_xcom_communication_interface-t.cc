@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -149,8 +149,8 @@ class mock_gcs_xcom_proxy : public Gcs_xcom_proxy_base {
   /* Mocking fails compilation on Windows. It attempts to copy the std::future
    * which is non-copyable. */
   Gcs_xcom_input_queue::future_reply xcom_input_try_push_and_get_reply(
-      app_data_ptr) {
-    return std::future<std::unique_ptr<Gcs_xcom_input_queue::Reply>>();
+      app_data_ptr) override {
+    return {};
   }
   MOCK_METHOD0(xcom_input_try_pop, xcom_input_request_ptr());
 };
@@ -273,9 +273,9 @@ class XComCommunicationTest : public GcsBaseTest {
 };
 
 TEST_F(XComCommunicationTest, SetEventListenerTest) {
-  mock_gcs_communication_event_listener comm_listener;
+  mock_gcs_communication_event_listener const comm_listener;
 
-  int reference = xcom_comm_if->add_event_listener(comm_listener);
+  int const reference = xcom_comm_if->add_event_listener(comm_listener);
 
   ASSERT_NE(0, reference);
   ASSERT_EQ((long unsigned int)1,
@@ -284,11 +284,11 @@ TEST_F(XComCommunicationTest, SetEventListenerTest) {
 }
 
 TEST_F(XComCommunicationTest, SetEventListenersTest) {
-  mock_gcs_communication_event_listener comm_listener;
-  mock_gcs_communication_event_listener another_comm_listener;
+  mock_gcs_communication_event_listener const comm_listener;
+  mock_gcs_communication_event_listener const another_comm_listener;
 
-  int reference = xcom_comm_if->add_event_listener(comm_listener);
-  int another_reference =
+  int const reference = xcom_comm_if->add_event_listener(comm_listener);
+  int const another_reference =
       xcom_comm_if->add_event_listener(another_comm_listener);
 
   ASSERT_NE(0, reference);
@@ -302,11 +302,11 @@ TEST_F(XComCommunicationTest, SetEventListenersTest) {
 }
 
 TEST_F(XComCommunicationTest, RemoveEventListenerTest) {
-  mock_gcs_communication_event_listener comm_listener;
-  mock_gcs_communication_event_listener another_comm_listener;
+  mock_gcs_communication_event_listener const comm_listener;
+  mock_gcs_communication_event_listener const another_comm_listener;
 
-  int reference = xcom_comm_if->add_event_listener(comm_listener);
-  int another_reference =
+  int const reference = xcom_comm_if->add_event_listener(comm_listener);
+  int const another_reference =
       xcom_comm_if->add_event_listener(another_comm_listener);
 
   xcom_comm_if->remove_event_listener(reference);
@@ -333,14 +333,14 @@ TEST_F(XComCommunicationTest, SendMessageTest) {
       .WillOnce(Invoke(&mock_xcom_client_send_data));
   EXPECT_CALL(*mock_vce, belongs_to_group()).Times(1).WillOnce(Return(true));
 
-  std::string test_header("header");
-  std::string test_payload("payload");
-  Gcs_member_identifier member_id("member");
-  Gcs_group_identifier group_id("group");
-  Gcs_message_data *message_data =
+  std::string const test_header("header");
+  std::string const test_payload("payload");
+  Gcs_member_identifier const member_id("member");
+  Gcs_group_identifier const group_id("group");
+  auto *message_data =
       new Gcs_message_data(test_header.length(), test_payload.length());
 
-  Gcs_message message(member_id, group_id, message_data);
+  Gcs_message const message(member_id, group_id, message_data);
 
   message.get_message_data().append_to_header(
       pointer_cast<const uchar *>(test_header.c_str()), test_header.length());
@@ -348,21 +348,21 @@ TEST_F(XComCommunicationTest, SendMessageTest) {
   message.get_message_data().append_to_payload(
       pointer_cast<const uchar *>(test_payload.c_str()), test_payload.length());
 
-  enum_gcs_error message_result = xcom_comm_if->send_message(message);
+  enum_gcs_error const message_result = xcom_comm_if->send_message(message);
   ASSERT_EQ(GCS_OK, message_result);
 }
 
 TEST_F(XComCommunicationTest, ReceiveMessageTest) {
-  mock_gcs_communication_event_listener ev_listener;
+  mock_gcs_communication_event_listener const ev_listener;
 
   // Test Expectations
   EXPECT_CALL(ev_listener, on_message_received(_)).Times(1);
 
   // Test
-  std::string test_header("header");
-  std::string test_payload("payload");
-  Gcs_member_identifier member_id("member");
-  Gcs_group_identifier group_id("group");
+  std::string const test_header("header");
+  std::string const test_payload("payload");
+  Gcs_member_identifier const member_id("member");
+  Gcs_group_identifier const group_id("group");
   Gcs_message_data message_data(test_header.length(), test_payload.length());
 
   message_data.append_to_header(
@@ -395,7 +395,7 @@ TEST_F(XComCommunicationTest, ReceiveMessageTest) {
   EXPECT_CALL(*mock_proxy, xcom_client_send_data(_, _))
       .Times(1)
       .WillOnce(Invoke(&mock_xcom_client_send_data));
-  enum_gcs_error message_result = xcom_comm_if->send_message(
+  enum_gcs_error const message_result = xcom_comm_if->send_message(
       Gcs_message(member_id, group_id, new Gcs_message_data(0, 0)));
   ASSERT_EQ(GCS_OK, message_result);
 
@@ -408,7 +408,7 @@ TEST_F(XComCommunicationTest, ReceiveMessageTest) {
       std::move(buffer), buffer_len, packet_synode, packet_synode,
       xcom_comm_if->get_msg_pipeline());
 
-  int listener_ref = xcom_comm_if->add_event_listener(ev_listener);
+  int const listener_ref = xcom_comm_if->add_event_listener(ev_listener);
 
   std::unique_ptr<Gcs_xcom_nodes> xcom_nodes(new Gcs_xcom_nodes());
   xcom_nodes->add_node(Gcs_xcom_node_information(
@@ -421,17 +421,17 @@ TEST_F(XComCommunicationTest, ReceiveMessageTest) {
 }
 
 TEST_F(XComCommunicationTest, BufferMessageTest) {
-  mock_gcs_communication_event_listener ev_listener;
+  mock_gcs_communication_event_listener const ev_listener;
 
   // Test Expectations
   EXPECT_CALL(ev_listener, on_message_received(_)).Times(1);
 
   // Set up the environment.
-  std::string test_header("header");
-  std::string test_payload("payload");
-  Gcs_member_identifier member_id("member");
-  Gcs_group_identifier group_id("group");
-  int listener_ref = xcom_comm_if->add_event_listener(ev_listener);
+  std::string const test_header("header");
+  std::string const test_payload("payload");
+  Gcs_member_identifier const member_id("member");
+  Gcs_group_identifier const group_id("group");
+  int const listener_ref = xcom_comm_if->add_event_listener(ev_listener);
   Gcs_message_data message_data(test_header.length(), test_payload.length());
 
   message_data.append_to_header(
@@ -464,7 +464,7 @@ TEST_F(XComCommunicationTest, BufferMessageTest) {
   EXPECT_CALL(*mock_proxy, xcom_client_send_data(_, _))
       .Times(1)
       .WillOnce(Invoke(&mock_xcom_client_send_data));
-  enum_gcs_error message_result = xcom_comm_if->send_message(
+  enum_gcs_error const message_result = xcom_comm_if->send_message(
       Gcs_message(member_id, group_id, new Gcs_message_data(0, 0)));
   ASSERT_EQ(GCS_OK, message_result);
 
@@ -577,8 +577,8 @@ TEST_F(XComCommunicationTest, SuccessfulSynodRecoveryTest) {
   ASSERT_FALSE(error);
 
   /* Setup group members, me and other dummy guy for recovery. */
-  Gcs_member_identifier me(mock_xcom_address->get_member_address());
-  Gcs_xcom_node_information other("127.0.0.2:12345");
+  Gcs_member_identifier const me(mock_xcom_address->get_member_address());
+  Gcs_xcom_node_information const other("127.0.0.2:12345");
   Gcs_xcom_nodes xcom_nodes;
   xcom_nodes.add_node(Gcs_xcom_node_information(me.get_member_id()));
   xcom_nodes.add_node(other);
@@ -604,8 +604,8 @@ TEST_F(XComCommunicationTest, SuccessfulSynodRecoveryTest) {
   synode_3.msgno = 3;
   synode_no synode_4 = base_synod;
   synode_4.msgno = 4;
-  std::unordered_set<Gcs_xcom_synode> synodes{Gcs_xcom_synode(synode_1),
-                                              Gcs_xcom_synode(synode_2)};
+  std::unordered_set<Gcs_xcom_synode> const synodes{Gcs_xcom_synode(synode_1),
+                                                    Gcs_xcom_synode(synode_2)};
 
   /* Mock the connection to the donor. */
   EXPECT_CALL(*mock_proxy, xcom_client_open_connection(_, _))
@@ -633,7 +633,7 @@ TEST_F(XComCommunicationTest, SuccessfulSynodRecoveryTest) {
   ASSERT_TRUE(recovered);
 
   /* Receive the last two packets normally. */
-  std::vector<Gcs_packet> packets_in;
+  std::vector<Gcs_packet> const packets_in;
   std::array<synode_no, 4> synodes_in_order{synode_1, synode_2, synode_3,
                                             synode_4};
   Gcs_packet packet_in;
@@ -660,7 +660,7 @@ TEST_F(XComCommunicationTest, SuccessfulSynodRecoveryTest) {
   Gcs_message_data received_data(packet_in.get_payload_length());
   ASSERT_FALSE(received_data.decode(packet_in.get_payload_pointer(),
                                     packet_in.get_payload_length()));
-  std::string received_payload(
+  std::string const received_payload(
       reinterpret_cast<char const *>(received_data.get_payload()));
   ASSERT_EQ(payload, received_payload);
 }
@@ -703,8 +703,8 @@ TEST_F(XComCommunicationTest, UnsuccessfulSynodRecoveryTest) {
   ASSERT_FALSE(error);
 
   /* Setup group members, me and other dummy guy for recovery. */
-  Gcs_member_identifier me(mock_xcom_address->get_member_address());
-  Gcs_xcom_node_information other("127.0.0.2:12345");
+  Gcs_member_identifier const me(mock_xcom_address->get_member_address());
+  Gcs_xcom_node_information const other("127.0.0.2:12345");
   Gcs_xcom_nodes xcom_nodes;
   xcom_nodes.add_node(Gcs_xcom_node_information(me.get_member_id()));
   xcom_nodes.add_node(other);
@@ -727,8 +727,8 @@ TEST_F(XComCommunicationTest, UnsuccessfulSynodRecoveryTest) {
   synode_1.msgno = 1;
   synode_no synode_2 = base_synod;
   synode_2.msgno = 2;
-  std::unordered_set<Gcs_xcom_synode> synodes{Gcs_xcom_synode(synode_1),
-                                              Gcs_xcom_synode(synode_2)};
+  std::unordered_set<Gcs_xcom_synode> const synodes{Gcs_xcom_synode(synode_1),
+                                                    Gcs_xcom_synode(synode_2)};
 
   /* Mock the connection to the donor. */
   EXPECT_CALL(*mock_proxy, xcom_client_open_connection(_, _))

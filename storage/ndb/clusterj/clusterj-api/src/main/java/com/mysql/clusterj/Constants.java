@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -178,6 +178,76 @@ public interface Constants {
 
     /** The default value of the database property */
     static final String DEFAULT_PROPERTY_CLUSTER_DATABASE = "test";
+
+    /**
+     * Each Cluster/J session uses an Ndb object that holds a connection record.
+     * Obtaining these objects requires a network round-trip between the
+     * Cluster/J application and an NDB data node. To eliminate that network
+     * overhead in getSession(), these Ndb objects can be cached. Each cached
+     * object, in addition to a small amount of memory used inside Cluster/J,
+     * also consumes about 1KB of memory on each data node.
+     *
+     * This SessionFactory property is used to determine the size and behavior
+     * of the cache. If set to zero, the session cache will not be enabled for
+     * this SessionFactory. If set to some value greater than zero, the session
+     * cache will be enabled, with its size limited to the value given.
+     *
+     * Users should generally not expect the cache in a SessionFactory to grow
+     * to this maximum size, but rather to remain roughly equal to the number
+     * of threads using the SessionFactory.
+     *
+     * The total size of all session caches will not exceed the largest size
+     * requested for any one SessionFactory.
+     *
+     * @since 9.4.0
+     */
+    static final String PROPERTY_CLUSTER_MAX_CACHED_SESSIONS =
+        "com.mysql.clusterj.max.cached.sessions";
+
+    /** The default size of the global session cache. */
+    static final int DEFAULT_PROPERTY_CLUSTER_MAX_CACHED_SESSIONS = 100;
+
+    /*
+     * Enable or disable MultiDB SessionFactory behavior.
+     *
+     * For MultiDB behavior to be enabled, this property must be set to
+     * the string value "true".
+     *
+     * When this property is true in getSessionFactory(), the returned
+     * SesssionFactory will be an "umbrella" MutliDB session factory -- an
+     * abstraction over a set of SessionFactory objects that all share a common
+     * connection (or pool of connections) to NDB, but each serves a different
+     * database. On creation, only an underlying SessionFactory for the default
+     * database is instantiated; other underlying SessionFactories will be
+     * created on demand the first time a call to getSession() requests a
+     * particular database.
+     *
+     * When set to false in getSessionFactory(), the returned SessionFactory is
+     * capable of handling only a single database.
+     *
+     * If PROPERTY_CLUSTER_MULTI_DB is set to true, PROPERTY_CONNECTION_POOL_SIZE
+     * must not be zero.
+     *
+     * @since 9.4.0
+     */
+    static final String PROPERTY_CLUSTER_MULTI_DB = "com.mysql.clusterj.multi.database";
+
+    /** The default value of the MultiDB property */
+    static final String DEFAULT_PROPERTY_CLUSTER_MULTI_DB = "false";
+
+    /** The name of the table wait retry time property.
+     *  The property denotes a value from 0 to 1000 milliseconds, and specifies
+     *  the behavior whenever Cluster/J attempts to open a table and the table
+     *  is not found. If non-zero, it will try again to open the table, waiting
+     *  up to the configured maximum number of milliseconds. If set to 0, it
+     *  will immediately give up, and throw ClusterJTableException.
+     *
+     *  @since 9.4.0
+     */
+    static final String PROPERTY_TABLE_WAIT_MSEC = "com.mysql.clusterj.table.wait.msec";
+
+    /** The default value of the table wait retry time property. */
+    static final int DEFAULT_PROPERTY_TABLE_WAIT_MSEC = 50;
 
     /** The name of the maximum number of transactions property. For details, see
      * <a href="http://dev.mysql.com/doc/ndbapi/en/ndb-ndb.html#ndb-ndb-init">Ndb::init()</a>

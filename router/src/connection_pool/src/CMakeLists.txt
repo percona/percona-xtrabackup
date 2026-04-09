@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -41,6 +41,14 @@ ROUTER_ADD_SHARED_LIBRARY(connection_pool
   PRIVATE
   OpenSSL::SSL OpenSSL::Crypto
   )
+
+# snd_buf.resize(frame_size)
+IF(MY_COMPILER_IS_GNU AND FPROFILE_USE)
+  ADD_COMPILE_FLAGS(connection_pool.cc
+    COMPILE_FLAGS -Wno-error=stringop-overflow
+    )
+  DOWNGRADE_STRINGOP_WARNINGS(connection_pool)
+ENDIF()
 
 # connection pool plugin
 

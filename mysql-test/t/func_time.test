@@ -443,7 +443,6 @@ select f3 from t1 where f3 between cast("2006-1-1 12:1:1" as datetime) and cast(
 select f3 from t1 where timestamp(f3) between cast("2006-1-1 12:1:1" as datetime) and cast("2006-1-1 12:1:2" as datetime);
 select f1 from t1 where cast("2006-1-1" as date) between f1 and f3;
 select f1 from t1 where cast("2006-1-1" as date) between date(f1) and date(f3);
---skip_if_hypergraph  # Warnings depend on query plan.
 select f1 from t1 where cast("2006-1-1" as date) between f1 and cast('zzz' as date);
 select f1 from t1 where makedate(2006,1) between date(f1) and date(f3);
 select f1 from t1 where makedate(2006,2) between date(f1) and date(f3);
@@ -479,6 +478,7 @@ SELECT SUBTIME('-916:40:00', '416:40:00');
 
 # check if MAKETIME() handles out-of-range values correctly
 SELECT MAKETIME(916,0,0);
+SELECT MAKETIME(-916,0,0);
 SELECT MAKETIME(4294967296, 0, 0);
 SELECT MAKETIME(-4294967296, 0, 0);
 SELECT MAKETIME(0, 4294967296, 0);
@@ -1051,24 +1051,18 @@ SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 CREATE TABLE t1 (a TIME NOT NULL) ENGINE=InnoDB;
 INSERT INTO t1 VALUES ('04:39:24');
 INSERT INTO t1 VALUES ('00:20:09');
---skip_if_hypergraph  # Warnings depend on query plan.
 SELECT a FROM t1
 WHERE CONVERT_TZ(TIMESTAMPADD(YEAR , a, TIMESTAMP('0000-00-00')),
                  '+00:00','+00:00');
---skip_if_hypergraph  # Warnings depend on query plan.
 SELECT a FROM t1
 WHERE CONVERT_TZ(TIMESTAMPADD(YEAR, a, DATE('0000-00-00')),
                  '+00:00','+00:00');
 DROP TABLE t1;
 CREATE TABLE t1 (a TIME) ENGINE=InnoDB;
 INSERT INTO t1 VALUES ('00:00:00');
---skip_if_hypergraph  # Warnings depend on query plan.
 SELECT * FROM t1 WHERE TIMESTAMPDIFF(MONTH, a, TIMESTAMP('0000-00-01')) IS NULL;
---skip_if_hypergraph  # Warnings depend on query plan.
 SELECT * FROM t1 WHERE TIMESTAMPDIFF(MONTH, a, TIMESTAMP'0000-00-01 00:00:00') IS NULL;
---skip_if_hypergraph  # Warnings depend on query plan.
 SELECT * FROM t1 WHERE TIMESTAMPDIFF(MONTH, a, DATE('0000-00-01')) IS NULL;
---skip_if_hypergraph  # Warnings depend on query plan.
 SELECT * FROM t1 WHERE TIMESTAMPDIFF(MONTH, a, DATE'0000-00-01') IS NULL;
 DROP TABLE t1;
 SET sql_mode = default;
@@ -1354,3 +1348,73 @@ SELECT YEAR('1999-09-11') UNION SELECT YEAR('1999-09-11');
 SET SQL_MODE="";
 DO MIN(STR_TO_DATE('4746-12-18' ,'%D  '));
 SET SQL_MODE=default;
+
+--echo #
+--echo # Bug#37807230: assertion null_value || current_thd->is_error failed
+--echo #
+
+CREATE TABLE t1(ic INTEGER, d DATE);
+INSERT INTO t1 VALUES(NULL, DATE'2025-04-11'),
+                     (20250412, DATE'2025-04-11'),
+                     (41331246, DATE'1998-11-30'),
+                     (-711023684, DATE'2028-09-27');
+SELECT * FROM t1 WHERE d > TIMEDIFF(ic, NULL);
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#37818753: Assertion `null_value == (res == nullptr)' failed
+--echo #
+
+CREATE TABLE t1(vc varchar(1));
+INSERT INTO t1 VALUES('a');
+SELECT SUBTIME('0000-00-00 00:00:00', vc) AS c FROM t1;
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#37864777: Assertion `null_value || current_thd->is_error()
+--echo #
+
+CREATE TABLE t1(t time(3));
+INSERT INTO t1 VALUES(TIME'05:27:52.019');
+
+SELECT DATEDIFF('2031-08-06',
+                TIMEDIFF(SUBTIME(t, '12:59:38'), '1994-01-14')) AS c
+FROM t1;
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#37881114: Assertion `mt.time_type == MYSQL_TIMESTAMP_DATETIME'
+--echo #
+
+SELECT SUBTIME(DATE'2005-04-14', TIMESTAMPADD(YEAR, 165, DATE'2025-01-01')) c;
+
+--echo #
+--echo # Bug#37900924: Assertion `mt.time_type == MYSQL_TIMESTAMP_DATETIME'
+--echo #
+
+CREATE TABLE t1 (t time(3) NOT NULL);
+
+INSERT INTO t1 VALUES (TIME'00:20:01.000'), (TIME'14:46:31.033');
+
+SELECT *
+FROM t1
+WHERE t IN (FROM_UNIXTIME(2120220672, '%Y-%m-%d'),
+            TIMESTAMP('2003-10-18', TIMESTAMPADD(QUARTER, 1, '2003-03-07'))
+           );
+
+DROP TABLE t1;
+
+--echo #
+--echo # Bug#37923312: Assertion `l_time1.time_type == MYSQL_TIMESTAMP_DATETIME'
+--echo #
+
+SELECT SUBTIME(FROM_UNIXTIME(3569025024, CONCAT_WS(':', '%V', '%V', '%m', '%T')
+                            ), '00:00:00') AS c;
+
+--echo #
+--echo # Bug#37976294: Assertion `hour <= TIME_MAX_HOUR &&
+--echo #                          minute <= TIME_MAX_MINUTE'
+--echo #
+
+SELECT TIMEDIFF('4617000000', DATE(NULL)) AS c;

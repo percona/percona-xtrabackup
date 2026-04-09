@@ -255,7 +255,7 @@ drop table t1;
 use test;
 
 -->expectwarnings WARN_DATA_TRUNCATED
-create table t1 as select 5.05 / 0.014;
+create table t1 as select 5.05000000000000000000000123456789 + 1;
 
 drop table t1;
 

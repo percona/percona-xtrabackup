@@ -19,6 +19,8 @@ grant ALL on *.* to user2@localhost;
 grant ALL on *.* to user3@localhost;
 grant ALL on *.* to user4@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Switch to (con1, localhost, user1, , )
 select NAME, TYPE, INSTRUMENTED, HISTORY, PROCESSLIST_USER, PROCESSLIST_HOST
 from performance_schema.threads
@@ -108,6 +110,8 @@ drop user user2@localhost;
 drop user user3@localhost;
 drop user user4@localhost;
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 truncate table performance_schema.setup_actors;
 insert into performance_schema.setup_actors
 values ('%', '%', '%', 'YES', 'YES');

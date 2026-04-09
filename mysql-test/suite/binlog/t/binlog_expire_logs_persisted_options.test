@@ -1,0 +1,91 @@
+# ==== Purpose ====
+#
+# Test that persisted binlog_expire_logs_* options take effect during binlog
+# rotations that occur during server start.
+#
+# ==== Requirements ====
+#
+# R1. If binlog_expire_logs_auto_purge=0 is a persisted option, binary logs must
+#     not be purged during server start, even if binary logs have expired
+#     according to compiled-in defaults, command-line options, or
+#     configuration options.
+#
+# R2. If binlog_expire_logs_seconds is a persisted option with a high value,
+#     binary logs must not be purged during server start, even if binary logs
+#     have expired according to compiled-in defaults, command-line options, or
+#     configuration options.
+#
+# ==== Implementation ====
+#
+# 1. This test has --binlog-expire-logs-seconds=1 configured in its .opt file.
+#
+# 2.1. Disable purge using SET PERSIST binlog_expire_logs_auto_purge = 0.
+#
+# 2.2. Rotate the binary log twice and verify that there are three files.
+#
+# 2.3. Stop the server, sleep > 1 second, start the server again.
+#
+# 2.4. R1: Verify that there are four files (another one created at server
+#      start, none purged).
+#
+# 2.5. Clean up using RESET PERSIST.
+#
+# 3.1. Disable purge using SET PERSIST binlog_expire_logs_auto_purge = 0.
+#
+# 3.2. Rotate the binary log twice and verify that there are three files.
+#
+# 3.3. Stop the server, sleep > 1 second, start the server again.
+#
+# 3.4. R1: Verify that there are four files (another one created at server
+#      start, none purged).
+#
+# 3.5. Clean up using RESET PERSIST.
+#
+# ==== References ====
+#
+# BUG#38554467: Binary log may be purged before persited binlog_expire_* options are loaded
+
+# This test is agnostic to binlog format.
+--source include/have_binlog_format_row.inc
+
+# This test restarts the server twice, and has a .opt file that might make it
+# restart a third time.
+--source include/big_test.inc
+
+--let $i = 0
+while ($i < 2) {
+  # Make the binlog serial number deterministic.
+  RESET BINARY LOGS AND GTIDS;
+
+  # 2.1/3.1. In each iteration, test a different way to increase the expiration
+  #          time.
+  if ($i == 0) {
+    SET PERSIST binlog_expire_logs_auto_purge = 0;
+  }
+  if ($i == 1) {
+    SET PERSIST binlog_expire_logs_seconds = 1000000;
+  }
+
+  # 2.2. Flush twice, expect 3 binary logs.
+  FLUSH BINARY LOGS;
+  FLUSH BINARY LOGS;
+  --source include/rpl/deprecated/show_binary_logs.inc
+
+  # 2.3. Restart the server, letting the binary logs age > 1 second so that the
+  # period configured on the command line expires.
+  --source include/stop_mysqld.inc
+  --sleep 2
+  --source include/start_mysqld.inc
+
+  # 2.4. Verify that there are four files
+  --source include/rpl/deprecated/show_binary_logs.inc
+
+  # 2.5. Clean up.
+  RESET PERSIST;
+
+  --inc $i
+}
+
+# Clean up. We need this because SET PERSIST sets the global option value, but
+# RESET PERSIST doesn't.
+SET GLOBAL binlog_expire_logs_seconds = 1;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,13 +27,13 @@
 #include "xcom/result.h"
 #include "xcom/site_def.h"
 
-#ifndef XCOM_WITHOUT_OPENSSL
 #ifdef _WIN32
 /* In OpenSSL before 1.1.0, we need this first. */
 #include <Ws2tcpip.h>
 #include <winsock2.h>
 #endif /* _WIN32 */
 
+#ifndef XCOM_WITHOUT_OPENSSL
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #endif /*! XCOM_WITHOUT_OPENSSL*/

@@ -2696,7 +2696,7 @@ CREATE TABLE `giant_table` (
   KEY `one_other_idx` (`one_id`,`other_id`),
   KEY `other_id` (`other_id`,`time_created`)
 ) ENGINE=InnoDB AUTO_INCREMENT=101651329
-DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci ;
+DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci ;
 
 CREATE TABLE t1 (c1 INT);
 INSERT INTO t1 VALUES (66136540), (68983250), (89627210), (77869520),
@@ -3828,3 +3828,34 @@ EXECUTE stmt1 USING @v1,@v2,@v3,@v4;
 SET optimizer_switch=default;
 
 DROP TABLE tt;
+
+--echo #
+--echo # Bug#37808260: Performance degradation in MySQL>=8.4 vs MySQL 8.0
+--echo #               due to redundant condition not optimized away
+--echo #
+
+CREATE TABLE t1 (f1 INTEGER NOT NULL, f2 INTEGER NOT NULL,
+f3 INTEGER NOT NULL, KEY(f1,f2,f3));
+INSERT INTO t1 VALUES (1,1,1), (1,2,1), (2,3,4), (2,4,5), (3,3,6), (3,4,7);
+ANALYZE TABLE t1;
+let query= SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL));
+--replace_regex $elide_costs
+--skip_if_hypergraph # Final filters are different
+eval EXPLAIN FORMAT=tree $query;
+eval $query;
+let query = SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL)) AND f1 = 1;
+--replace_regex $elide_costs
+--skip_if_hypergraph #Final filters are different
+eval EXPLAIN FORMAT=tree $query;
+eval $query;
+let query = SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL), (1,1,1));
+--replace_regex $elide_costs
+--skip_if_hypergraph #Final filters are different
+eval EXPLAIN FORMAT=tree $query;
+eval $query;
+let query = SELECT f1 FROM t1 WHERE (f1,f2,f3) IN ((1,1,NULL),(2,2,NULL), (1,1,1)) AND f1 = 1;
+--replace_regex $elide_costs
+--skip_if_hypergraph # Final filters are different
+eval EXPLAIN FORMAT=tree $query;
+eval $query;
+DROP TABLE t1;

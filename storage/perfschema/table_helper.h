@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -362,6 +362,8 @@ ulonglong get_field_set(Field *f);
   @param len length of the value
 */
 void set_field_date(Field *f, const char *value, uint len);
+
+void set_field_date_by_daynr(Field *f, ulong daynr);
 
 /**
   Helper, read a value from an @c date field.
@@ -1514,6 +1516,7 @@ class PFS_key_user : public PFS_key_string<USERNAME_LENGTH> {
   bool match(const PFS_user *pfs);
   bool match(const PFS_account *pfs);
   bool match(const PFS_setup_actor *pfs);
+  bool match(const PFS_user_name *pfs);
 };
 
 class PFS_key_host : public PFS_key_string<HOSTNAME_LENGTH> {
@@ -1526,6 +1529,7 @@ class PFS_key_host : public PFS_key_string<HOSTNAME_LENGTH> {
   bool match(const PFS_host *pfs);
   bool match(const PFS_account *pfs);
   bool match(const PFS_setup_actor *pfs);
+  bool match(const PFS_host_name *pfs);
   bool match(const char *host, size_t hostname_length);
 };
 

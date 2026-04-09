@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -53,21 +53,21 @@ class Dummy_object : public dd::Weak_object_impl_<with_pfs> {
     if (n_children > 0)
       for (auto &child : m_children) child = new Dummy_object<with_pfs, 0>();
   }
-  ~Dummy_object() {
+  ~Dummy_object() override {
     if (n_children > 0)
       for (auto &child : m_children) delete child;
   }
 
   // Dummy definitions needed to make the class non-abstract.
-  virtual void debug_print(dd::String_type &) const {}
-  virtual const dd::Object_table &object_table() const {
+  void debug_print(dd::String_type &) const override {}
+  const dd::Object_table &object_table() const override {
     return dd::tables::Tables::instance();
   }
-  virtual bool validate() const { return false; }
-  virtual bool restore_attributes(const dd::Raw_record &) { return false; }
-  virtual bool store_attributes(dd::Raw_record *) { return false; }
-  virtual bool has_new_primary_key() const { return false; }
-  virtual dd::Object_key *create_primary_key() const { return nullptr; }
+  bool validate() const override { return false; }
+  bool restore_attributes(const dd::Raw_record &) override { return false; }
+  bool store_attributes(dd::Raw_record *) override { return false; }
+  bool has_new_primary_key() const override { return false; }
+  dd::Object_key *create_primary_key() const override { return nullptr; }
 };
 
 /**
@@ -84,8 +84,7 @@ void BM_DD_pfs(size_t num_iterations) {
   StopBenchmarkTiming();
   StartBenchmarkTiming();
   for (size_t n = 0; n < num_iterations; n++) {
-    Dummy_object<with_pfs, n_children> *dummy =
-        new Dummy_object<with_pfs, n_children>();
+    auto *dummy = new Dummy_object<with_pfs, n_children>();
     delete dummy;
   }
   StopBenchmarkTiming();

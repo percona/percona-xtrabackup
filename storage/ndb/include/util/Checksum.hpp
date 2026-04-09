@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -26,9 +26,9 @@
 #ifndef CHECKSUM_HPP
 #define CHECKSUM_HPP
 
-#include <assert.h>
 #include <ndb_types.h>
-#include <stddef.h>
+#include <cassert>
+#include <cstddef>
 
 /**
  * We want the compiler to vectorize the xor-loop using SSE extensions.
@@ -87,25 +87,23 @@ T xorChecksum(const T *const buf, const size_t words, T sum) {
  * We only use this aligned variant of XorChecksum for large memory blocks.
  * Thus, the overhead for the extra function call should be relatively small.
  */
-Uint32 computeXorChecksumAligned16(const Uint32 *buf, const size_t words,
-                                   const Uint32 sum);
+Uint32 computeXorChecksumAligned16(const Uint32 *buf, size_t words, Uint32 sum);
 
 inline Uint32 computeXorChecksum(const Uint32 *const buf, const size_t words,
                                  Uint32 sum = 0) {
   if (words < 256) {  // Decided by empirical experiments
     return xorChecksum(buf, words, sum);
-  } else {
-    /**
-     * For larger memory blocks there is a ~20% performance gain using aligned
-     * memory accesses. Blocks has to be large enough to compensate for the
-     * extra overhead of finding the aligned start (below).
-     */
-    unsigned int i;
-    for (i = 0; ((size_t)(buf + i) % 16) != 0; ++i)
-      sum ^= buf[i];  // Advance to a 16 byte aligned address
-
-    return computeXorChecksumAligned16(buf + i, words - i, sum);
   }
+  /**
+   * For larger memory blocks there is a ~20% performance gain using aligned
+   * memory accesses. Blocks has to be large enough to compensate for the
+   * extra overhead of finding the aligned start (below).
+   */
+  unsigned int i;
+  for (i = 0; ((size_t)(buf + i) % 16) != 0; ++i)
+    sum ^= buf[i];  // Advance to a 16 byte aligned address
+
+  return computeXorChecksumAligned16(buf + i, words - i, sum);
 }
 
 #else
@@ -151,10 +149,10 @@ inline Uint32 rotateChecksum(const Uint32 sum, Uint32 byte_steps) {
   assert(byte_steps > 0);
   assert(byte_steps < 4);
 
-  const unsigned char *psum =
+  const auto *psum =
       static_cast<const unsigned char *>(static_cast<const void *>(&sum));
   Uint32 rot;
-  unsigned char *prot = static_cast<unsigned char *>(static_cast<void *>(&rot));
+  auto *prot = static_cast<unsigned char *>(static_cast<void *>(&rot));
   for (int i = 0, j = byte_steps; i < 4; i++, j = (j + 1) % 4) {
     prot[i] = psum[j];
   }
@@ -181,8 +179,7 @@ inline Uint32 computeXorChecksumBytes(const unsigned char *buf, size_t bytes,
 
   // checksum buf[0..rotate-1] per byte
   if (rotate > 0) {
-    unsigned char *psum =
-        static_cast<unsigned char *>(static_cast<void *>(&sum));
+    auto *psum = static_cast<unsigned char *>(static_cast<void *>(&sum));
     for (size_t i = 0; i < rotate && i < bytes; i++) {
       psum[i] ^= buf[i];
     }
@@ -207,8 +204,7 @@ inline Uint32 computeXorChecksumBytes(const unsigned char *buf, size_t bytes,
 
   // checksum buf[rotate+4*words..bytes-1] per byte
   {
-    unsigned char *psum =
-        static_cast<unsigned char *>(static_cast<void *>(&sum));
+    auto *psum = static_cast<unsigned char *>(static_cast<void *>(&sum));
     for (size_t i = rotate, j = rotate + 4 * words; j < bytes;
          j++, i = (i + 1) % 4) {
       psum[i] ^= buf[j];

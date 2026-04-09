@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2005, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2005, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -75,11 +75,11 @@
 
 #include <mysql.h>
 #include <mysqld_error.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <NdbApi.hpp>
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <thread>
 
@@ -152,7 +152,7 @@ int populate(Ndb *myNdb) {
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_scan");
 
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   /**
    * Five blue mercedes
@@ -182,11 +182,11 @@ int populate(Ndb *myNdb) {
   }
 
   NdbTransaction *myTrans = myNdb->startTransaction();
-  if (myTrans == NULL) APIERROR(myNdb->getNdbError());
+  if (myTrans == nullptr) APIERROR(myNdb->getNdbError());
 
   for (i = 0; i < 15; i++) {
     NdbOperation *myNdbOperation = myTrans->getNdbOperation(myTable);
-    if (myNdbOperation == NULL) APIERROR(myTrans->getNdbError());
+    if (myNdbOperation == nullptr) APIERROR(myTrans->getNdbError());
     myNdbOperation->insertTuple();
     myNdbOperation->equal("REG_NO", cars[i].reg_no);
     myNdbOperation->setValue("BRAND", cars[i].brand);
@@ -216,7 +216,7 @@ int scan_delete(Ndb *myNdb, int column, const char *color)
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_scan");
 
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   /**
    * Loop as long as :
@@ -235,7 +235,7 @@ int scan_delete(Ndb *myNdb, int column, const char *color)
     }
 
     myTrans = myNdb->startTransaction();
-    if (myTrans == NULL) {
+    if (myTrans == nullptr) {
       const NdbError err = myNdb->getNdbError();
 
       if (err.status == NdbError::TemporaryError) {
@@ -251,7 +251,7 @@ int scan_delete(Ndb *myNdb, int column, const char *color)
      * Get a scan operation.
      */
     myScanOp = myTrans->getNdbScanOperation(myTable);
-    if (myScanOp == NULL) {
+    if (myScanOp == nullptr) {
       std::cout << myTrans->getNdbError().message << std::endl;
       myNdb->closeTransaction(myTrans);
       return -1;
@@ -355,7 +355,7 @@ int scan_delete(Ndb *myNdb, int column, const char *color)
     return 0;
   }
 
-  if (myTrans != 0) {
+  if (myTrans != nullptr) {
     std::cout << myTrans->getNdbError().message << std::endl;
     myNdb->closeTransaction(myTrans);
   }
@@ -379,7 +379,7 @@ int scan_update(Ndb *myNdb, int update_column, const char *before_color,
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_scan");
 
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   /**
    * Loop as long as :
@@ -398,7 +398,7 @@ int scan_update(Ndb *myNdb, int update_column, const char *before_color,
     }
 
     myTrans = myNdb->startTransaction();
-    if (myTrans == NULL) {
+    if (myTrans == nullptr) {
       const NdbError err = myNdb->getNdbError();
 
       if (err.status == NdbError::TemporaryError) {
@@ -414,7 +414,7 @@ int scan_update(Ndb *myNdb, int update_column, const char *before_color,
      * Get a scan operation.
      */
     myScanOp = myTrans->getNdbScanOperation(myTable);
-    if (myScanOp == NULL) {
+    if (myScanOp == nullptr) {
       std::cout << myTrans->getNdbError().message << std::endl;
       myNdb->closeTransaction(myTrans);
       return -1;
@@ -468,7 +468,7 @@ int scan_update(Ndb *myNdb, int update_column, const char *before_color,
          * Get update operation
          */
         NdbOperation *myUpdateOp = myScanOp->updateCurrentTuple();
-        if (myUpdateOp == 0) {
+        if (myUpdateOp == nullptr) {
           std::cout << myTrans->getNdbError().message << std::endl;
           myNdb->closeTransaction(myTrans);
           return -1;
@@ -527,7 +527,7 @@ int scan_update(Ndb *myNdb, int update_column, const char *before_color,
     return 0;
   }
 
-  if (myTrans != 0) {
+  if (myTrans != nullptr) {
     std::cout << myTrans->getNdbError().message << std::endl;
     myNdb->closeTransaction(myTrans);
   }
@@ -552,7 +552,7 @@ int scan_print(Ndb *myNdb) {
   const NdbDictionary::Dictionary *myDict = myNdb->getDictionary();
   const NdbDictionary::Table *myTable = myDict->getTable("api_scan");
 
-  if (myTable == NULL) APIERROR(myDict->getNdbError());
+  if (myTable == nullptr) APIERROR(myDict->getNdbError());
 
   /**
    * Loop as long as :
@@ -571,7 +571,7 @@ int scan_print(Ndb *myNdb) {
     }
 
     myTrans = myNdb->startTransaction();
-    if (myTrans == NULL) {
+    if (myTrans == nullptr) {
       const NdbError err = myNdb->getNdbError();
 
       if (err.status == NdbError::TemporaryError) {
@@ -587,7 +587,7 @@ int scan_print(Ndb *myNdb) {
      * NDBAPI.
      */
     myScanOp = myTrans->getNdbScanOperation(myTable);
-    if (myScanOp == NULL) {
+    if (myScanOp == nullptr) {
       std::cout << myTrans->getNdbError().message << std::endl;
       myNdb->closeTransaction(myTrans);
       return -1;
@@ -611,7 +611,8 @@ int scan_print(Ndb *myNdb) {
     myRecAttr[0] = myScanOp->getValue("REG_NO");
     myRecAttr[1] = myScanOp->getValue("BRAND");
     myRecAttr[2] = myScanOp->getValue("COLOR");
-    if (myRecAttr[0] == NULL || myRecAttr[1] == NULL || myRecAttr[2] == NULL) {
+    if (myRecAttr[0] == nullptr || myRecAttr[1] == nullptr ||
+        myRecAttr[2] == nullptr) {
       std::cout << myTrans->getNdbError().message << std::endl;
       myNdb->closeTransaction(myTrans);
       return -1;
@@ -712,7 +713,7 @@ void ndb_run_scan(const char *connectstring) {
   {
     const NdbDictionary::Dictionary *myDict = myNdb.getDictionary();
     const NdbDictionary::Table *t = myDict->getTable("api_scan");
-    if (t == NULL) {
+    if (t == nullptr) {
       std::cout << "Dictionary::getTable() failed.";
       exit(-1);
     }

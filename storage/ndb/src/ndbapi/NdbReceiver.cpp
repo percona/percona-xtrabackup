@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -143,8 +143,8 @@ class NdbReceiverBuffer {
   static const Uint32 headerWords = 4;  // 4*Uint32's below
 
   // No copying / assignment:
-  NdbReceiverBuffer(const NdbReceiverBuffer &);
-  NdbReceiverBuffer &operator=(const NdbReceiverBuffer &);
+  NdbReceiverBuffer(const NdbReceiverBuffer &) = delete;
+  NdbReceiverBuffer &operator=(const NdbReceiverBuffer &) = delete;
 
   const Uint32 m_maxRows;       // Max capacity in #rows / #keys
   const Uint32 m_bufSizeWords;  // Size of 'm_buffer'
@@ -312,6 +312,8 @@ NdbReceiver::NdbReceiver(Ndb *aNdb)
       m_owner(nullptr),
       m_ndb_record(nullptr),
       m_row_buffer(nullptr),
+      m_row_side_buffer(nullptr),
+      m_row_side_buffer_size(0),
       m_recv_buffer(nullptr),
       m_read_range_no(false),
       m_read_key_info(false),
@@ -347,6 +349,8 @@ int NdbReceiver::init(ReceiverType type, void *owner) {
   m_owner = owner;
   m_ndb_record = nullptr;
   m_row_buffer = nullptr;
+  m_row_side_buffer = nullptr;
+  m_row_side_buffer_size = 0;
   m_recv_buffer = nullptr;
   m_read_range_no = false;
   m_read_key_info = false;
@@ -368,10 +372,14 @@ int NdbReceiver::init(ReceiverType type, void *owner) {
 }
 
 void NdbReceiver::do_setup_ndbrecord(const NdbRecord *ndb_record,
-                                     char *row_buffer, bool read_range_no,
-                                     bool read_key_info) {
+                                     char *row_buffer, char *row_side_buffer,
+                                     Uint32 row_side_buffer_size,
+                                     bool read_range_no, bool read_key_info) {
+  assert(row_side_buffer != nullptr);
   m_ndb_record = ndb_record;
   m_row_buffer = row_buffer;
+  m_row_side_buffer = row_side_buffer;
+  m_row_side_buffer_size = row_side_buffer_size;
   m_recv_buffer = nullptr;
   m_read_range_no = read_range_no;
   m_read_key_info = read_key_info;
@@ -392,6 +400,8 @@ void NdbReceiver::release() {
   m_ndb_record = nullptr;
   m_row_buffer = nullptr;
   m_recv_buffer = nullptr;
+  m_row_side_buffer = nullptr;
+  m_row_side_buffer_size = 0;
 }
 
 NdbRecAttr *NdbReceiver::getValue(const NdbColumnImpl *tAttrInfo,
@@ -412,12 +422,20 @@ NdbRecAttr *NdbReceiver::getValue(const NdbColumnImpl *tAttrInfo,
   return nullptr;
 }
 
-void NdbReceiver::getValues(const NdbRecord *rec, char *row_ptr) {
+void NdbReceiver::getValues(const NdbRecord *rec, char *row_ptr,
+                            char *row_side_buffer,
+                            Uint32 row_side_buffer_size) {
   assert(m_recv_buffer == nullptr);
   assert(rec != nullptr);
 
+  require(m_ndb_record == nullptr);
+  require(m_row_buffer == nullptr);
   m_ndb_record = rec;
   m_row_buffer = row_ptr;
+
+  require(m_row_side_buffer == nullptr);
+  m_row_side_buffer = row_side_buffer;
+  m_row_side_buffer_size = row_side_buffer_size;
 }
 
 void NdbReceiver::prepareSend() {
@@ -486,9 +504,13 @@ void NdbReceiver::calculate_batch_size(Uint32 parallelism, Uint32 &batch_size,
 // static
 Uint32 NdbReceiver::ndbrecord_rowsize(const NdbRecord *result_record,
                                       bool read_range_no) {
-  // Unpacked NdbRecords are stored in its full unprojected form
-  Uint32 rowsize = (result_record) ? result_record->m_row_size : 0;
-
+  Uint32 rowsize = 0;
+  if (result_record) {
+    // Unpacked NdbRecords are stored in its full unprojected form
+    rowsize += result_record->m_row_size;
+    // Add space for storing values off record
+    rowsize += result_record->m_row_side_buffer_size;
+  }
   // After unpack, the optional RANGE_NO is stored as an Uint32
   if (read_range_no) rowsize += sizeof(Uint32);
 
@@ -538,10 +560,13 @@ static Uint32 packed_rowsize(const NdbRecord *result_record,
           default:
             pos = pad_pos(pos, align, bitPos);
             bitPos = 0;
-            pos += col->maxSize;
+            if (col->flags & NdbRecord::UsesRowSideBuffer) {
+              pos += col->maxValueSize;
+            } else {
+              pos += col->maxSize;
+            }
             break;
         }
-
         if (col->flags & NdbRecord::IsNullable) nullCount++;
       }
     }
@@ -746,7 +771,7 @@ static inline UintPtr pad_pos(UintPtr pos, Uint32 align, Uint32 bitPos) {
 }
 
 static inline const Uint8 *pad(const Uint8 *src, Uint32 align, Uint32 bitPos) {
-  UintPtr ptr = UintPtr(src);
+  auto ptr = UintPtr(src);
   return (const Uint8 *)pad_pos(ptr, align, bitPos);
 }
 
@@ -757,13 +782,13 @@ static inline const Uint8 *pad(const Uint8 *src, Uint32 align, Uint32 bitPos) {
  */
 static void handle_packed_bit(const char *_src, Uint32 pos, Uint32 len,
                               char *_dst) {
-  const Uint32 *src = (const Uint32 *)_src;
+  const auto *src = (const Uint32 *)_src;
   assert((UintPtr(src) & 3) == 0);
 
   /* Convert char* to aligned Uint32* and some byte offset */
-  UintPtr uiPtr = UintPtr((Uint32 *)_dst);
+  auto uiPtr = UintPtr((Uint32 *)_dst);
   Uint32 dstByteOffset = Uint32(uiPtr) & 3;
-  Uint32 *dst = (Uint32 *)(uiPtr - dstByteOffset);
+  auto *dst = (Uint32 *)(uiPtr - dstByteOffset);
 
   BitmaskImpl::copyField(dst, dstByteOffset << 3, src, pos, len);
 }
@@ -781,8 +806,8 @@ Uint32 NdbReceiver::unpackRecAttr(NdbRecAttr **recAttr, Uint32 bmlen,
   constexpr Uint32 ERROR = UINT32_MAX;
   if (unlikely(bmlen > aLength)) return ERROR;
   NdbRecAttr *currRecAttr = *recAttr;
-  const Uint8 *src = (const Uint8 *)(aDataPtr + bmlen);
-  const Uint8 *const end = (const Uint8 *)(aDataPtr + aLength);
+  const auto *src = (const Uint8 *)(aDataPtr + bmlen);
+  const auto *const end = (const Uint8 *)(aDataPtr + aLength);
   Uint32 bitPos = 0;
   for (Uint32 i = 0, attrId = 0; i < 32 * bmlen; i++, attrId++) {
     if (BitmaskImpl::get(bmlen, aDataPtr, i)) {
@@ -859,7 +884,10 @@ int NdbReceiver::get_range_no() const {
 
   if (unlikely(!m_read_range_no)) return -1;
 
-  memcpy(&range_no, m_row_buffer + m_ndb_record->m_row_size, sizeof(range_no));
+  memcpy(&range_no,
+         m_row_buffer + m_ndb_record->m_row_size +
+             m_ndb_record->m_row_side_buffer_size,
+         sizeof(range_no));
   return (int)range_no;
 }
 
@@ -910,12 +938,15 @@ static void handle_bitfield_ndbrecord(const NdbRecord::Attr *col,
  */
 // static
 Uint32 NdbReceiver::unpackNdbRecord(const NdbRecord *rec, const Uint32 bmlen,
-                                    const Uint32 *aDataPtr, char *row) {
+                                    const Uint32 *aDataPtr, char *row,
+                                    char *row_side_buffer,
+                                    Uint32 row_side_buffer_size) {
   assert(bmlen <= 0x07FF);
-  const Uint8 *src = (const Uint8 *)(aDataPtr + bmlen);
+  const auto *src = (const Uint8 *)(aDataPtr + bmlen);
   uint bitPos = 0;
   uint attrId = 0;
   uint bitIndex = 0;
+  Uint32 row_side_buffer_used = 0;
 
   /* Use bitmap to determine which columns have been sent */
   for (uint nextBit = BitmaskImpl::find_first(bmlen, aDataPtr);
@@ -932,7 +963,7 @@ Uint32 NdbReceiver::unpackNdbRecord(const NdbRecord *rec, const Uint32 bmlen,
     assert(next_index < rec->noOfColumns);
 
     const NdbRecord::Attr *col = &rec->columns[next_index];
-    assert((col->flags & NdbRecord::IsBlob) == 0);
+    assert((col->flags & NdbRecord::UsesBlobHandle) == 0);
 
     /* If col is nullable, check for null and set/clear NULL-bit */
     if (col->flags & NdbRecord::IsNullable) {
@@ -959,6 +990,45 @@ Uint32 NdbReceiver::unpackNdbRecord(const NdbRecord *rec, const Uint32 bmlen,
     }
 
     src = pad(src, align, bitPos);
+
+    if (col->flags & NdbRecord::UsesRowSideBuffer) {
+      require(col->flags & NdbRecord::IsMysqldBlob);
+      require(col->flags & NdbRecord::IsVar2ByteLen);
+      static constexpr uint length_bytes = 4;
+      require(col->maxSize == length_bytes + 8 /* portable ptr size */);
+      /*
+       * Convert received data from NDB VAR attribute format (2 byte length,
+       * data) to 'MySQL LongBlob' format data (4 byte length, data ptr) stored
+       * in row buffer, and the data bytes in row side buffer.
+       */
+      uint len;
+      const Uint8 *data;
+      len = src[0] + 256 * src[1];
+      src += 2;
+      char *col_row_ptr = &row[col->offset];
+      uint copylen = len;
+      for (uint i = 0; i < length_bytes; i++, copylen /= 256)
+        *col_row_ptr++ = copylen % 256;
+      if (len > 0) {
+        /*
+         * Need to copy value to row side buffer that will still be valid when
+         * value is returned to user.
+         */
+        if (row_side_buffer_used + len > row_side_buffer_size)
+          return UINT32_MAX;  // Error, out of row side buffer
+        require(row_side_buffer);
+        Uint8 *value = (Uint8 *)row_side_buffer + row_side_buffer_used;
+        memcpy(value, src, len);
+        data = value;
+        row_side_buffer_used += len;
+      } else
+        data = src;
+      memcpy(col_row_ptr, &data, 8);
+
+      src += len;
+      continue;
+    }
+
     bitPos = 0;
     Uint32 sz;
     char *col_row_ptr = &row[col->offset];
@@ -975,7 +1045,7 @@ Uint32 NdbReceiver::unpackNdbRecord(const NdbRecord *rec, const Uint32 bmlen,
     src += sz;
     memcpy(col_row_ptr, source, sz);
   }
-  const Uint32 len = (Uint32)(((const Uint32 *)pad(src, 0, bitPos)) - aDataPtr);
+  const auto len = (Uint32)(((const Uint32 *)pad(src, 0, bitPos)) - aDataPtr);
   return len;
 }
 
@@ -1050,8 +1120,10 @@ int NdbReceiver::unpackRow(const Uint32 *aDataPtr, Uint32 aLength, char *row) {
         assert(row != nullptr);
         const Uint32 len = unpackNdbRecord(m_ndb_record,
                                            attrSize >> 2,  // Bitmap length
-                                           aDataPtr, row);
-        assert(aLength >= len);
+                                           aDataPtr, row, m_row_side_buffer,
+                                           m_row_side_buffer_size);
+        if (len == UINT32_MAX) return -1;
+        assert(aLength >= (unsigned)len);
         aDataPtr += len;
         aLength -= len;
       }
@@ -1062,7 +1134,9 @@ int NdbReceiver::unpackRow(const Uint32 *aDataPtr, Uint32 aLength, char *row) {
         assert(row != nullptr);
         assert(m_read_range_no);
         assert(attrSize == sizeof(Uint32));
-        memcpy(row + m_ndb_record->m_row_size, aDataPtr++, sizeof(Uint32));
+        memcpy(row + m_ndb_record->m_row_size +
+                   m_ndb_record->m_row_side_buffer_size,
+               aDataPtr++, sizeof(Uint32));
         aLength--;
       }
 
@@ -1105,14 +1179,14 @@ int NdbReceiver::unpackRow(const Uint32 *aDataPtr, Uint32 aLength, char *row) {
       m_rec_attr_data = aDataPtr;
       m_rec_attr_len = aLength;
       return 0;
-    } else {
-      /* Put values into RecAttr now */
-      const int ret = handle_rec_attrs(m_firstRecAttr, aDataPtr, aLength);
-      if (unlikely(ret != 0)) return -1;
-
-      aDataPtr += aLength;
-      aLength = 0;
     }
+    /* Put values into RecAttr now */
+    const int ret = handle_rec_attrs(m_firstRecAttr, aDataPtr, aLength);
+    if (unlikely(ret != 0)) return -1;
+
+    aDataPtr += aLength;
+    aLength = 0;
+
   }  // if (aLength > 0)
 
   m_rec_attr_data = nullptr;
@@ -1269,10 +1343,10 @@ int NdbReceiver::execSCANOPCONF(Uint32 tcPtrI, Uint32 len, Uint32 rows) {
 void NdbReceiver::setErrorCode(int code) {
   theMagicNumber = 0;
   if (getType() == NDB_QUERY_OPERATION) {
-    NdbQueryOperationImpl *op = (NdbQueryOperationImpl *)getOwner();
+    auto *op = (NdbQueryOperationImpl *)getOwner();
     op->getQuery().setErrorCode(code);
   } else {
-    NdbOperation *const op = (NdbOperation *)getOwner();
+    auto *const op = (NdbOperation *)getOwner();
     assert(op->checkMagicNumber() == 0);
     op->setErrorCode(code);
   }

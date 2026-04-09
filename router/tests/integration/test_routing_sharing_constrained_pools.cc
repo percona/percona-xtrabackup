@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +42,9 @@
 #include <gtest/gtest-param-test.h>
 #include <gtest/gtest.h>
 
+#ifdef RAPIDJSON_NO_SIZETYPEDEFINE
 #include "my_rapidjson_size_t.h"
+#endif
 
 #include <rapidjson/pointer.h>
 
@@ -97,6 +99,17 @@ integration_tests::Procs procs;
 std::ostream &operator<<(std::ostream &os, MysqlError e) {
   os << e.sql_state() << " (" << e.value() << ") " << e.message();
   return os;
+}
+
+static stdx::expected<void, MysqlError> cli_connect(
+    MysqlClient &cli, const mysql_harness::Destination &dest) {
+  if (dest.is_local()) {
+    const auto &local_dest = dest.as_local();
+    return cli.connect(MysqlClient::unix_socket_t{}, local_dest.path());
+  }
+
+  const auto &tcp_dest = dest.as_tcp();
+  return cli.connect(tcp_dest.hostname(), tcp_dest.port());
 }
 
 /**
@@ -364,9 +377,8 @@ class SharedRouter {
   static std::vector<std::string> destinations_from_shared_servers(
       const std::array<SharedServer *, N> &servers) {
     std::vector<std::string> dests;
-    for (const auto &s : servers) {
-      dests.push_back(s->server_host() + ":" +
-                      std::to_string(s->server_port()));
+    for (const auto &srv : servers) {
+      dests.push_back(srv->classic_tcp_destination().str());
     }
 
     return dests;
@@ -472,12 +484,11 @@ class SharedRouter {
     }
   }
 
-  [[nodiscard]] auto host() const { return router_host_; }
-
-  [[nodiscard]] uint16_t port(const ShareConnectionParam &param,
-                              size_t route_ndx = 0) const {
-    return ports_.at(std::make_tuple(param.client_ssl_mode,
-                                     param.server_ssl_mode, route_ndx));
+  [[nodiscard]] mysql_harness::TcpDestination router_tcp_destination(
+      const ShareConnectionParam &param, size_t route_ndx = 0) {
+    return {router_host_,
+            ports_.at(std::make_tuple(param.client_ssl_mode,
+                                      param.server_ssl_mode, route_ndx))};
   }
 
   [[nodiscard]] auto rest_port() const { return rest_port_; }
@@ -495,7 +506,7 @@ class SharedRouter {
       cli.username("root");
       cli.password("");
 
-      ASSERT_NO_ERROR(cli.connect(host(), port(param)));
+      ASSERT_NO_ERROR(cli_connect(cli, router_tcp_destination(param)));
     }
 
     // wait for the connections appear in the pool.
@@ -700,7 +711,7 @@ class TestEnv : public ::testing::Environment {
       cli->username(account.username);
       cli->password(account.password);
 
-      auto connect_res = cli->connect(s->server_host(), s->server_port());
+      auto connect_res = cli_connect(*cli, s->classic_tcp_destination());
       ASSERT_NO_ERROR(connect_res);
 
       ASSERT_NO_ERROR(
@@ -911,8 +922,7 @@ class ShareConnectionTestWithRestartedServer
 
   static void start_intermediate_router_for_server(
       SharedRestartableRouter *inter, SharedServer *s) {
-    inter->spawn_router(
-        {s->server_host() + ":"s + std::to_string(s->server_port())});
+    inter->spawn_router({s->classic_tcp_destination().str()});
   }
 
   static void restart_intermediate_router(SharedRestartableRouter *inter,
@@ -927,7 +937,7 @@ class ShareConnectionTestWithRestartedServer
     // instead of purely waiting for the expiry, the intermediate router is
     // restarted which drops connections.
     for (auto [ndx, s] : stdx::views::enumerate(shared_servers())) {
-      if (s->server_port() == srv_port) {
+      if (s->classic_tcp_destination().port() == srv_port) {
         auto inter = intermediate_routers()[ndx];
 
         // stop the intermediate router to force a close of all connections
@@ -964,6 +974,14 @@ class ShareConnectionTestTemp
   static void SetUpTestSuite() {
     for (const auto &s : shared_servers()) {
       if (s->mysqld_failed_to_start()) GTEST_SKIP();
+
+      auto admin_cli_res = s->admin_cli();
+      ASSERT_NO_ERROR(admin_cli_res);
+
+      ASSERT_NO_ERROR(
+          admin_cli_res->query("DROP TABLE IF EXISTS testing.locked"));
+      ASSERT_NO_ERROR(admin_cli_res->query(
+          "CREATE TABLE testing.locked (id SERIAL) SELECT 1"));
     }
 
     TestWithSharedRouter::SetUpTestSuite(
@@ -1304,6 +1322,20 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
   const bool can_fetch_password = !(GetParam().client_ssl_mode == kDisabled);
   const bool can_share = GetParam().can_share();
 
+  // connection to the server to block the cli1-connection with a transaction.
+  MysqlClient cli_server;
+
+  {
+    auto account = SharedServer::admin_account();
+
+    cli_server.username(account.username);
+    cli_server.password(account.password);
+
+    auto connect_res =
+        cli_connect(cli_server, shared_servers()[0]->classic_tcp_destination());
+    ASSERT_NO_ERROR(connect_res);
+  }
+
   MysqlClient cli1;
   MysqlClient cli2;
   MysqlClient cli3;
@@ -1314,8 +1346,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
     cli1.username(account.username);
     cli1.password(account.password);
 
-    auto connect_res = cli1.connect(shared_router()->host(),
-                                    shared_router()->port(GetParam()));
+    auto connect_res =
+        cli_connect(cli1, shared_router()->router_tcp_destination(GetParam()));
 
     if (!can_fetch_password) {
       ASSERT_ERROR(connect_res);
@@ -1353,9 +1385,22 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
 
   // - set-option
   // - add to stash
-  // - do
+  // - select
 
-  ASSERT_NO_ERROR(cli1.send_query("DO SLEEP(0.2)"));
+  // prepare to block the cli1-connection
+  SCOPED_TRACE("// block the 1st connection for a bit.");
+  ASSERT_NO_ERROR(cli_server.query("START TRANSACTION"));
+  {
+    auto locked_res =
+        cli_server.query("SELECT * FROM testing.locked FOR UPDATE");
+    ASSERT_NO_ERROR(locked_res);
+    for (const auto &_ [[maybe_unused]] : locked_res.value()) {
+      // traverse the resultset to take from the connection.
+    }
+  }
+
+  // block until cli2-connect is finished.
+  ASSERT_NO_ERROR(cli1.send_query("SELECT * FROM testing.locked FOR UPDATE"));
 
   ASSERT_NO_ERROR(shared_router()->wait_for_stashed_server_connections(0, 10s));
 
@@ -1365,8 +1410,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
     cli2.username(account.username);
     cli2.password(account.password);
 
-    ASSERT_NO_ERROR(cli2.connect(shared_router()->host(),
-                                 shared_router()->port(GetParam())));
+    ASSERT_NO_ERROR(
+        cli_connect(cli2, shared_router()->router_tcp_destination(GetParam())));
 
     if (can_share && can_fetch_password) {
       ASSERT_NO_ERROR(
@@ -1394,12 +1439,26 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
     }
   }
 
-  // - do
-  SCOPED_TRACE("// wait until 1st connection finished SLEEP()ing.");
-  ASSERT_NO_ERROR(cli1.read_query_result());
+  // - select
+  SCOPED_TRACE("// release the lock to unblock cli1.");
+  ASSERT_NO_ERROR(cli_server.query("ROLLBACK"));
+
+  SCOPED_TRACE("// wait until 1st connection finished waiting on the lock.");
+  {
+    auto locked_res = cli1.read_query_result();
+    ASSERT_NO_ERROR(locked_res);
+    for (const auto &_ [[maybe_unused]] : locked_res.value()) {
+      // traverse the resultset to take from the connection.
+    }
+  }
 
   // cli2 should be stashed
   // cli1 should be stashed
+
+  if (can_share && can_fetch_password) {
+    ASSERT_NO_ERROR(
+        shared_router()->wait_for_stashed_server_connections(2, 10s));
+  }
 
   {
     auto events_res = changed_event_counters(cli1);  // the (+ select)
@@ -1410,21 +1469,18 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
         // cli1: set-option
         // cli1: do (+ select)
         EXPECT_THAT(*events_res,
-                    ElementsAre(Pair("statement/sql/do", 1),
-                                Pair("statement/sql/select", 2),
+                    ElementsAre(Pair("statement/sql/select", 3),
                                 Pair("statement/sql/set_option", 1)));
       } else {
         // cli1: set-option
         // cli1: do (+ select)
         EXPECT_THAT(*events_res,
-                    ElementsAre(Pair("statement/sql/do", 1),
-                                Pair("statement/sql/select", 1),
+                    ElementsAre(Pair("statement/sql/select", 2),
                                 Pair("statement/sql/set_option", 1)));
       }
     } else {
       // no sharing possible, router is not injection SET statements.
-      EXPECT_THAT(*events_res, ElementsAre(Pair("statement/sql/do", 1),
-                                           Pair("statement/sql/select", 1)));
+      EXPECT_THAT(*events_res, ElementsAre(Pair("statement/sql/select", 2)));
     }
   }
 
@@ -1476,8 +1532,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
     cli3.username(account.username);
     cli3.password(account.password);
 
-    ASSERT_NO_ERROR(cli3.connect(shared_router()->host(),
-                                 shared_router()->port(GetParam())));
+    ASSERT_NO_ERROR(
+        cli_connect(cli3, shared_router()->router_tcp_destination(GetParam())));
 
     if (can_share && can_fetch_password) {
       ASSERT_NO_ERROR(
@@ -1485,8 +1541,21 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
     }
   }
 
-  // start a long running query, takes the connection from the stash.
-  ASSERT_NO_ERROR(cli3.send_query("SELECT SLEEP(0.2), CONNECTION_ID()"));
+  // prepare to block cli3
+  ASSERT_NO_ERROR(cli_server.query("START TRANSACTION"));
+  {
+    auto locked_res =
+        cli_server.query("SELECT * FROM testing.locked FOR UPDATE");
+    ASSERT_NO_ERROR(locked_res);
+    for (const auto &_ [[maybe_unused]] : locked_res.value()) {
+      // traverse the resultset to take from the connection.
+    }
+  }
+
+  SCOPED_TRACE(
+      "// start a long running query, takes the connection from the stash.");
+  ASSERT_NO_ERROR(cli3.send_query(
+      "SELECT id, CONNECTION_ID() FROM testing.locked FOR UPDATE"));
 
   ASSERT_NO_ERROR(shared_router()->wait_for_stashed_server_connections(0, 10s));
 
@@ -1506,6 +1575,9 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, overlapping_connections) {
       }
     }
   }
+
+  // unblock cli3
+  ASSERT_NO_ERROR(cli_server.query("ROLLBACK"));
 
   {
     auto cmd_res = cli3.read_query_result();
@@ -1544,7 +1616,7 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
   cli.password(account.password);
 
   ASSERT_NO_ERROR(
-      cli.connect(shared_router()->host(), shared_router()->port(GetParam())));
+      cli_connect(cli, shared_router()->router_tcp_destination(GetParam())));
 
   if (can_share) {
     // connection is in the pool
@@ -1588,8 +1660,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
   cli_blocker.username(account.username);
   cli_blocker.password(account.password);
 
-  ASSERT_NO_ERROR(cli_blocker.connect(shared_router()->host(),
-                                      shared_router()->port(GetParam())));
+  ASSERT_NO_ERROR(cli_connect(
+      cli_blocker, shared_router()->router_tcp_destination(GetParam())));
 
   {
     auto query_res = cli_blocker.query("DO /* client[1] = FAIL */ 1; DO 2");
@@ -1624,6 +1696,20 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
     s->flush_privileges();  // reset the auth-cache
   }
 
+  // connection to the server to block the cli1-connection with a transaction.
+  MysqlClient cli_server;
+
+  {
+    auto account = SharedServer::admin_account();
+
+    cli_server.username(account.username);
+    cli_server.password(account.password);
+
+    auto connect_res =
+        cli_connect(cli_server, shared_servers()[0]->classic_tcp_destination());
+    ASSERT_NO_ERROR(connect_res);
+  }
+
   MysqlClient cli1;
   MysqlClient cli2;
   MysqlClient cli3;
@@ -1637,8 +1723,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
     cli1.username(account.username);
     cli1.password(account.password);
 
-    auto connect_res = cli1.connect(shared_router()->host(),
-                                    shared_router()->port(GetParam()));
+    auto connect_res =
+        cli_connect(cli1, shared_router()->router_tcp_destination(GetParam()));
 
     if (!can_fetch_password) {
       ASSERT_ERROR(connect_res);
@@ -1680,9 +1766,21 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
   // - add to stash
 
   SCOPED_TRACE("// block the 1st connection for a bit.");
-  ASSERT_NO_ERROR(cli1.send_query("DO SLEEP(0.2)"));
+  // prepare to block the cli1-connection
+  ASSERT_NO_ERROR(cli_server.query("START TRANSACTION"));
+  {
+    auto locked_res =
+        cli_server.query("SELECT * FROM testing.locked FOR UPDATE");
+    ASSERT_NO_ERROR(locked_res);
+    for (const auto &_ [[maybe_unused]] : locked_res.value()) {
+      // traverse the resultset to take from the connection.
+    }
+  }
 
-  // - do
+  // block until cli2-connect is finished.
+  ASSERT_NO_ERROR(cli1.send_query("SELECT * FROM testing.locked FOR UPDATE"));
+
+  // - select
   ASSERT_NO_ERROR(shared_router()->wait_for_stashed_server_connections(0, 10s));
 
   SCOPED_TRACE("// open a 2nd connection, that gets added to the pool.");
@@ -1693,8 +1791,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
     cli2.username(account.username);
     cli2.password(account.password);
 
-    auto connect_res = cli2.connect(shared_router()->host(),
-                                    shared_router()->port(GetParam()));
+    auto connect_res =
+        cli_connect(cli2, shared_router()->router_tcp_destination(GetParam()));
     if (GetParam().client_ssl_mode == kDisabled &&
         (GetParam().server_ssl_mode == kRequired ||
          GetParam().server_ssl_mode == kPreferred)) {
@@ -1739,11 +1837,25 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
   // - set-option
   // - select
 
-  SCOPED_TRACE("// wait until 1st connection finished SLEEP()ing.");
-  ASSERT_NO_ERROR(cli1.read_query_result());
+  SCOPED_TRACE("// release the lock to unblock cli1.");
+  ASSERT_NO_ERROR(cli_server.query("ROLLBACK"));
+
+  SCOPED_TRACE("// wait until 1st connection finished waiting on the lock.");
+  {
+    auto locked_res = cli1.read_query_result();
+    ASSERT_NO_ERROR(locked_res);
+    for (const auto &_ [[maybe_unused]] : locked_res.value()) {
+      // traverse the resultset to take from the connection.
+    }
+  }
 
   // cli2 should be stashed
   // cli1 should be stashed
+  if (can_share && can_fetch_password) {
+    ASSERT_NO_ERROR(
+        shared_router()->wait_for_stashed_server_connections(2, 10s));
+  }
+
   {
     auto events_res = changed_event_counters(cli1);  // the (+ select)
     ASSERT_NO_ERROR(events_res);
@@ -1753,21 +1865,18 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
         // cli1: set-option
         // cli1: do (+ select)
         EXPECT_THAT(*events_res,
-                    ElementsAre(Pair("statement/sql/do", 1),
-                                Pair("statement/sql/select", 2),
+                    ElementsAre(Pair("statement/sql/select", 3),
                                 Pair("statement/sql/set_option", 1)));
       } else {
         // cli1: set-option
         // cli1: do (+ select)
         EXPECT_THAT(*events_res,
-                    ElementsAre(Pair("statement/sql/do", 1),
-                                Pair("statement/sql/select", 1),
+                    ElementsAre(Pair("statement/sql/select", 2),
                                 Pair("statement/sql/set_option", 1)));
       }
     } else {
       // no sharing possible, router is not injection SET statements.
-      EXPECT_THAT(*events_res, ElementsAre(Pair("statement/sql/do", 1),
-                                           Pair("statement/sql/select", 1)));
+      EXPECT_THAT(*events_res, ElementsAre(Pair("statement/sql/select", 2)));
     }
   }
 
@@ -1819,8 +1928,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
     cli3.username(account.username);
     cli3.password(account.password);
 
-    ASSERT_NO_ERROR(cli3.connect(shared_router()->host(),
-                                 shared_router()->port(GetParam())));
+    ASSERT_NO_ERROR(
+        cli_connect(cli3, shared_router()->router_tcp_destination(GetParam())));
   }
 
   if (can_share && can_fetch_password) {
@@ -1830,7 +1939,19 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
 
   SCOPED_TRACE(
       "// start a long running query, takes the connection from the pool.");
-  ASSERT_NO_ERROR(cli3.send_query("SELECT SLEEP(0.2), CONNECTION_ID()"));
+  // prepare to block cli3
+  ASSERT_NO_ERROR(cli_server.query("START TRANSACTION"));
+  {
+    auto locked_res =
+        cli_server.query("SELECT * FROM testing.locked FOR UPDATE");
+    ASSERT_NO_ERROR(locked_res);
+    for (const auto &_ [[maybe_unused]] : locked_res.value()) {
+      // traverse the resultset to take from the connection.
+    }
+  }
+
+  ASSERT_NO_ERROR(cli3.send_query(
+      "SELECT id, CONNECTION_ID() FROM testing.locked FOR UPDATE"));
 
   ASSERT_NO_ERROR(shared_router()->wait_for_stashed_server_connections(0, 10s));
 
@@ -1851,6 +1972,9 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
       }
     }
   }
+
+  // unblock cli3
+  ASSERT_NO_ERROR(cli_server.query("ROLLBACK"));
 
   SCOPED_TRACE("// check that the 3rd connection was pooled.");
   {
@@ -1894,7 +2018,7 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
   cli.password("changeme");
 
   auto connect_res =
-      cli.connect(shared_router()->host(), shared_router()->port(GetParam()));
+      cli_connect(cli, shared_router()->router_tcp_destination(GetParam()));
   if (!can_fetch_password) {
     ASSERT_ERROR(connect_res);
 
@@ -1971,10 +2095,13 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
 
   SCOPED_TRACE("// change the source of the replica");
   {
-    auto cmd_res = replica.query(R"(CHANGE REPLICATION SOURCE TO
+    auto cmd_res = replica.query(
+        R"(CHANGE REPLICATION SOURCE TO
 SOURCE_SSL = 1,
 SOURCE_HOST = "127.0.0.1",
-SOURCE_PORT = )" + std::to_string(shared_router()->port(GetParam())));
+SOURCE_PORT = )" +
+        std::to_string(
+            shared_router()->router_tcp_destination(GetParam()).port()));
     ASSERT_NO_ERROR(cmd_res);
   }
 
@@ -2030,14 +2157,16 @@ WHERE t.thread_id = r.thread_id
     auto cmd_res = query_one_result(source, "SHOW REPLICAS");
     ASSERT_NO_ERROR(cmd_res);
 
-    EXPECT_THAT(*cmd_res,
-                ElementsAre(ElementsAre(
-                    "2",                                           // replica-id
-                    "some_funky_host",                             // host
-                    std::to_string(replica_server.server_port()),  // port
-                    "1",                                           // source-id
-                    Not(IsEmpty())  // server-uuid
-                    )));
+    EXPECT_THAT(
+        *cmd_res,
+        ElementsAre(ElementsAre(
+            "2",                // replica-id
+            "some_funky_host",  // host
+            std::to_string(
+                replica_server.classic_tcp_destination().port()),  // port
+            "1",                                                   // source-id
+            Not(IsEmpty())  // server-uuid
+            )));
   }
 
   SCOPED_TRACE("// stop the replica");
@@ -2071,15 +2200,15 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, classic_protocol_clone) {
   auto recipient_res = recipient_server.admin_cli();
   ASSERT_NO_ERROR(recipient_res);
 
+  auto tcp_dest = shared_router()->router_tcp_destination(GetParam());
+
   auto recipient = std::move(*recipient_res);
   SharedServer::local_install_plugin(recipient, "clone", "mysql_clone");
   {
     std::ostringstream oss;
 
     oss << "SET GLOBAL clone_valid_donor_list = " <<  //
-        std::quoted(shared_router()->host() + ":"s +
-                        std::to_string(shared_router()->port(GetParam())),
-                    '\'');
+        std::quoted(tcp_dest.str(), '\'');
 
     ASSERT_NO_ERROR(recipient.query(oss.str()));
   }
@@ -2096,9 +2225,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, classic_protocol_clone) {
 
     oss << "CLONE INSTANCE FROM " <<  //
         std::quoted(account.username, '\'') << "@"
-        << std::quoted(shared_router()->host(), '\'') << ":"
-        << shared_router()->port(GetParam()) <<  //
-        " IDENTIFIED BY " << std::quoted(account.password, '\'')
+        << std::quoted(tcp_dest.hostname(), '\'') << ":" << tcp_dest.port()
+        << " IDENTIFIED BY " << std::quoted(account.password, '\'')
         << " DATA DIRECTORY = " << std::quoted(clone_data_dir.name(), '\'');
 
     ASSERT_NO_ERROR(recipient.send_query(oss.str()));
@@ -2518,8 +2646,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest, restore) {
 
             checker->apply_before_connect(cli);
 
-            auto connect_res = cli.connect(shared_router()->host(),
-                                           shared_router()->port(GetParam()));
+            auto connect_res = cli_connect(
+                cli, shared_router()->router_tcp_destination(GetParam()));
             if (!connect_res) {
               // auth may fail with DISABLED as the router has no public-key
               // cert
@@ -2670,8 +2798,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
       cli.username(account.username);
       cli.password(account.password);
 
-      auto connect_res = cli.connect(shared_router()->host(),
-                                     shared_router()->port(GetParam()));
+      auto connect_res =
+          cli_connect(cli, shared_router()->router_tcp_destination(GetParam()));
       ASSERT_NO_ERROR(connect_res);
 
       // block sharing
@@ -2686,8 +2814,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
       cli2.username(account.username);
       cli2.password(account.password);
 
-      auto connect_res = cli2.connect(shared_router()->host(),
-                                      shared_router()->port(GetParam()));
+      auto connect_res = cli_connect(
+          cli2, shared_router()->router_tcp_destination(GetParam()));
       ASSERT_ERROR(connect_res);
       EXPECT_EQ(connect_res.error().value(), 1040)  // max-connections reached
           << connect_res.error();
@@ -2701,8 +2829,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
       cli_super.username(admin_account.username);
       cli_super.password(admin_account.password);
 
-      auto connect_res = cli_super.connect(shared_router()->host(),
-                                           shared_router()->port(GetParam()));
+      auto connect_res = cli_connect(
+          cli_super, shared_router()->router_tcp_destination(GetParam()));
       ASSERT_NO_ERROR(connect_res);
 
       // block sharing
@@ -2718,8 +2846,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
       cli2.username(account.username);
       cli2.password(account.password);
 
-      auto connect_res = cli2.connect(shared_router()->host(),
-                                      shared_router()->port(GetParam()));
+      auto connect_res = cli_connect(
+          cli2, shared_router()->router_tcp_destination(GetParam()));
       ASSERT_ERROR(connect_res);
       EXPECT_EQ(connect_res.error().value(), 1040)  // max-connections reached
           << connect_res.error();
@@ -2804,8 +2932,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
       cli1.username(account.username);
       cli1.password(account.password);
 
-      auto connect_res = cli1.connect(shared_router()->host(),
-                                      shared_router()->port(GetParam()));
+      auto connect_res = cli_connect(
+          cli1, shared_router()->router_tcp_destination(GetParam()));
       ASSERT_NO_ERROR(connect_res);
     }
 
@@ -2822,8 +2950,8 @@ TEST_P(ShareConnectionTinyPoolOneServerTest,
       cli2.username(account.username);
       cli2.password(account.password);
 
-      auto connect_res = cli2.connect(shared_router()->host(),
-                                      shared_router()->port(GetParam()));
+      auto connect_res = cli_connect(
+          cli2, shared_router()->router_tcp_destination(GetParam()));
       if (can_share) {
         ASSERT_NO_ERROR(connect_res);
 
@@ -2881,7 +3009,7 @@ TEST_P(ShareConnectionSmallPoolTwoServersTest, round_robin_all_in_pool) {
     cli.password(account.password);
 
     auto connect_res =
-        cli.connect(shared_router()->host(), shared_router()->port(GetParam()));
+        cli_connect(cli, shared_router()->router_tcp_destination(GetParam()));
     if (!can_fetch_password) {
       ASSERT_ERROR(connect_res);
 
@@ -2941,8 +3069,8 @@ TEST_P(ShareConnectionSmallPoolTwoServersTest, round_robin_all_in_pool_purge) {
     cli.username(account.username);
     cli.password(account.password);
 
-    ASSERT_NO_ERROR(cli.connect(shared_router()->host(),
-                                shared_router()->port(GetParam())));
+    ASSERT_NO_ERROR(
+        cli_connect(cli, shared_router()->router_tcp_destination(GetParam())));
 
     // wait for the server-connections to make it to the pool.
     //
@@ -3060,8 +3188,8 @@ TEST_P(ShareConnectionTinyPoolTwoRoutesTest, round_robin_one_route) {
 
     const size_t route_ndx = 1;
 
-    auto connect_res = cli.connect(
-        shared_router()->host(), shared_router()->port(GetParam(), route_ndx));
+    auto connect_res = cli_connect(
+        cli, shared_router()->router_tcp_destination(GetParam(), route_ndx));
 
     if (!can_fetch_password) {
       ASSERT_ERROR(connect_res);
@@ -3130,8 +3258,8 @@ TEST_P(ShareConnectionTinyPoolTwoRoutesTest, round_robin_one_route) {
     cli.username(account.username);
     cli.password(account.password);
 
-    ASSERT_NO_ERROR(cli.connect(shared_router()->host(),
-                                shared_router()->port(GetParam(), 1)));
+    ASSERT_NO_ERROR(cli_connect(
+        cli, shared_router()->router_tcp_destination(GetParam(), 1)));
 
     if (can_share && can_fetch_password) {
       // the connection to s[1] should be in the pool, ... and now reused.
@@ -3180,8 +3308,8 @@ TEST_P(ShareConnectionTinyPoolTwoRoutesTest, round_robin_two_routes) {
     const size_t route_ndx =
         (ndx == 0 || ndx == 2 || ndx == 4 || ndx == 5) ? 1 : 0;
 
-    auto connect_res = cli.connect(
-        shared_router()->host(), shared_router()->port(GetParam(), route_ndx));
+    auto connect_res = cli_connect(
+        cli, shared_router()->router_tcp_destination(GetParam(), route_ndx));
 
     if (!can_fetch_password) {
       ASSERT_ERROR(connect_res);
@@ -3252,8 +3380,8 @@ TEST_P(ShareConnectionTinyPoolTwoRoutesTest, round_robin_two_routes) {
     cli.username(account.username);
     cli.password(account.password);
 
-    ASSERT_NO_ERROR(cli.connect(shared_router()->host(),
-                                shared_router()->port(GetParam(), 0)));
+    ASSERT_NO_ERROR(cli_connect(
+        cli, shared_router()->router_tcp_destination(GetParam(), 0)));
 
     if (can_share && can_fetch_password) {
       // the connection to s[0] should be in the pool, ... and now reused.
@@ -3284,8 +3412,8 @@ TEST_P(ShareConnectionNoPoolOneServersTest, classic_protocol_tls_resumption) {
       cli.password(account.password);
 
       SCOPED_TRACE("// connect");
-      ASSERT_NO_ERROR(cli.connect(shared_router()->host(),
-                                  shared_router()->port(GetParam())));
+      ASSERT_NO_ERROR(cli_connect(
+          cli, shared_router()->router_tcp_destination(GetParam())));
 
       SCOPED_TRACE("// checking TLS resumptions with the server.");
 

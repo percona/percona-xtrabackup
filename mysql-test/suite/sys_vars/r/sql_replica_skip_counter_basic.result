@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 SET @@global.enforce_gtid_consistency = on;
 SET @@global.gtid_mode = off_permissive;
 set global sql_replica_skip_counter= 1;
@@ -17,7 +18,3 @@ set global sql_replica_skip_counter= 0;
 select @@global.sql_replica_skip_counter;
 @@global.sql_replica_skip_counter
 0
-SET @@global.gtid_mode = on_permissive;
-SET @@global.gtid_mode = off_permissive;
-SET @@global.gtid_mode = off;
-SET @@global.enforce_gtid_consistency = off;

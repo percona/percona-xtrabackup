@@ -1,0 +1,28 @@
+SELECT @@GLOBAL.gtid_mode;
+@@GLOBAL.gtid_mode
+ON
+SELECT @@GLOBAL.enforce_gtid_consistency;
+@@GLOBAL.enforce_gtid_consistency
+ON
+CREATE TABLE t1 (c1 INT, c2 INT) engine=innodb;
+CREATE TABLE t2 (c1 INT, c2 INT) engine=innodb;
+SET GLOBAL DEBUG='+d,syncpoint_gtid_save';
+INSERT INTO t1 VALUES(2,2);
+SET DEBUG_SYNC='now WAIT_FOR reached_gtid_save';
+SET GLOBAL DEBUG='-d,syncpoint_gtid_save';
+SELECT * FROM t1;
+c1	c2
+2	2
+SELECT * FROM t2;
+c1	c2
+SET DEBUG_SYNC='before_purge_run SIGNAL reached_before_purge_run
+WAIT_FOR continue_purge_run';
+FLUSH TABLE t1 FOR EXPORT;
+SET DEBUG_SYNC='now WAIT_FOR reached_before_purge_run';
+SET DEBUG_SYNC='rm_table_tdc_locked SIGNAL reached_rm_table_tdc_locked
+WAIT_FOR continue_rm_table';
+DROP TABLE t2;
+SET DEBUG_SYNC='now WAIT_FOR reached_rm_table_tdc_locked';
+SET DEBUG_SYNC='now SIGNAL continue_gtid_save,continue_purge_run,continue_rm_table';
+SET DEBUG_SYNC='RESET';
+DROP TABLE t1;

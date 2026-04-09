@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -23,13 +23,9 @@
 
 ADD_WSHADOW_WARNING()
 
-# Workaround to avoid "cannot allocate memory in static TLS block" error
-STRING(REPLACE "-ftls-model=initial-exec" "-ftls-model=global-dynamic"
-  CMAKE_C_FLAGS "${CMAKE_C_FLAGS}"
-  )
-STRING(REPLACE "-ftls-model=initial-exec" "-ftls-model=global-dynamic"
-  CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}"
-  )
+# Use default value for -ftls-model which is global-dynamic with -fPIC
+REMOVE_CMAKE_COMPILER_FLAGS(CMAKE_C_FLAGS "-ftls-model=initial-exec")
+REMOVE_CMAKE_COMPILER_FLAGS(CMAKE_CXX_FLAGS "-ftls-model=initial-exec")
 
 SET(KEYRING_COMMON_SOURCES
   # Component implementation helpers
@@ -38,7 +34,6 @@ SET(KEYRING_COMMON_SOURCES
   # Data representation
   data/data.cc
   data/meta.cc
-  data/pfs_string.cpp
   # File reader/writer
   data_file/reader.cc
   data_file/writer.cc
@@ -74,3 +69,14 @@ ADD_CONVENIENCE_LIBRARY(
     $<TARGET_PROPERTY:extra::rapidjson,INTERFACE_COMPILE_DEFINITIONS>
   LINK_LIBRARIES library_mysys extra::rapidjson
 )
+
+IF(MY_COMPILER_IS_GNU AND FPROFILE_USE)
+  ADD_COMPILE_FLAGS(
+    component_helpers/src/keyring_log_builtins_definition.cc
+    json_data/json_reader.cc
+    COMPILE_FLAGS
+    "-Wno-array-bounds"
+    "-Wno-restrict"
+    "-Wno-stringop-overflow"
+    )
+ENDIF()

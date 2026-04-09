@@ -1,3 +1,4 @@
+SET explain_json_format_version = 1;
 #---------------- Index merge test 1 -------------------------------------------
 # (Start of test file: index_merge1.inc)
 SET SESSION DEFAULT_STORAGE_ENGINE = InnoDB;
@@ -643,29 +644,29 @@ from t0 as a, t0 as b
 where (a.key1 = 1 and a.key2 = 1 and a.key3 = 1 and a.key4=1 and a.key5=1 and a.key6=1 and a.key7 = 1 or a.key8=1)
 and (b.key1 = 1 and b.key2 = 1 and b.key3 = 1 and b.key4=1 and b.key5=1 and b.key6=1 and b.key7 = 1 or b.key8=1);
 EXPLAIN
--> Aggregate: max((((((((((a.key1 + b.key1) + a.key2) + b.key2) + a.key3) + b.key3) + a.key4) + b.key4) + a.key5) + b.key5))  (rows=1)
-    -> Inner hash join (no condition)  (rows=196)
-        -> Filter: (((b.key7 = 1) and (b.key6 = 1) and (b.key5 = 1) and (b.key4 = 1) and (b.key3 = 1) and (b.key2 = 1) and (b.key1 = 1)) or (b.key8 = 1))  (rows=14)
-            -> Deduplicate rows sorted by row ID  (rows=14)
-                -> Intersect rows sorted by row ID  (rows=13.4)
-                    -> Index range scan on b using i2 over (key2 = 1)  (rows=496)
-                    -> Index range scan on b using i3 over (key3 = 1)  (rows=496)
-                    -> Index range scan on b using i4 over (key4 = 1)  (rows=496)
-                    -> Index range scan on b using i5 over (key5 = 1)  (rows=496)
-                    -> Index range scan on b using i6,i7? over (key6 = 1)  (rows=496)
-                    -> Index range scan on b using i7 over (key7 = 1)  (rows=496)
-                -> Index range scan on b using i8 over (key8 = 1)  (rows=1)
+-> Aggregate: max((((((((((a.key1 + b.key1) + a.key2) + b.key2) + a.key3) + b.key3) + a.key4) + b.key4) + a.key5) + b.key5))  (...)
+    -> Inner hash join (no condition)  (...)
+        -> Filter: (((b.key7 = 1) and (b.key6 = 1) and (b.key5 = 1) and (b.key4 = 1) and (b.key3 = 1) and (b.key2 = 1) and (b.key1 = 1)) or (b.key8 = 1))  (...)
+            -> Deduplicate rows sorted by row ID  (...)
+                -> Intersect rows sorted by row ID  (...)
+                    -> Index range scan on b using i2 over (key2 = 1)  (...)
+                    -> Index range scan on b using i3 over (key3 = 1)  (...)
+                    -> Index range scan on b using i4 over (key4 = 1)  (...)
+                    -> Index range scan on b using i5 over (key5 = 1)  (...)
+                    -> Index range scan on b using i6,i7? over (key6 = 1)  (...)
+                    -> Index range scan on b using i7 over (key7 = 1)  (...)
+                -> Index range scan on b using i8 over (key8 = 1)  (...)
         -> Hash
-            -> Filter: (((a.key7 = 1) and (a.key6 = 1) and (a.key5 = 1) and (a.key4 = 1) and (a.key3 = 1) and (a.key2 = 1) and (a.key1 = 1)) or (a.key8 = 1))  (rows=14)
-                -> Deduplicate rows sorted by row ID  (rows=14)
-                    -> Intersect rows sorted by row ID  (rows=13.4)
-                        -> Index range scan on a using i2 over (key2 = 1)  (rows=496)
-                        -> Index range scan on a using i3 over (key3 = 1)  (rows=496)
-                        -> Index range scan on a using i4 over (key4 = 1)  (rows=496)
-                        -> Index range scan on a using i5 over (key5 = 1)  (rows=496)
-                        -> Index range scan on a using i6,i7? over (key6 = 1)  (rows=496)
-                        -> Index range scan on a using i7 over (key7 = 1)  (rows=496)
-                    -> Index range scan on a using i8 over (key8 = 1)  (rows=1)
+            -> Filter: (((a.key7 = 1) and (a.key6 = 1) and (a.key5 = 1) and (a.key4 = 1) and (a.key3 = 1) and (a.key2 = 1) and (a.key1 = 1)) or (a.key8 = 1))  (...)
+                -> Deduplicate rows sorted by row ID  (...)
+                    -> Intersect rows sorted by row ID  (...)
+                        -> Index range scan on a using i2 over (key2 = 1)  (...)
+                        -> Index range scan on a using i3 over (key3 = 1)  (...)
+                        -> Index range scan on a using i4 over (key4 = 1)  (...)
+                        -> Index range scan on a using i5 over (key5 = 1)  (...)
+                        -> Index range scan on a using i6,i7? over (key6 = 1)  (...)
+                        -> Index range scan on a using i7 over (key7 = 1)  (...)
+                    -> Index range scan on a using i8 over (key8 = 1)  (...)
 
 select max(a.key1 + b.key1 + a.key2 + b.key2 + a.key3 + b.key3 + a.key4 + b.key4 + a.key5 + b.key5)
 from t0 as a, t0 as b
@@ -1716,10 +1717,10 @@ alter table t1 add index i3(key3);
 update t1 set key2=key1,key3=key1;
 explain select * from t1 where (key3 > 30 and key3<35) or (key2 >32 and key2 < 40);
 EXPLAIN
--> Filter: (((t1.key3 > 30) and (t1.key3 < 35)) or ((t1.key2 > 32) and (t1.key2 < 40)))  (rows=11)
-    -> Sort-deduplicate by row ID  (rows=11)
-        -> Index range scan on t1 using i3 over (30 < key3 < 35)  (rows=4)
-        -> Index range scan on t1 using i2 over (32 < key2 < 40)  (rows=7)
+-> Filter: (((t1.key3 > 30) and (t1.key3 < 35)) or ((t1.key2 > 32) and (t1.key2 < 40)))  (...)
+    -> Sort-deduplicate by row ID  (...)
+        -> Index range scan on t1 using i3 over (30 < key3 < 35)  (...)
+        -> Index range scan on t1 using i2 over (32 < key2 < 40)  (...)
 
 select * from t1 where (key3 > 30 and key3<35) or (key2 >32 and key2 < 40);
 key1	key2	key3
@@ -2035,15 +2036,16 @@ pk1	pk2
 # The expected number of rows can vary depending on page size
 explain select * from t1 where badkey=1 and key1=10;
 EXPLAIN
--> Filter: (t1.badkey = 1)  (rows=10)
-    -> Index lookup on t1 using key1 (key1 = 10)  (rows=100)
+-> Filter: (t1.badkey = 1)  (...)
+    -> Index lookup on t1 using key1 (key1 = 10)  (...)
 
 # The expected number of rows can vary depending on page size
 explain select * from t1 where pk1 < 7500 and key1 = 10;
 EXPLAIN
--> Filter: ((t1.key1 = 10) and (t1.pk1 < 7500))  (rows=50)
-    -> Intersect rows sorted by row ID  (rows=50)
-        -> Index range scan on t1 using key1 over (key1 = 10 AND pk1 < 7500)  (rows=100)
+-> Filter: ((t1.key1 = 10) and (t1.pk1 < 7500))  (...)
+    -> Intersect rows sorted by row ID  (...)
+        -> Index range scan on t1 using key1 over (key1 = 10 AND pk1 < 7500)  (...)
+        -> Index range scan on t1 using PRIMARY over (pk1 < 7500)  (...)
 
 # Verify that keys with 'tails' of PK members are ok.
 explain select * from t1 where pktail1ok=1 and key1=10;

@@ -211,6 +211,8 @@ grantee	table_name
 'testuser1'@'localhost'	t1_view
 RENAME USER 'testuser1'@'localhost' TO 'the_user'@'localhost';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT DISTINCT grantee, table_name FROM information_schema.table_privileges
 WHERE table_name LIKE 't1_%'
 ORDER BY grantee, table_name;

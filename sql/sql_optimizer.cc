@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -43,6 +43,7 @@
 #include <cmath>
 #include <deque>
 #include <limits>
+#include <memory>
 #include <new>
 #include <string>
 #include <utility>
@@ -542,7 +543,7 @@ bool JOIN::optimize(bool finalize_access_paths) {
         const_tables = tables = primary_tables = query_block->leaf_table_count;
         AccessPath *path =
             NewFakeSingleRowAccessPath(thd, /*count_examined_rows=*/true);
-        path = attach_access_paths_for_having_and_limit(path);
+        path = attach_access_paths_for_having_qualify_limit(path);
         m_root_access_path = path;
         /*
           There are no relevant conditions left from the WHERE;
@@ -631,9 +632,10 @@ bool JOIN::optimize(bool finalize_access_paths) {
         std::min<uintmax_t>(std::numeric_limits<int64_t>::max(),
                             thd->variables.optimizer_trace_max_mem_size))};
 
-    UnstructuredTrace unstructured_trace{max_trace_bytes};
+    std::unique_ptr<UnstructuredTrace> unstructured_trace;
     if (thd->opt_trace.is_started()) {
-      thd->opt_trace.set_unstructured_trace(&unstructured_trace);
+      unstructured_trace = std::make_unique<UnstructuredTrace>(max_trace_bytes);
+      thd->opt_trace.set_unstructured_trace(unstructured_trace.get());
     }
 
     // Add the contents of unstructured_trace to the JSON tree when we exit
@@ -1138,7 +1140,7 @@ AccessPath *JOIN::create_access_paths_for_zero_rows() const {
   if (send_row_on_empty_set()) {
     // Aggregate no rows into an aggregate row.
     path = NewZeroRowsAggregatedAccessPath(thd, zero_result_cause);
-    path = attach_access_paths_for_having_and_limit(path);
+    path = attach_access_paths_for_having_qualify_limit(path);
   } else {
     // Send no row at all (so also no need to check HAVING or LIMIT).
     path = NewZeroRowsAccessPath(thd, zero_result_cause);
@@ -1545,7 +1547,8 @@ bool JOIN::optimize_distinct_group_order() {
     }
   }
   if (!(!group_list.empty() || tmp_table_param.sum_func_count || windowing) &&
-      select_distinct && plan_is_single_table() &&
+      select_distinct &&
+      (plan_is_single_table() || query_block->original_tables_map == 1) &&
       rollup_state == RollupState::NONE) {
     int order_idx = -1, group_idx = -1;
     /*
@@ -1576,8 +1579,7 @@ bool JOIN::optimize_distinct_group_order() {
     bool all_order_fields_used;
     if ((o = create_order_from_distinct(
              thd, ref_items[REF_SLICE_ACTIVE], order.order, fields,
-             /*skip_aggregates=*/true,
-             /*convert_bit_fields_to_long=*/true, &all_order_fields_used))) {
+             /*skip_aggregates=*/true, &all_order_fields_used))) {
       group_list = ORDER_with_src(o, ESC_DISTINCT);
       const bool skip_group =
           skip_sort_order &&
@@ -3998,6 +4000,12 @@ static bool check_simple_equality(THD *thd, Item *left_item, Item *right_item,
   if (field_item->result_type() != const_item->result_type()) {
     return false;
   }
+  // Do not substitute possibly negative constants for unsigned fields.
+  if (field_item->result_type() == INT_RESULT &&
+      const_item->type() != Item::INT_ITEM &&
+      field_item->unsigned_flag != const_item->unsigned_flag) {
+    return false;
+  }
   if (field_item->result_type() == STRING_RESULT) {
     const CHARSET_INFO *cs = field_item->field->charset();
     if (item == nullptr) {
@@ -4408,6 +4416,13 @@ static bool build_equal_items_for_cond(THD *thd, Item *cond, Item **retcond,
     }
 
     if (do_inherit) {
+      // Range optimizer expects the LHS of an IN predicate to be columns
+      // from a table. Doing constant propagation for these columns would
+      // skip the range analysis leading to less performant queries.
+      // So we disable constant propagation for this case.
+      if (is_function_of_type(cond, Item_func::IN_FUNC)) {
+        down_cast<Item_func_in *>(cond)->set_no_constant_propagation();
+      }
       /*
         For each field reference in cond, not from equal item predicates,
         set a pointer to the multiple equality it belongs to (if there is any)
@@ -5615,6 +5630,31 @@ bool JOIN::propagate_dependencies() {
 }
 
 /**
+ * Check if a table can be safely marked as const during optimization.
+ *
+ * For regular base tables, always safe.
+ * For views and derived tables:
+ *   - If merged: check if it has stored programs in EXPLAIN mode
+ *   - If materialized: delegates to materializable_is_const() which checks
+ *     estimated row count, optimization flags, and stored programs in EXPLAIN
+ *
+ * @param thd   Thread handler
+ * @param tr    Table reference to check
+ * @return true if safe to mark as const, false otherwise
+ */
+static inline bool is_const_optimizable(THD *thd, Table_ref *tr) {
+  if (!tr->is_view_or_derived()) return true;
+
+  // For merged views/derived tables, check EXPLAIN mode + stored programs
+  if (!tr->uses_materialization()) {
+    return !(thd->lex->is_explain() && tr->has_stored_program());
+  }
+
+  // For materialized derived tables, use the comprehensive check
+  return tr->materializable_is_const(thd);
+}
+
+/**
   Extract const tables based on row counts.
 
   @returns false if success, true if error
@@ -5671,7 +5711,7 @@ bool JOIN::extract_const_tables() {
       case extract_empty_table:
         // Extract tables with zero rows, but only if statistics are exact
         if ((table->file->stats.records == 0 || all_partitions_pruned_away) &&
-            (table->file->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT))
+            (table->file->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT) != 0u)
           mark_const_table(tab, nullptr);
         break;
 
@@ -5680,13 +5720,18 @@ bool JOIN::extract_const_tables() {
           Extract tables with zero or one rows, but do not extract tables that
            1. are dependent upon other tables, or
            2. have no exact statistics, or
-           3. are full-text searched
+           3. are full-text searched, or
+           4. a derived table that cannot be safely treated as const
+              (e.g., materialized table with >1 row, or with stored programs
+              in EXPLAIN mode)
         */
         if ((table->s->system || table->file->stats.records <= 1 ||
              all_partitions_pruned_away) &&
-            !tab->dependent &&                                              // 1
-            (table->file->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT) &&  // 2
-            !tl->is_fulltext_searched())                                    // 3
+            !tab->dependent &&  // 1
+            (table->file->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT) !=
+                0u &&                       // 2
+            !tl->is_fulltext_searched() &&  // 3
+            is_const_optimizable(thd, tl))  // 4
           mark_const_table(tab, nullptr);
         break;
     }
@@ -5791,12 +5836,15 @@ bool JOIN::extract_func_dependent_tables() {
               has a real row or a null-extended row in the optimizer phase.
               We have no possibility to evaluate its join condition at
               execution time, when it is marked as a system table.
+           4. a derived table that can be safely treated as const
         */
         if (table->file->stats.records <= 1L &&                             // 1
             (table->file->ha_table_flags() & HA_STATS_RECORDS_IS_EXACT) &&  // 1
             !tl->outer_join_nest() &&                                       // 2
-            !(tab->join_cond() && tab->join_cond()->cost().IsExpensive()))  // 3
-        {  // system table
+            !(tab->join_cond() != nullptr &&
+              tab->join_cond()->cost().IsExpensive()) &&  // 3
+            is_const_optimizable(thd, tl))                // 4
+        {                                                 // system table
           mark_const_table(tab, nullptr);
           const int status =
               join_read_const_table(tab, positions + const_tables - 1);
@@ -5835,20 +5883,27 @@ bool JOIN::extract_func_dependent_tables() {
              1. are full-text searched, or
              2. are part of nested outer join, or
              3. are part of semi-join, or
-             4. have an expensive outer join condition.
-             5. are blocked by handler for const table optimize.
+             4. have an expensive outer join condition, or
+             5. are blocked by handler for const table optimize, or
              6. are not going to be used, typically because they are streamed
                 instead of materialized
-                (see Query_expression::can_materialize_directly_into_result()).
+                (see Query_expression::can_materialize_directly_into_result()),
+            or
+             7. key evaluated in stored program in EXPLAIN mode, or
+             8. a derived table that cannot be safely treated as const
           */
+
           if (eq_part.is_prefix(table->key_info[key].user_defined_key_parts) &&
               !tl->is_fulltext_searched() &&                            // 1
               !tl->outer_join_nest() &&                                 // 2
               !(tl->embedding && tl->embedding->is_sj_or_aj_nest()) &&  // 3
-              !(tab->join_cond() &&
+              !(tab->join_cond() != nullptr &&
                 tab->join_cond()->cost().IsExpensive()) &&                // 4
               !(table->file->ha_table_flags() & HA_BLOCK_CONST_TABLE) &&  // 5
-              table->is_created()) {                                      // 6
+              table->is_created() &&                                      // 6
+              !(thd->lex->is_explain() &&
+                start_keyuse->val->has_stored_program()) &&  // 7
+              is_const_optimizable(thd, tl)) {               // 8
             if (table->key_info[key].flags & HA_NOSAME) {
               if (const_ref == eq_part) {  // Found everything for ref.
                 ref_changed = true;
@@ -6123,6 +6178,7 @@ static void semijoin_types_allow_materialization(Table_ref *sj_nest) {
   sj_nest->nested_join->sjm.lookup_allowed = true;
 
   bool blobs_involved = false;
+  bool bit_fields_involved = false;
   uint total_lookup_index_length = 0;
   uint max_key_length, max_key_part_length, max_key_parts;
   /*
@@ -6144,6 +6200,7 @@ static void semijoin_types_allow_materialization(Table_ref *sj_nest) {
       return;
     }
     blobs_involved |= inner->is_blob_field();
+    bit_fields_involved |= inner->data_type() == MYSQL_TYPE_BIT;
 
     // Calculate the index length of materialized table
     const uint lookup_index_length = get_key_length_tmp_table(inner);
@@ -6154,7 +6211,8 @@ static void semijoin_types_allow_materialization(Table_ref *sj_nest) {
   if (total_lookup_index_length > max_key_length)
     sj_nest->nested_join->sjm.lookup_allowed = false;
 
-  if (blobs_involved) sj_nest->nested_join->sjm.lookup_allowed = false;
+  if (blobs_involved || bit_fields_involved)
+    sj_nest->nested_join->sjm.lookup_allowed = false;
 
   DBUG_PRINT("info", ("semijoin_types_allow_materialization: ok, allowed"));
 }
@@ -6281,7 +6339,7 @@ static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit,
       return 0;
     }
     DBUG_PRINT("warning", ("Couldn't use record count on const keypart"));
-  } else if (tl->is_table_function() || tl->materializable_is_const()) {
+  } else if (tl->is_table_function() || tl->materializable_is_const(thd)) {
     tl->fetch_number_of_rows();
     return tl->table->file->stats.records;
   }
@@ -6294,9 +6352,9 @@ static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit,
   SYNOPSIS
     get_tmp_table_rec_length()
       items            Represents a select list.
-      include_hidden   Used for temp table aggregate, to include hidden fields.
-      can_skip_aggs    Used for temp table aggregate to skip fields that are not
-                       included in the temp table.
+      include_hidden   include hidden fields.
+      can_skip_aggs    skip aggregations not included in the temp table.
+
 
   DESCRIPTION
     Calculate estimated record length for a temptable. It's an estimate because
@@ -6311,10 +6369,16 @@ static ha_rows get_quick_record_count(THD *thd, JOIN_TAB *tab, ha_rows limit,
 uint get_tmp_table_rec_length(const mem_root_deque<Item *> &items,
                               bool include_hidden, bool can_skip_aggs) {
   uint len = 0;
+  // (1) In some cases such as GROUP BY, the GROUP BY columns are included as
+  // hidden items in the JOIN fields, and these are also included in the temp
+  // table columns.  include_hidden is meant to indicate this.
+  // (2) Expressions that embed an aggregation function are sometimes not
+  // included in the temp table. E.g. 2*avg(id). can_skip_aggs is meant to
+  // indicate this.
   for (Item *item : items) {
-    if ((!include_hidden && item->hidden) ||
-        (can_skip_aggs && item->has_aggregation() &&
-         item->type() != Item::SUM_FUNC_ITEM))
+    if ((!include_hidden && item->hidden) ||          // (1)
+        (can_skip_aggs && item->has_aggregation() &&  // (2)
+         item->type() != Item::SUM_FUNC_ITEM))        // (2)
       continue;
     switch (item->result_type()) {
       case REAL_RESULT:
@@ -8084,9 +8148,9 @@ bool is_indexed_agg_distinct(JOIN *join,
   bool result = false;
   Field_map first_aggdistinct_fields;
 
-  if (join->primary_tables > 1 || /* reference more than 1 table */
-      join->select_distinct ||    /* or a DISTINCT */
-
+  if (join->query_block->original_tables_map > 1 ||  /* reference more than 1
+                                                        table originally */
+      join->select_distinct ||                       /* or a DISTINCT */
       join->query_block->is_non_primitive_grouped()) /* Check (B3) for
                                                       non-primitive grouping */
     return false;
@@ -8206,7 +8270,9 @@ static void add_loose_index_scan_and_skip_scan_keys(JOIN *join,
   const char *cause;
 
   /* Find the indexes that might be used for skip scan queries. */
-  if (join->where_cond && join->primary_tables == 1 &&
+  if (join->where_cond != nullptr &&
+      join->query_block->original_tables_map == 1 &&
+      join->query_block->original_tables_map == join_tab->table_ref->map() &&
       join->group_list.empty() &&
       !is_indexed_agg_distinct(join, &indexed_fields) &&
       !join->select_distinct) {
@@ -8957,7 +9023,11 @@ bool ref_lookup_subsumes_comparison(THD *thd, Field *field, Item *right_item,
   if (can_evaluate) {
     assert(evaluate_during_optimization(right_item,
                                         thd->lex->current_query_block()));
-    right_is_null = right_item->is_nullable() && right_item->is_null();
+    if (thd->lex->using_hypergraph_optimizer()) {
+      right_is_null = right_item->has_subquery();
+    } else {
+      right_is_null = right_item->is_nullable() && right_item->is_null();
+    }
     if (thd->is_error()) return true;
   }
   if (!right_is_null) {
@@ -10750,7 +10820,6 @@ ORDER *create_order_from_distinct(THD *thd, Ref_item_array ref_item_array,
                                   ORDER *order_list,
                                   mem_root_deque<Item *> *fields,
                                   bool skip_aggregates,
-                                  bool convert_bit_fields_to_long,
                                   bool *all_order_by_fields_used) {
   ORDER *group = nullptr, **prev = &group;
 
@@ -10767,8 +10836,6 @@ ORDER *create_order_from_distinct(THD *thd, Ref_item_array ref_item_array,
       *all_order_by_fields_used = false;
   }
 
-  Mem_root_array<std::pair<Item *, ORDER *>> bit_fields_to_add(thd->mem_root);
-
   for (Item *&item : VisibleFields(*fields)) {
     if (!item->const_item() && (!skip_aggregates || !item->has_aggregation()) &&
         item->marker != Item::MARKER_DISTINCT_GROUP) {
@@ -10783,21 +10850,7 @@ ORDER *create_order_from_distinct(THD *thd, Ref_item_array ref_item_array,
       ORDER *ord = (ORDER *)thd->mem_calloc(sizeof(ORDER));
       if (!ord) return nullptr;
 
-      if (item->type() == Item::FIELD_ITEM &&
-          item->data_type() == MYSQL_TYPE_BIT && convert_bit_fields_to_long) {
-        /*
-          Because HEAP tables can't index BIT fields we need to use an
-          additional hidden field for grouping because later it will be
-          converted to a LONG field. Original field will remain of the
-          BIT type and will be returned to a client.
-          @note setup_ref_array() needs to account for the extra space.
-          @note We need to defer the actual adding to after the loop,
-            or we will invalidate the iterator to “fields”.
-        */
-        Item_field *new_item = new Item_field(thd, (Item_field *)item);
-        ord->item = &item;  // Temporary; for the duplicate check above.
-        bit_fields_to_add.push_back(std::make_pair(new_item, ord));
-      } else if (ref_item_array.is_null()) {
+      if (ref_item_array.is_null()) {
         // No slices are in use, so just use the field from the list.
         ord->item = &item;
       } else {
@@ -10815,11 +10868,6 @@ ORDER *create_order_from_distinct(THD *thd, Ref_item_array ref_item_array,
     if (!ref_item_array.is_null()) {
       ref_item_array.pop_front();
     }
-  }
-  for (const auto &item_and_order : bit_fields_to_add) {
-    item_and_order.second->item =
-        thd->lex->current_query_block()->add_hidden_item(item_and_order.first);
-    thd->lex->current_query_block()->hidden_items_from_optimization++;
   }
   *prev = nullptr;
   return group;
@@ -11505,6 +11553,13 @@ bool evaluate_during_optimization(const Item *item, const Query_block *select) {
   // If the Item does not access any tables, it can always be evaluated.
   if (item->const_item()) return true;
 
+  // Do not evaluate stored procedure in EXPLAIN
+  if (current_thd->lex->is_explain() &&
+      WalkItem(item, enum_walk::PREFIX, [](const Item *curitem) {
+        return curitem->has_stored_program();
+      }))
+    return false;
+
   return !item->has_subquery() || (select->active_options() &
                                    OPTION_NO_SUBQUERY_DURING_OPTIMIZATION) == 0;
 }
@@ -11624,8 +11679,15 @@ static double EstimateRowAccessesInItem(Item *item, double num_evaluations) {
       } else {
         path = qe->item->root_access_path();
       }
-      rows += EstimateRowAccesses(
-          path, query_block->is_cacheable() ? 1.0 : num_evaluations, kNoLimit);
+      // In some cases, for old optimizer, when subtitem is a
+      // Item_singlerow_subselect, its Query_expression::root_access_path has
+      // not been set, and Item_singlerow_subselect::root_access_path() always
+      // returns nullptr, so we need to check:
+      if (path != nullptr) {
+        rows += EstimateRowAccesses(
+            path, query_block->is_cacheable() ? 1.0 : num_evaluations,
+            kNoLimit);
+      }
     }
     return false;
   });

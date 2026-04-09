@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -124,7 +124,8 @@ bool get_local_private_addresses(std::map<std::string, int> &out,
  @return false on success, true otherwise.
  */
 bool resolve_all_ip_addr_from_hostname(
-    std::string name, std::vector<std::pair<sa_family_t, std::string>> &ips);
+    const std::string &name,
+    std::vector<std::pair<sa_family_t, std::string>> &ips);
 
 /**
  This function translates hostname to all possible IP addresses.
@@ -134,7 +135,7 @@ bool resolve_all_ip_addr_from_hostname(
 
  @return false on success, true otherwise.
  */
-bool resolve_ip_addr_from_hostname(std::string name,
+bool resolve_ip_addr_from_hostname(const std::string &name,
                                    std::vector<std::string> &ip);
 
 /**
@@ -147,7 +148,7 @@ bool resolve_ip_addr_from_hostname(std::string name,
 
  @return false on success, true otherwise.
  */
-bool get_address_for_allowlist(std::string addr, std::string mask,
+bool get_address_for_allowlist(const std::string &addr, const std::string &mask,
                                std::pair<std::vector<unsigned char>,
                                          std::vector<unsigned char>> &out_pair);
 
@@ -368,7 +369,7 @@ class Gcs_ip_allowlist {
       std::vector<unsigned char> const &incoming_octets) const;
   bool do_check_block_xcom(std::vector<unsigned char> const &incoming_octets,
                            site_def const *xcom_config) const;
-  bool add_address(std::string addr, std::string mask);
+  bool add_address(const std::string &addr, const std::string &mask);
 
   /**
    @brief Clears the contents of this Allowlist object.

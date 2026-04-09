@@ -22,6 +22,8 @@
 
 #include <memory>
 
+#include <my_inttypes.h>
+
 namespace keyring_vault::backend {
 
 class Vault_base64 final {

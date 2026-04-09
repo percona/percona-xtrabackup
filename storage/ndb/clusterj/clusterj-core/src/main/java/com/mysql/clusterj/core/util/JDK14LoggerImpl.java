@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,6 +25,7 @@
 
 package com.mysql.clusterj.core.util;
 
+import java.util.function.Supplier;
 import java.util.logging.Level;
 
 public class JDK14LoggerImpl implements Logger {
@@ -52,67 +53,74 @@ public class JDK14LoggerImpl implements Logger {
         return delegate.isLoggable(Level.INFO);
     }
 
-    public void detail(String message) {
+    private void write(Level level, int stackDepth, String message) {
         Throwable t = new Throwable();
         StackTraceElement[] stack = t.getStackTrace();
-        StackTraceElement element = stack[1];
+        StackTraceElement element = stack[stackDepth];
         String className = element.getClassName();
         String methodName = element.getMethodName();
-        delegate.logp(Level.FINEST, className, methodName, message);
+        delegate.logp(level, className, methodName, message);
+    }
+
+    private void write(Level level, int stackDepth, Supplier<String> generator) {
+        Throwable t = new Throwable();
+        StackTraceElement[] stack = t.getStackTrace();
+        StackTraceElement element = stack[stackDepth];
+        String className = element.getClassName();
+        String methodName = element.getMethodName();
+        delegate.logp(level, className, methodName, generator);
+    }
+
+    public void detail(String message) {
+        assert isDetailEnabled();
+        this.write(Level.FINEST, 2, message);
+    }
+
+    public void detail(Supplier<String> generator) {
+        if(! isDetailEnabled()) return;
+        this.write(Level.FINEST, 2, generator);
     }
 
     public void debug(String message) {
-        Throwable t = new Throwable();
-        StackTraceElement[] stack = t.getStackTrace();
-        StackTraceElement element = stack[1];
-        String className = element.getClassName();
-        String methodName = element.getMethodName();
-        delegate.logp(Level.FINER, className, methodName, message);
+        assert isDebugEnabled();
+        this.write(Level.FINER, 2, message);
+    }
+
+    public void debug(Supplier<String> generator) {
+        if(! isDebugEnabled()) return;
+        this.write(Level.FINER, 2, generator);
     }
 
     public void trace(String message) {
-        Throwable t = new Throwable();
-        StackTraceElement[] stack = t.getStackTrace();
-        StackTraceElement element = stack[1];
-        String className = element.getClassName();
-        String methodName = element.getMethodName();
-        delegate.logp(Level.FINE, className, methodName, message);
+        assert isTraceEnabled();
+        this.write(Level.FINE, 2, message);
+    }
+
+    public void trace(Supplier<String> generator) {
+        if(! isTraceEnabled()) return;
+        this.write(Level.FINE, 2, generator);
     }
 
     public void info(String message) {
-        Throwable t = new Throwable();
-        StackTraceElement[] stack = t.getStackTrace();
-        StackTraceElement element = stack[1];
-        String className = element.getClassName();
-        String methodName = element.getMethodName();
-        delegate.logp(Level.INFO, className, methodName, message);
+        assert isInfoEnabled();
+        this.write(Level.INFO, 2, message);
+    }
+
+    public void info(Supplier<String> generator) {
+        if(! isInfoEnabled()) return;
+        this.write(Level.INFO, 2, generator);
     }
 
     public void warn(String message) {
-        Throwable t = new Throwable();
-        StackTraceElement[] stack = t.getStackTrace();
-        StackTraceElement element = stack[1];
-        String className = element.getClassName();
-        String methodName = element.getMethodName();
-        delegate.logp(Level.WARNING, className, methodName, message);
+        this.write(Level.WARNING, 2, message);
     }
 
     public void error(String message) {
-        Throwable t = new Throwable();
-        StackTraceElement[] stack = t.getStackTrace();
-        StackTraceElement element = stack[1];
-        String className = element.getClassName();
-        String methodName = element.getMethodName();
-        delegate.logp(Level.SEVERE, className, methodName, message);
+        this.write(Level.SEVERE, 2, message);
     }
 
     public void fatal(String message) {
-        Throwable t = new Throwable();
-        StackTraceElement[] stack = t.getStackTrace();
-        StackTraceElement element = stack[1];
-        String className = element.getClassName();
-        String methodName = element.getMethodName();
-        delegate.logp(Level.SEVERE, className, methodName, message);
+        this.write(Level.SEVERE, 2, message);
     }
 
 }

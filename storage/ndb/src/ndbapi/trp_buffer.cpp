@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -35,7 +35,7 @@ bool TFPool::init(size_t mem, size_t reserved_mem, size_t page_sz) {
 
   unsigned char *ptr = (m_alloc_ptr = (unsigned char *)malloc(tot_alloc));
   for (size_t i = 0; i + page_sz <= tot_alloc; i += page_sz) {
-    TFPage *p = (TFPage *)(ptr + i);
+    auto *p = (TFPage *)(ptr + i);
     assert(((UintPtr)(&p->m_data[0]) & 3) == 0);
     p->init();
     p->m_next = m_first_free;
@@ -64,10 +64,10 @@ void TFBuffer::validate() const {
       assert(m_head->m_bytes == 0);
     }
     return;
-  } else {
-    assert(m_head != nullptr);
-    assert(m_tail != nullptr);
   }
+  assert(m_head != nullptr);
+  assert(m_tail != nullptr);
+
   Uint32 sum [[maybe_unused]] = 0;
   TFPage *p = m_head;
   while (p) {

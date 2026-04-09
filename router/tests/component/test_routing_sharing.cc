@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2022, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2022, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -31,10 +31,16 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#define RAPIDJSON_HAS_STDSTRING 1
+
+#include "mock_server_rest_client.h"
+#include "mock_server_testutils.h"
 #include "mysql/harness/net_ts/impl/socket.h"
 #include "rest_api_testutils.h"
 #include "router/src/routing/tests/mysql_client.h"
 #include "router_component_test.h"
+#include "router_component_testutils.h"
+#include "routing_guidelines_builder.h"
 #include "stdx_expected_no_error.h"
 #include "tcp_port_pool.h"
 #include "test/temp_directory.h"
@@ -167,7 +173,7 @@ class RoutingSharingConfig : public RouterComponentTest {
 
 TEST_F(RoutingSharingConfig, connection_sharing_not_set) {
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto writer = config_writer(conf_dir_.name());
 
@@ -296,7 +302,7 @@ TEST_F(RoutingSharingConfig, connection_sharing_no_session_tracker_support) {
 
 TEST_F(RoutingSharingConfig, connection_sharing_is_zero) {
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto writer = config_writer(conf_dir_.name());
 
@@ -355,7 +361,7 @@ TEST_F(RoutingSharingConfig, connection_sharing_is_zero) {
 
 TEST_F(RoutingSharingConfig, warn_connection_sharing_needs_connection_pool) {
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto writer = config_writer(conf_dir_.name());
 
@@ -417,7 +423,7 @@ TEST_F(RoutingSharingConfig, warn_connection_sharing_needs_connection_pool) {
 
 TEST_F(RoutingSharingConfig, warn_connection_sharing_passthrough) {
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto writer = config_writer(conf_dir_.name());
 
@@ -502,7 +508,7 @@ TEST_F(RoutingSharingConfig, warn_xproto_does_not_support_sharing) {
 
 TEST_F(RoutingSharingConfig, connection_sharing_delay_is_default) {
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto userfile = conf_dir_.file("userfile");
   {
@@ -619,7 +625,7 @@ TEST_F(RoutingSharingConfig, connection_sharing_delay_is_default) {
 
 TEST_F(RoutingSharingConfig, connection_sharing_delay_is_zero) {
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto userfile = conf_dir_.file("userfile");
   {
@@ -802,7 +808,7 @@ TEST_F(RoutingSharingConfig, connection_sharing_delay_is_zero) {
 
 TEST_F(RoutingSharingConfig, connection_sharing_delay_is_small) {
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto userfile = conf_dir_.file("userfile");
   {
@@ -973,7 +979,7 @@ TEST_F(RoutingSharingConfig, connection_sharing_delay_is_small) {
 
 TEST_F(RoutingSharingConfig, connection_sharing_delay_is_large) {
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto writer = config_writer(conf_dir_.name());
 
@@ -1082,10 +1088,10 @@ TEST_F(RoutingSharingConfig, connection_sharing_per_route) {
   auto server2_port = port_pool_.get_next_available();
 
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server2_port).args());
+      mock_server_cmdline("sharing_static.js").port(server2_port).args());
 
   auto userfile = conf_dir_.file("userfile");
   {
@@ -1231,7 +1237,7 @@ TEST_F(RoutingSharingConfig, connection_sharing_pool_before_stash) {
                  "only if it is empty, taken from the stash of server-side "
                  "connections _with_ a client-side connection.");
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto userfile = conf_dir_.file("userfile");
   {
@@ -1347,7 +1353,7 @@ TEST_F(RoutingSharingConfig, stashed_connection_is_moved_to_pool) {
                  "Check that stashed connections get moved to the pool when "
                  "the client disconnections.");
   mock_server_spawner().spawn(
-      mock_server_cmdline("sharing.js").port(server_port_).args());
+      mock_server_cmdline("sharing_static.js").port(server_port_).args());
 
   auto userfile = conf_dir_.file("userfile");
   {
@@ -1422,7 +1428,7 @@ TEST_F(RoutingSharingConfig, pooled_ssl_and_non_ssl_dont_mix) {
       "Description",
       "Check that pooled connections SSL and non-SSL don't get shared.");
 
-  mock_server_spawner().spawn(mock_server_cmdline("sharing.js")
+  mock_server_spawner().spawn(mock_server_cmdline("sharing_static.js")
                                   .port(server_port_)
                                   .enable_ssl(true)
                                   .args());
@@ -1560,7 +1566,7 @@ TEST_F(RoutingSharingConfig, stashed_ssl_and_non_ssl_dont_mix) {
       "Description",
       "Check that stashed connections SSL and non-SSL don't get shared.");
 
-  mock_server_spawner().spawn(mock_server_cmdline("sharing.js")
+  mock_server_spawner().spawn(mock_server_cmdline("sharing_static.js")
                                   .port(server_port_)
                                   .enable_ssl(true)
                                   .args());
@@ -1694,7 +1700,7 @@ TEST_F(RoutingSharingConfig, stashed_ssl_and_ssl) {
   RecordProperty("Description",
                  "Check that stashed connections SSL and SSL can share.");
 
-  mock_server_spawner().spawn(mock_server_cmdline("sharing.js")
+  mock_server_spawner().spawn(mock_server_cmdline("sharing_static.js")
                                   .port(server_port_)
                                   .enable_ssl(true)
                                   .args());
@@ -1810,6 +1816,455 @@ TEST_F(RoutingSharingConfig, stashed_ssl_and_ssl) {
 
   proc.send_clean_shutdown_event();
 }
+
+class RoutingSharingWithGuidelines
+    : public RoutingSharingConfig,
+      public ::testing::WithParamInterface<std::optional<bool>> {
+ protected:
+  RoutingSharingWithGuidelines() {
+    cluster_nodes_ports = {port_pool_.get_next_available(),  // first is PRIMARY
+                           port_pool_.get_next_available(),
+                           port_pool_.get_next_available(),
+                           port_pool_.get_next_available()};
+    cluster_nodes_http_ports = {
+        port_pool_.get_next_available(),  // first is PRIMARY
+        port_pool_.get_next_available(), port_pool_.get_next_available(),
+        port_pool_.get_next_available()};
+    router_port_ = port_pool_.get_next_available();
+
+    setup_cluster("sharing_md_based.js");
+
+    auto userfile = conf_dir_.file("userfile");
+    {
+      std::ofstream ofs(userfile);
+      // user:pass
+      ofs << "user:$5$Vh2PFa7xfiEyPgFW$gGRTa6Hr9mRGBpxm4ATyfrfIY5ghAnqa."
+             "YJgciRvb69";
+    }
+
+    writer = std::make_unique<ProcessManager::ConfigWriter>(
+        config_writer(conf_dir_.name()));
+
+    writer
+        ->section("metadata_cache:md", {{"cluster_type", "gr"},
+                                        {"router_id", "1"},
+                                        {"user", "user"},
+                                        {"metadata_cluster", "test"},
+                                        {"ttl", "0.1"}})
+        .section("rest_connection_pool",
+                 {
+                     {"require_realm", "somerealm"},
+                 })
+        .section("http_auth_realm:somerealm",
+                 {
+                     {"backend", "somebackend"},
+                     {"method", "basic"},
+                     {"name", "some realm"},
+                 })
+        .section("http_auth_backend:somebackend",
+                 {
+                     {"backend", "file"},
+                     {"filename", userfile},
+                 })
+        .section("http_server", {{"port", std::to_string(rest_port_)},
+                                 {"bind_address", "127.0.0.1"}})
+        .section(
+            "routing:" + routing_plugin_name,
+            {
+                {"bind_port", std::to_string(router_port_)},
+                {"bind_address", "127.0.0.1"},
+                {"protocol", "classic"},
+                {"destinations", "metadata-cache://test/default?role=PRIMARY"},
+                {"routing_strategy", "round-robin"},
+                {"client_ssl_mode", "DISABLED"},
+                {"server_ssl_mode", "DISABLED"},
+                {"connection_sharing_delay", "0"},
+            });
+
+    auto state_file = create_state_file(
+        get_test_temp_dir_name(),
+        create_state_file_content(gr_id_, "", cluster_nodes_ports, 0));
+    auto &default_section = writer->sections()["DEFAULT"];
+    default_section["dynamic_state"] = state_file;
+  }
+
+  void instrument_metadata(std::string_view guidelines,
+                           const std::vector<uint16_t> &node_ports,
+                           const uint16_t http_port) {
+    auto json_doc =
+        mock_GR_metadata_as_json("", classic_ports_to_gr_nodes(node_ports), 0,
+                                 classic_ports_to_cluster_nodes(node_ports));
+    JsonAllocator allocator;
+
+    json_doc.AddMember("gr_id",
+                       JsonValue(gr_id_.c_str(), gr_id_.length(), allocator),
+                       allocator);
+
+    json_doc.AddMember("transaction_count", 0, allocator);
+    json_doc.AddMember(
+        "routing_guidelines",
+        JsonValue(guidelines.data(), guidelines.size(), allocator), allocator);
+
+    const std::string rw_port_str = std::to_string(router_port_);
+    json_doc.AddMember(
+        "router_rw_classic_port",
+        JsonValue(rw_port_str.data(), rw_port_str.size(), allocator),
+        allocator);
+
+    auto json_doc_str = json_to_string(json_doc);
+    EXPECT_NO_THROW(MockServerRestClient(http_port).set_globals(json_doc_str));
+    EXPECT_TRUE(wait_for_transaction_count_increase(http_port, 2));
+  }
+
+  ProcessWrapper &launch_cluster_node(const std::uint16_t cluster_port,
+                                      const std::uint16_t cluster_x_port = 0) {
+    auto &cluster_node =
+        mock_server_spawner().spawn(mock_server_cmdline("my_port.js")
+                                        .port(cluster_port)
+                                        .x_port(cluster_x_port)
+                                        .args());
+
+    return cluster_node;
+  }
+
+  void setup_cluster(const std::string &mock_file) {
+    const auto http_port = cluster_nodes_http_ports[0];
+    auto mock_server_cmdline_args = mock_server_cmdline(mock_file)
+                                        .port(cluster_nodes_ports[0])
+                                        .http_port(http_port)
+                                        .args();
+
+    auto &primary_node = mock_server_spawner().spawn(mock_server_cmdline_args);
+    ASSERT_NO_FATAL_FAILURE(
+        check_port_ready(primary_node, cluster_nodes_ports[0]));
+
+    EXPECT_TRUE(MockServerRestClient(http_port).wait_for_rest_endpoint_ready());
+    set_mock_metadata(http_port, gr_id_,
+                      classic_ports_to_gr_nodes(cluster_nodes_ports), 0,
+                      classic_ports_to_cluster_nodes(cluster_nodes_ports));
+
+    // launch the secondary cluster nodes
+    for (unsigned port = 1; port < cluster_nodes_ports.size(); ++port) {
+      auto &secondary_node = launch_cluster_node(cluster_nodes_ports[port]);
+      ASSERT_NO_FATAL_FAILURE(
+          check_port_ready(secondary_node, cluster_nodes_ports[port]));
+    }
+  }
+
+  std::unique_ptr<ProcessManager::ConfigWriter> writer;
+  std::vector<uint16_t> cluster_nodes_ports;
+  std::vector<uint16_t> cluster_nodes_http_ports;
+  const std::string user_{"mysql_test_user"};
+  const std::string gr_id_{"uuid"};
+  const std::string routing_plugin_name{"plugin1"};
+};
+
+TEST_P(RoutingSharingWithGuidelines,
+       routing_guidelines_connection_sharing_enabled) {
+  writer->sections()["connection_pool"]["max_idle_server_connections"] = "1";
+
+  auto &default_section = writer->sections()["DEFAULT"];
+  init_keyring(default_section, get_test_temp_dir_name(),
+               {KeyringEntry{"user", "password", "root"}});
+
+  if (GetParam().has_value()) {
+    auto &routing_plugin_section =
+        writer->sections()["routing:" + routing_plugin_name];
+    routing_plugin_section["connection_sharing"] =
+        std::to_string(GetParam().value());
+  }
+
+  auto &router_proc = router_spawner().spawn({"-c", writer->write()});
+
+  const auto &guidelines_str = guidelines_builder::create(
+      {{"rw", "$.server.memberRole = PRIMARY"},
+       {"ro", "$.server.memberRole = SECONDARY"}},
+      {{"r1",
+        "$.session.user = 'foo'",
+        {{"round-robin", {"rw"}}, {"round-robin", {"ro"}}},
+        /*enabled*/ true,
+        /*sharing_enabled*/ true}});
+
+  instrument_metadata(guidelines_str, cluster_nodes_ports,
+                      cluster_nodes_http_ports[0]);
+  EXPECT_TRUE(wait_log_contains(router_proc,
+                                "Routing guidelines document updated", 5s));
+
+  const auto kDelay = 0ms;
+  const auto kJitter = 500ms;
+
+  SCOPED_TRACE("// connect");
+  {
+    MysqlClient cli;
+
+    cli.username("foo");
+    cli.password("");
+
+    auto connect_res = cli.connect("127.0.0.1", router_port_);
+    ASSERT_TRUE(connect_res) << connect_res.error();
+
+    { EXPECT_NO_ERROR(wait_for_stashed_server_connections(1, 10s)); }
+
+    // run it once
+    {
+      auto query_res = cli.query(events_stmt);
+      ASSERT_TRUE(query_res) << query_res.error();
+
+      auto results = result_as_vector(*query_res);
+      ASSERT_THAT(results, ::testing::SizeIs(1));
+
+      auto result = results.front();
+      EXPECT_THAT(result,
+                  ElementsAre(ElementsAre("statement/sql/select", "1"),
+                              ElementsAre("statement/sql/set_option", "1")));
+    }
+
+    {
+      const auto start = clock_type::now();
+      EXPECT_NO_ERROR(wait_for_stashed_server_connections(1, 10s));
+
+      const auto wait_time = clock_type::now() - start;
+      EXPECT_GT(wait_time, kDelay);
+      EXPECT_LT(wait_time, kDelay + kJitter);
+    }
+
+    // run it again.
+    //
+    // if there is multiplexing, there will be some SET statements.
+    {
+      auto query_res = cli.query(events_stmt);
+      ASSERT_TRUE(query_res) << query_res.error();
+
+      auto results = result_as_vector(*query_res);
+      ASSERT_THAT(results, ::testing::SizeIs(1));
+
+      auto result = results.front();
+      EXPECT_THAT(result,
+                  ElementsAre(ElementsAre("statement/sql/select", "2"),
+                              ElementsAre("statement/sql/set_option", "1")));
+    }
+  }
+
+  router_proc.send_clean_shutdown_event();
+}
+
+TEST_P(RoutingSharingWithGuidelines,
+       routing_guidelines_connection_sharing_disabled) {
+  writer->sections()["connection_pool"]["max_idle_server_connections"] = "1";
+
+  auto &default_section = writer->sections()["DEFAULT"];
+  init_keyring(default_section, get_test_temp_dir_name(),
+               {KeyringEntry{"user", "password", "root"}});
+
+  if (GetParam().has_value()) {
+    auto &routing_plugin_section =
+        writer->sections()["routing:" + routing_plugin_name];
+    routing_plugin_section["connection_sharing"] =
+        std::to_string(GetParam().value());
+  }
+
+  auto &router_proc = router_spawner().spawn({"-c", writer->write()});
+
+  const auto &guidelines_str = guidelines_builder::create(
+      {{"rw", "$.server.memberRole = PRIMARY"},
+       {"ro", "$.server.memberRole = SECONDARY"}},
+      {{"r1",
+        "$.session.targetPort = " + std::to_string(router_port_),
+        {{"round-robin", {"rw"}}, {"round-robin", {"ro"}}},
+        /*enabled*/ true,
+        /*sharing_enabled*/ false}});
+
+  instrument_metadata(guidelines_str, cluster_nodes_ports,
+                      cluster_nodes_http_ports[0]);
+  EXPECT_TRUE(wait_log_contains(router_proc,
+                                "Routing guidelines document updated", 5s));
+
+  SCOPED_TRACE("// connect");
+  {
+    MysqlClient cli;
+
+    cli.username("foo");
+    cli.password("bar");
+
+    auto connect_res = cli.connect("127.0.0.1", router_port_);
+    ASSERT_TRUE(connect_res) << connect_res.error();
+
+    // run it once
+    {
+      auto query_res = cli.query(events_stmt);
+      ASSERT_TRUE(query_res) << query_res.error();
+
+      auto results = result_as_vector(*query_res);
+      ASSERT_THAT(results, ::testing::SizeIs(1));
+
+      auto result = results.front();
+      EXPECT_THAT(result, ::testing::IsEmpty());
+    }
+
+    // run it again.
+    //
+    // if there is multiplexing, there will be some SET statements.
+    {
+      auto query_res = cli.query(events_stmt);
+      ASSERT_TRUE(query_res) << query_res.error();
+
+      auto results = result_as_vector(*query_res);
+      ASSERT_THAT(results, ::testing::SizeIs(1));
+
+      auto result = results.front();
+      EXPECT_THAT(result,
+                  ElementsAre(ElementsAre("statement/sql/select", "1")));
+    }
+  }
+
+  router_proc.send_clean_shutdown_event();
+}
+
+TEST_P(RoutingSharingWithGuidelines,
+       routing_guidelines_connection_sharing_enabled_in_one_of_the_routes) {
+  writer->sections()["connection_pool"]["max_idle_server_connections"] = "1";
+
+  auto &default_section = writer->sections()["DEFAULT"];
+  init_keyring(default_section, get_test_temp_dir_name(),
+               {KeyringEntry{"user", "password", "root"}});
+
+  if (GetParam().has_value()) {
+    auto &routing_plugin_section =
+        writer->sections()["routing:" + routing_plugin_name];
+    routing_plugin_section["connection_sharing"] =
+        std::to_string(GetParam().value());
+  }
+
+  auto &router_proc = router_spawner().spawn({"-c", writer->write()});
+
+  const auto &guidelines_str = guidelines_builder::create(
+      {{"rw", "$.server.memberRole = PRIMARY"},
+       {"ro", "$.server.memberRole = SECONDARY"}},
+      {{"r1",
+        "$.session.user = 'foo'",
+        {{"round-robin", {"rw"}}, {"round-robin", {"ro"}}},
+        /*enabled*/ true,
+        /*sharing_enabled*/ true},
+       {"r2",
+        "$.session.user = 'not_foo'",
+        {{"round-robin", {"rw"}}, {"round-robin", {"ro"}}},
+        /*enabled*/ true,
+        /*sharing_enabled*/ false}});
+
+  instrument_metadata(guidelines_str, cluster_nodes_ports,
+                      cluster_nodes_http_ports[0]);
+  EXPECT_TRUE(wait_log_contains(router_proc,
+                                "Routing guidelines document updated", 5s));
+
+  const auto kDelay = 0ms;
+  const auto kJitter = 500ms;
+
+  SCOPED_TRACE("// connect the first user, his route has sharing enabled");
+  {
+    MysqlClient cli;
+
+    cli.username("foo");
+    cli.password("");
+
+    auto connect_res = cli.connect("127.0.0.1", router_port_);
+    ASSERT_TRUE(connect_res) << connect_res.error();
+
+    { EXPECT_NO_ERROR(wait_for_stashed_server_connections(1, 10s)); }
+
+    // run it once
+    {
+      auto query_res = cli.query(events_stmt);
+      ASSERT_TRUE(query_res) << query_res.error();
+
+      auto results = result_as_vector(*query_res);
+      ASSERT_THAT(results, ::testing::SizeIs(1));
+
+      auto result = results.front();
+      EXPECT_THAT(result,
+                  ElementsAre(ElementsAre("statement/sql/select", "1"),
+                              ElementsAre("statement/sql/set_option", "1")));
+    }
+
+    {
+      const auto start = clock_type::now();
+      EXPECT_NO_ERROR(wait_for_stashed_server_connections(1, 10s));
+
+      const auto wait_time = clock_type::now() - start;
+      EXPECT_GT(wait_time, kDelay);
+      EXPECT_LT(wait_time, kDelay + kJitter);
+    }
+
+    // run it again.
+    //
+    // if there is multiplexing, there will be some SET statements.
+    {
+      auto query_res = cli.query(events_stmt);
+      ASSERT_TRUE(query_res) << query_res.error();
+
+      auto results = result_as_vector(*query_res);
+      ASSERT_THAT(results, ::testing::SizeIs(1));
+
+      auto result = results.front();
+      EXPECT_THAT(result,
+                  ElementsAre(ElementsAre("statement/sql/select", "2"),
+                              ElementsAre("statement/sql/set_option", "1")));
+    }
+  }
+
+  SCOPED_TRACE("// connect the second user, no sharing set in his route");
+  {
+    MysqlClient cli;
+
+    cli.username("not_foo");
+    cli.password("bar");
+
+    auto connect_res = cli.connect("127.0.0.1", router_port_);
+    ASSERT_TRUE(connect_res) << connect_res.error();
+
+    // run it once
+    {
+      auto query_res = cli.query(events_stmt);
+      ASSERT_TRUE(query_res) << query_res.error();
+
+      auto results = result_as_vector(*query_res);
+      ASSERT_THAT(results, ::testing::SizeIs(1));
+
+      auto result = results.front();
+      EXPECT_THAT(result,
+                  ElementsAre(ElementsAre("statement/sql/select", "3"),
+                              ElementsAre("statement/sql/set_option", "1")));
+    }
+
+    // run it again.
+    //
+    // if there is multiplexing, there will be some SET statements.
+    {
+      auto query_res = cli.query(events_stmt);
+
+      ASSERT_TRUE(query_res) << query_res.error();
+
+      auto results = result_as_vector(*query_res);
+      ASSERT_THAT(results, ::testing::SizeIs(1));
+
+      auto result = results.front();
+      EXPECT_THAT(result,
+                  ElementsAre(ElementsAre("statement/sql/select", "4"),
+                              ElementsAre("statement/sql/set_option", "1")));
+    }
+  }
+
+  router_proc.send_clean_shutdown_event();
+}
+
+INSTANTIATE_TEST_SUITE_P(Spec, RoutingSharingWithGuidelines,
+                         ::testing::Values(false, true, std::nullopt),
+                         [](const auto &sharing_cfg) {
+                           if (!sharing_cfg.param.has_value())
+                             return "sharing_in_cfg_not_set";
+                           return sharing_cfg.param.value()
+                                      ? "sharing_in_cfg_enabled"
+                                      : "sharing_in_cfg_not_enabled";
+                         });
 
 struct RoutingSharingConfigInvalidParam {
   std::string testname;

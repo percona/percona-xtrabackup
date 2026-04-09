@@ -66,6 +66,8 @@ GRANT INSERT ON `test`.* TO `mysqltest6`@`localhost`
 GRANT INSERT ON `test`.`t1` TO `mysqltest6`@`localhost`
 GRANT SELECT, INSERT ON *.* TO `mysqltest6`@`localhost`
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 show grants for mysqltest5@somehost;
 Grants for mysqltest5@somehost
 GRANT USAGE ON *.* TO `mysqltest5`@`somehost`

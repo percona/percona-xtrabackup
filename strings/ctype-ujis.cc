@@ -1,5 +1,5 @@
 /* Copyright (c) 2002, tommy@valley.ne.jp
-   Copyright (c) 2002, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2002, 2025, Oracle and/or its affiliates.
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
@@ -42,7 +42,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "my_compiler.h"
 #include "mysql/strings/m_ctype.h"
 #include "strings/m_ctype_internals.h"
 #include "template_utils.h"
@@ -313,7 +312,7 @@ static unsigned mbcharlen_ujis(const CHARSET_INFO *cs [[maybe_unused]],
 static size_t my_well_formed_len_ujis(const CHARSET_INFO *cs [[maybe_unused]],
                                       const char *beg, const char *end,
                                       size_t pos, int *error) {
-  const uint8_t *b = pointer_cast<const uint8_t *>(beg);
+  const auto *b = pointer_cast<const uint8_t *>(beg);
 
   for (*error = 0; pos && b < pointer_cast<const uint8_t *>(end); pos--, b++) {
     const char *chbeg;
@@ -357,8 +356,8 @@ static size_t my_well_formed_len_ujis(const CHARSET_INFO *cs [[maybe_unused]],
 static size_t my_numcells_eucjp(const CHARSET_INFO *cs [[maybe_unused]],
                                 const char *str, const char *str_end) {
   size_t clen = 0;
-  const uint8_t *b = pointer_cast<const uint8_t *>(str);
-  const uint8_t *e = pointer_cast<const uint8_t *>(str_end);
+  const auto *b = pointer_cast<const uint8_t *>(str);
+  const auto *e = pointer_cast<const uint8_t *>(str_end);
 
   for (clen = 0; b < e;) {
     if (*b == 0x8E) {
@@ -35735,14 +35734,14 @@ static size_t my_casefold_ujis(const CHARSET_INFO *cs, char *src, size_t srclen,
   char *srcend = src + srclen, *dst0 = dst;
 
   while (src < srcend) {
-    size_t mblen = my_ismbchar(cs, src, srcend);
+    size_t const mblen = my_ismbchar(cs, src, srcend);
     if (mblen) {
       const MY_UNICASE_CHARACTER *ch;
       ch = (mblen == 2)
                ? get_case_info_for_ch(cs, 0, (uint8_t)src[0], (uint8_t)src[1])
                : get_case_info_for_ch(cs, 1, (uint8_t)src[1], (uint8_t)src[2]);
       if (ch) {
-        int code = is_upper ? ch->toupper : ch->tolower;
+        int const code = is_upper ? ch->toupper : ch->tolower;
         src += mblen;
         if (code > 0xFFFF) *dst++ = (char)(uint8_t)((code >> 16) & 0xFF);
         if (code > 0xFF) *dst++ = (char)(uint8_t)((code >> 8) & 0xFF);

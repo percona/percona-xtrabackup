@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -91,16 +91,16 @@ Ndb_dd_client::~Ndb_dd_client() {
     if (!m_comitted) rollback();
   }
 
+  // Free the dictionary client auto releaser
+  dd::cache::Dictionary_client::Auto_releaser *ar =
+      (dd::cache::Dictionary_client::Auto_releaser *)m_auto_releaser;
+  delete ar;
+
   // Release MDL locks
   mdl_locks_release();
 
   // Restore previous MEM_ROOT
   m_thd->mem_root = m_prev_mem_root;
-
-  // Free the dictionary client auto releaser
-  dd::cache::Dictionary_client::Auto_releaser *ar =
-      (dd::cache::Dictionary_client::Auto_releaser *)m_auto_releaser;
-  delete ar;
 }
 
 bool Ndb_dd_client::mdl_lock_table(const char *schema_name,

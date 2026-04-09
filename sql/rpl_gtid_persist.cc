@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -413,6 +413,8 @@ int Gtid_table_persistor::save(const Gtid_set *gtid_set, bool compress) {
     error = ret = 1;
     goto end;
   }
+
+  CONDITIONAL_SYNC_POINT("gtid_save");
 
   ret = error = save(table, gtid_set);
 

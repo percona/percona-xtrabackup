@@ -1,0 +1,61 @@
+--source include/have_router_bootstrap.inc
+
+--source ../include/mrs/initialize_schema.inc
+
+CREATE USER 'admin'@'%' IDENTIFIED BY 'admin_pass';
+GRANT ALL PRIVILEGES ON *.* TO 'admin'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+
+
+# --mrs with unexpected value
+--error 1,2,256
+exec $MYSQLROUTER_BOOTSTRAP
+   --conf-set-option=DEFAULT.plugin_folder=$ROUTER_PLUGIN_DIRECTORY
+   -B admin:admin_pass@127.0.0.1:$port
+   --directory $MYSQL_TMP_DIR/bootstrap_folder/
+   --mrs=1 2>&1;
+
+# --mrs-global-secret needs value
+--error 1,2,256
+exec $MYSQLROUTER_BOOTSTRAP
+   --conf-set-option=DEFAULT.plugin_folder=$ROUTER_PLUGIN_DIRECTORY
+   -B admin:admin_pass@127.0.0.1:$port
+   --directory $MYSQL_TMP_DIR/bootstrap_folder/
+   --mrs --mrs-global-secret 2>&1;
+
+# --mrs-mysql-metadata-account needs value
+--error 1,2,256
+exec $MYSQLROUTER_BOOTSTRAP
+   --conf-set-option=DEFAULT.plugin_folder=$ROUTER_PLUGIN_DIRECTORY
+   -B admin:admin_pass@127.0.0.1:$port
+   --directory $MYSQL_TMP_DIR/bootstrap_folder/
+   --mrs --mrs-mysql-metadata-account 2>&1;
+
+# --mrs-mysql-data-account needs value
+--error 1,2,256
+exec $MYSQLROUTER_BOOTSTRAP
+   --conf-set-option=DEFAULT.plugin_folder=$ROUTER_PLUGIN_DIRECTORY
+   -B admin:admin_pass@127.0.0.1:$port
+   --directory $MYSQL_TMP_DIR/bootstrap_folder/
+   --mrs --mrs-mysql-data-account 2>&1;
+
+# --account and --account-create are not supported for standalone target
+--error 1,2,256
+exec $MYSQLROUTER_BOOTSTRAP
+   --conf-set-option=DEFAULT.plugin_folder=$ROUTER_PLUGIN_DIRECTORY
+   -B admin:admin_pass@127.0.0.1:$MASTER_MYPORT
+   --directory $MYSQL_TMP_DIR/bootstrap_folder/
+   --mrs --account=foo --account-create=never 2>&1;
+
+# --account-host is not supported for standalone target
+--error 1,2,256
+exec $MYSQLROUTER_BOOTSTRAP
+   --conf-set-option=DEFAULT.plugin_folder=$ROUTER_PLUGIN_DIRECTORY
+   -B admin:admin_pass@127.0.0.1:$MASTER_MYPORT
+   --directory $MYSQL_TMP_DIR/bootstrap_folder/
+   --mrs --account-host=foo 2>&1;
+
+# Cleanup
+DROP USER 'admin'@'%';
+--let $cleanup_arg_mrs_skip_service_disable=1
+--source ../include/mrs/cleanup.inc

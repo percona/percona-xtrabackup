@@ -1,6 +1,10 @@
 #
 # Check some special create statements.
 #
+
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
+
 SET sql_mode = 'NO_ENGINE_SUBSTITUTION';
 --disable_warnings
 drop table if exists t1,t2,t3,t4,t5;
@@ -2397,3 +2401,5 @@ CREATE TABLE t3 AS
   ON t1.x IN (SELECT it1.pk FROM t2 AS it1, t2 AS it2);
 SELECT COUNT(*) FROM t3;
 DROP TABLE t1, t2, t3;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

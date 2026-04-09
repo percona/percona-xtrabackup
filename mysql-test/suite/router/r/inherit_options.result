@@ -1,0 +1,371 @@
+# MySQL Rest Service schema created.
+# MySQL Rest Service, server accounts configured.
+# DB `basic_schema` - created
+CREATE FUNCTION `basic_schema`.`nothing` () RETURNS INTEGER
+BEGIN
+RETURN 0;
+END;$$
+# Registred SERVICE at path: /svc
+# Registred DB_SCHEMA at path: /svc/basic
+set @basic_id=@schema_id;
+# Registred DB_OBJECT at path: /svc/basic/t1
+# Registred DB_OBJECT at path: /svc/basic/t2
+# Registred DB_OBJECT at path: /svc/basic/t3
+set @basic_t3_id=@db_object_id;
+# Registred DB_OBJECT at path: /svc/basic/proc1
+# Registred DB_OBJECT at path: /svc/basic/proc2
+# Registred DB_OBJECT at path: /svc/basic/proc3
+set @basic_proc3_id=@db_object_id;
+# Registred DB_OBJECT at path: /svc/basic/func1
+# Registred DB_OBJECT at path: /svc/basic/func2
+# Registred DB_OBJECT at path: /svc/basic/func3
+set @basic_func3_id=@db_object_id;
+# Registred DB_SCHEMA at path: /svc/basic2
+set @basic2_id=@schema_id;
+# Registred DB_OBJECT at path: /svc/basic2/t1
+# Registred DB_OBJECT at path: /svc/basic2/t2
+# Registred DB_OBJECT at path: /svc/basic2/t3
+set @basic2_t3_id=@db_object_id;
+# no links
+GET /svc/basic2/t1/1
+{
+    "id": 1,
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+# no links
+GET /svc/basic2/t2/1
+{
+    "id": 1,
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+# with links
+GET /svc/basic2/t3/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic2/t3/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+### change schema and object options
+# with links schema-true
+GET /svc/basic2/t1/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic2/t1/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+# with links schema-true
+GET /svc/basic2/t2/1
+{
+    "id": 1,
+    "links": [
+        {
+            "rel": "self",
+            "href": "/svc/basic2/t2/1"
+        }
+    ],
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+# with links object-false
+GET /svc/basic2/t3/1
+{
+    "id": 1,
+    "_metadata": {
+        "etag": "349A978B6EEAC86C01C2D7FD0F0C13EEAEE998366EF4D2B4881E22957865400F"
+    }
+}
+OK
+drop schema basic_schema;
+# 500 with error
+GET /svc/basic/t1
+{
+    "message": "Unknown database 'basic_schema'",
+    "sqlcode": "1049",
+    "what": "Error executing MySQL query \"SELECT /*+ MAX_EXECUTION_TIME(60000) */ JSON_OBJECT('id', `t`.`id`,'links', JSON_ARRAY(JSON_OBJECT('rel','self','href',CONCAT('/svc/basic/t1','/',CONCAT_WS(',',`t`.`id`))))) as doc FROM `basic_schema`.`table1` as `t`  LIMIT 0,26\": Unknown database 'basic_schema' (1049)",
+    "status": 500
+}
+OK
+POST /svc/basic/proc1 (payload-size:2)
+{
+    "message": "PROCEDURE basic_schema.procedure1 does not exist",
+    "sqlcode": "1305",
+    "what": "Error preparing MySQL query \"CALL `basic_schema`.`procedure1`()\": PROCEDURE basic_schema.procedure1 does not exist (1305)",
+    "status": 500
+}
+OK
+POST /svc/basic/func1 (payload-size:2)
+{
+    "message": "FUNCTION basic_schema.nothing does not exist",
+    "sqlcode": "1305",
+    "what": "Error executing MySQL query \"SELECT `basic_schema`.`nothing`()\": FUNCTION basic_schema.nothing does not exist (1305)",
+    "status": 500
+}
+OK
+# 500 with error
+GET /svc/basic/t2
+{
+    "message": "Unknown database 'basic_schema'",
+    "sqlcode": "1049",
+    "what": "Error executing MySQL query \"SELECT /*+ MAX_EXECUTION_TIME(60000) */ JSON_OBJECT('id', `t`.`id`,'links', JSON_ARRAY(JSON_OBJECT('rel','self','href',CONCAT('/svc/basic/t2','/',CONCAT_WS(',',`t`.`id`))))) as doc FROM `basic_schema`.`table1` as `t`  LIMIT 0,26\": Unknown database 'basic_schema' (1049)",
+    "status": 500
+}
+OK
+POST /svc/basic/proc2 (payload-size:2)
+{
+    "message": "PROCEDURE basic_schema.procedure1 does not exist",
+    "sqlcode": "1305",
+    "what": "Error preparing MySQL query \"CALL `basic_schema`.`procedure1`()\": PROCEDURE basic_schema.procedure1 does not exist (1305)",
+    "status": 500
+}
+OK
+POST /svc/basic/func2 (payload-size:2)
+{
+    "message": "FUNCTION basic_schema.nothing does not exist",
+    "sqlcode": "1305",
+    "what": "Error executing MySQL query \"SELECT `basic_schema`.`nothing`()\": FUNCTION basic_schema.nothing does not exist (1305)",
+    "status": 500
+}
+OK
+# no error
+GET /svc/basic/t3
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/proc3 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/func3 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+### change schema options
+# 500 with error
+GET /svc/basic/t1
+{
+    "message": "Unknown database 'basic_schema'",
+    "sqlcode": "1049",
+    "what": "Error executing MySQL query \"SELECT /*+ MAX_EXECUTION_TIME(60000) */ JSON_OBJECT('id', `t`.`id`,'links', JSON_ARRAY(JSON_OBJECT('rel','self','href',CONCAT('/svc/basic/t1','/',CONCAT_WS(',',`t`.`id`))))) as doc FROM `basic_schema`.`table1` as `t`  LIMIT 0,26\": Unknown database 'basic_schema' (1049)",
+    "status": 500
+}
+OK
+POST /svc/basic/proc1 (payload-size:2)
+{
+    "message": "PROCEDURE basic_schema.procedure1 does not exist",
+    "sqlcode": "1305",
+    "what": "Error preparing MySQL query \"CALL `basic_schema`.`procedure1`()\": PROCEDURE basic_schema.procedure1 does not exist (1305)",
+    "status": 500
+}
+OK
+POST /svc/basic/func1 (payload-size:2)
+{
+    "message": "FUNCTION basic_schema.nothing does not exist",
+    "sqlcode": "1305",
+    "what": "Error executing MySQL query \"SELECT `basic_schema`.`nothing`()\": FUNCTION basic_schema.nothing does not exist (1305)",
+    "status": 500
+}
+OK
+# 500 with error
+GET /svc/basic/t2
+{
+    "message": "Unknown database 'basic_schema'",
+    "sqlcode": "1049",
+    "what": "Error executing MySQL query \"SELECT /*+ MAX_EXECUTION_TIME(60000) */ JSON_OBJECT('id', `t`.`id`,'links', JSON_ARRAY(JSON_OBJECT('rel','self','href',CONCAT('/svc/basic/t2','/',CONCAT_WS(',',`t`.`id`))))) as doc FROM `basic_schema`.`table1` as `t`  LIMIT 0,26\": Unknown database 'basic_schema' (1049)",
+    "status": 500
+}
+OK
+POST /svc/basic/proc2 (payload-size:2)
+{
+    "message": "PROCEDURE basic_schema.procedure1 does not exist",
+    "sqlcode": "1305",
+    "what": "Error preparing MySQL query \"CALL `basic_schema`.`procedure1`()\": PROCEDURE basic_schema.procedure1 does not exist (1305)",
+    "status": 500
+}
+OK
+POST /svc/basic/func2 (payload-size:2)
+{
+    "message": "FUNCTION basic_schema.nothing does not exist",
+    "sqlcode": "1305",
+    "what": "Error executing MySQL query \"SELECT `basic_schema`.`nothing`()\": FUNCTION basic_schema.nothing does not exist (1305)",
+    "status": 500
+}
+OK
+# with no error
+GET /svc/basic/t3
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/proc3 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/func3 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+### change service options
+# 500 with no error
+GET /svc/basic/t1
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/proc1 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/func1 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+# 500 with no error
+GET /svc/basic/t2
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/proc2 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/func2 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+# with no error
+GET /svc/basic/t3
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/proc3 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/func3 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+### change object options
+# 500 with no error
+GET /svc/basic/t1
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/proc1 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/func1 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+# 500 with no error
+GET /svc/basic/t2
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/proc2 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+POST /svc/basic/func2 (payload-size:2)
+{
+    "message": "Internal Error",
+    "status": 500
+}
+OK
+# with error
+GET /svc/basic/t3
+{
+    "message": "Unknown database 'basic_schema'",
+    "sqlcode": "1049",
+    "what": "Error executing MySQL query \"SELECT /*+ MAX_EXECUTION_TIME(60000) */ JSON_OBJECT('id', `t`.`id`,'links', JSON_ARRAY(JSON_OBJECT('rel','self','href',CONCAT('/svc/basic/t3','/',CONCAT_WS(',',`t`.`id`))))) as doc FROM `basic_schema`.`table1` as `t`  LIMIT 0,26\": Unknown database 'basic_schema' (1049)",
+    "status": 500
+}
+OK
+POST /svc/basic/proc3 (payload-size:2)
+{
+    "message": "PROCEDURE basic_schema.procedure1 does not exist",
+    "sqlcode": "1305",
+    "what": "Error preparing MySQL query \"CALL `basic_schema`.`procedure1`()\": PROCEDURE basic_schema.procedure1 does not exist (1305)",
+    "status": 500
+}
+OK
+POST /svc/basic/func3 (payload-size:2)
+{
+    "message": "FUNCTION basic_schema.nothing does not exist",
+    "sqlcode": "1305",
+    "what": "Error executing MySQL query \"SELECT `basic_schema`.`nothing`()\": FUNCTION basic_schema.nothing does not exist (1305)",
+    "status": 500
+}
+OK
+create schema basic_schema;
+DROP SCHEMA basic_schema;
+DROP SCHEMA mysql_rest_service_metadata;
+DROP ROLE mysql_rest_service_admin;
+DROP ROLE mysql_rest_service_schema_admin;
+DROP ROLE mysql_rest_service_meta_provider;
+DROP ROLE mysql_rest_service_data_provider;
+DROP ROLE mysql_rest_service_dev;

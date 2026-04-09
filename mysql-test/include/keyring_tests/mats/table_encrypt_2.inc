@@ -89,10 +89,16 @@ SELECT * FROM tde_db.t1 LIMIT 10;
 ALTER INSTANCE ROTATE INNODB MASTER KEY;
 SELECT * FROM tde_db.t1 LIMIT 10;
 --echo # Mysqldump output
+
+--let $executed_gtid_set= `SELECT @@GLOBAL.GTID_EXECUTED`
+--replace_result "$executed_gtid_set" GTID_SET
+
 --exec $MYSQL_DUMP --compact --skip-comments --databases tde_db
 --echo # Redirecting mysqldump output to MYSQL_TMP_DIR/mysqldump_encrypt.sql
 --exec $MYSQL_DUMP --databases tde_db > $MYSQL_TMP_DIR/mysqldump_encrypt.sql
 DROP DATABASE tde_db;
+
+RESET BINARY LOGS AND GTIDS;
 
 --let SEARCH_FILE=$MYSQL_TMP_DIR/keyring_query_log
 let SEARCH_PATTERN= ALTER INSTANCE ROTATE INNODB MASTER KEY;

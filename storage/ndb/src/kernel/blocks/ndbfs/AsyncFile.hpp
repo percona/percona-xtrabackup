@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -54,18 +54,6 @@
 #endif
 #ifndef TEST_UNRELIABLE_DISTRIBUTED_FILESYSTEM
 #define TEST_UNRELIABLE_DISTRIBUTED_FILESYSTEM 0
-#endif
-
-#ifndef _WIN32
-static inline int get_last_os_error() { return errno; }
-
-static inline void set_last_os_error(int err) { errno = err; }
-
-#else
-static inline int get_last_os_error() { return GetLastError(); }
-
-static inline void set_last_os_error(int err) { SetLastError(err); }
-
 #endif
 
 class AsyncFile {

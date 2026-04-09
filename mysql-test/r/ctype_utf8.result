@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 drop table if exists t1,t2;
 set names utf8mb3;
 Warnings:
@@ -330,7 +331,7 @@ b
 select * from t1 where a = 'b' and a != 'b';
 a
 drop table t1;
-set collation_connection=utf8_general_ci;
+set collation_connection=utf8mb3_general_ci;
 Warnings:
 Warning	3778	'utf8mb3_general_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 drop table if exists t1;
@@ -1059,7 +1060,7 @@ hex(soundex(_utf8mb3 0xD091D092D093))
 D091303030
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
-SET collation_connection='utf8_general_ci';
+SET collation_connection='utf8mb3_general_ci';
 Warnings:
 Warning	3778	'utf8mb3_general_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 create table t1 select repeat('a',4000) a;
@@ -1188,7 +1189,7 @@ Warnings:
 Warning	1287	'BINARY expr' is deprecated and will be removed in a future release. Please use CAST instead
 drop table t1;
 "END ctype_german.inc"
-SET collation_connection='utf8_bin';
+SET collation_connection='utf8mb3_bin';
 Warnings:
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 create table t1 select repeat('a',4000) a;
@@ -1669,7 +1670,7 @@ a varchar(16) COLLATE utf8mb3_unicode_ci NOT NULL default '',
 b int,
 f varchar(128) default 'XXX',
 INDEX (a(4))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_unicode_ci;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_unicode_ci;
 Warnings:
 Warning	3778	'utf8mb3_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
@@ -1713,7 +1714,7 @@ Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Pl
 CREATE TABLE t1 (
 a CHAR(13) DEFAULT '',
 INDEX(a)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_general_ci;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 Warning	3778	'utf8mb3_general_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
@@ -1767,7 +1768,7 @@ DROP TABLE t1,t2;
 CREATE TABLE t1 (
 a char(255) DEFAULT '', 
 KEY(a(10))
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_general_ci;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 Warning	3778	'utf8mb3_general_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
@@ -1783,7 +1784,7 @@ Käli Käli 2-4
 DROP TABLE t1;
 CREATE TABLE t1 (
 a char(255) DEFAULT ''
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8_general_ci;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci;
 Warnings:
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
 Warning	3778	'utf8mb3_general_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
@@ -1860,7 +1861,7 @@ id	tid	val
 44205	72	VOLN� ADSL
 DROP TABLE t1;
 create table t1(a char(200) COLLATE utf8mb3_unicode_ci NOT NULL default '')
-default charset=utf8mb3 collate=utf8_unicode_ci;
+default charset=utf8mb3 collate=utf8mb3_unicode_ci;
 Warnings:
 Warning	3778	'utf8mb3_unicode_ci' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 Warning	1287	'utf8mb3' is deprecated and will be removed in a future release. Please use utf8mb4 instead
@@ -3322,24 +3323,14 @@ t1	CREATE TABLE `t1` (
   `c1` varchar(3) CHARACTER SET utf8mb3 DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
-select sha('a'), hex(sha('a'));
-sha('a')	hex(sha('a'))
-86f7e437faa5a7fce15d1ddcb9eaeaea377667b8	38366637653433376661613561376663653135643164646362396561656165613337373636376238
-create table t1 as select sha('a') as c1;
+select sha2('a',224), hex(sha2('a',224));
+sha2('a',224)	hex(sha2('a',224))
+abd37534c7d9a2efb9465de931cd7055ffdb8879563ae98078d6d6d5	6162643337353334633764396132656662393436356465393331636437303535666664623838373935363361653938303738643664366435
+create table t1 as select sha2('a',224) as c1;
 show create table t1;
 Table	Create Table
 t1	CREATE TABLE `t1` (
-  `c1` varchar(40) CHARACTER SET utf8mb3 DEFAULT NULL
-) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-drop table t1;
-select sha1('a'), hex(sha1('a'));
-sha1('a')	hex(sha1('a'))
-86f7e437faa5a7fce15d1ddcb9eaeaea377667b8	38366637653433376661613561376663653135643164646362396561656165613337373636376238
-create table t1 as select sha1('a') as c1;
-show create table t1;
-Table	Create Table
-t1	CREATE TABLE `t1` (
-  `c1` varchar(40) CHARACTER SET utf8mb3 DEFAULT NULL
+  `c1` varchar(56) CHARACTER SET utf8mb3 DEFAULT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 drop table t1;
 select hex(concat(cast('-1' as signed)));
@@ -5417,14 +5408,6 @@ drop function f1;
 #
 # Bug#54668 User variable assignments get wrong type
 #
-SET @ST_X=sha('a');
-SELECT charset(@ST_X), collation(@ST_X);
-charset(@ST_X)	collation(@ST_X)
-utf8mb3	utf8mb3_general_ci
-SET @ST_X=sha1('a');
-SELECT charset(@ST_X), collation(@ST_X);
-charset(@ST_X)	collation(@ST_X)
-utf8mb3	utf8mb3_general_ci
 SET @ST_X=ST_astext(point(1,2));
 SELECT charset(@ST_X), collation(@ST_X);
 charset(@ST_X)	collation(@ST_X)
@@ -5783,7 +5766,7 @@ hex(weight_string(cast(_latin1 0x808080 as char), 5, 4, 0xC0))
 select hex(weight_string(cast(_latin1 0x808080 as char),25, 4, 0xC0));
 hex(weight_string(cast(_latin1 0x808080 as char),25, 4, 0xC0))
 20AC20AC20AC00200020002000200020002000200020002000
-set @@collation_connection=utf8_bin;
+set @@collation_connection=utf8mb3_bin;
 Warnings:
 Warning	3778	'utf8mb3_bin' is a collation of the deprecated character set UTF8MB3. Please consider using UTF8MB4 with an appropriate collation instead.
 select @@collation_connection;
@@ -6038,3 +6021,4 @@ INSERT INTO t2 (c2) VALUES(REPEAT(_utf8mb4 0xE0B295, 128));
 ERROR HY000: Incorrect string value: '\xE0\xB2\x95\xE0\xB2\x95...' for column 'c2' at row 1
 DROP TABLE t1;
 DROP TABLE t2;
+include/rpl/set_gtid_mode_on.inc

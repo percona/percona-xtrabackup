@@ -4,6 +4,8 @@
 
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 --disable_warnings
 drop table if exists t1,t2;
@@ -1675,3 +1677,5 @@ INSERT INTO t1 VALUES('aaa'), ('aaaa'), ('aaaaa');
 # One row expected.
 SELECT a FROM t1 WHERE a = 'aaa ';
 DROP TABLE t1;
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

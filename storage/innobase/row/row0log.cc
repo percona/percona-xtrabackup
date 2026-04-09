@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -50,6 +50,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0mysql.h"
 #include "row0row.h"
 #include "row0upd.h"
+#include "scope_guard.h"
 #include "srv0mon.h"
 #include "trx0rec.h"
 #include "ut0new.h"
@@ -1820,7 +1821,7 @@ flag_ok:
   ulint *offsets;
   ulint num_v = new_table->n_v_cols;
 
-  ut_ad(rec_offs_n_fields(moffsets) == dict_index_get_n_unique(index) + 2);
+  ut_ad(rec_offs_n_fields(moffsets) == dict_index_get_n_unique(index) + 2U);
   ut_ad(!rec_offs_any_extern(moffsets));
 
   /* Convert the row to a search tuple. */
@@ -1843,6 +1844,7 @@ flag_ok:
 
   pcur.open(index, 0, old_pk, PAGE_CUR_LE,
             BTR_MODIFY_TREE | BTR_LATCH_FOR_DELETE, &mtr, UT_LOCATION_HERE);
+  const auto guard = create_scope_guard([&pcur]() { pcur.close(); });
 #ifdef UNIV_DEBUG
   switch (pcur.get_btr_cur()->flag) {
     case BTR_CUR_UNSET:
@@ -2031,7 +2033,7 @@ flag_ok:
 
   ut_ad(dtuple_get_n_fields_cmp(old_pk) == dict_index_get_n_unique(index));
   ut_ad(dtuple_get_n_fields(old_pk) ==
-        dict_index_get_n_unique(index) + (log->same_pk ? 0 : 2));
+        dict_index_get_n_unique(index) + (log->same_pk ? 0U : 2U));
 
   row = row_log_table_apply_convert_mrec(mrec, dup->m_index, offsets, log, heap,
                                          &error);
@@ -2066,6 +2068,7 @@ flag_ok:
 
   pcur.open(index, 0, old_pk, PAGE_CUR_LE, BTR_MODIFY_TREE, &mtr,
             UT_LOCATION_HERE);
+  const auto guard = create_scope_guard([&pcur]() { pcur.close(); });
 #ifdef UNIV_DEBUG
   switch (pcur.get_btr_cur()->flag) {
     case BTR_CUR_UNSET:
@@ -2572,7 +2575,7 @@ flag_ok:
           dict_table_copy_v_types(old_pk, new_index->table);
         }
 
-        for (ulint i = 0; i < dict_index_get_n_unique(new_index) + 2; i++) {
+        for (ulint i = 0; i < dict_index_get_n_unique(new_index) + 2U; i++) {
           const void *field;
           ulint len;
           dfield_t *dfield;
@@ -2624,27 +2627,41 @@ flag_ok:
         }
         n_v_size = mach_read_from_2(next_mrec);
         next_mrec += n_v_size;
-
         if (next_mrec > mrec_end) {
           return (nullptr);
         }
 
-        /* if there is more than 2 bytes length info */
-        if (n_v_size > 2) {
-          if (next_mrec + 2 > mrec_end) {
-            return (nullptr);
+        /* Check whether any of the virtual columns are part of an index. */
+        bool virt_in_idx = false;
+        for (ulint col_no = 0;
+             col_no < dict_table_get_n_v_cols(new_index->table); col_no++) {
+          const dict_v_col_t *col =
+              dict_table_get_nth_v_col(new_index->table, col_no);
+          if (col->m_col.ord_part) {
+            virt_in_idx = true;
           }
-          o_v_size = mach_read_from_2(next_mrec);
-          if (next_mrec + o_v_size > mrec_end) {
-            return (nullptr);
-          }
-
-          trx_undo_read_v_cols(log->table, const_cast<byte *>(next_mrec),
-                               old_pk, false, true,
-                               &(log->col_map[log->n_old_col]), heap);
         }
 
-        next_mrec += o_v_size;
+        /* Values of only virtual columns that are in index are fully
+         serialized into undo log. */
+        if (virt_in_idx) {
+          /* if there is more than 2 bytes length info */
+          if (n_v_size > 2) {
+            if (next_mrec + 2 > mrec_end) {
+              return (nullptr);
+            }
+            o_v_size = mach_read_from_2(next_mrec);
+            if (next_mrec + o_v_size > mrec_end) {
+              return (nullptr);
+            }
+
+            trx_undo_read_v_cols(log->table, const_cast<byte *>(next_mrec),
+                                 old_pk, false, true,
+                                 &(log->col_map[log->n_old_col]), heap);
+          }
+
+          next_mrec += o_v_size;
+        }
         ut_ad(next_mrec <= mrec_end);
       }
 

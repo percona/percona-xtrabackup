@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -39,10 +39,10 @@
 #include "dim.h"
 #include "mock_server_rest_client.h"
 #include "mock_server_testutils.h"
+#include "mysql/harness/filesystem.h"  // rename_file
 #include "mysql/harness/logging/logging.h"
 #include "mysql/harness/string_utils.h"  // split_string
 #include "mysqlrouter/mysql_session.h"
-#include "mysqlrouter/utils.h"  // rename_file
 #include "process_wrapper.h"
 #include "random_generator.h"
 #include "router_component_test.h"
@@ -65,6 +65,9 @@ using namespace std::chrono_literals;
 using namespace std::string_literals;
 
 class RouterLoggingTest : public RouterComponentBootstrapTest {
+ public:
+  RouterLoggingTest() : RouterComponentBootstrapTest(false) {}
+
  protected:
   std::string create_config_file(
       const std::string &directory, const std::string &sections,
@@ -1950,8 +1953,8 @@ TEST_F(RouterLoggingTest, bootstrap_normal_logs_written_to_stdout) {
 
   // check if normal output is written to output
   EXPECT_THAT(router.get_full_output(),
-              testing::HasSubstr("After this MySQL Router has been started "
-                                 "with the generated configuration"));
+              testing::HasSubstr("After this, MySQL Router can be started "
+                                 "with the generated configuration with:"));
 
   EXPECT_THAT(router.get_full_output(),
               testing::HasSubstr("MySQL Classic protocol"));
@@ -2097,13 +2100,18 @@ TEST_F(MetadataCacheLoggingTest,
   TempDirectory conf_dir;
 
   // launch the router with metadata-cache configuration
-  auto &router =
-      launch_router({"-c", init_keyring_and_config_file(conf_dir.name())},
-                    EXIT_SUCCESS,  // expected-exit-code
-                    false,         // catch-stderr
-                    false,         // with-sudo
-                    -1s            // wait-ready
-      );
+  auto &router = launch_router(
+      {"-c", init_keyring_and_config_file(
+                 conf_dir.name(),
+                 metadata_cache_section + "\n" +
+                     //  the DEBUG check below needs the reconnect
+                     "close_connection_after_refresh=1\n" + routing_section,
+                 false)},
+      EXIT_SUCCESS,  // expected-exit-code
+      false,         // catch-stderr
+      false,         // with-sudo
+      -1s            // wait-ready
+  );
 
   // expect something like this to appear on STDERR
   // 2017-12-21 17:22:35 metadata_cache ERROR [7ff0bb001700] Failed connecting
@@ -2144,16 +2152,21 @@ TEST_F(MetadataCacheLoggingTest,
 
   // We report to log info that we have connected only if there was an error,
   // otherwise those reports should be treated as debug
-  const auto connect_msg = "Connected with metadata server";
-  EXPECT_TRUE(get_log_timestamp(
-      router.get_logfile_path(),
-      std::string{".*metadata_cache INFO.*"} + connect_msg, 1, 20 * ttl_));
-  EXPECT_FALSE(get_log_timestamp(
-      router.get_logfile_path(),
-      std::string{".*metadata_cache INFO.*"} + connect_msg, 3, 5 * ttl_));
-  EXPECT_TRUE(get_log_timestamp(
-      router.get_logfile_path(),
-      std::string{".*metadata_cache DEBUG.*"} + connect_msg, 1, 20 * ttl_));
+  SCOPED_TRACE("// wait for 1x 'INFO connected with metadata server' message");
+  EXPECT_TRUE(get_log_timestamp(router.get_logfile_path(),
+                                ".*metadata_cache INFO.*"
+                                "Connected with metadata server",
+                                1, 20 * ttl_));
+  SCOPED_TRACE("// wait for 3x 'INFO connected with metadata server' message");
+  EXPECT_FALSE(get_log_timestamp(router.get_logfile_path(),
+                                 ".*metadata_cache INFO.*"
+                                 "Connected with metadata server",
+                                 3, 5 * ttl_));
+  SCOPED_TRACE("// wait for 1x 'DEBUG connected with metadata server' message");
+  EXPECT_TRUE(get_log_timestamp(router.get_logfile_path(),
+                                ".*metadata_cache DEBUG.*"
+                                "Connected with metadata server",
+                                1, 20 * ttl_));
 
   server.send_clean_shutdown_event();
   server.wait_for_exit();
@@ -2187,8 +2200,13 @@ TEST_F(MetadataCacheLoggingTest,
 
   // launch the router with metadata-cache configuration
   auto &router = ProcessManager::launch_router(
-      {"-c", init_keyring_and_config_file(conf_dir.name())}, EXIT_SUCCESS, true,
-      false, -1s);
+      {"-c", init_keyring_and_config_file(
+                 conf_dir.name(),
+                 metadata_cache_section + "\n" +
+                     //  the DEBUG check below needs the reconnect
+                     "close_connection_after_refresh=1\n" + routing_section,
+                 false)},
+      EXIT_SUCCESS, true, false, -1s);
 
   // expect something like this to appear on STDERR:
   //
@@ -2271,7 +2289,7 @@ TEST_F(MetadataCacheLoggingTest, log_rotation_by_HUP_signal) {
   // move the log_file appending '.1' to its name
   auto log_file_1 = Path(logging_dir).join("mysqlrouter.log.1");
 
-  mysqlrouter::rename_file(log_file.str(), log_file_1.str());
+  mysql_harness::rename_file(log_file.str(), log_file_1.str());
   ::kill(router.get_pid(), SIGHUP);
 
   // let's wait until something new gets logged (metadata cache TTL has
@@ -2351,7 +2369,7 @@ TEST_F(MetadataCacheLoggingTest, log_rotation_when_router_restarts) {
   // move the log_file appending '.1' to its name
   auto log_file_1 = get_logging_dir();
   log_file_1.append("mysqlrouter.log.1");
-  mysqlrouter::rename_file(log_file.str(), log_file_1.str());
+  mysql_harness::rename_file(log_file.str(), log_file_1.str());
 
   // make the new file read-only
   chmod(log_file_1.c_str(), S_IRUSR);
@@ -2386,7 +2404,7 @@ TEST_F(MetadataCacheLoggingTest, log_rotation_read_only) {
 
   SCOPED_TRACE("// move the log_file appending '.1' to its name");
   auto log_file_1 = Path(logging_dir).join("mysqlrouter.log.1");
-  mysqlrouter::rename_file(log_file.str(), log_file_1.str());
+  mysql_harness::rename_file(log_file.str(), log_file_1.str());
 
   SCOPED_TRACE("// 'manually' recreate the log file and make it read only");
   {
@@ -3003,9 +3021,15 @@ class TempRelativeDirectory {
   std::string name_;
 
 #ifndef _WIN32
-  // mysql_harness::get_tmp_dir() returns a relative path on these platforms
   std::string get_tmp_dir_(const std::string &name) {
-    return mysql_harness::get_tmp_dir(name);
+    std::string pattern(name + "-XXXXXX");
+    const char *res = mkdtemp(pattern.data());
+    if (res == nullptr) {
+      throw std::system_error(errno, std::generic_category(),
+                              "mkdtemp(" + pattern + ") failed");
+    }
+
+    return pattern;
   }
 #else
   // mysql_harness::get_tmp_dir() returns an abs path under GetTempPath() on

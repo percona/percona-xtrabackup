@@ -12,6 +12,10 @@ CREATE TABLE t1(a INT PRIMARY KEY, b BLOB) STATS_PERSISTENT=0;
 
 # To make sure that the change buffer is empty
 SET GLOBAL innodb_fast_shutdown=0;
+# Disable gtid_mode so that the Clone_persist_gtid periodic updates
+# on "mysql.gtid_executed" table do not interfere with the
+# "non_ahi_search" debug point.
+--let $restart_parameters = restart: --gtid-mode=OFF --enforce-gtid-consistency=OFF
 --source include/restart_mysqld.inc
 
 # temporary workaround for Bug#22284224
@@ -52,3 +56,6 @@ DROP TABLE t1;
 # temporary workaround for Bug#22284224
 SET GLOBAL innodb_purge_run_now = ON;
 SET GLOBAL innodb_adaptive_hash_index = @saved_ahi;
+
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

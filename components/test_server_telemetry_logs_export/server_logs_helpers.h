@@ -1,4 +1,4 @@
-/* Copyright (c) 2023, 2024 Oracle and/or its affiliates.
+/* Copyright (c) 2023, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License, version 2.0,
@@ -42,7 +42,7 @@ class FileLogger {
     // to be thread-safe each call opens the file by itself
     FILE *outfile = fopen(m_path.c_str(), "a+");
     if (outfile) {
-      char msg[2048];
+      char msg[20480];
 
       va_list args;
       va_start(args, format);

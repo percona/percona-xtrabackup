@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -141,10 +141,9 @@ static const char *get_client_errmsg(int nr) {
     void
 */
 
-void init_client_errs(void) {
-  static_assert(
-      array_elements(client_errors) == (CR_ERROR_LAST - CR_ERROR_FIRST + 2),
-      "");
+void init_client_errs() {
+  static_assert(array_elements(client_errors) ==
+                (CR_ERROR_LAST - CR_ERROR_FIRST + 2));
   (void)my_error_register(get_client_errmsg, CR_ERROR_FIRST, CR_ERROR_LAST);
 }
 
@@ -158,6 +157,6 @@ void init_client_errs(void) {
     void
 */
 
-void finish_client_errs(void) {
+void finish_client_errs() {
   (void)my_error_unregister(CR_ERROR_FIRST, CR_ERROR_LAST);
 }

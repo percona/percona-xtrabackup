@@ -1,4 +1,4 @@
-/* Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -52,4 +52,7 @@ extern "C" void *my_malloc(PSI_memory_key key, size_t size, int flags);
  @param ptr memory address to be freed
 */
 extern "C" void my_free(void *ptr);
+
+extern "C" void my_memset_s(void *dest, size_t dest_max, int c, size_t n);
+
 #endif  // COMPONENT_MEMORY_H

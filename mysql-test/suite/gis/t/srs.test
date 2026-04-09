@@ -41,30 +41,30 @@ DEFINITION 'GEOGCS["WGS 84",DATUM["World Geodetic System 1984",SPHEROID["WGS 84"
 --connect(nonsuper,localhost,srs_test)
 --connection nonsuper
 
---echo # CREATE as non-SUPER (should raise error).
---error ER_CMD_NEED_SUPER
+--echo # CREATE without SUPER or CREATE_SPATIAL_REFERENCE_SYSTEM (should raise error).
+--error ER_CMD_NEED_SUPER_OR_CREATE_SPATIAL_REFERENCE_SYSTEM
 CREATE SPATIAL REFERENCE SYSTEM 1000000001
 NAME 'foo'
 DEFINITION 'GEOGCS["WGS 84",DATUM["World Geodetic System 1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.017453292519943278,AUTHORITY["EPSG","9122"]],AXIS["Lat",NORTH],AXIS["Lon",EAST],AUTHORITY["EPSG","4326"]]';
 
---echo # CREATE OR REPLACE on existing SRS as non-SUPER (should raise error).
---error ER_CMD_NEED_SUPER
+--echo # CREATE OR REPLACE on existing SRS without SUPER or CREATE_SPATIAL_REFERENCE_SYSTEM (should raise error).
+--error ER_CMD_NEED_SUPER_OR_CREATE_SPATIAL_REFERENCE_SYSTEM
 CREATE OR REPLACE SPATIAL REFERENCE SYSTEM 1000000000
 NAME 'foo'
 DEFINITION 'GEOGCS["WGS 84",DATUM["World Geodetic System 1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.017453292519943278,AUTHORITY["EPSG","9122"]],AXIS["Lat",NORTH],AXIS["Lon",EAST],AUTHORITY["EPSG","4326"]]';
 
---echo # CREATE SRS IF NOT EXISTS on existing SRS as non-SUPER (should raise error).
---error ER_CMD_NEED_SUPER
+--echo # CREATE SRS IF NOT EXISTS on existing SRS without SUPER or CREATE_SPATIAL_REFERENCE_SYSTEM (should raise error).
+--error ER_CMD_NEED_SUPER_OR_CREATE_SPATIAL_REFERENCE_SYSTEM
 CREATE SPATIAL REFERENCE SYSTEM IF NOT EXISTS 1000000000
 NAME 'foo'
 DEFINITION 'GEOGCS["WGS 84",DATUM["World Geodetic System 1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.017453292519943278,AUTHORITY["EPSG","9122"]],AXIS["Lat",NORTH],AXIS["Lon",EAST],AUTHORITY["EPSG","4326"]]';
 
---echo # DROP on existing SRS as non-SUPER(should raise error).
---error ER_CMD_NEED_SUPER
+--echo # DROP on existing SRS without SUPER or CREATE_SPATIAL_REFERENCE_SYSTEM (should raise error).
+--error ER_CMD_NEED_SUPER_OR_CREATE_SPATIAL_REFERENCE_SYSTEM
 DROP SPATIAL REFERENCE SYSTEM 1000000000;
 
---echo # DROP on non-existing SRS as non-SUPER (should raise error).
---error ER_CMD_NEED_SUPER
+--echo # DROP on non-existing SRS without SUPER or CREATE_SPATIAL_REFERENCE_SYSTEM (should raise error).
+--error ER_CMD_NEED_SUPER_OR_CREATE_SPATIAL_REFERENCE_SYSTEM
 DROP SPATIAL REFERENCE SYSTEM 1000000000;
 
 --connection default
@@ -73,6 +73,27 @@ DROP SPATIAL REFERENCE SYSTEM 1000000000;
 # Wait until all disconnects are completed
 --source include/wait_until_count_sessions.inc
 
+GRANT CREATE_SPATIAL_REFERENCE_SYSTEM ON *.* TO 'srs_test'@'localhost';
+
+--connect(CREATE_SPATIAL_REFERENCE_SYSTEM,localhost,srs_test)
+--connection CREATE_SPATIAL_REFERENCE_SYSTEM
+
+--echo # CREATE with CREATE_SPATIAL_REFERENCE_SYSTEM privilege (should pass).
+CREATE SPATIAL REFERENCE SYSTEM 33000 NAME 'MAGNA-SIRGAS 2018' ORGANIZATION 'EPSG' IDENTIFIED BY 33000 DEFINITION 'PROJCS["MAGNA-SIRGAS 2018 / Origen-Nacional",GEOGCS["MAGNA-SIRGAS 2018",DATUM["Marco_Geocentrico_Nacional_de_Referencia_2018",SPHEROID["GRS 1980",6378137,298.257222101],TOWGS84[0,0,0,0,0,0,0]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AXIS["Lat",NORTH],AXIS["Lon",EAST],AUTHORITY["EPSG","20046"]],PROJECTION["Transverse_Mercator",AUTHORITY["EPSG","9807"]],PARAMETER["latitude_of_origin",4],PARAMETER["central_meridian",-73],PARAMETER["scale_factor",0.9992],PARAMETER["false_easting",5000000],PARAMETER["false_northing",2000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AUTHORITY["EPSG","33000"]]';
+
+--echo # CREATE OR REPLACE with CREATE_SPATIAL_REFERENCE_SYSTEM privilege (should pass).
+CREATE OR REPLACE SPATIAL REFERENCE SYSTEM 33000 NAME 'MAGNA-SIRGAS 2018' ORGANIZATION 'EPSG' IDENTIFIED BY 33000 DEFINITION 'PROJCS["MAGNA-SIRGAS 2018 / Origen-Nacional",GEOGCS["MAGNA-SIRGAS 2018",DATUM["Marco_Geocentrico_Nacional_de_Referencia_2018",SPHEROID["GRS 1980",6378137,298.257222101],TOWGS84[0,0,0,0,0,0,0]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AXIS["Lat",NORTH],AXIS["Lon",EAST],AUTHORITY["EPSG","20046"]],PROJECTION["Transverse_Mercator",AUTHORITY["EPSG","9807"]],PARAMETER["latitude_of_origin",4],PARAMETER["central_meridian",-73],PARAMETER["scale_factor",0.9992],PARAMETER["false_easting",5000000],PARAMETER["false_northing",2000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AUTHORITY["EPSG","33000"]]';
+
+--echo # DROP with CREATE_SPATIAL_REFERENCE_SYSTEM privilege (should pass).
+DROP SPATIAL REFERENCE SYSTEM 33000;
+
+--echo # CREATE IF NOT EXISTS with CREATE_SPATIAL_REFERENCE_SYSTEM privilege (should pass).
+CREATE SPATIAL REFERENCE SYSTEM IF NOT EXISTS 33000 NAME 'MAGNA-SIRGAS 2018' ORGANIZATION 'EPSG' IDENTIFIED BY 33000 DEFINITION 'PROJCS["MAGNA-SIRGAS 2018 / Origen-Nacional",GEOGCS["MAGNA-SIRGAS 2018",DATUM["Marco_Geocentrico_Nacional_de_Referencia_2018",SPHEROID["GRS 1980",6378137,298.257222101],TOWGS84[0,0,0,0,0,0,0]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AXIS["Lat",NORTH],AXIS["Lon",EAST],AUTHORITY["EPSG","20046"]],PROJECTION["Transverse_Mercator",AUTHORITY["EPSG","9807"]],PARAMETER["latitude_of_origin",4],PARAMETER["central_meridian",-73],PARAMETER["scale_factor",0.9992],PARAMETER["false_easting",5000000],PARAMETER["false_northing",2000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AUTHORITY["EPSG","33000"]]';
+
+--connection default
+--disconnect CREATE_SPATIAL_REFERENCE_SYSTEM
+
+DROP SPATIAL REFERENCE SYSTEM 33000;
 DROP SPATIAL REFERENCE SYSTEM 1000000000;
 DROP USER srs_test@localhost;
 
@@ -2195,3 +2216,76 @@ CREATE OR REPLACE SPATIAL REFERENCE SYSTEM 33001 NAME 'webmodairy' ORGANIZATION 
 # detect if we created an SRS and forgot to drop it afterwards.
 SELECT @number_of_srss = COUNT(*) AS should_be_true
 FROM INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS;
+
+--let $test_error_log= $MYSQL_TMP_DIR/mysql_upgrade_grant.err
+
+--echo #
+--echo # Tests for WL#16547
+--echo # Check that users with SUPER privilege (root@localhost and
+--echo # the new added user u1) gets CREATE_SPATIAL_REFERENCE_SYSTEM privilege
+--echo # after upgrade.
+--echo #
+
+--echo # Show privilege for root@localhost before the privilege CREATE_SPATIAL_REFERENCE_SYSTEM will be revoked
+--let $user = root@localhost
+--source include/show_grants.inc
+
+CREATE USER u1;
+GRANT SUPER ON *.* TO u1;
+
+--echo # Revoke the privilege CREATE_SPATIAL_REFERENCE_SYSTEM in order to simulate
+--echo # the case when upgrade is run against a database that was created by
+--echo # mysql server without support for CREATE_SPATIAL_REFERENCE_SYSTEM.
+REVOKE CREATE_SPATIAL_REFERENCE_SYSTEM ON *.* FROM root@localhost;
+REVOKE CREATE_SPATIAL_REFERENCE_SYSTEM ON *.* FROM u1;
+
+--echo # We show here that the users root@localhost and u1 have the privilege
+--echo # SUPER and don't have the privilege CREATE_SPATIAL_REFERENCE_SYSTEM
+--let $user = root@localhost
+--source include/show_grants.inc
+SHOW GRANTS FOR u1;
+
+--echo # Start upgrade
+
+--let $restart_parameters = restart:--upgrade=FORCE --log-error=$test_error_log
+--let $wait_counter= 10000
+--replace_result $test_error_log test_error_log
+--source include/restart_mysqld.inc
+
+--echo # Show privileges granted to the users root@localhost and u1
+--echo # after upgrade has been finished.
+--echo # It is expected that the users root@localhost and u1 have the
+--echo # privilege CREATE_SPATIAL_REFERENCE_SYSTEM granted since they had the privilge SUPER
+--echo # before upgrade
+--let $user = root@localhost
+--source include/show_grants.inc
+SHOW GRANTS FOR u1;
+
+--echo # Now run upgrade against database where there is a user with granted
+--echo # privilege CREATE_SPATIAL_REFERENCE_SYSTEM and check that for those users who have
+--echo # the privilege SUPER assigned the privilege CREATE_SPATIAL_REFERENCE_SYSTEM won't be
+--echo # granted during upgrade.
+
+--echo # Revoke the privilege CREATE_SPATIAL_REFERENCE_SYSTEM from the user u1 and
+--echo # mysql.session@localhost
+REVOKE CREATE_SPATIAL_REFERENCE_SYSTEM ON *.* FROM u1;
+
+--echo # Start upgrade
+
+--let $restart_parameters = restart:--upgrade=FORCE --log-error=$test_error_log
+--let $wait_counter= 10000
+--replace_result $test_error_log test_error_log
+--source include/restart_mysqld.inc
+
+--echo # It is expected that after upgrade be finished the privilege
+--echo # CREATE_SPATIAL_REFERENCE_SYSTEM won't be granted to the user u1 since
+--echo # there was another user (root@localhost) who had the privilege
+--echo # CREATE_SPATIAL_REFERENCE_SYSTEM at the time when upgrade was started
+--let $user = root@localhost
+--source include/show_grants.inc
+SHOW GRANTS FOR u1;
+
+--echo # Cleaning up
+DROP USER u1;
+
+--echo # End of tests for WL#16547

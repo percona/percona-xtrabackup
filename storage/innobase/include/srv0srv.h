@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2024, Oracle and/or its affiliates.
+Copyright (c) 1995, 2025, Oracle and/or its affiliates.
 Copyright (c) 2008, 2009, Google Inc.
 Copyright (c) 2009, Percona Inc.
 
@@ -295,12 +295,6 @@ extern Srv_cpu_usage srv_cpu_usage;
 
 extern Log_DDL *log_ddl;
 
-#ifdef INNODB_DD_TABLE
-extern bool srv_is_upgrade_mode;
-extern bool srv_downgrade_logs;
-extern bool srv_upgrade_old_undo_found;
-#endif /* INNODB_DD_TABLE */
-
 extern bool srv_downgrade_partition_files;
 
 extern const char *srv_main_thread_op_info;
@@ -403,9 +397,6 @@ extern char *srv_innodb_directories;
 /** Server undo tablespaces directory, can be absolute path. */
 extern char *srv_undo_dir;
 
-/** Number of undo tablespaces to use. */
-extern ulong srv_undo_tablespaces;
-
 /** The number of rollback segments per tablespace */
 extern ulong srv_rollback_segments;
 
@@ -432,12 +423,6 @@ extern bool srv_redo_log_encrypt;
 
 /* Maximum number of redo files of a cloned DB. */
 constexpr size_t SRV_N_LOG_FILES_CLONE_MAX = 1000;
-
-/** Value of innodb_log_files_in_group. This is deprecated. */
-extern ulong srv_log_n_files;
-
-/** Value of innodb_log_file_size. Expressed in bytes. This is deprecated. */
-extern ulonglong srv_log_file_size;
 
 /** Value of innodb_redo_log_capacity. Expressed in bytes. Might be set
 during startup automatically when started in "dedicated server mode". */
@@ -797,6 +782,7 @@ extern srv_stats_t srv_stats;
 #ifdef UNIV_PFS_THREAD
 extern mysql_pfs_key_t log_archiver_thread_key;
 extern mysql_pfs_key_t page_archiver_thread_key;
+extern mysql_pfs_key_t buf_pool_create_thread_key;
 extern mysql_pfs_key_t buf_dump_thread_key;
 extern mysql_pfs_key_t buf_resize_thread_key;
 extern mysql_pfs_key_t clone_ddl_thread_key;
@@ -1107,11 +1093,11 @@ This is called during CREATE UNDO TABLESPACE.
 dberr_t srv_undo_tablespace_create(const char *space_name,
                                    const char *file_name, space_id_t space_id);
 
-/** Initialize undo::spaces and trx_sys_undo_spaces,
+/** Initialize undo::spaces,
 called once during srv_start(). */
 void undo_spaces_init();
 
-/** Free the resources occupied by undo::spaces and trx_sys_undo_spaces,
+/** Free the resources occupied by undo::spaces,
 called once during thread de-initialization. */
 void undo_spaces_deinit();
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -35,6 +35,9 @@ SET(KEYRING_ENCRYPTION_TEST_SOURCE
 
   # Components subsystem
   components.cc
+
+  # log_builtin component implementation helpers
+  ${CMAKE_SOURCE_DIR}/components/keyrings/common/component_helpers/src/keyring_log_builtins_definition.cc
 
   # Main
   keyring_encryption.cc

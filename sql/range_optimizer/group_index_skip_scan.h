@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -81,7 +81,7 @@ class List_iterator;
   index, this class produces only index keys, and not complete records.
 */
 
-class GroupIndexSkipScanIterator : public TableRowIterator {
+class GroupIndexSkipScanIterator final : public TableRowIterator {
  private:
   uint index;                  /* Index this quick select uses */
   KEY *index_info;             /* The index chosen for data access */
@@ -151,9 +151,11 @@ class GroupIndexSkipScanIterator : public TableRowIterator {
                              const Quick_ranges_array *key_infix_ranges,
                              const Quick_ranges *min_max_ranges);
   ~GroupIndexSkipScanIterator() override;
-  bool Init() override;
-  int Read() override;
   bool is_agg_distinct() const { return have_agg_distinct; }
+
+ private:
+  bool DoInit() override;
+  int DoRead() override;
 };
 
 #endif  // SQL_RANGE_OPTIMIZER_GROUP_INDEX_SKIP_SCAN_H_

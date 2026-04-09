@@ -2,6 +2,8 @@
 # Test the metrics monitor system's control system
 # and counter accuracy.
 
+# This o/p keeps varying so running with gtid_mode=OFF
+--source include/rpl/set_gtid_mode_off.inc
 
 set global innodb_monitor_disable = All;
 
@@ -443,3 +445,5 @@ LIKE 'buffer_page_written_index_leaf';
 
 DROP TABLE t1;
 --source include/innodb_monitor_restore.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

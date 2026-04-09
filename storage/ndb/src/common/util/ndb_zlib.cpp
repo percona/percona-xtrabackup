@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,9 @@
 #include "util/ndb_zlib.h"
 #include "util/require.h"
 
-#include <assert.h>  // assert()
-#include <stdlib.h>  // abort()
+#include <cassert>  // assert()
 #include <cstdint>
+#include <cstdlib>  // abort()
 
 #include "zlib.h"
 
@@ -87,7 +87,7 @@ int ndb_zlib::set_memory(void *mem, size_t size) {
 }
 
 void *ndb_zlib::alloc(void *opaque, unsigned items, unsigned size) {
-  ndb_zlib *ths = static_cast<ndb_zlib *>(opaque);
+  auto *ths = static_cast<ndb_zlib *>(opaque);
   size_t sz = size_t{items} * size_t{size};
   if (ths->mem_top + sz <= ths->mem_end) {
     void *p = ths->mem_top;
@@ -98,7 +98,7 @@ void *ndb_zlib::alloc(void *opaque, unsigned items, unsigned size) {
 }
 
 void ndb_zlib::free(void *opaque, void *address) {
-  ndb_zlib *ths = static_cast<ndb_zlib *>(opaque);
+  auto *ths = static_cast<ndb_zlib *>(opaque);
   REQUIRE(ths->mem_begin <= address);
   REQUIRE(address < ths->mem_top);
   REQUIRE(address < ths->mem_end);

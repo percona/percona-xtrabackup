@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2013, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2013, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -25,11 +25,11 @@
 #include <NdbThread.h>
 #include <NdbTick.h>
 #include <ndb_limits.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <File.hpp>
 #include <NdbHW.hpp>
 #include <UtilBuffer.hpp>
+#include <cstdint>
+#include <cstdio>
 #include <iostream>
 #include <thread>
 #include "../src/common/util/parse_mask.hpp"
@@ -285,7 +285,6 @@ static void create_cpu_list(struct ndb_hwinfo *hwinfo,
       }
     }
   } while (found);
-  return;
 }
 
 static Uint32 find_largest_virt_l3_group(struct ndb_hwinfo *hwinfo,
@@ -395,7 +394,7 @@ static int create_l3_cache_list(struct ndb_hwinfo *hwinfo) {
     Uint32 found_online = 0;
     for (Uint32 cpu_id = 0; cpu_id < ncpu; cpu_id++) {
       if (hwinfo->cpu_info[cpu_id].l3_cache_id == l3_cache_id &&
-          hwinfo->cpu_info[cpu_id].in_l3_cache_list == false) {
+          !static_cast<bool>(hwinfo->cpu_info[cpu_id].in_l3_cache_list)) {
         if (found == 0) {
           g_first_l3_cache[l3_cache_id] = cpu_id;
           prev_cpu_id = cpu_id;
@@ -855,7 +854,7 @@ static struct ndb_hwinfo *Ndb_SetHWInfo() {
   }
   memset(p_cpudata, 0, sz_cpudata);
 
-  struct ndb_hwinfo *res = (struct ndb_hwinfo *)p_hwinfo;
+  auto *res = (struct ndb_hwinfo *)p_hwinfo;
   res->cpu_info = (ndb_cpuinfo_data *)p_cpuinfo;
   res->cpu_data = (ndb_cpudata *)p_cpudata;
   res->cpu_cnt_max = ncpu;
@@ -1423,7 +1422,7 @@ static int Ndb_ReloadCPUData(struct ndb_hwinfo *hwinfo) {
       // no number found...
       return -1;
     }
-    if (!(val >= 0 && val <= (long)max_cpu_no)) {
+    if (val < 0 || val > (long)max_cpu_no) {
       assert(false);
       return -1;
     }
@@ -1438,7 +1437,7 @@ static int Ndb_ReloadCPUData(struct ndb_hwinfo *hwinfo) {
 
     char *base = (char *)&hwinfo->cpu_data[curr_cpu];
     for (int i = 0; i < 12; i++) {
-      Uint64 *ptr = (Uint64 *)(base + offsets[i]);
+      auto *ptr = (Uint64 *)(base + offsets[i]);
       *ptr = t2us(ticks[i]);
     }
     curr_cpu++;
@@ -1576,7 +1575,7 @@ static int get_physical_package_ids(struct ndb_hwinfo *hwinfo) {
       perror(error_buf);
       return -1;
     }
-    Uint32 package_id = (Uint32)strtol(read_buf, nullptr, 10);
+    auto package_id = (Uint32)strtol(read_buf, nullptr, 10);
     int err_code = errno;
     if (package_id == 0 && (err_code == EINVAL || err_code == ERANGE)) {
       snprintf(error_buf, sizeof(error_buf), "Failed to convert %s into number",
@@ -1584,7 +1583,7 @@ static int get_physical_package_ids(struct ndb_hwinfo *hwinfo) {
       perror(error_buf);
       return -1;
     }
-    Uint32 socket_id = Uint32(~0);
+    auto socket_id = Uint32(~0);
     int max_socket_id = -1;
     for (Uint32 i = 0; i < hwinfo->cpu_cnt_max; i++) {
       if (hwinfo->cpu_info[i].package_id == package_id) {
@@ -1731,7 +1730,7 @@ static int Ndb_ReloadHWInfo(struct ndb_hwinfo *hwinfo) {
       hwinfo->cpu_info[curr_cpu].online = 1;
       cpu_online_count++;
     } else if (sscanf(buf, "core id : %u", &val) == 1) {
-      if (!(curr_cpu >= 0 && curr_cpu <= (int)max_cpu_no)) {
+      if (curr_cpu < 0 || curr_cpu > (int)max_cpu_no) {
         snprintf(error_buf, sizeof(error_buf), "CPU %u is outside max %u", val,
                  max_cpu_no);
         perror(error_buf);
@@ -1739,7 +1738,7 @@ static int Ndb_ReloadHWInfo(struct ndb_hwinfo *hwinfo) {
       }
       hwinfo->cpu_info[curr_cpu].core_id = val;
     } else if (sscanf(buf, "physical id : %u", &val) == 1) {
-      if (!(curr_cpu >= 0 && curr_cpu <= (int)max_cpu_no)) {
+      if (curr_cpu < 0 || curr_cpu > (int)max_cpu_no) {
         snprintf(error_buf, sizeof(error_buf), "CPU %u is outside max %u", val,
                  max_cpu_no);
         perror(error_buf);
@@ -1750,7 +1749,7 @@ static int Ndb_ReloadHWInfo(struct ndb_hwinfo *hwinfo) {
     } else if (sscanf(buf, "cpu cores : %u", &val) == 1) {
       num_cpu_cores_per_socket = val;
     } else if ((p = strstr(buf, "model name")) != nullptr) {
-      if (!(curr_cpu >= 0 && curr_cpu <= (int)max_cpu_no)) {
+      if (curr_cpu < 0 || curr_cpu > (int)max_cpu_no) {
         snprintf(error_buf, sizeof(error_buf), "CPU %u is outside max %u", val,
                  max_cpu_no);
         perror(error_buf);
@@ -2236,7 +2235,6 @@ static void test_create(struct test_cpumap_data *map, Uint32 test_case) {
       break;
     }
   }
-  return;
 }
 
 #define NUM_TESTS 15

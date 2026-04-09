@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 CALL mtr.add_suppression("Enabling keys got errno");
 drop table if exists t1,t2;
 SET SQL_WARNINGS=1;
@@ -2791,3 +2792,4 @@ FROM_VECTOR(embedding)
 [1.00000e+00,2.00000e+00,3.00000e+00,4.00000e+00]
 [4.00000e+00,5.00000e+00,6.00000e+00,7.00000e+00]
 DROP TABLE ta;
+include/rpl/set_gtid_mode_on.inc

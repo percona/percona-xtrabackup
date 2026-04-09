@@ -83,8 +83,8 @@ SET GLOBAL group_replication_ssl_mode= VERIFY_IDENTITY;
 --source include/assert.inc
 
 SET GLOBAL group_replication_ssl_mode= DEFAULT;
---let $assert_text= group_replication_ssl_mode must be set to DISABLED
---let $assert_cond= "[SELECT @@GLOBAL.group_replication_ssl_mode]" = "DISABLED"
+--let $assert_text= group_replication_ssl_mode must be set to REQUIRED
+--let $assert_cond= "[SELECT @@GLOBAL.group_replication_ssl_mode]" = "REQUIRED"
 --source include/assert.inc
 
 

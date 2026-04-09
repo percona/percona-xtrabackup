@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,6 +24,7 @@
 */
 
 #include <atomic>
+#include <ctime>
 
 #include <ndb_global.h>
 
@@ -68,7 +69,7 @@ class CommandInterpreter {
    *   @return true until quit/bye/exit has been typed
    */
   bool execute(const char *line, int try_reconnect = -1,
-               bool interactive = true, int *error = NULL);
+               bool interactive = true, int *error = nullptr);
 
  private:
   void printError();
@@ -159,7 +160,7 @@ class CommandInterpreter {
 
   int test_tls();
   bool connect(bool interactive);
-  void disconnect(void);
+  void disconnect();
 
   /**
    * A execute function definition
@@ -250,7 +251,6 @@ int Ndb_mgmclient::test_tls() { return m_cmd->test_tls(); }
 #include <portlib/NdbThread.h>
 
 #include <debugger/EventLogger.hpp>
-#include <signaldata/SetLogLevelOrd.hpp>
 
 /*****************************************************************************
  * HELP
@@ -675,45 +675,46 @@ struct st_cmd_help {
   const char *cmd;
   const char *help;
   void (*help_fn)();
-} help_items[] = {{"SHOW", helpTextShow, NULL},
-                  {"HELP", helpTextHelp, NULL},
-                  {"BACKUP", helpTextBackup, NULL},
-                  {"TLS INFO", helpTextTlsInfo, NULL},
-                  {"START BACKUP", helpTextStartBackup, NULL},
-                  {"START BACKUP NOWAIT", helpTextStartBackup, NULL},
-                  {"START BACKUP WAIT STARTED", helpTextStartBackup, NULL},
-                  {"START BACKUP WAIT", helpTextStartBackup, NULL},
-                  {"START BACKUP WAIT COMPLETED", helpTextStartBackup, NULL},
-                  {"ABORT BACKUP", helpTextAbortBackup, NULL},
-                  {"SHUTDOWN", helpTextShutdown, NULL},
-                  {"CLUSTERLOG ON", helpTextClusterlogOn, NULL},
-                  {"CLUSTERLOG OFF", helpTextClusterlogOff, NULL},
-                  {"CLUSTERLOG TOGGLE", helpTextClusterlogToggle, NULL},
-                  {"CLUSTERLOG INFO", helpTextClusterlogInfo, NULL},
-                  {"START", helpTextStart, NULL},
-                  {"RESTART", helpTextRestart, NULL},
-                  {"STOP", helpTextStop, NULL},
-                  {"ENTER SINGLE USER MODE", helpTextEnterSingleUserMode, NULL},
-                  {"EXIT SINGLE USER MODE", helpTextExitSingleUserMode, NULL},
-                  {"STATUS", helpTextStatus, NULL},
-                  {"CLUSTERLOG", helpTextClusterlog, NULL},
-                  {"NODELOG", helpTextNodelog, NULL},
-                  {"NODELOG DEBUG", helpTextNodelog, NULL},
-                  {"NODELOG DEBUG", helpTextNodelog, NULL},
-                  {"NODELOG DEBUG ON", helpTextNodelog, NULL},
-                  {"NODELOG DEBUG OFF", helpTextNodelog, NULL},
-                  {"PURGE STALE SESSIONS", helpTextPurgeStaleSessions, NULL},
-                  {"CONNECT", helpTextConnect, NULL},
-                  {"REPORT", helpTextReport, helpTextReportFn},
-                  {"QUIT", helpTextQuit, NULL},
-                  {"PROMPT", helpTextPrompt, NULL},
+} help_items[] = {
+    {"SHOW", helpTextShow, nullptr},
+    {"HELP", helpTextHelp, nullptr},
+    {"BACKUP", helpTextBackup, nullptr},
+    {"TLS INFO", helpTextTlsInfo, nullptr},
+    {"START BACKUP", helpTextStartBackup, nullptr},
+    {"START BACKUP NOWAIT", helpTextStartBackup, nullptr},
+    {"START BACKUP WAIT STARTED", helpTextStartBackup, nullptr},
+    {"START BACKUP WAIT", helpTextStartBackup, nullptr},
+    {"START BACKUP WAIT COMPLETED", helpTextStartBackup, nullptr},
+    {"ABORT BACKUP", helpTextAbortBackup, nullptr},
+    {"SHUTDOWN", helpTextShutdown, nullptr},
+    {"CLUSTERLOG ON", helpTextClusterlogOn, nullptr},
+    {"CLUSTERLOG OFF", helpTextClusterlogOff, nullptr},
+    {"CLUSTERLOG TOGGLE", helpTextClusterlogToggle, nullptr},
+    {"CLUSTERLOG INFO", helpTextClusterlogInfo, nullptr},
+    {"START", helpTextStart, nullptr},
+    {"RESTART", helpTextRestart, nullptr},
+    {"STOP", helpTextStop, nullptr},
+    {"ENTER SINGLE USER MODE", helpTextEnterSingleUserMode, nullptr},
+    {"EXIT SINGLE USER MODE", helpTextExitSingleUserMode, nullptr},
+    {"STATUS", helpTextStatus, nullptr},
+    {"CLUSTERLOG", helpTextClusterlog, nullptr},
+    {"NODELOG", helpTextNodelog, nullptr},
+    {"NODELOG DEBUG", helpTextNodelog, nullptr},
+    {"NODELOG DEBUG", helpTextNodelog, nullptr},
+    {"NODELOG DEBUG ON", helpTextNodelog, nullptr},
+    {"NODELOG DEBUG OFF", helpTextNodelog, nullptr},
+    {"PURGE STALE SESSIONS", helpTextPurgeStaleSessions, nullptr},
+    {"CONNECT", helpTextConnect, nullptr},
+    {"REPORT", helpTextReport, helpTextReportFn},
+    {"QUIT", helpTextQuit, nullptr},
+    {"PROMPT", helpTextPrompt, nullptr},
 #ifdef VM_TRACE  // DEBUG ONLY
-                  {"DEBUG", helpTextDebug, NULL},
+    {"DEBUG", helpTextDebug, NULL},
 #endif  // VM_TRACE
-                  {NULL, NULL, NULL}};
+    {nullptr, nullptr, nullptr}};
 
 static bool convert(const char *s, int &val) {
-  if (s == NULL) return false;
+  if (s == nullptr) return false;
 
   if (strlen(s) == 0) return false;
 
@@ -741,7 +742,7 @@ CommandInterpreter::CommandInterpreter(const char *host,
       m_verbose(verbose),
       m_try_reconnect(0),
       m_error(-1),
-      m_event_thread(NULL),
+      m_event_thread(nullptr),
       m_connect_retry_delay(connect_retry_delay),
       m_default_prompt(default_prompt),
       m_prompt(default_prompt),
@@ -762,7 +763,7 @@ CommandInterpreter::~CommandInterpreter() {
 }
 
 static bool emptyString(const char *s) {
-  if (s == NULL) {
+  if (s == nullptr) {
     return true;
   }
 
@@ -791,6 +792,7 @@ void CommandInterpreter::printError() {
  */
 #define make_uint64(a, b) (((Uint64)(a)) + (((Uint64)(b)) << 32))
 #define Q64(a) make_uint64(event->EVENT.a##_lo, event->EVENT.a##_hi)
+#define Q64_B(a) make_uint64(event->EVENT.a, event->EVENT.a##_hi)
 #define R event->source_nodeid
 #define Q(a) event->EVENT.a
 #define QVERSION \
@@ -832,10 +834,11 @@ static void printLogEvent(struct ndb_logevent *event) {
       ndbout_c(
           "Node %u: Backup %u started from node %u completed\n"
           " StartGCP: %u StopGCP: %u\n"
-          " #Records: %u #LogRecords: %u\n"
-          " Data: %u bytes Log: %u bytes",
+          " #Records: %llu #LogRecords: %llu\n"
+          " Data: %llu bytes Log: %llu bytes",
           R, Q(backup_id), Q(starting_node), Q(start_gci), Q(stop_gci),
-          Q(n_records), Q(n_log_records), Q(n_bytes), Q(n_log_bytes));
+          Q64_B(n_records), Q64_B(n_log_records), Q64_B(n_bytes),
+          Q64_B(n_log_bytes));
       break;
 #undef EVENT
 #define EVENT BackupAborted
@@ -1107,7 +1110,7 @@ bool CommandInterpreter::connect(bool interactive) {
   DBUG_RETURN(m_connected);
 }
 
-void CommandInterpreter::disconnect(void) {
+void CommandInterpreter::disconnect() {
   DBUG_ENTER("CommandInterpreter::disconnect");
 
   if (m_event_thread) {
@@ -1133,7 +1136,7 @@ bool CommandInterpreter::execute(const char *_line, int try_reconnect,
   return result;
 }
 
-static void invalid_command(const char *cmd, const char *msg = 0) {
+static void invalid_command(const char *cmd, const char *msg = nullptr) {
   ndbout << "Invalid command: " << cmd << endl;
   if (msg) ndbout << msg << endl;
   ndbout << "Type HELP for help." << endl << endl;
@@ -1145,7 +1148,7 @@ class ClusterInfo {
   ndb_mgm_cluster_state *m_status;
 
  public:
-  ClusterInfo() : m_status(NULL) {}
+  ClusterInfo() : m_status(nullptr) {}
 
   ~ClusterInfo() {
     if (m_status) free(m_status);
@@ -1154,8 +1157,8 @@ class ClusterInfo {
   bool fetch(NdbMgmHandle handle, bool all_nodes = false) {
     const ndb_mgm_node_type types[2] = {NDB_MGM_NODE_TYPE_NDB,
                                         NDB_MGM_NODE_TYPE_UNKNOWN};
-    m_status = ndb_mgm_get_status2(handle, !all_nodes ? types : 0);
-    if (m_status == NULL) {
+    m_status = ndb_mgm_get_status2(handle, !all_nodes ? types : nullptr);
+    if (m_status == nullptr) {
       ndbout_c("ERROR: couldn't fetch cluster status");
       return false;
     }
@@ -1220,7 +1223,7 @@ bool CommandInterpreter::execute_impl(const char *_line, bool interactive) {
   DBUG_PRINT("enter", ("line='%s'", _line));
   m_error = 0;
 
-  if (_line == NULL) {
+  if (_line == nullptr) {
     // Pressing Ctrl-C on some platforms will cause 'readline' to
     // to return NULL, handle it as graceful exit of ndb_mgm
     m_error = -1;
@@ -1228,7 +1231,7 @@ bool CommandInterpreter::execute_impl(const char *_line, bool interactive) {
   }
 
   char *line = strdup(_line);
-  if (line == NULL) {
+  if (line == nullptr) {
     ndbout_c("ERROR: Memory allocation error at %s:%d.", __FILE__, __LINE__);
     m_error = -1;
     DBUG_RETURN(false);  // Terminate gracefully
@@ -1244,7 +1247,7 @@ bool CommandInterpreter::execute_impl(const char *_line, bool interactive) {
     }
     // for mysql client compatibility remove trailing ';'
     {
-      unsigned last = (unsigned)(strlen(line) - 1);
+      auto last = (unsigned)(strlen(line) - 1);
       if (line[last] == ';') {
         line[last] = 0;
         do_continue = 1;
@@ -1257,7 +1260,7 @@ bool CommandInterpreter::execute_impl(const char *_line, bool interactive) {
   split_args(line, command_list);
 
   char *firstToken = strtok(line, " ");
-  char *allAfterFirstToken = strtok(NULL, "");
+  char *allAfterFirstToken = strtok(nullptr, "");
 
   if (native_strcasecmp(firstToken, "HELP") == 0 ||
       native_strcasecmp(firstToken, "?") == 0) {
@@ -1272,7 +1275,7 @@ bool CommandInterpreter::execute_impl(const char *_line, bool interactive) {
   } else if ((native_strcasecmp(firstToken, "QUIT") == 0 ||
               native_strcasecmp(firstToken, "EXIT") == 0 ||
               native_strcasecmp(firstToken, "BYE") == 0) &&
-             allAfterFirstToken == NULL) {
+             allAfterFirstToken == nullptr) {
     DBUG_RETURN(false);
   }
 
@@ -1301,12 +1304,12 @@ bool CommandInterpreter::execute_impl(const char *_line, bool interactive) {
     executeShowTlsInfo(allAfterFirstToken);
     DBUG_RETURN(true);
   } else if (native_strcasecmp(firstToken, "START") == 0 &&
-             allAfterFirstToken != NULL &&
+             allAfterFirstToken != nullptr &&
              native_strncasecmp(allAfterFirstToken, "TLS", 3) == 0) {
     m_error = executeStartTls();
     DBUG_RETURN(true);
   } else if (native_strcasecmp(firstToken, "START") == 0 &&
-             allAfterFirstToken != NULL &&
+             allAfterFirstToken != nullptr &&
              native_strncasecmp(allAfterFirstToken, "BACKUP",
                                 sizeof("BACKUP") - 1) == 0) {
     // password length should be less than sizeof(line_buffer)
@@ -1314,7 +1317,7 @@ bool CommandInterpreter::execute_impl(const char *_line, bool interactive) {
     m_error = executeStartBackup(allAfterFirstToken, interactive);
     DBUG_RETURN(true);
   } else if (native_strcasecmp(firstToken, "ABORT") == 0 &&
-             allAfterFirstToken != NULL &&
+             allAfterFirstToken != nullptr &&
              native_strncasecmp(allAfterFirstToken, "BACKUP",
                                 sizeof("BACKUP") - 1) == 0) {
     m_error = executeAbortBackup(allAfterFirstToken);
@@ -1323,25 +1326,25 @@ bool CommandInterpreter::execute_impl(const char *_line, bool interactive) {
     m_error = executePurge(allAfterFirstToken);
     DBUG_RETURN(true);
   } else if (native_strcasecmp(firstToken, "ENTER") == 0 &&
-             allAfterFirstToken != NULL && allAfterFirstToken != NULL &&
+             allAfterFirstToken != nullptr && allAfterFirstToken != nullptr &&
              native_strncasecmp(allAfterFirstToken, "SINGLE USER MODE ",
                                 sizeof("SINGLE USER MODE") - 1) == 0) {
     m_error = executeEnterSingleUser(allAfterFirstToken);
     DBUG_RETURN(true);
   } else if (native_strcasecmp(firstToken, "EXIT") == 0 &&
-             allAfterFirstToken != NULL &&
+             allAfterFirstToken != nullptr &&
              native_strncasecmp(allAfterFirstToken, "SINGLE USER MODE ",
                                 sizeof("SINGLE USER MODE") - 1) == 0) {
     m_error = executeExitSingleUser(allAfterFirstToken);
     DBUG_RETURN(true);
   } else if (native_strcasecmp(firstToken, "CREATE") == 0 &&
-             allAfterFirstToken != NULL &&
+             allAfterFirstToken != nullptr &&
              native_strncasecmp(allAfterFirstToken, "NODEGROUP",
                                 sizeof("NODEGROUP") - 1) == 0) {
     m_error = executeCreateNodeGroup(allAfterFirstToken);
     DBUG_RETURN(true);
   } else if (native_strcasecmp(firstToken, "DROP") == 0 &&
-             allAfterFirstToken != NULL &&
+             allAfterFirstToken != nullptr &&
              native_strncasecmp(allAfterFirstToken, "NODEGROUP",
                                 sizeof("NODEGROUP") - 1) == 0) {
     m_error = executeDropNodeGroup(allAfterFirstToken);
@@ -1427,11 +1430,11 @@ int CommandInterpreter::analyseAfterFirstToken(int processId,
   }
 
   char *secondToken = strtok(allAfterFirstToken, " ");
-  char *allAfterSecondToken = strtok(NULL, "\0");
+  char *allAfterSecondToken = strtok(nullptr, "\0");
 
   const int tmpSize = sizeof(commands) / sizeof(CommandFunctionPair);
-  ExecuteFunction fun = 0;
-  const char *command = 0;
+  ExecuteFunction fun = nullptr;
+  const char *command = nullptr;
   for (int i = 0; i < tmpSize; i++) {
     if (native_strcasecmp(secondToken, commands[i].command) == 0) {
       fun = commands[i].executeFunction;
@@ -1440,7 +1443,7 @@ int CommandInterpreter::analyseAfterFirstToken(int processId,
     }
   }
 
-  if (fun == 0) {
+  if (fun == nullptr) {
     invalid_command(secondToken);
     return -1;
   }
@@ -1494,7 +1497,7 @@ static int get_next_nodeid(struct ndb_mgm_cluster_state *cl, int *node_id,
                            enum ndb_mgm_node_type type) {
   int i;
 
-  if (cl == NULL) return 0;
+  if (cl == nullptr) return 0;
 
   i = 0;
   while ((i < cl->no_of_nodes)) {
@@ -1529,7 +1532,7 @@ int CommandInterpreter::executeForAll(const char *cmd, ExecuteFunction fun,
   } else {
     Guard g(m_print_mutex);
     struct ndb_mgm_cluster_state *cl = ndb_mgm_get_status(m_mgmsrv);
-    if (cl == 0) {
+    if (cl == nullptr) {
       ndbout_c("Unable get status from management server");
       printError();
       return -1;
@@ -1553,7 +1556,7 @@ bool CommandInterpreter::parseBlockSpecification(const char *allAfterLog,
 
   // Copy allAfterLog since strtok will modify it
   char *newAllAfterLog = strdup(allAfterLog);
-  if (newAllAfterLog == NULL) {
+  if (newAllAfterLog == nullptr) {
     ndbout_c("ERROR: Memory allocation error at %s:%d.", __FILE__, __LINE__);
     return false;  // Error parsing
   }
@@ -1570,7 +1573,7 @@ bool CommandInterpreter::parseBlockSpecification(const char *allAfterLog,
     return false;
   }
 
-  char *allAfterFirstToken = strtok(NULL, "\0");
+  char *allAfterFirstToken = strtok(nullptr, "\0");
   if (emptyString(allAfterFirstToken)) {
     ndbout << "Expected =." << endl;
     return false;
@@ -1583,14 +1586,14 @@ bool CommandInterpreter::parseBlockSpecification(const char *allAfterLog,
     return false;
   }
 
-  char *blockName = strtok(NULL, " ");
+  char *blockName = strtok(nullptr, " ");
   bool all = false;
-  if (blockName != NULL && (native_strcasecmp(blockName, "ALL") == 0)) {
+  if (blockName != nullptr && (native_strcasecmp(blockName, "ALL") == 0)) {
     all = true;
   }
-  while (blockName != NULL) {
+  while (blockName != nullptr) {
     blocks.push_back(blockName);
-    blockName = strtok(NULL, " ");
+    blockName = strtok(nullptr, " ");
   }
 
   if (blocks.size() == 0) {
@@ -1638,14 +1641,14 @@ int CommandInterpreter::executeHelp(char *parameters) {
     ndbout << "For detailed help on COMMAND, use HELP COMMAND." << endl;
   } else {
     int i = 0;
-    for (i = 0; help_items[i].cmd != NULL; i++) {
+    for (i = 0; help_items[i].cmd != nullptr; i++) {
       if (native_strcasecmp(parameters, help_items[i].cmd) == 0) {
         if (help_items[i].help) ndbout << help_items[i].help;
         if (help_items[i].help_fn) (*help_items[i].help_fn)();
         break;
       }
     }
-    if (help_items[i].cmd == NULL) {
+    if (help_items[i].cmd == nullptr) {
       ndbout << "No help for " << parameters << " available" << endl;
       return -1;
     }
@@ -1659,7 +1662,7 @@ int CommandInterpreter::executeHelp(char *parameters) {
 
 int CommandInterpreter::executeShutdown(char * /*parameters*/) {
   ndb_mgm_cluster_state *state = ndb_mgm_get_status(m_mgmsrv);
-  if (state == NULL) {
+  if (state == nullptr) {
     ndbout_c("Could not get status");
     printError();
     return 1;
@@ -1668,7 +1671,7 @@ int CommandInterpreter::executeShutdown(char * /*parameters*/) {
 
   int result = 0;
   int need_disconnect;
-  result = ndb_mgm_stop3(m_mgmsrv, -1, 0, 0, &need_disconnect);
+  result = ndb_mgm_stop3(m_mgmsrv, -1, nullptr, 0, &need_disconnect);
   if (result < 0) {
     ndbout << "Shutdown of NDB Cluster node(s) failed." << endl;
     printError();
@@ -1689,7 +1692,7 @@ int CommandInterpreter::executeShutdown(char * /*parameters*/) {
  *****************************************************************************/
 
 int CommandInterpreter::executePrompt(char *parameters) {
-  if (parameters != NULL) {
+  if (parameters != nullptr) {
     /* Assign parameter passed to the prompt */
     m_prompt_copy.assign(parameters);
     m_prompt_copy.append(" ");
@@ -1743,7 +1746,7 @@ static void print_nodes(ndb_mgm_cluster_state2 *state,
       ndbout << "id=" << node_id;
       if (node_state->version != 0) {
         const char *hostname = node_state->connect_address;
-        if (hostname == 0 || strlen(hostname) == 0 ||
+        if (hostname == nullptr || strlen(hostname) == 0 ||
             native_strcasecmp(hostname, "0.0.0.0") == 0 ||
             native_strcasecmp(hostname, "::") == 0)
           ndbout << " ";
@@ -1754,7 +1757,7 @@ static void print_nodes(ndb_mgm_cluster_state2 *state,
         char tmp[100];
         ndbout << "  ("
                << ndbGetVersionString(node_state->version,
-                                      node_state->mysql_version, 0, tmp,
+                                      node_state->mysql_version, nullptr, tmp,
                                       sizeof(tmp));
         if (type == NDB_MGM_NODE_TYPE_NDB) {
           if (node_state->node_status != NDB_MGM_NODE_STATUS_STARTED) {
@@ -1779,9 +1782,9 @@ static void print_nodes(ndb_mgm_cluster_state2 *state,
       } else {
         ndb_mgm_first(it);
         if (ndb_mgm_find(it, CFG_NODE_ID, node_id) == 0) {
-          const char *config_hostname = 0;
+          const char *config_hostname = nullptr;
           ndb_mgm_get_string_parameter(it, CFG_NODE_HOST, &config_hostname);
-          if (config_hostname == 0 || config_hostname[0] == 0)
+          if (config_hostname == nullptr || config_hostname[0] == 0)
             config_hostname = "any host";
           if (type == NDB_MGM_NODE_TYPE_API && node_state->is_single_user) {
             ndbout_c(
@@ -1806,13 +1809,13 @@ int CommandInterpreter::executePurge(char *parameters) {
   do {
     if (emptyString(parameters)) break;
     char *firstToken = strtok(parameters, " ");
-    char *nextToken = strtok(NULL, " \0");
+    char *nextToken = strtok(nullptr, " \0");
     if (native_strcasecmp(firstToken, "STALE") == 0 && nextToken &&
         native_strcasecmp(nextToken, "SESSIONS") == 0) {
       command_ok = 1;
       break;
     }
-  } while (0);
+  } while (false);
 
   if (!command_ok) {
     ndbout_c("Unexpected command, expected: PURGE STALE SESSIONS");
@@ -1838,7 +1841,7 @@ int CommandInterpreter::executeShow(char *parameters) {
   int i;
   if (emptyString(parameters)) {
     ndb_mgm_cluster_state2 *state = ndb_mgm_get_status3(m_mgmsrv, nullptr);
-    if (state == NULL) {
+    if (state == nullptr) {
       ndbout_c("Could not get status");
       printError();
       return -1;
@@ -1901,25 +1904,25 @@ int CommandInterpreter::executeShow(char *parameters) {
     ndb_mgm_destroy_iterator(it);
 
     return 0;
-  } else {
-    ndbout << "Invalid argument: '" << parameters << "'" << endl;
-    return -1;
   }
+  ndbout << "Invalid argument: '" << parameters << "'" << endl;
+  return -1;
+
   return 0;
 }
 
 int CommandInterpreter::executeConnect(char *parameters, bool interactive) {
-  BaseString *basestring = NULL;
+  BaseString *basestring = nullptr;
 
   disconnect();
   if (!emptyString(parameters)) {
     basestring = new BaseString(parameters);
     m_constr = basestring->trim().c_str();
   }
-  if (connect(interactive) == false) {
+  if (!connect(interactive)) {
     return -1;
   }
-  if (basestring != NULL) delete basestring;
+  if (basestring != nullptr) delete basestring;
 
   return 0;
 }
@@ -1999,14 +2002,14 @@ void CommandInterpreter::executeClusterLog(char *parameters) {
   enum ndb_mgm_event_severity severity = NDB_MGM_EVENT_SEVERITY_ALL;
 
   char *tmpString = strdup(parameters);
-  if (tmpString == NULL) {
+  if (tmpString == nullptr) {
     ndbout_c("ERROR: Memory allocation error at %s:%d.", __FILE__, __LINE__);
     m_error = -1;
     DBUG_VOID_RETURN;
   }
 
   NdbAutoPtr<char> ap1(tmpString);
-  char *tmpPtr = 0;
+  char *tmpPtr = nullptr;
   char *item = my_strtok_r(tmpString, " ", &tmpPtr);
   int enable;
 
@@ -2041,7 +2044,7 @@ void CommandInterpreter::executeClusterLog(char *parameters) {
     ndbout << "Severities enabled: ";
     for (i = 1; i < (int)NDB_MGM_EVENT_SEVERITY_ALL; i++) {
       const char *str = ndb_mgm_get_event_severity_string(enabled[i].category);
-      if (str == 0) {
+      if (str == nullptr) {
         assert(false);
         continue;
       }
@@ -2068,10 +2071,10 @@ void CommandInterpreter::executeClusterLog(char *parameters) {
   }
 
   int res_enable;
-  item = my_strtok_r(NULL, " ", &tmpPtr);
-  if (item == NULL) {
+  item = my_strtok_r(nullptr, " ", &tmpPtr);
+  if (item == nullptr) {
     res_enable = ndb_mgm_set_clusterlog_severity_filter(
-        m_mgmsrv, NDB_MGM_EVENT_SEVERITY_ON, enable, NULL);
+        m_mgmsrv, NDB_MGM_EVENT_SEVERITY_ON, enable, nullptr);
     if (res_enable < 0) {
       ndbout << "Couldn't set filter" << endl;
       printError();
@@ -2112,7 +2115,7 @@ void CommandInterpreter::executeClusterLog(char *parameters) {
     }
 
     res_enable = ndb_mgm_set_clusterlog_severity_filter(m_mgmsrv, severity,
-                                                        enable, NULL);
+                                                        enable, nullptr);
     if (res_enable < 0) {
       ndbout << "Couldn't set filter" << endl;
       printError();
@@ -2122,8 +2125,8 @@ void CommandInterpreter::executeClusterLog(char *parameters) {
     ndbout << BaseString(item).ndb_toupper().c_str() << " "
            << (res_enable ? "enabled" : "disabled") << endl;
 
-    item = my_strtok_r(NULL, " ", &tmpPtr);
-  } while (item != NULL);
+    item = my_strtok_r(nullptr, " ", &tmpPtr);
+  } while (item != nullptr);
 
   m_error = 0;
   DBUG_VOID_RETURN;
@@ -2139,7 +2142,7 @@ int CommandInterpreter::executeStop(int processId, const char *parameters,
 
   int retval;
   if (all)
-    retval = executeStop(command_list, 0, 0, 0);
+    retval = executeStop(command_list, 0, nullptr, 0);
   else
     retval = executeStop(command_list, 0, &processId, 1);
 
@@ -2175,7 +2178,7 @@ int CommandInterpreter::executeStop(Vector<BaseString> &command_list,
     printError();
     retval = -1;
   } else {
-    if (node_ids == 0)
+    if (node_ids == nullptr)
       ndbout_c("NDB Cluster has shutdown.");
     else {
       ndbout << "Node";
@@ -2195,11 +2198,11 @@ int CommandInterpreter::executeStop(Vector<BaseString> &command_list,
 int CommandInterpreter::executeEnterSingleUser(char *parameters) {
   strtok(parameters, " ");
   struct ndb_mgm_reply reply;
-  char *id = strtok(NULL, " ");
-  id = strtok(NULL, " ");
-  id = strtok(NULL, "\0");
+  char *id = strtok(nullptr, " ");
+  id = strtok(nullptr, " ");
+  id = strtok(nullptr, "\0");
   int nodeId = -1;
-  if (id == 0 || sscanf(id, "%d", &nodeId) != 1) {
+  if (id == nullptr || sscanf(id, "%d", &nodeId) != 1) {
     ndbout_c("Invalid arguments: expected <NodeId>");
     ndbout_c("Use SHOW to see what API nodes are configured");
     return -1;
@@ -2210,25 +2213,24 @@ int CommandInterpreter::executeEnterSingleUser(char *parameters) {
     ndbout_c("Entering single user mode for node %d failed", nodeId);
     printError();
     return -1;
-  } else {
-    ndbout_c("Single user mode entered");
-    ndbout_c("Access is granted for API node %d only.", nodeId);
   }
+  ndbout_c("Single user mode entered");
+  ndbout_c("Access is granted for API node %d only.", nodeId);
+
   return 0;
 }
 
 int CommandInterpreter::executeExitSingleUser(char * /*parameters*/) {
-  int result = ndb_mgm_exit_single_user(m_mgmsrv, 0);
+  int result = ndb_mgm_exit_single_user(m_mgmsrv, nullptr);
   if (result != 0) {
     ndbout_c("Exiting single user mode failed.");
     printError();
     return -1;
-  } else {
-    ndbout_c("Exiting single user mode in progress.");
-    ndbout_c(
-        "Use ALL STATUS or SHOW to see when single user mode has been exited.");
-    return 0;
   }
+  ndbout_c("Exiting single user mode in progress.");
+  ndbout_c(
+      "Use ALL STATUS or SHOW to see when single user mode has been exited.");
+  return 0;
 }
 
 int CommandInterpreter::executeStart(int processId, const char * /*parameters*/,
@@ -2236,7 +2238,7 @@ int CommandInterpreter::executeStart(int processId, const char * /*parameters*/,
   int result;
   int retval = 0;
   if (all) {
-    result = ndb_mgm_start(m_mgmsrv, 0, 0);
+    result = ndb_mgm_start(m_mgmsrv, 0, nullptr);
   } else {
     result = ndb_mgm_start(m_mgmsrv, 1, &processId);
   }
@@ -2264,11 +2266,11 @@ int CommandInterpreter::executeStart(Vector<BaseString> & /*command_list*/,
     ndbout_c("Start failed.");
     printError();
     return -1;
-  } else {
-    ndbout << "Node";
-    for (int i = 0; i < no_of_nodes; i++) ndbout << " " << node_ids[i];
-    ndbout_c(" is being started");
   }
+  ndbout << "Node";
+  for (int i = 0; i < no_of_nodes; i++) ndbout << " " << node_ids[i];
+  ndbout_c(" is being started");
+
   return 0;
 }
 
@@ -2279,7 +2281,7 @@ int CommandInterpreter::executeRestart(int processId, const char *parameters,
 
   int retval;
   if (all)
-    retval = executeRestart(command_list, 0, 0, 0);
+    retval = executeRestart(command_list, 0, nullptr, 0);
   else
     retval = executeRestart(command_list, 0, &processId, 1);
 
@@ -2321,7 +2323,7 @@ int CommandInterpreter::executeRestart(Vector<BaseString> &command_list,
   }
 
   struct ndb_mgm_cluster_state *cl = ndb_mgm_get_status(m_mgmsrv);
-  if (cl == NULL) {
+  if (cl == nullptr) {
     ndbout_c("Could not get status");
     printError();
     return -1;
@@ -2329,7 +2331,7 @@ int CommandInterpreter::executeRestart(Vector<BaseString> &command_list,
   NdbAutoPtr<char> ap1((char *)cl);
 
   // We allow 'all restart' in single user mode
-  if (node_ids != 0) {
+  if (node_ids != nullptr) {
     for (int i = 0; i < cl->no_of_nodes; i++) {
       if ((cl->node_states + i)->node_status ==
           NDB_MGM_NODE_STATUS_SINGLEUSER) {
@@ -2339,7 +2341,7 @@ int CommandInterpreter::executeRestart(Vector<BaseString> &command_list,
     }
   }
 
-  if (node_ids == 0) {
+  if (node_ids == nullptr) {
     ndbout_c("Executing RESTART on all nodes.");
     ndbout_c("Starting shutdown. This may take a while. Please wait...");
   }
@@ -2368,7 +2370,7 @@ int CommandInterpreter::executeRestart(Vector<BaseString> &command_list,
     printError();
     retval = -1;
   } else {
-    if (node_ids == 0)
+    if (node_ids == nullptr)
       ndbout_c("All DB nodes are being restarted.");
     else {
       ndbout << "Node";
@@ -2412,8 +2414,8 @@ static void print_status(const ndb_mgm_node_state *state) {
 
   if (state->node_status != NDB_MGM_NODE_STATUS_NO_CONTACT) {
     char tmp[100];
-    ndbout_c(" (%s)", ndbGetVersionString(version, state->mysql_version, 0, tmp,
-                                          sizeof(tmp)));
+    ndbout_c(" (%s)", ndbGetVersionString(version, state->mysql_version,
+                                          nullptr, tmp, sizeof(tmp)));
   } else {
     ndbout << endl;
   }
@@ -2429,8 +2431,8 @@ int CommandInterpreter::executeStatus(int processId, const char *parameters,
   ndb_mgm_node_type types[2] = {NDB_MGM_NODE_TYPE_NDB,
                                 NDB_MGM_NODE_TYPE_UNKNOWN};
   struct ndb_mgm_cluster_state *cl;
-  cl = ndb_mgm_get_status2(m_mgmsrv, all ? types : 0);
-  if (cl == NULL) {
+  cl = ndb_mgm_get_status2(m_mgmsrv, all ? types : nullptr);
+  if (cl == nullptr) {
     ndbout_c("Can't get status of node %d.", processId);
     printError();
     return -1;
@@ -2440,16 +2442,16 @@ int CommandInterpreter::executeStatus(int processId, const char *parameters,
   if (all) {
     for (int i = 0; i < cl->no_of_nodes; i++) print_status(cl->node_states + i);
     return 0;
-  } else {
-    for (int i = 0; i < cl->no_of_nodes; i++) {
-      if (cl->node_states[i].node_id == processId) {
-        print_status(cl->node_states + i);
-        return 0;
-      }
-    }
-    ndbout << processId << ": Node not found" << endl;
-    return -1;
   }
+  for (int i = 0; i < cl->no_of_nodes; i++) {
+    if (cl->node_states[i].node_id == processId) {
+      print_status(cl->node_states + i);
+      return 0;
+    }
+  }
+  ndbout << processId << ": Node not found" << endl;
+  return -1;
+
   return 0;
 }  //
 
@@ -2475,7 +2477,8 @@ int CommandInterpreter::executeDumpState(int processId, const char *parameters,
   for (unsigned i = 0; i < args.size(); i++) {
     const char *arg = args[i].c_str();
 
-    if (my_strtoll(arg, NULL, 0) < 0 || my_strtoll(arg, NULL, 0) > 0xffffffff) {
+    if (my_strtoll(arg, nullptr, 0) < 0 ||
+        my_strtoll(arg, nullptr, 0) > 0xffffffff) {
       ndbout_c(
           "ERROR: Illegal value '%s' in argument to signal.\n"
           "(Value must be between 0 and 0xffffffff.)",
@@ -2483,7 +2486,7 @@ int CommandInterpreter::executeDumpState(int processId, const char *parameters,
       return -1;
     }
     assert(num_params < (int)max_params);
-    params[num_params] = (int)my_strtoll(arg, NULL, 0);
+    params[num_params] = (int)my_strtoll(arg, nullptr, 0);
     num_params++;
   }
 
@@ -2536,7 +2539,7 @@ static void report_events(const ndb_logevent &event) {
   LogLevel::EventCategory cat = LogLevel::llInvalid;
   EventLogger::EventTextFunction textF;
 
-  const EventReport *real_event = (const EventReport *)event.SavedEvent.data;
+  const auto *real_event = (const EventReport *)event.SavedEvent.data;
   Uint32 type = real_event->getEventType();
 
   if (EventLoggerBase::event_lookup(type, cat, threshold, severity, textF))
@@ -2552,15 +2555,15 @@ static void report_events(const ndb_logevent &event) {
         event.SavedEvent.len);
 
   char timestamp_str[64];
-  Logger::format_timestamp(event.SavedEvent.time, timestamp_str,
-                           sizeof(timestamp_str));
+  std::timespec t = {event.SavedEvent.time, 0};
+  Logger::format_timestamp(&t, timestamp_str, sizeof(timestamp_str));
 
   ndbout_c("%s %s", timestamp_str, out);
 }
 
 static int sort_log(const void *_a, const void *_b) {
-  const ndb_logevent *a = (const ndb_logevent *)_a;
-  const ndb_logevent *b = (const ndb_logevent *)_b;
+  const auto *a = (const ndb_logevent *)_a;
+  const auto *b = (const ndb_logevent *)_b;
 
   if (a->source_nodeid == b->source_nodeid) {
     return a->SavedEvent.seq - b->SavedEvent.seq;
@@ -2584,15 +2587,15 @@ static const struct st_report_cmd {
 } report_cmds[] = {
 
     {"BackupStatus", "Report backup status of respective node",
-     NDB_LE_BackupStatus, report_backupstatus, 0},
+     NDB_LE_BackupStatus, report_backupstatus, nullptr},
 
     {"MemoryUsage", "Report memory usage of respective node",
-     NDB_LE_MemoryUsage, report_memoryusage, 0},
+     NDB_LE_MemoryUsage, report_memoryusage, nullptr},
 
     {"EventLog", "Report events in datanodes circular event log buffer",
      NDB_LE_SavedEvent, report_events, sort_log},
 
-    {0, 0, NDB_LE_ILLEGAL_TYPE, 0, 0}};
+    {nullptr, nullptr, NDB_LE_ILLEGAL_TYPE, nullptr, nullptr}};
 
 int CommandInterpreter::executeReport(int nodeid, const char *parameters,
                                       bool all) {
@@ -2711,9 +2714,9 @@ int CommandInterpreter::executeLogLevel(int processId, const char *parameters,
     ndbout_c(" failed.");
     printError();
     return -1;
-  } else {
-    ndbout_c(" OK!");
   }
+  ndbout_c(" OK!");
+
   return 0;
 }
 
@@ -2740,7 +2743,7 @@ int CommandInterpreter::executeError(int processId, const char *parameters,
     return -1;
   }
 
-  return ndb_mgm_insert_error(m_mgmsrv, processId, errorNo, NULL);
+  return ndb_mgm_insert_error(m_mgmsrv, processId, errorNo, nullptr);
 }
 
 //*****************************************************************************
@@ -2989,17 +2992,15 @@ int CommandInterpreter::executeStartBackup(char *parameters, bool interactive) {
           args[1].length() <= strlen(out)) {
         input_backupId = static_cast<unsigned>(tmp_backupId);
         continue;
-      } else {
-        BaseString::snprintf(out, sizeof(out),
-                             "Backup ID out of range [1 - %u]",
-                             MAX_BACKUPS - 1);
-        invalid_command(parameters, out);
-        return -1;
       }
+      BaseString::snprintf(out, sizeof(out), "Backup ID out of range [1 - %u]",
+                           MAX_BACKUPS - 1);
+      invalid_command(parameters, out);
+      return -1;
     }
 
     if (args[i] == "SNAPSHOTEND") {
-      if (b_log == true) {
+      if (b_log) {
         invalid_command(parameters);
         return -1;
       }
@@ -3008,7 +3009,7 @@ int CommandInterpreter::executeStartBackup(char *parameters, bool interactive) {
       continue;
     }
     if (args[i] == "SNAPSHOTSTART") {
-      if (b_log == true) {
+      if (b_log) {
         invalid_command(parameters);
         return -1;
       }
@@ -3017,8 +3018,7 @@ int CommandInterpreter::executeStartBackup(char *parameters, bool interactive) {
       continue;
     }
     if (args[i] == "NOWAIT") {
-      if (b_nowait == true || b_wait_completed == true ||
-          b_wait_started == true) {
+      if (b_nowait || b_wait_completed || b_wait_started) {
         invalid_command(parameters);
         return -1;
       }
@@ -3027,8 +3027,7 @@ int CommandInterpreter::executeStartBackup(char *parameters, bool interactive) {
       continue;
     }
     if (args[i] == "WAIT") {
-      if (b_nowait == true || b_wait_completed == true ||
-          b_wait_started == true) {
+      if (b_nowait || b_wait_completed || b_wait_started) {
         invalid_command(parameters);
         return -1;
       }
@@ -3110,7 +3109,7 @@ int CommandInterpreter::executeStartBackup(char *parameters, bool interactive) {
   if (flags == 1)
     ndbout_c("Waiting for started, this may take several minutes");
 
-  NdbLogEventHandle log_handle = NULL;
+  NdbLogEventHandle log_handle = nullptr;
   struct ndb_logevent log_event;
   if (flags > 0 && !interactive) {
     int filter[] = {15, NDB_MGM_EVENT_CATEGORY_BACKUP, 0, 0};
@@ -3199,8 +3198,8 @@ int CommandInterpreter::executeAbortBackup(char *parameters) {
 
   {
     strtok(parameters, " ");
-    char *id = strtok(NULL, "\0");
-    if (id == 0 || sscanf(id, "%llu", &tmp_bid) != 1)
+    char *id = strtok(nullptr, "\0");
+    if (id == nullptr || sscanf(id, "%llu", &tmp_bid) != 1)
       goto executeAbortBackupError1;
 
     // to detect wraparound due to overflow, check if number of digits in
@@ -3218,9 +3217,8 @@ int CommandInterpreter::executeAbortBackup(char *parameters) {
       ndbout << "Abort of backup " << bid << " failed" << endl;
       printError();
       return -1;
-    } else {
-      ndbout << "Abort of backup " << bid << " ordered" << endl;
     }
+    ndbout << "Abort of backup " << bid << " ordered" << endl;
   }
   return 0;
 executeAbortBackupError1:
@@ -3254,9 +3252,8 @@ int CommandInterpreter::executeCreateNodeGroup(char *parameters) {
     if (result != 0) {
       printError();
       return -1;
-    } else {
-      ndbout << "Nodegroup " << ng << " created" << endl;
     }
+    ndbout << "Nodegroup " << ng << " created" << endl;
   }
 
   return 0;
@@ -3271,7 +3268,7 @@ int CommandInterpreter::executeDropNodeGroup(char *parameters) {
 
   {
     char *id = strchr(parameters, ' ');
-    if (id == 0 || sscanf(id, "%d", &ng) != 1) goto err;
+    if (id == nullptr || sscanf(id, "%d", &ng) != 1) goto err;
   }
 
   {
@@ -3280,9 +3277,8 @@ int CommandInterpreter::executeDropNodeGroup(char *parameters) {
     if (result != 0) {
       printError();
       return -1;
-    } else {
-      ndbout << "Drop Node Group " << ng << " done" << endl;
     }
+    ndbout << "Drop Node Group " << ng << " done" << endl;
   }
   return 0;
 err:

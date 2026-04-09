@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -132,7 +132,7 @@ struct sql_digest_storage {
     memset(m_hash, 0, DIGEST_HASH_SIZE);
   }
 
-  inline bool is_empty() { return (m_byte_count == 0); }
+  inline bool is_empty() const { return (m_byte_count == 0); }
 
   inline void copy(const sql_digest_storage *from) {
     /*
@@ -156,6 +156,9 @@ struct sql_digest_storage {
       m_charset_number = 0;
     }
   }
+
+  /** Same as copy(), with a prefix token. */
+  void prefix_and_copy(uint prefix_token, const sql_digest_storage *from);
 };
 typedef struct sql_digest_storage sql_digest_storage;
 

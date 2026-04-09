@@ -1,4 +1,4 @@
-/* Copyright (c) 2006, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2006, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -45,6 +45,7 @@
 #include "lex_string.h"
 #include "my_dbug.h"
 #include "my_inttypes.h"
+#include "my_temporal.h"
 #include "my_time.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysql_time.h"    /* enum_mysql_timestamp_type */
@@ -86,7 +87,7 @@ bool decimal_to_datetime(const my_decimal *decimal, MYSQL_TIME *ltime,
                          my_time_flags_t flags);
 bool decimal_to_time(const my_decimal *decimal, MYSQL_TIME *ltime);
 bool double_to_datetime(double nr, MYSQL_TIME *ltime, my_time_flags_t flags);
-bool double_to_time(double nr, MYSQL_TIME *ltime);
+bool double_to_time(double nr, Time_val *time);
 
 bool my_decimal_to_datetime_with_warn(const my_decimal *decimal,
                                       MYSQL_TIME *ltime, my_time_flags_t flags);
@@ -94,10 +95,10 @@ bool my_double_to_datetime_with_warn(double nr, MYSQL_TIME *ltime,
                                      my_time_flags_t flags);
 bool my_longlong_to_datetime_with_warn(longlong nr, MYSQL_TIME *ltime,
                                        my_time_flags_t flags);
-bool my_decimal_to_time_with_warn(const my_decimal *decimal, MYSQL_TIME *ltime);
-bool my_double_to_time_with_warn(double nr, MYSQL_TIME *ltime);
-bool my_longlong_to_time_with_warn(longlong nr, MYSQL_TIME *ltime);
-bool str_to_time_with_warn(String *str, MYSQL_TIME *l_time);
+bool my_decimal_to_time_with_warn(const my_decimal *decimal, Time_val *time);
+bool my_double_to_time_with_warn(double nr, Time_val *time);
+bool my_longlong_to_time_with_warn(longlong nr, Time_val *time);
+bool str_to_time_with_warn(String *str, Time_val *time);
 void time_to_datetime(THD *thd, const MYSQL_TIME *tm, const Time_zone &tz,
                       MYSQL_TIME *dt);
 void time_to_datetime(THD *thd, const MYSQL_TIME *in, MYSQL_TIME *out);

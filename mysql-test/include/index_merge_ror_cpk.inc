@@ -91,10 +91,10 @@ select pk1,pk2 from t1 where key1 = 10 and key2=10 and 2*pk1+1 < 2*96+1;
 --echo # Verify that CPK is always used for index intersection scans
 --echo # (this is because it is used as a filter, not for retrieval)
 --echo # The expected number of rows can vary depending on page size
---replace_regex $elide_costs
+--replace_regex $elide_costs_and_rows
 explain select * from t1 where badkey=1 and key1=10;
 --echo # The expected number of rows can vary depending on page size
---replace_regex $elide_costs
+--replace_regex $elide_costs_and_rows
 explain select * from t1 where pk1 < 7500 and key1 = 10;
 
 --echo # Verify that keys with 'tails' of PK members are ok.

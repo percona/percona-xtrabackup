@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -61,63 +61,63 @@ TEST_F(MemberVersionTest, AssertPatchVersion) {
 }
 
 TEST_F(MemberVersionTest, AssertEqualsOperator) {
-  Member_version another_version(0x010206);  // version: 1.2.6
+  Member_version const another_version(0x010206);  // version: 1.2.6
 
   ASSERT_TRUE(*version == another_version);
 }
 
 TEST_F(MemberVersionTest, AssertLtOperator) {
-  Member_version same_version(0x010206);  // version: 1.2.6
+  Member_version const same_version(0x010206);  // version: 1.2.6
 
   ASSERT_FALSE(*version < same_version);
 
-  Member_version major_major_version(0x020206);  // version: 2.2.6
+  Member_version const major_major_version(0x020206);  // version: 2.2.6
 
   ASSERT_TRUE(*version < major_major_version);
 
-  Member_version major_minor_version(0x010306);  // version: 1.3.6
+  Member_version const major_minor_version(0x010306);  // version: 1.3.6
 
   ASSERT_TRUE(*version < major_minor_version);
 
-  Member_version major_patch_version(0x010207);  // version: 1.2.7
+  Member_version const major_patch_version(0x010207);  // version: 1.2.7
 
   ASSERT_TRUE(*version < major_patch_version);
 }
 
 TEST_F(MemberVersionTest, AssertGtOperator) {
-  Member_version same_version(0x010206);  // version: 1.2.6
+  Member_version const same_version(0x010206);  // version: 1.2.6
 
   ASSERT_FALSE(*version > same_version);
 
-  Member_version minor_major_version(0x000206);  // version: 0.2.6
+  Member_version const minor_major_version(0x000206);  // version: 0.2.6
 
   ASSERT_TRUE(*version > minor_major_version);
 
-  Member_version minor_minor_version(0x010106);  // version: 1.1.6
+  Member_version const minor_minor_version(0x010106);  // version: 1.1.6
 
   ASSERT_TRUE(*version > minor_minor_version);
 
-  Member_version minor_patch_version(0x010205);  // version: 1.2.5
+  Member_version const minor_patch_version(0x010205);  // version: 1.2.5
 
   ASSERT_TRUE(*version > minor_patch_version);
 }
 
 TEST_F(MemberVersionTest, AssertGtEqualsOperator) {
-  Member_version same_version(0x010206);  // version: 1.2.6
+  Member_version const same_version(0x010206);  // version: 1.2.6
 
   ASSERT_TRUE(*version >= same_version);
 
-  Member_version lower_version(0x010205);  // version: 1.2.5
+  Member_version const lower_version(0x010205);  // version: 1.2.5
 
   ASSERT_TRUE(*version >= lower_version);
 }
 
 TEST_F(MemberVersionTest, AssertLtEqualsOperator) {
-  Member_version same_version(0x010206);  // version: 1.2.6
+  Member_version const same_version(0x010206);  // version: 1.2.6
 
   ASSERT_TRUE(*version <= same_version);
 
-  Member_version higher_version(0x010207);  // version: 1.2.7
+  Member_version const higher_version(0x010207);  // version: 1.2.7
 
   ASSERT_TRUE(*version <= higher_version);
 }

@@ -1,0 +1,98 @@
+# sys.revoke_schema_privileges_from_all_accounts_except() procedure test
+
+CREATE DATABASE test_db;
+
+SELECT user, host FROM mysql.user;
+
+CREATE USER 'test_user'@'localhost';
+
+--echo ## Create schema and global level grants.
+GRANT SELECT, INSERT, UPDATE ON *.* TO 'test_user'@'localhost';
+GRANT INSERT, UPDATE, DELETE ON test_db.* TO 'test_user'@'localhost';
+
+SET @old_partial_revokes = @@partial_revokes;
+
+--echo ## Run the script on non existing schema. Should exit with error.
+--error ER_SIGNAL_EXCEPTION
+CALL sys.revoke_schema_privileges_from_all_accounts_except("non_existring_schema", JSON_ARRAY("SELECT", "insert", "Update", "deletE"), JSON_ARRAY("'root'@'localhost'", "'mysql.infoschema'@'LOCALHOST'", "'mysql.session'@'Localhost'", "'mysql.sys'@'locaLHost'"));
+
+--echo ## Partial revokes is required to revoke privilege on global level.
+SET GLOBAL partial_revokes = 1;
+
+--echo ## User grants.
+SHOW GRANTS FOR 'test_user'@'localhost';
+--echo ## Schema level privilege should be present.
+SELECT * FROM INFORMATION_SCHEMA.SCHEMA_PRIVILEGES WHERE TABLE_SCHEMA = 'test_db' AND GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## Global level privilege should be present.
+SELECT grantee, privilege_type FROM INFORMATION_SCHEMA.USER_PRIVILEGES WHERE GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## There should be no partial revoke restriction.
+SELECT User, Host, User_attributes FROM mysql.user WHERE User = 'test_user';
+
+--echo ## Revoke INSERT, UPDATE privileges from schema.
+--echo ## #############################################
+CALL sys.revoke_schema_privileges_from_all_accounts_except("test_db", JSON_ARRAY("insert", "Update"), JSON_ARRAY("'root'@'localhost'", "'mysql.infoschema'@'LOCALHOST'", "'mysql.session'@'Localhost'", "'mysql.sys'@'locaLHost'"));
+
+--echo ## User grants.
+SHOW GRANTS FOR 'test_user'@'localhost';
+--echo ## Schema privilege should be missing.
+SELECT * FROM INFORMATION_SCHEMA.SCHEMA_PRIVILEGES WHERE TABLE_SCHEMA = 'test_db' AND GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## Global privileges should be present.
+SELECT grantee, privilege_type FROM INFORMATION_SCHEMA.USER_PRIVILEGES WHERE GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## There should be schema restriction present.
+SELECT User, Host, User_attributes FROM mysql.user WHERE User = 'test_user';
+
+--echo ## Revoke SELECT, INSERT privileges from schema.
+--echo ## #############################################
+CALL sys.revoke_schema_privileges_from_all_accounts_except("test_db", JSON_ARRAY("insert", "SELECT"), JSON_ARRAY("'root'@'localhost'", "'mysql.infoschema'@'LOCALHOST'", "'mysql.session'@'Localhost'", "'mysql.sys'@'locaLHost'"));
+
+--echo ## User grants.
+SHOW GRANTS FOR 'test_user'@'localhost';
+--echo ## Schema privilege should be missing.
+SELECT * FROM INFORMATION_SCHEMA.SCHEMA_PRIVILEGES WHERE TABLE_SCHEMA = 'test_db' AND GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## Global privileges should be present.
+SELECT grantee, privilege_type FROM INFORMATION_SCHEMA.USER_PRIVILEGES WHERE GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## There should be schema restriction present.
+SELECT User, Host, User_attributes FROM mysql.user WHERE User = 'test_user';
+
+--echo ## Revoke UPDATE, DELETE privileges from schema.
+--echo ## #############################################
+CALL sys.revoke_schema_privileges_from_all_accounts_except("test_db", JSON_ARRAY("Update", "deletE"), JSON_ARRAY("'root'@'localhost'", "'mysql.infoschema'@'LOCALHOST'", "'mysql.session'@'Localhost'", "'mysql.sys'@'locaLHost'"));
+
+--echo ## User grants.
+SHOW GRANTS FOR 'test_user'@'localhost';
+--echo ## Schema privilege should be missing.
+SELECT * FROM INFORMATION_SCHEMA.SCHEMA_PRIVILEGES WHERE TABLE_SCHEMA = 'test_db' AND GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## Global privileges should be present.
+SELECT grantee, privilege_type FROM INFORMATION_SCHEMA.USER_PRIVILEGES WHERE GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## There should be schema restriction present.
+SELECT User, Host, User_attributes FROM mysql.user WHERE User = 'test_user';
+
+
+--echo ## Drop the user, so all modifications are gone.
+DROP USER 'test_user'@'localhost';
+
+--echo ## Test the script with 'ANSI_QUOTES' turned on.
+SET GLOBAL sql_mode = 'ANSI_QUOTES';
+--echo ## Create the user back and grant privileges as on the beginning.
+CREATE USER 'test_user'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON *.* TO 'test_user'@'localhost';
+GRANT SELECT, INSERT, UPDATE, DELETE ON test_db.* TO 'test_user'@'localhost';
+
+--echo ## Revoke privileges from schema.
+--echo ## ##############################
+CALL sys.revoke_schema_privileges_from_all_accounts_except("test_db", JSON_ARRAY("SELECT", "insert", "Update", "deletE"), JSON_ARRAY("'root'@'localhost'", "'mysql.infoschema'@'LOCALHOST'", "'mysql.session'@'Localhost'", "'mysql.sys'@'locaLHost'"));
+
+--echo ## User grants.
+SHOW GRANTS FOR 'test_user'@'localhost';
+--echo ## Schema privilege should be missing.
+SELECT * FROM INFORMATION_SCHEMA.SCHEMA_PRIVILEGES WHERE TABLE_SCHEMA = 'test_db' AND GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## Global privileges should be present.
+SELECT grantee, privilege_type FROM INFORMATION_SCHEMA.USER_PRIVILEGES WHERE GRANTEE NOT IN ("'root'@'localhost'", "'mysql.infoschema'@'localhost'", "'mysql.session'@'localhost'", "'mysql.sys'@'localhost'") ORDER BY PRIVILEGE_TYPE;
+--echo ## There should be schema restriction present.
+SELECT User, Host, User_attributes FROM mysql.user WHERE User = 'test_user';
+
+DROP USER 'test_user'@'localhost';
+DROP DATABASE test_db;
+
+SET GLOBAL partial_revokes = @old_partial_revokes;
+SET GLOBAL sql_mode = DEFAULT;

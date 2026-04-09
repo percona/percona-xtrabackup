@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2024, Oracle and/or its affiliates.
+Copyright (c) 1994, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -36,11 +36,11 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <type_traits>
 
 #include "data0data.h"
+#include "dict0dict.h"
 #include "ha_prototypes.h"
 
 #ifndef UNIV_HOTBACKUP
 #include "btr0cur.h"
-#include "dict0dict.h"
 #include "lob0lob.h"
 #include "page0page.h"
 #include "page0zip.h"
@@ -474,7 +474,7 @@ big_rec_t *dtuple_convert_big_rec(dict_index_t *index, upd_t *upd,
     byte *data;
     ulint longest = 0;
     ulint longest_i = ULINT_MAX;
-    upd_field_t *uf = nullptr;
+    const upd_field_t *uf = nullptr;
 
     for (ulint i = dict_index_get_n_unique_in_tree(index);
          i < dtuple_get_n_fields(entry); i++) {
@@ -606,7 +606,8 @@ big_rec_t *dtuple_convert_big_rec(dict_index_t *index, upd_t *upd,
     if (upd == nullptr) {
       big_rec.ext_in_old = false;
     } else {
-      upd_field_t *uf = upd->get_field_by_field_no(longest_i, index);
+      const upd_field_t *const uf =
+          upd->get_field_by_field_no(longest_i, index);
       ut_ad(uf != nullptr);
       big_rec.ext_in_old = uf->ext_in_old;
     }
@@ -657,7 +658,7 @@ big_rec_t *big_rec_t::alloc(mem_heap_t *heap, ulint n_fld) {
       mem_heap_alloc(heap, n_fld * sizeof(big_rec_field_t)));
 
   rec->n_fields = 0;
-  return (rec);
+  return rec;
 }
 
 dfield_t *dfield_t::clone(mem_heap_t *heap) {
@@ -677,13 +678,13 @@ dfield_t *dfield_t::clone(mem_heap_t *heap) {
     obj->data = nullptr;
   }
 
-  return (obj);
+  return obj;
 }
 
 byte *dfield_t::blobref() const {
   ut_ad(ext);
 
-  return (static_cast<byte *>(data) + len - BTR_EXTERN_FIELD_REF_SIZE);
+  return static_cast<byte *>(data) + len - BTR_EXTERN_FIELD_REF_SIZE;
 }
 
 uint32_t dfield_t::lob_version() const {
@@ -777,6 +778,32 @@ std::ostream &big_rec_t::print(std::ostream &out) const {
   }
   out << "]";
   return (out);
+}
+
+void dtuple_t::validate() const {
+  for (uint16_t i = 0; i < n_fields; i++) {
+    const dfield_t &field = fields[i];
+    /* All fields in the fields vector represent actual fields in the
+    record, so their DATA_VIRTUAL flag is cleared regardless of
+    whether they are defined for virtual columns. */
+    ut_a_eq((field.type.prtype & DATA_VIRTUAL), 0U);
+  }
+  for (uint16_t i = 0; i < n_v_fields; i++) {
+    const dfield_t &field = v_fields[i];
+    /* All fields in the v_fields vector represent fields not present
+    in the record, and as such have their DATA_VIRTUAL flag set. */
+    ut_a_eq((field.type.prtype & DATA_VIRTUAL), DATA_VIRTUAL);
+  }
+}
+
+void dtuple_t::validate_for_index(const dict_index_t *index) const {
+  validate();
+  if (!index->is_clustered()) {
+    /* Only tuples for clustered index may have virtual fields.
+    Secondary index fields based on virtual columns are not
+    considered virtual. */
+    ut_a_eq(n_v_fields, 0);
+  }
 }
 #endif /* UNIV_DEBUG */
 
@@ -1079,4 +1106,27 @@ dtuple_t *dtuple_t::deep_copy(mem_heap_t *heap) const {
     dfield_dup(&copy->fields[i], heap);
   }
   return copy;
+}
+
+dfield_t *dtuple_t::choose_ext(dict_index_t *index) {
+  uint32_t max_length = 0;
+  dfield_t *result = nullptr;
+
+  for (ulint i = dict_index_get_n_unique_in_tree(index); i < n_fields; i++) {
+    auto dfield = &fields[i];
+    auto ifield = index->get_field(i);
+    const uint32_t len = dfield_get_len(dfield);
+
+    if (ifield->fixed_len || dfield_is_null(dfield) || dfield_is_ext(dfield) ||
+        len <= BTR_EXTERN_LOCAL_STORED_MAX_SIZE) {
+      continue;
+    }
+
+    if (len > max_length) {
+      result = dfield;
+      max_length = len;
+    }
+  }
+
+  return result;
 }

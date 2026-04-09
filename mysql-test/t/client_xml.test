@@ -1,7 +1,7 @@
-
 # Disable concurrent inserts to avoid test failures when reading
 # data from concurrent connections (insert might return before
 # the data is actually in the table).
+RESET BINARY LOGS AND GTIDS;
 set @old_concurrent_insert= @@global.concurrent_insert;
 set @@global.concurrent_insert= 0;
 --disable_warnings
@@ -21,6 +21,8 @@ insert into t1 values (1, 2, 'a&b a<b a>b');
 --source include/count_sessions.inc
 
 --exec $MYSQL --xml test -e "select * from t1"
+--let $my_gtid_set= `SELECT @@GLOBAL.GTID_EXECUTED`
+--replace_result "$my_gtid_set" GTID_SET
 --exec $MYSQL_DUMP --xml --skip-create-options test
 
 --exec $MYSQL --xml test -e "select count(*) from t1"

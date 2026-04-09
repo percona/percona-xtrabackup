@@ -1,4 +1,4 @@
-// Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 /// This file implements the union functor.
 
 #include <boost/geometry.hpp>  // boost::geometry::union_
+#include <utility>
 
 #include "sql/gis/gc_utils.h"
 #include "sql/gis/geometries.h"
@@ -57,23 +58,23 @@ typed_geometry_collection_apply_union(const Union &f,
   gc_union(f.semi_major(), f.semi_minor(), &mpt, &mls, &mpy);
 
   if (mpt->is_empty() && mls->is_empty()) {
-    result.reset(mpy.release());
+    result = std::move(mpy);
     return result;
   }
 
   if (mpy->is_empty() && mpt->is_empty()) {
-    result.reset(mls.release());
+    result = std::move(mls);
     return result;
   }
 
   if (mpy->is_empty() && mls->is_empty()) {
-    result.reset(mpt.release());
+    result = std::move(mpt);
     return result;
   }
 
-  for (auto py : *down_cast<MPy *>(mpy.get())) result->push_back(py);
-  for (auto ls : *down_cast<MLs *>(mls.get())) result->push_back(ls);
-  for (auto pt : *down_cast<MPt *>(mpt.get())) result->push_back(pt);
+  for (const auto &py : *down_cast<MPy *>(mpy.get())) result->push_back(py);
+  for (const auto &ls : *down_cast<MLs *>(mls.get())) result->push_back(ls);
+  for (const auto &pt : *down_cast<MPt *>(mpt.get())) result->push_back(pt);
 
   return result;
 }
@@ -175,7 +176,7 @@ std::unique_ptr<Geometrycollection> Union::eval(
   // equivalent to GeometryCollection(Point, Linestrings...) or Multilinestring.
   std::unique_ptr<Geometrycollection> result =
       std::make_unique<Cartesian_geometrycollection>();
-  for (auto ls : *g2) result->push_back(ls);
+  for (const auto &ls : *g2) result->push_back(ls);
   if (bg::disjoint(*g1, *g2)) result->push_back(*g1);
 
   if (result->size() == g2->size()) result.reset(g2->clone());
@@ -188,7 +189,7 @@ std::unique_ptr<Geometrycollection> Union::eval(
   // equivalent to GeometryCollection(Point, Multipolygon) or Multipolygon.
   std::unique_ptr<Geometrycollection> result =
       std::make_unique<Cartesian_geometrycollection>();
-  for (auto py : *g2) result->push_back(py);
+  for (const auto &py : *g2) result->push_back(py);
   if (bg::disjoint(*g1, *g2)) result->push_back(*g1);
 
   if (result->size() == g2->size()) result.reset(g2->clone());
@@ -224,7 +225,7 @@ std::unique_ptr<Cartesian_geometrycollection> Union::eval(
   std::unique_ptr<Cartesian_geometrycollection> result =
       std::make_unique<Cartesian_geometrycollection>();
   result->push_back(*g2);
-  for (auto ls : *difference) result->push_back(ls);
+  for (const auto &ls : *difference) result->push_back(ls);
   return result;
 }
 
@@ -241,7 +242,7 @@ std::unique_ptr<Cartesian_geometrycollection> Union::eval(
   std::unique_ptr<Cartesian_geometrycollection> result =
       std::make_unique<Cartesian_geometrycollection>();
   result->push_back(*g1);
-  for (auto pt : *difference) result->push_back(pt);
+  for (const auto &pt : *difference) result->push_back(pt);
   return result;
 }
 
@@ -268,8 +269,8 @@ std::unique_ptr<Geometrycollection> Union::eval(
   if (difference->is_empty())
     result.reset(g2->clone());
   else {
-    for (auto py : *g2) result->push_back(py);
-    for (auto ls : *difference) result->push_back(ls);
+    for (const auto &py : *g2) result->push_back(py);
+    for (const auto &ls : *difference) result->push_back(ls);
   }
   return result;
 }
@@ -308,7 +309,7 @@ std::unique_ptr<Cartesian_geometrycollection> Union::eval(
   std::unique_ptr<Cartesian_geometrycollection> result =
       std::make_unique<Cartesian_geometrycollection>();
   result->push_back(*g1);
-  for (auto pt : *difference) result->push_back(pt);
+  for (const auto &pt : *difference) result->push_back(pt);
   return result;
 }
 
@@ -325,7 +326,7 @@ std::unique_ptr<Cartesian_geometrycollection> Union::eval(
   std::unique_ptr<Cartesian_geometrycollection> result =
       std::make_unique<Cartesian_geometrycollection>();
   result->push_back(*g1);
-  for (auto ls : *difference) result->push_back(ls);
+  for (const auto &ls : *difference) result->push_back(ls);
   return result;
 }
 
@@ -399,8 +400,8 @@ std::unique_ptr<Geometrycollection> Union::eval(
   if (difference->is_empty())
     result.reset(g2->clone());
   else {
-    for (auto ls : *g2) result->push_back(ls);
-    for (auto pt : *difference) result->push_back(pt);
+    for (const auto &ls : *g2) result->push_back(ls);
+    for (const auto &pt : *difference) result->push_back(pt);
   }
   return result;
 }
@@ -420,8 +421,8 @@ std::unique_ptr<Geometrycollection> Union::eval(
   if (difference->is_empty())
     result.reset(g2->clone());
   else {
-    for (auto py : *g2) result->push_back(py);
-    for (auto pt : *difference) result->push_back(pt);
+    for (const auto &py : *g2) result->push_back(py);
+    for (const auto &pt : *difference) result->push_back(pt);
   }
   return result;
 }
@@ -475,8 +476,8 @@ std::unique_ptr<Geometrycollection> Union::eval(
   if (difference->is_empty())
     result.reset(g2->clone());
   else {
-    for (auto py : *g2) result->push_back(py);
-    for (auto ls : *difference) result->push_back(ls);
+    for (const auto &py : *g2) result->push_back(py);
+    for (const auto &ls : *difference) result->push_back(ls);
   }
   return result;
 }
@@ -569,7 +570,7 @@ std::unique_ptr<Geometrycollection> Union::eval(
   // equivalent to GeometryCollection(Point, Linestrings...) or Multilinestring.
   std::unique_ptr<Geometrycollection> result =
       std::make_unique<Geographic_geometrycollection>();
-  for (auto ls : *g2) result->push_back(ls);
+  for (const auto &ls : *g2) result->push_back(ls);
   if (bg::disjoint(*g1, *g2, m_geographic_pl_pa_strategy))
     result->push_back(*g1);
 
@@ -583,7 +584,7 @@ std::unique_ptr<Geometrycollection> Union::eval(
   // equivalent to GeometryCollection(Point, Multipolygon) or Multipolygon.
   std::unique_ptr<Geometrycollection> result =
       std::make_unique<Geographic_geometrycollection>();
-  for (auto py : *g2) result->push_back(py);
+  for (const auto &py : *g2) result->push_back(py);
   if (bg::disjoint(*g1, *g2, m_geographic_pl_pa_strategy))
     result->push_back(*g1);
 
@@ -620,7 +621,7 @@ std::unique_ptr<Geographic_geometrycollection> Union::eval(
   std::unique_ptr<Geographic_geometrycollection> result =
       std::make_unique<Geographic_geometrycollection>();
   result->push_back(*g2);
-  for (auto ls : *difference) result->push_back(ls);
+  for (const auto &ls : *difference) result->push_back(ls);
   return result;
 }
 
@@ -637,7 +638,7 @@ std::unique_ptr<Geographic_geometrycollection> Union::eval(
   std::unique_ptr<Geographic_geometrycollection> result =
       std::make_unique<Geographic_geometrycollection>();
   result->push_back(*g1);
-  for (auto pt : *difference) result->push_back(pt);
+  for (const auto &pt : *difference) result->push_back(pt);
   return result;
 }
 
@@ -665,8 +666,8 @@ std::unique_ptr<Geometrycollection> Union::eval(
   if (difference->is_empty())
     result.reset(g2->clone());
   else {
-    for (auto py : *g2) result->push_back(py);
-    for (auto ls : *difference) result->push_back(ls);
+    for (const auto &py : *g2) result->push_back(py);
+    for (const auto &ls : *difference) result->push_back(ls);
   }
   return result;
 }
@@ -705,7 +706,7 @@ std::unique_ptr<Geographic_geometrycollection> Union::eval(
   std::unique_ptr<Geographic_geometrycollection> result =
       std::make_unique<Geographic_geometrycollection>();
   result->push_back(*g1);
-  for (auto pt : *difference) result->push_back(pt);
+  for (const auto &pt : *difference) result->push_back(pt);
   return result;
 }
 
@@ -722,7 +723,7 @@ std::unique_ptr<Geographic_geometrycollection> Union::eval(
   std::unique_ptr<Geographic_geometrycollection> result =
       std::make_unique<Geographic_geometrycollection>();
   result->push_back(*g1);
-  for (auto ls : *difference) result->push_back(ls);
+  for (const auto &ls : *difference) result->push_back(ls);
   return result;
 }
 
@@ -797,8 +798,8 @@ std::unique_ptr<Geometrycollection> Union::eval(
   if (difference->is_empty())
     result.reset(g2->clone());
   else {
-    for (auto ls : *g2) result->push_back(ls);
-    for (auto pt : *difference) result->push_back(pt);
+    for (const auto &ls : *g2) result->push_back(ls);
+    for (const auto &pt : *difference) result->push_back(pt);
   }
   return result;
 }
@@ -818,8 +819,8 @@ std::unique_ptr<Geometrycollection> Union::eval(
   if (difference->is_empty())
     result.reset(g2->clone());
   else {
-    for (auto py : *g2) result->push_back(py);
-    for (auto pt : *difference) result->push_back(pt);
+    for (const auto &py : *g2) result->push_back(py);
+    for (const auto &pt : *difference) result->push_back(pt);
   }
   return result;
 }
@@ -873,8 +874,8 @@ std::unique_ptr<Geometrycollection> Union::eval(
   if (difference->is_empty())
     result.reset(g2->clone());
   else {
-    for (auto py : *g2) result->push_back(py);
-    for (auto ls : *difference) result->push_back(ls);
+    for (const auto &py : *g2) result->push_back(py);
+    for (const auto &ls : *difference) result->push_back(ls);
   }
   return result;
 }

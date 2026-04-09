@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -30,14 +30,13 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-namespace lock {
-namespace unittests {
+namespace lock::unittests {
 
 class Shared_spin_lock_test : public ::testing::Test {
  protected:
   Shared_spin_lock_test() = default;
-  virtual void SetUp() {}
-  virtual void TearDown() {}
+  void SetUp() override {}
+  void TearDown() override {}
 };
 
 TEST_F(Shared_spin_lock_test, Lock_unlock_test) {
@@ -330,5 +329,4 @@ TEST_F(Shared_spin_lock_test, Sentry_class_test) {
             false);  // Exclusive access is not acquired anymore
 }  // namespace unittests
 
-}  // namespace unittests
-}  // namespace lock
+}  // namespace lock::unittests

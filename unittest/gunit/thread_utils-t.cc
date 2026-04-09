@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2009, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -60,8 +60,8 @@ class NotificationThread : public Thread {
   Notification *m_end_notification;
   int *m_counter;
 
-  NotificationThread(const NotificationThread &);  // Not copyable.
-  void operator=(const NotificationThread &);      // Not assignable.
+  NotificationThread(const NotificationThread &) = delete;  // Not copyable.
+  void operator=(const NotificationThread &) = delete;      // Not assignable.
 };
 
 /*

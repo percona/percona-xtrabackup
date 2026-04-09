@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -59,6 +59,10 @@ class TlsStream : private TlsBase<LowerLayer> {
 
   auto get_executor() { return lower_layer().get_executor(); }
   auto cancel() { return lower_layer().cancel(); }
+
+  auto shutdown(typename LowerLayer::shutdown_type sd) {
+    return lower_layer().shutdown(sd);
+  }
 
   typename Parent::LowerLayerType &lower_layer() {
     return Parent::lower_layer_;

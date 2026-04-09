@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -32,8 +32,8 @@ namespace temptable_allocator_unittest {
 
 // Needed for making it possible to use user-defined literals (e.g. 1_MiB) when
 // instantiating (generating) test-cases below
-using temptable::operator"" _KiB;
-using temptable::operator"" _MiB;
+using temptable::operator""_KiB;
+using temptable::operator""_MiB;
 
 /** GoogleTest macros for testing exceptions (EXPECT_THROW, EXPECT_NO_THROW,
  * EXPECT_ANY_THROW, etc.) do not provide direct means to inspect the value of
@@ -92,7 +92,7 @@ struct MemoryMonitorReadOnlyProbe : public temptable::MemoryMonitor {
   static size_t ram_threshold() {
     return temptable::MemoryMonitor::RAM::threshold();
   }
-  static bool mmap_enabled() { return temptable_use_mmap; }
+  static bool mmap_enabled() { return (temptable_max_mmap > 0); }
   static size_t mmap_consumption() {
     return temptable::MemoryMonitor::MMAP::consumption();
   }
@@ -116,8 +116,8 @@ struct MemoryMonitorHijackProbe : public MemoryMonitorReadOnlyProbe {
     auto current_consumption = temptable::MemoryMonitor::MMAP::consumption();
     return temptable::MemoryMonitor::MMAP::decrease(current_consumption);
   }
-  static void mmap_enable() { temptable_use_mmap = true; }
-  static void mmap_disable() { temptable_use_mmap = false; }
+  static void mmap_enable() { temptable_max_mmap = 1073741824; }
+  static void mmap_disable() { temptable_max_mmap = 0; }
   static void max_ram_set(size_t new_max_ram) {
     temptable_max_ram = new_max_ram;
   }
@@ -917,7 +917,7 @@ TEST_F(
 // down below.
 using max_ram = decltype(temptable_max_ram);
 using max_mmap = decltype(temptable_max_mmap);
-using use_mmap = decltype(temptable_use_mmap);
+using use_mmap = bool;
 using n_elements = uint32_t;
 using is_ram_expected_to_be_increased = bool;
 using is_mmap_expected_to_be_increased = bool;
@@ -926,16 +926,14 @@ using is_mmap_expected_to_be_increased = bool;
 class AllocatesSuccessfully
     : public TempTableAllocator,
       public ::testing::WithParamInterface<std::tuple<
-          max_ram, max_mmap, use_mmap, n_elements,
-          is_ram_expected_to_be_increased, is_mmap_expected_to_be_increased>> {
-};
+          max_ram, max_mmap, n_elements, is_ram_expected_to_be_increased,
+          is_mmap_expected_to_be_increased>> {};
 
 // Parametrized test for testing allocation patterns which should yield
 // RecordFileFull exception
-class ThrowsRecordFileFull
-    : public TempTableAllocator,
-      public ::testing::WithParamInterface<
-          std::tuple<max_ram, max_mmap, use_mmap, n_elements>> {};
+class ThrowsRecordFileFull : public TempTableAllocator,
+                             public ::testing::WithParamInterface<
+                                 std::tuple<max_ram, max_mmap, n_elements>> {};
 
 // Implementation of parametrized test-cases which tests successful allocation
 // patterns
@@ -943,15 +941,12 @@ TEST_P(AllocatesSuccessfully,
        for_various_allocation_patterns_and_configurations) {
   auto max_ram = std::get<0>(GetParam());
   auto max_mmap = std::get<1>(GetParam());
-  auto mmap_enabled = std::get<2>(GetParam());
-  auto n_elements = std::get<3>(GetParam());
-  auto ram_expected_to_be_increased = std::get<4>(GetParam());
-  auto mmap_expected_to_be_increased = std::get<5>(GetParam());
+  auto n_elements = std::get<2>(GetParam());
+  auto ram_expected_to_be_increased = std::get<3>(GetParam());
+  auto mmap_expected_to_be_increased = std::get<4>(GetParam());
 
   MemoryMonitorHijackProbe::max_ram_set(max_ram);
   MemoryMonitorHijackProbe::max_mmap_set(max_mmap);
-  mmap_enabled ? MemoryMonitorHijackProbe::mmap_enable()
-               : MemoryMonitorHijackProbe::mmap_disable();
 
   // Trigger the allocation
   temptable::TableResourceMonitor table_resource_monitor(16 * 1024 * 1024);
@@ -985,13 +980,10 @@ TEST_P(ThrowsRecordFileFull,
        for_various_allocation_patterns_and_configurations) {
   auto max_ram = std::get<0>(GetParam());
   auto max_mmap = std::get<1>(GetParam());
-  auto mmap_enabled = std::get<2>(GetParam());
-  auto n_elements = std::get<3>(GetParam());
+  auto n_elements = std::get<2>(GetParam());
 
   MemoryMonitorHijackProbe::max_ram_set(max_ram);
   MemoryMonitorHijackProbe::max_mmap_set(max_mmap);
-  mmap_enabled ? MemoryMonitorHijackProbe::mmap_enable()
-               : MemoryMonitorHijackProbe::mmap_disable();
 
   // Trigger the allocation
   temptable::TableResourceMonitor table_resource_monitor(16 * 1024 * 1024);
@@ -1012,18 +1004,10 @@ TEST_P(ThrowsRecordFileFull,
 INSTANTIATE_TEST_SUITE_P(
     TempTableAllocator, ThrowsRecordFileFull,
     ::testing::Values(
-        // ram threshold reached, mmap threshold not reached, mmap disabled
-        std::make_tuple(1_MiB, 2_MiB, false, 1_MiB + 1),
-        // ram threshold reached, mmap threshold reached, mmap disabled
-        std::make_tuple(1_MiB, 1_MiB, false, 2_MiB),
-        // ram threshold reached, mmap threshold reached, mmap enabled
-        std::make_tuple(1_MiB, 1_MiB, true, 2_MiB),
-        // ram threshold reached, mmap threshold reached (but set to 0), mmap
-        // disabled
-        std::make_tuple(1_MiB, 0_MiB, false, 2_MiB),
-        // ram threshold reached, mmap threshold reached (but set to 0), mmap
-        // enabled
-        std::make_tuple(1_MiB, 0_MiB, true, 2_MiB)));
+        // ram threshold reached, mmap threshold reached
+        std::make_tuple(1_MiB, 1_MiB, 2_MiB),
+        // ram threshold reached, mmap threshold reached (but set to 0)
+        std::make_tuple(1_MiB, 0_MiB, 2_MiB)));
 
 // Generate tests for all of the test-case scenarios which should result with a
 // successful allocation
@@ -1032,16 +1016,16 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         // ram threshold not reached, mmap threshold not reached (but set to 0),
         // mmap disabled
-        std::make_tuple(1_MiB, 0_MiB, false, 2_KiB, true, false),
+        std::make_tuple(1_MiB, 0_MiB, 2_KiB, true, false),
         // ram threshold not reached, mmap threshold not reached (but set to 0),
         // mmap enabled
-        std::make_tuple(1_MiB, 0_MiB, true, 2_KiB, true, false),
+        std::make_tuple(1_MiB, 0_MiB, 2_KiB, true, false),
         // ram threshold not reached, mmap threshold not reached, mmap disabled
-        std::make_tuple(1_MiB, 1_MiB, true, 2_KiB, true, false),
+        std::make_tuple(1_MiB, 1_MiB, 2_KiB, true, false),
         // ram threshold not reached, mmap threshold not reached, mmap enabled
-        std::make_tuple(1_MiB, 1_MiB, true, 2_KiB, true, false),
+        std::make_tuple(1_MiB, 1_MiB, 2_KiB, true, false),
         // ram threshold reached, mmap threshold not reached, mmap enabled
-        std::make_tuple(1_MiB, 4_MiB, true, 2_MiB, false, true)));
+        std::make_tuple(1_MiB, 4_MiB, 2_MiB, false, true)));
 
 // Create some aliases to make our life easier when generating the test-cases
 // down below.

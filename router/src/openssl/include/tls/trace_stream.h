@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2021, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -56,6 +56,7 @@ class TraceStream : Mutex_static_holder<Trace_stream_static_holder> {
   using VectorOfBuffers = std::vector<net::mutable_buffer>;
   using VectorOfConstBuffers = std::vector<net::const_buffer>;
 
+ public:
   TraceStream(TraceStream &&other)
       : recv_buffer_{other.recv_buffer_},
         send_buffer_{other.send_buffer_},
@@ -115,6 +116,11 @@ class TraceStream : Mutex_static_holder<Trace_stream_static_holder> {
   auto cancel() {
     print("cancel");
     return lower_layer_.cancel();
+  }
+
+  void shutdown(net::socket_base::shutdown_type s) {
+    print("shutdown");
+    lower_layer_.shutdown(s);
   }
 
   auto close() {

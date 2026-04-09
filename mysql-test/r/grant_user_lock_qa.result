@@ -43,6 +43,8 @@ ALTER USER user() IDENTIFIED BY 'auth_string' ACCOUNT LOCK;
 ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'ACCOUNT LOCK' at line 1
 GRANT CREATE USER ON *.* TO user2@localhost;
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT USER();
 USER()
 user2@localhost

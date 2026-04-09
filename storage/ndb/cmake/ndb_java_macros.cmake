@@ -1,4 +1,4 @@
-# Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+# Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2.0,
@@ -103,14 +103,9 @@ MACRO(CREATE_JAR TARGET_ARG)
   # Treat all deprecation warnings as errors
   SET(JAVA_ARGS ${JAVA_ARGS} -Xlint:deprecation -Xlint:-options -Werror)
 
-  # Set Java 1.8 as the target version
-  SET(_JAVAC_TARGET "8")
-  IF(${Java_VERSION} VERSION_LESS 9)
-    SET(JAVA_ARGS ${JAVA_ARGS} -target ${_JAVAC_TARGET} -source ${_JAVAC_TARGET})
-  ELSE()
-    # Use the newer 'release' argument if compiling with Java version 9 or above
-    SET(JAVA_ARGS ${JAVA_ARGS} --release ${_JAVAC_TARGET})
-  ENDIF()
+  # Set Java 11 as the target version
+  SET(_JAVAC_TARGET "11")
+  SET(JAVA_ARGS ${JAVA_ARGS} --release ${_JAVAC_TARGET})
 
   # Compile
   IF (JAVA_FILES)

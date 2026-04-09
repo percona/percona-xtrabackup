@@ -16,6 +16,8 @@ INSERT INTO t1 VALUES (1);
 CREATE USER "recovery_user" IDENTIFIED BY "recovery_password";
 GRANT REPLICATION SLAVE ON *.* TO "recovery_user";
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 #
 # Set valid options
 #

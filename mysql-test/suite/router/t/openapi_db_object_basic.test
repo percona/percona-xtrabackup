@@ -1,0 +1,114 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+--source ../include/schema/pk_types_schema.sql
+
+--source ../include/mrs/start_object_definition.inc
+--source ../include/test/test_openapi_object_structure.inc
+--source ../include/mrs/end_object_definition.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Show that GET /<service>/<schema>/open-api-catalog/<object> works
+--echo ##    and lists OpenAPI description for all specified REST Objects.
+--echo #
+--echo # 1. Check t_decimal REST Objects from different_types_as_pk schema.
+--echo #
+--echo #
+--echo # 2. Check t_set REST Objects from different_types_as_pk schema.
+--echo #
+--echo #
+--echo # 3. Check t_timestamp REST Objects from different_types_as_pk schema.
+--echo #
+--echo #
+--echo # 4. Check t_bin REST Objects from different_types_as_pk schema.
+--echo #
+--echo #
+--echo # 5. Check all_types REST Objects from different_types schema.
+--echo #
+--echo #
+--echo # 6. Check t1 REST Objects from crud_operations schema.
+--echo #
+--echo #
+--echo # 7. Check t2 REST Objects from crud_operations schema.
+--echo #
+--echo #
+--echo # 8. Check t3 REST Objects from crud_operations schema.
+--echo #
+--echo #
+--echo # 9. Check t4 REST Objects from crud_operations schema.
+--echo #
+--echo #
+--echo # 10. Check v1 REST Object from 'view1' view.
+--echo #
+--echo #
+
+--echo
+--echo #
+--echo # I.1
+--let $mrs_client_arg_path='/svc/different_types_as_pk/open-api-catalog/t_decimal'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+--let $mrs_client_arg_path='/svc/different_types_as_pk/open-api-catalog/t_set'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.3
+--let $mrs_client_arg_path='/svc/different_types_as_pk/open-api-catalog/t_timestamp'
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/pk_types_schema_t_timestamp/properties/id/example
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.4
+--let $mrs_client_arg_path='/svc/different_types_as_pk/open-api-catalog/t_bin'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.5
+--let $mrs_client_arg_path='/svc/different_types/open-api-catalog/all_types'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.6
+--let $mrs_client_arg_path='/svc/crud_operations/open-api-catalog/t1'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.7
+--let $mrs_client_arg_path='/svc/crud_operations/open-api-catalog/t2'
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_table2/properties/date/example
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.8
+--let $mrs_client_arg_path='/svc/crud_operations/open-api-catalog/t3'
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_table3/properties/ctimestamp/example,components/schemas/basic_schema_table3/properties/cdatetime/example
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.9
+--let $mrs_client_arg_path='/svc/crud_operations/open-api-catalog/t4'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.10
+--let $mrs_client_arg_path='/svc/crud_operations/open-api-catalog/v1'
+--let $mrs_client_arg_exclude_json_pointer=/components/schemas/basic_schema_view1/properties/date/example
+--source ../include/mrs/mrs_client.inc
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

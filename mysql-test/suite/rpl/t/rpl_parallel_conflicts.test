@@ -1,239 +1,247 @@
 #
-# WL#5569 MTS
+# The test checks cases of transaction dependencies that require special
+# handling.
 #
-# The test checks cases of hashing conflicts forcing a special hanling.
-# The cases include
+# There are two tests in here:
 #
-# I. two Worker jobs conflict to each other
+# - Test 1: inter-transaction (DMLs) dependencies that cause the applier
+#           to coordinate scheduling of transactions and or transaction
+#           commits.
 #
-#   a. two multi-statement transactions containing more than one partition
-#      in which one is common are mapped to different Workers.
-#   b. similarly two autocommit queries or ddl:s
-#
-# Handling of the cases is carried out as the following:
-# when Coordinator hits to an occupied by not the currenly assigned Worker
-# partition it marks the partition and goes to wait till the Worker-owner
-# has released it and signaled.
-#
-# II. An event requires the sequential execution
-#
-# Coordinator does not schedule the event and is waiting till all workers have
-# released their partitions and signalled.
+# - Test 2: DDL-DML transaction dependencies. This tests that DDL following
+#           DML transactions waits until all preceding DML transactions
+#           finish.
 
---source include/not_group_replication_plugin.inc
---source include/have_replica_parallel_type_database.inc
+--source include/have_binlog_format_row.inc
 --source include/rpl/init_source_replica.inc
 
 #
-#  Testing with the statement format requires
-#  @@global.slave_run_query_in_parallel = 1.
-#  Notice, parallelization for Query-log-event is limitted
-#  to the default dababase. That's why 'use db'.
-#  With the default @@global.slave_run_query_in_parallel == 0
-#  the tests in stmt format still run to prove switching to the sequential.
+# Test 1: force a dependency between DML transactions and check that
+#         they follow the dependency order. This test works with and
+#         without preserve commit order
+#
 
-#  TODO: convert this file into two tests for either value of
-#        @@global.slave_run_query_in_parallel
---source include/have_binlog_format_row.inc
-
-connection slave;
-
---disable_query_log
---disable_result_log
-call mtr.add_suppression('Error reading replica worker configuration');
---enable_query_log
---enable_result_log
-
+--source include/rpl/connection_replica.inc
 source include/rpl/stop_replica.inc;
 
-set @save.replica_parallel_workers= @@global.replica_parallel_workers;
-set @@global.replica_parallel_workers= 4;
+--let $saved_innodb_lock_wait_timeout = `SELECT @@global.innodb_lock_wait_timeout`
+SET GLOBAL innodb_lock_wait_timeout = 300;
+
+--let $saved_replica_parallel_workers = `SELECT @@global.replica_parallel_workers`
+SET GLOBAL replica_parallel_workers = 4;
+
+--let $is_preserve_commit_order = `SELECT @@global.replica_preserve_commit_order = TRUE`
 
 source include/rpl/start_replica.inc;
 
+--source include/rpl/connection_source.inc
+# we are using multiple schemas as it becomes easier to assert
+# later on
+CREATE DATABASE db1;
+CREATE DATABASE db2;
+CREATE DATABASE db3;
+CREATE TABLE db1.t1 (c1 INT PRIMARY KEY);
+CREATE TABLE db2.t1 (c1 INT PRIMARY KEY);
+CREATE TABLE db3.t1 (c1 INT PRIMARY KEY);
 
-connection master;
-
-create database d1;
-create database d2;
-create database d3;
-create table d1.t1 (a int auto_increment primary key) engine=innodb;
-create table d2.t1 (a int auto_increment primary key) engine=innodb;
-create table d3.t1 (a int auto_increment primary key) engine=innodb;
-
-#
-
-# I. Two parallel jobs conflict
-#
-# two conflicting jobs to follow
-
+BEGIN;
+INSERT INTO db1.t1 VALUES (1);
+INSERT INTO db2.t1 VALUES (1);
+INSERT INTO db3.t1 VALUES (1);
+COMMIT;
 --source include/rpl/sync_to_replica.inc
-# To be really conflicting slave needs to block commit of the first.
-#connection slave;
 
-begin;
-insert into d2.t1 values (1);
+--source include/rpl/connection_replica.inc
+# X lock record on t1 in db1
+BEGIN;
+SELECT * FROM db1.t1 WHERE c1 = 1 FOR UPDATE;
 
-connection master;
+--source include/rpl/connection_replica1.inc
+# X lock record on t1 in db3
+BEGIN;
+SELECT * FROM db3.t1 WHERE c1 = 1 FOR UPDATE;
 
-# Job_1
-begin;
-use d1;
-insert into d1.t1 values (null);
-use d2;
-insert into d2.t1 values (1);   # will be block at this point on Worker
-commit;
+--source include/rpl/connection_source.inc
+BEGIN;
+UPDATE db1.t1 SET c1 = 100 WHERE c1 = 1;
+COMMIT;
 
-# Job_2
-begin;
-use d3;
-insert into d3.t1 values (null);
-use d1;
-insert into d1.t1 values (null); #  will be block at this point on Coord if no transaction compression used
-commit;
+# this one should commit even before the previous one if not
+# preserving commit order. If preserving commit order, this
+# one commits only after the previous one
+UPDATE db2.t1 SET c1 = 100 WHERE c1 = 1;
 
-connection slave;
+BEGIN;
+# there is a dependency to the second previous transaction because
+# of this change
+UPDATE db1.t1 SET c1 = 1000 WHERE c1 = 100;
+UPDATE db3.t1 SET c1 = 100 WHERE c1 = 1;
+COMMIT;
 
---echo Either the coordinator is waiting for a worker to unlock d1
---echo (binlog transaction compression OFF) or the coordinator
---echo has scheduled the 2nd transaction to the sane worker (binlog
---echo transaction compression ON)
+--source include/rpl/connection_replica.inc
 
---let $wait_condition=SELECT COUNT(*) = 1 FROM performance_schema.data_locks WHERE object_schema="d2" AND object_name="t1" AND lock_status="WAITING"
+# now we assert that the update to db1 is blocked on the X lock
+--let $wait_condition=SELECT COUNT(*)=1 FROM performance_schema.threads WHERE processlist_state="Applying batch of row changes (update)" AND PROCESSLIST_DB="db1"
 --source include/wait_condition.inc
 
-if (`SELECT @@global.binlog_transaction_compression = FALSE`)
+if ($is_preserve_commit_order)
 {
-  #
-  # note that if no compression used, then the coordinator had
-  # started to assign 2nd transaction to the a second worker,
-  # since it schedules event by event (blocks when the 2nd
-  # event for the 2nd transaction is scheduled - d1's event).
-  #
-  # if compression is on, then the coordinator knows beforehand
-  # which databases a transaction is going to touch, as it inspects
-  # the payload event and gathers all the information about the
-  # transaction events. Then it does not wait  and assigns 2nd
-  # transaction to the worker handling d1 already.
-  #
-  --let $wait_condition=SELECT COUNT(*) = 1 FROM performance_schema.threads WHERE processlist_state LIKE 'Waiting for Replica Worker to release partition' AND name = 'thread/sql/replica_sql'
+  # we also assert that the update to db3 is blocked
+  --let $wait_condition=SELECT COUNT(*)=1 FROM performance_schema.threads WHERE processlist_state="Waiting for preceding transaction to commit"
   --source include/wait_condition.inc
 }
 
-# release the Worker
-rollback;
+if (!$is_preserve_commit_order)
+{
+  --let $wait_condition=SELECT count(*) = 1 FROM db2.t1 WHERE c1=100
+  --source include/wait_condition.inc
+}
 
-# Bug#21461991 : RPL.RPL_PARALLEL_CONFLICTS FAILS SPORADICALLY
-# ON DAILY AND WEEKLY TRUNK
-# Waits until the slave SQL thread has been synced with master
-connection master;
+# now lets unlock db1.t1's record
+--source include/rpl/connection_replica.inc
+ROLLBACK;
+
+# now lets wait until the worker commits the first update
+--let $wait_condition=SELECT count(*) = 1 FROM db1.t1 WHERE c1=100
+--source include/wait_condition.inc
+
+# lets wait until the second update is committed too
+--let $wait_condition=SELECT count(*) = 1 FROM db2.t1 WHERE c1=100
+--source include/wait_condition.inc
+
+# now lets check that db3 is not yet updated but it
+# is also not blocked by a dependency since the first
+# update was committed already. This means it has been
+# scheduled after the dependency cleared.
+--let $wait_condition=SELECT COUNT(*)=1 FROM performance_schema.threads WHERE processlist_state="Applying batch of row changes (update)" AND PROCESSLIST_DB="db3"
+--source include/wait_condition.inc
+
+# now lets unlock db3.t1's record
+--source include/rpl/connection_replica1.inc
+ROLLBACK;
+
+--source include/rpl/connection_replica.inc
+
+# lets wait until the third update is committed too
+--let $wait_condition=SELECT count(*) = 1 FROM db3.t1 WHERE c1=100
+--source include/wait_condition.inc
+
+# clean up now
+--source include/rpl/connection_source.inc
+DROP DATABASE db1;
+DROP DATABASE db2;
+DROP DATABASE db3;
+--source include/rpl/reset.inc
+
+#
+# Test 2: Assert that a DDL waits for preceding DMLs to finish before
+#         it is scheduled
+#
+
+if ($is_preserve_commit_order)
+{
+  --disable_result_log
+  --source include/rpl/connection_replica.inc
+  --source include/rpl/stop_replica.inc
+  --let $save_replica_preserve_commit_order = `SELECT @@global.replica_preserve_commit_order`
+  SET GLOBAL replica_preserve_commit_order = FALSE;
+  --source include/rpl/start_replica.inc
+  --enable_result_log
+}
+
+--source include/rpl/connection_source.inc
+CREATE TABLE t1 (c1 INT PRIMARY KEY);
+INSERT INTO t1 VALUES (1), (2), (3);
 --source include/rpl/sync_to_replica.inc
 
-let $count= 2;
-let $table= d1.t1;
-source include/wait_until_rows_count.inc;
+# create a table that only exists on the replica
+--source include/rpl/connection_replica.inc
+CREATE TABLE `exists_only_on_replica` (c1 INT);
 
+BEGIN;
+# lock table that exists only on replica
+INSERT INTO exists_only_on_replica VALUES (1);
 
-#
-# II. The only-sequential conflicts with ongoing parallel applying
-#
+# lock the records on the table
+--source include/rpl/connection_replica1.inc
+BEGIN;
+# lock records in t1
+SELECT * FROM t1 FOR UPDATE;
 
-# a. DDL waits for all workers have processed their earlier scheduled assignments
+--source include/rpl/connection_source.inc
+# issue transactions that would change t1
+UPDATE t1 SET c1 = 100 WHERE c1 = 1;
+UPDATE t1 SET c1 = 200 WHERE c1 = 2;
+UPDATE t1 SET c1 = 300 WHERE c1 = 3;
 
-connection slave1;
+# issue a DDL
+DROP TABLE IF EXISTS `exists_only_on_replica`;
+--source include/rpl/connection_replica.inc
 
-# fix the tables status. Tables are supposed to exist, possibly with data left
-# after previous part.
+# now we assert that the update to c1=1 is blocked on the X lock
+--let $wait_condition=SELECT COUNT(*)=3 FROM performance_schema.threads WHERE processlist_state="Applying batch of row changes (update)" AND PROCESSLIST_DB="test"
+--source include/wait_condition.inc
 
-select count(*) from d1.t1 into @d1;
-select count(*) from d2.t1 into @d2;
-select count(*) from d3.t1 into @d3;
-use d1;
-create table `exists_only_on_slave` (a int);
+# now we assert that the coordinator is waiting for workers to
+# commit their DMLs
+--let $wait_condition=SELECT COUNT(*)=1 FROM performance_schema.threads WHERE processlist_state="Waiting for dependent transaction to commit" AND NAME="thread/sql/replica_sql"
+--source include/wait_condition.inc
 
-connection slave;
+# unlock the records on the table t1
+--source include/rpl/connection_replica1.inc
+ROLLBACK;
 
-# put in the way of workers blocking load
+--source include/rpl/connection_replica.inc
+# now we assert that the coordinator has now scheduled the DDL
+# and it is waiting on a metadata lock
+--let $wait_condition=SELECT COUNT(*)=1 FROM performance_schema.threads WHERE processlist_state="Waiting for table metadata lock" AND processlist_info LIKE "%DROP TABLE IF EXISTS `exists_only_on_replica`%"
+--source include/wait_condition.inc
 
-begin;
-insert into d1.t1 values (null);
-insert into d2.t1 values (null);
-insert into d3.t1 values (null);
+--let $assert_text=Assert that table `exists_only_on_replica` still exists
+--let $assert_cond=[SELECT COUNT(*) FROM information_schema.tables WHERE table_name="exists_only_on_replica" AND table_schema = "test"] = 1
+--source include/assert.inc
 
-connection master;
+# now unlock the table and watch it disappear from the database
+ROLLBACK;
 
-# Job_1
-begin;
-use d1;
-insert into d1.t1 values (null);
-commit;
+# all four workers are now idle
+--let $wait_condition=SELECT COUNT(*)=4 FROM performance_schema.threads WHERE processlist_state="Waiting for an event from Coordinator"
+--source include/wait_condition.inc
 
-# Job_2
-begin;
-use d2;
-insert into d2.t1 values (null);
-commit;
+--let $assert_text=Assert that table `exists_only_on_replica` is no more
+--let $assert_cond=[SELECT COUNT(*) FROM information_schema.tables WHERE table_name="exists_only_on_replica" AND table_schema = "test"] = 0
+--source include/assert.inc
 
-
-# Job_3
-begin;
-use d3;
-insert into d3.t1 values (null);
-commit;
-
---disable_warnings
-use d1;
-drop table if exists `exists_only_on_slave`;
---enable_warnings
-
-
-connection slave1;
-
-select sleep(1);  # give Workers a little time to process (but they won't)
-
-select count(*) - @d1 as 'zero' from d1.t1;
-select count(*) - @d2 as 'zero' from d2.t1;
-select count(*) - @d3 as 'zero' from d3.t1;
-
-# proof the master DDL has not got through
-use d1;
-select count(*) as 'zero' from `exists_only_on_slave`;
-
-connection slave;
-
-rollback; # release workers
-
-connection slave1;
-
-# to finish up with getting all committed.
-
-let $count= `select @d1 + 1`;
-let $table= d1.t1;
-source include/wait_until_rows_count.inc;
-
-let $count= `select @d2 + 1`;
-let $table= d2.t1;
-source include/wait_until_rows_count.inc;
-
-let $count= `select @d3 + 1`;
-let $table= d3.t1;
-source include/wait_until_rows_count.inc;
-connection slave;
-
-
-#
-# cleanup
-#
-
-connection master;
-
-drop database d1;
-drop database d2;
-drop database d3;
-
+--source include/rpl/connection_source.inc
+DROP TABLE t1;
 --source include/rpl/sync_to_replica.inc
-#connection slave;
 
-set @@global.replica_parallel_workers= @save.replica_parallel_workers;
+if ($is_preserve_commit_order)
+{
+  --disable_result_log
+  --source include/rpl/connection_replica.inc
+  --source include/rpl/stop_replica.inc
+  --eval SET GLOBAL replica_preserve_commit_order = $save_replica_preserve_commit_order
+  --source include/rpl/start_replica.inc
+  --enable_result_log
+}
+
+--source include/rpl/connection_source.inc
+--source include/rpl/reset.inc
+
+#
+# Clean Up
+#
+--source include/rpl/connection_replica.inc
+
+source include/rpl/stop_replica.inc;
+
+--replace_result $saved_innodb_lock_wait_timeout SAVED_INNODB_LOCK_WAIT_TIMEOUT
+--eval SET GLOBAL innodb_lock_wait_timeout = $saved_innodb_lock_wait_timeout
+
+--replace_result $saved_replica_parallel_workers SAVED_REPLICA_PARALLEL_WORKERS
+--eval SET GLOBAL replica_parallel_workers = $saved_replica_parallel_workers;
+
+source include/rpl/start_replica.inc;
 
 --source include/rpl/deinit.inc

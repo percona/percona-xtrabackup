@@ -1,4 +1,4 @@
-/* Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -145,7 +145,7 @@ static void my_xml_norm_text(MY_XML_ATTR *a) {
 
 static inline bool my_xml_parser_prefix_cmp(MY_XML_PARSER *p, const char *s,
                                             size_t slen) {
-  return (p->cur + slen > p->end) || memcmp(p->cur, s, slen);
+  return (p->cur + slen > p->end) || memcmp(p->cur, s, slen) != 0;
 }
 
 static int my_xml_scan(MY_XML_PARSER *p, MY_XML_ATTR *a) {
@@ -235,7 +235,7 @@ static int my_xml_value(MY_XML_PARSER *st, const char *str, size_t len) {
   @retval 0  success
 */
 static int my_xml_attr_ensure_space(MY_XML_PARSER *st, size_t len) {
-  size_t ofs = st->attr.end - st->attr.start;
+  size_t const ofs = st->attr.end - st->attr.start;
   len++;  // Add terminating zero.
   if (ofs + len > st->attr.buffer_size) {
     st->attr.buffer_size =
@@ -278,10 +278,9 @@ static int my_xml_enter(MY_XML_PARSER *st, const char *str, size_t len) {
   st->attr.end[0] = '\0';
   if (st->flags & MY_XML_FLAG_RELATIVE_NAMES)
     return st->enter ? st->enter(st, str, len) : MY_XML_OK;
-  else
-    return st->enter
-               ? st->enter(st, st->attr.start, st->attr.end - st->attr.start)
-               : MY_XML_OK;
+  return st->enter
+             ? st->enter(st, st->attr.start, st->attr.end - st->attr.start)
+             : MY_XML_OK;
 }
 
 static void mstr(char *s, const char *src, size_t l1, size_t l2) {

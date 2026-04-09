@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -36,13 +36,13 @@ class SetVarReq {
   static UintR size();
 
   void mgmtSrvrBlockRef(UintR mgmtSrvrBlockRef);
-  UintR mgmtSrvrBlockRef(void) const;
+  UintR mgmtSrvrBlockRef() const;
 
   void variable(ConfigParamId variable);
-  ConfigParamId variable(void) const;
+  ConfigParamId variable() const;
 
   void value(UintR value);
-  UintR value(void) const;
+  UintR value() const;
 
  private:
   UintR _mgmtSrvrBlockRef;
@@ -50,27 +50,25 @@ class SetVarReq {
   UintR _value;
 };
 
-inline UintR SetVarReq::size(void) { return 3; }
+inline UintR SetVarReq::size() { return 3; }
 
 inline void SetVarReq::mgmtSrvrBlockRef(UintR mgmtSrvrBlockRef) {
   _mgmtSrvrBlockRef = mgmtSrvrBlockRef;
 }
 
-inline UintR SetVarReq::mgmtSrvrBlockRef(void) const {
-  return _mgmtSrvrBlockRef;
-}
+inline UintR SetVarReq::mgmtSrvrBlockRef() const { return _mgmtSrvrBlockRef; }
 
 inline void SetVarReq::variable(ConfigParamId variable) {
   _variable = variable;
 }
 
-inline ConfigParamId SetVarReq::variable(void) const {
+inline ConfigParamId SetVarReq::variable() const {
   return static_cast<ConfigParamId>(_variable);
 }
 
 inline void SetVarReq::value(UintR value) { _value = value; }
 
-inline UintR SetVarReq::value(void) const { return _value; }
+inline UintR SetVarReq::value() const { return _value; }
 
 #undef JAM_FILE_ID
 

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2017, 2024, Oracle and/or its affiliates.
+Copyright (c) 2017, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -1308,7 +1308,11 @@ class Arch_log_consumer : public Log_consumer {
 
   lsn_t get_consumed_lsn() const override;
 
-  void consumption_requested() override;
+  void consumption_requested(lsn_t request_lsn) override;
+
+ private:
+  std::chrono::system_clock::time_point m_last_rushed_at;
+  std::chrono::system_clock::time_point m_problem_started_at;
 };
 
 /** Redo log archiving system */
@@ -1420,6 +1424,9 @@ class Arch_Log_Sys {
   /** Disable assignment */
   Arch_Log_Sys &operator=(Arch_Log_Sys const &) = delete;
 
+  /** Abort the archiver if it is lagging behind and unable to advance. */
+  void async_abort_if_below(lsn_t requested_lsn);
+
  private:
   /** Wait for archive system to come out of #ARCH_STATE_PREPARE_IDLE.
   If the system is preparing to idle, #start needs to wait
@@ -1499,6 +1506,13 @@ class Arch_Log_Sys {
   /** Redo log consumer that can be registered to prevent consumption
   of redo log files which still haven't been archived. */
   Arch_log_consumer m_log_consumer;
+
+  /** Non-zero if async_abort_if_below(request_lsn) was called, which sets it to
+  request_lsn. Used to notify the thread calling Arch_Log_Sys::archive(..) that
+  it should abort. Because this field is not cleared, and we don't want to
+  prevent future CLONE operations, the operation should only be aborted if
+  arch_lsn is below the value of this field */
+  std::atomic<lsn_t> m_abort_if_below_lsn{0};
 };
 
 /** Vector of page archive in memory blocks */

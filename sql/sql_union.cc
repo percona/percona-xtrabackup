@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2001, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -151,7 +151,6 @@ bool Query_result_union::flush() { return false; }
                             duplicates on insert
   @param options            create options
   @param table_alias        name of the temporary table
-  @param bit_fields_as_long convert bit fields to ulonglong
   @param create_table If false, a table handler will not be created when
                       creating the result table.
   @param op                 If we are creating a result table for a set
@@ -169,7 +168,7 @@ bool Query_result_union::flush() { return false; }
 bool Query_result_union::create_result_table(
     THD *thd_arg, const mem_root_deque<Item *> &column_types,
     bool is_union_distinct, ulonglong options, const char *table_alias,
-    bool bit_fields_as_long, bool create_table, Query_term_set_op *op) {
+    bool create_table, Query_term_set_op *op) {
   mem_root_deque<Item *> visible_fields(thd_arg->mem_root);
   for (Item *item : VisibleFields(column_types)) {
     visible_fields.push_back(item);
@@ -180,7 +179,6 @@ bool Query_result_union::create_result_table(
   count_field_types(thd_arg->lex->current_query_block(), &tmp_table_param,
                     visible_fields, false, true);
   tmp_table_param.skip_create_table = !create_table;
-  tmp_table_param.bit_fields_as_long = bit_fields_as_long;
   if (unit != nullptr && op == nullptr) {
     if (unit->is_recursive()) {
       /*
@@ -249,8 +247,12 @@ bool Query_result_union::reset() {
 }
 
 void Query_result_union::set_limit(ha_rows limit_rows) {
-  table->m_limit_rows = limit_rows;
+  if (table != nullptr) {
+    assert(!table->s->is_mv_se_materialized);
+    table->m_limit_rows = limit_rows;
+  }
 }
+
 /**
   This class is effectively dead. It was used for non-DISTINCT UNIONs
   in the pre-iterator executor. Now it exists only as a shell for certain
@@ -404,6 +406,19 @@ bool Query_expression::prepare(THD *thd, Query_result *sel_result,
     // This had to wait until all query blocks are prepared:
     if (check_materialized_derived_query_blocks(thd))
       return true; /* purecov: inspected */
+  }
+
+  if (thd->lex->is_explain()) {
+    WalkQueryExpression(this,
+                        enum_walk::SUBQUERY_POSTFIX,  // Use SUBQUERY_POSTFIX to
+                                                      // traverse subqueries
+                        [this](Item *item) {
+                          if (item->has_stored_program()) {
+                            this->m_has_stored_program = true;
+                            return true;  // Stop walking
+                          }
+                          return false;  // Continue walking
+                        });
   }
 
   // Query blocks are prepared, update the state
@@ -1373,6 +1388,24 @@ static void cleanup_tmp_tables(Table_ref *list) {
     } else if (tl->is_table_function()) {
       tl->table_function->cleanup();
     }
+    if (tl->is_mv_se_available()) {
+      // Materialized view directly in storage engine
+      if (tl->derived_result != nullptr &&
+          tl->derived_result->table != nullptr) {
+        // - In the regular case, derived_result->table and tl->table both point
+        // to the same table, thus only close via tl->table. But in the case of
+        // a secondary engine materialized view, derived_result->table points to
+        // the generic derived table, whereas tl->table points to the
+        // materialized view table. Close only derived_result->table here,
+        // tl->table will be closed and freed in close_thread_tables().
+        // - Also note that the generic derived_table->table will be populated
+        // mainly in the prepared statement case, where prepare occurs before
+        // open_secondary_engine_tables occurs, which makes the decision to
+        // use secondary engine materialized views.
+        close_tmp_table(tl->derived_result->table);
+      }
+      continue;
+    }
     if (tl->table == nullptr) continue;  // Not materialized
     if ((tl->is_view_or_derived() || tl->is_recursive_reference() ||
          tl->schema_table || tl->is_table_function())) {
@@ -1384,6 +1417,8 @@ static void cleanup_tmp_tables(Table_ref *list) {
         // Clear indexes added during optimization, keep possible unique index
         TABLE *t = tl->table;
         t->s->keys = t->s->is_distinct ? 1 : 0;
+        t->s->key_parts =
+            t->s->is_distinct ? t->s->key_info[0].user_defined_key_parts : 0;
         t->s->first_unused_tmp_key = 0;
         t->keys_in_use_for_query.clear_all();
         t->keys_in_use_for_group_by.clear_all();
@@ -1410,6 +1445,25 @@ static void destroy_tmp_tables(Table_ref *list) {
     // If this table has a reference to CTE, we need to remove it.
     if (tl->common_table_expr() != nullptr) {
       tl->common_table_expr()->references.erase_value(tl);
+    }
+    if (tl->is_mv_se_available()) {
+      // Materialized view directly in storage engine
+      if (tl->derived_result != nullptr &&
+          tl->derived_result->table != nullptr) {
+        // - In the regular case, derived_result->table and tl->table both point
+        // to the same table, thus only close via tl->table. But in the case of
+        // a secondary engine materialized view, derived_result->table points to
+        // the generic derived table, whereas tl->table points to the
+        // materialized view table. Close only derived_result->table here,
+        // tl->table will be closed and freed in close_thread_tables().
+        // - Also note that the generic derived_table->table will be populated
+        // mainly in the prepared statement case, where prepare occurs before
+        // open_secondary_engine_tables occurs, which makes the decision to
+        // use secondary engine materialized views.
+        free_tmp_table(tl->derived_result->table);
+        tl->derived_result->table = nullptr;
+      }
+      continue;
     }
     if (tl->table == nullptr) continue;  // Not materialized
     assert(tl->schema_table == nullptr);
@@ -1471,11 +1525,11 @@ void Query_block::destroy() {
     unit->destroy();
     unit = next;
   }
-
   List_iterator<Window> li(m_windows);
   Window *w;
-  while ((w = li++)) w->destroy();
-
+  while ((w = li++)) {
+    w->destroy();
+  }
   // Destroy allocated derived tables
   destroy_tmp_tables(get_table_list());
 

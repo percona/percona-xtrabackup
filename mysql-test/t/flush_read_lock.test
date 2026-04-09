@@ -10,6 +10,8 @@
 --source include/count_sessions.inc
 --source include/force_myisam_default.inc
 --source include/have_myisam.inc
+# This test doesn't support GTID
+--source include/rpl/set_gtid_mode_off.inc
 
 # Needs --xa_detach_on_prepare to hit debug sync points
 --let $option_name = xa_detach_on_prepare
@@ -2246,3 +2248,5 @@ disconnect con3;
 # Check that all connections opened by test cases in this file are really
 # gone so execution of other tests won't be affected by their presence.
 --source include/wait_until_count_sessions.inc
+# Restore the default for gtid_mode which is ON
+--source include/rpl/set_gtid_mode_on.inc

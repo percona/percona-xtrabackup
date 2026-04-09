@@ -2,6 +2,7 @@
 # Testcase for InnoDB
 # Bug#42419 Server crash with "Pure virtual method called" on two concurrent connections
 #
+--source include/hypergraph_is_active.inc
 
 
 let $innodb_lock_wait_timeout= query_get_value(SHOW VARIABLES LIKE 'innodb_lock_wait_timeout%', Value, 1);
@@ -51,7 +52,7 @@ connection default;
 let $show_statement= SHOW PROCESSLIST;
 let $field= State;
 let $condition= = 'Updating';
-if ($HYPERGRAPH_TEST) {
+if ($hypergraph_is_active) {
   # The 'Updating' stage is specific to the old optimizer's
   # single-table UPDATE code path. The hypergraph optimizer uses a
   # common code path for single-table and multi-table UPDATE, and sees

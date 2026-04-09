@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -24,9 +24,9 @@
 */
 
 #define OPTEXPORT
-#include <errno.h>
 #include <ndb_opts.h>
 #include <ndb_version.h>
+#include <cerrno>
 #include "my_alloc.h"
 #include "my_default.h"
 #include "portlib/NdbMem.h"
@@ -34,24 +34,31 @@
 #include "unhex.h"
 #include "util/require.h"
 
-using usage_fn = void (*)(void);
+using usage_fn = void (*)();
 
 static const char *load_default_groups[] = {"mysql_cluster", nullptr};
 
-static void default_ndb_opt_short(void) { ndb_short_usage_sub(nullptr); }
+static void default_ndb_opt_short() { ndb_short_usage_sub(nullptr); }
 
 /* declaration only */
 void ndb_usage(usage_fn, const char *load_default_groups[],
                struct my_option *my_long_options);
 
-static void default_ndb_opt_usage(void) {
+static void default_ndb_opt_usage() {
   struct my_option my_long_options[] = {
-      NdbStdOpt::usage,           NdbStdOpt::help,
-      NdbStdOpt::version,         NdbStdOpt::ndb_connectstring,
-      NdbStdOpt::mgmd_host,       NdbStdOpt::connectstring,
-      NdbStdOpt::ndb_nodeid,      NdbStdOpt::optimized_node_selection,
-      NdbStdOpt::charsets_dir,    NdbStdOpt::connect_retry_delay,
-      NdbStdOpt::connect_retries, NDB_STD_OPT_DEBUG NdbStdOpt::end_of_options,
+      NdbStdOpt::usage,
+      NdbStdOpt::help,
+      NdbStdOpt::version,
+      NdbStdOpt::ndb_connectstring,
+      NdbStdOpt::mgmd_host,
+      NdbStdOpt::connectstring,
+      NdbStdOpt::ndb_nodeid,
+      NdbStdOpt::optimized_node_selection,
+      NdbStdOpt::charsets_dir,
+      NdbStdOpt::connect_retry_delay,
+      NdbStdOpt::connect_retries,
+      NdbStdOpt::log_timestamps,
+      NDB_STD_OPT_DEBUG NdbStdOpt::end_of_options,
   };
 
   ndb_usage(default_ndb_opt_short, load_default_groups, my_long_options);
@@ -60,7 +67,7 @@ static void default_ndb_opt_usage(void) {
 static usage_fn g_ndb_opt_short_usage = default_ndb_opt_short;
 static usage_fn g_ndb_opt_usage = default_ndb_opt_usage;
 
-void ndb_opt_set_usage_funcs(void (*short_usage)(void), void (*usage)(void)) {
+void ndb_opt_set_usage_funcs(void (*short_usage)(), void (*usage)()) {
   /* Check that the program name has been set already */
   assert(my_progname);
 
@@ -68,7 +75,7 @@ void ndb_opt_set_usage_funcs(void (*short_usage)(void), void (*usage)(void)) {
   if (usage) g_ndb_opt_usage = usage;
 }
 
-static inline const char *ndb_progname(void) {
+static inline const char *ndb_progname() {
   if (my_progname) return my_progname;
   return "<unknown program>";
 }
@@ -111,7 +118,7 @@ bool ndb_std_get_one_option(int optid, const struct my_option *opt,
       (*g_ndb_opt_usage)();
       exit(0);
   }
-  return 0;
+  return false;
 }
 
 void ndb_std_print_version() {
@@ -129,8 +136,7 @@ bool ndb_is_load_default_arg_separator(const char *arg) {
     load_default() in 5.5+ returns an extra arg which has to
     be skipped when processing the argv array
    */
-  if (my_getopt_is_args_separator(arg)) return true;
-  return false;
+  return my_getopt_is_args_separator(arg);
 }
 
 static Ndb_opts *registeredNdbOpts;
@@ -169,7 +175,7 @@ int Ndb_opts::handle_options(bool (*get_opt_fn)(int, const struct my_option *,
   return ::handle_options(main_argc_ptr, main_argv_ptr, options, get_opt_fn);
 }
 
-void Ndb_opts::set_usage_funcs(void (*short_fn)(void), void (*long_fn)(void)) {
+void Ndb_opts::set_usage_funcs(void (*short_fn)(), void (*long_fn)(void)) {
   if (short_fn) short_usage_fn = short_fn;
   if (long_fn) long_usage_extra_fn = long_fn;
 }
@@ -205,7 +211,7 @@ bool ndb_option::get_one_option(int optid, const my_option *opt, char *arg) {
    * Make sure your option definition only set app_type to nullptr or pointing
    * to a ndb_option object, else your code is broken.
    */
-  ndb_option *opt_obj = static_cast<ndb_option *>(opt->app_type);
+  auto *opt_obj = static_cast<ndb_option *>(opt->app_type);
   return opt_obj->get_option(optid, opt, arg);
 }
 
@@ -339,9 +345,8 @@ int ndb_password_state::get_from_tty() {
   if (r >= 0) {
     if (is_password()) {
       return set_password(m_password_buffer, r);
-    } else {
-      return set_key(m_password_buffer, r);
     }
+    return set_key(m_password_buffer, r);
   }
 
   clear_password();
@@ -371,9 +376,8 @@ int ndb_password_state::get_from_stdin() {
   if (r >= 0) {
     if (is_password()) {
       return set_password(m_password_buffer, r);
-    } else {
-      return set_key(m_password_buffer, r);
     }
+    return set_key(m_password_buffer, r);
   }
 
   clear_password();

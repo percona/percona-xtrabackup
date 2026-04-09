@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -53,6 +53,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 static inline rtr_mbr_t *prdt_get_mbr_from_prdt(
     const lock_prdt_t *prdt) /*!< in: the lock predicate */
 {
+  ut_ad(prdt != nullptr);
+
   rtr_mbr_t *mbr_loc = reinterpret_cast<rtr_mbr_t *>(prdt->data);
 
   return (mbr_loc);
@@ -124,7 +126,9 @@ static bool lock_prdt_consistent(lock_prdt_t *prdt1, lock_prdt_t *prdt2,
       ret = mbr_disjoint_cmp(srs, mbr1, mbr2);
       break;
     case PAGE_CUR_MBR_EQUAL:
-      ret = mbr_equal_cmp(srs, mbr1, mbr2);
+      /* TBD: Why is it important to use mbr_equal_physically()
+      vs mbr_equal_logically() here? */
+      ret = mbr_equal_logically(srs, mbr1, mbr2);
       break;
     case PAGE_CUR_INTERSECT:
       ret = mbr_intersect_cmp(srs, mbr1, mbr2);
@@ -316,7 +320,9 @@ static bool lock_prdt_is_same(
   rtr_mbr_t *mbr1 = prdt_get_mbr_from_prdt(prdt1);
   rtr_mbr_t *mbr2 = prdt_get_mbr_from_prdt(prdt2);
 
-  if (prdt1->op == prdt2->op && mbr_equal_cmp(srs, mbr1, mbr2)) {
+  /* TBD: Why is it important to use mbr_equal_physically()
+  vs mbr_equal_logically() here? */
+  if (prdt1->op == prdt2->op && mbr_equal_logically(srs, mbr1, mbr2)) {
     return (true);
   }
 

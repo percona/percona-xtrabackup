@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -39,10 +39,12 @@
 #include "mysql/harness/utility/string.h"  // join, string_format
 #include "mysql_routing.h"
 #include "mysqlrouter/io_component.h"
+#include "mysqlrouter/metadata_cache.h"
 #include "mysqlrouter/routing_component.h"
 #include "mysqlrouter/ssl_mode.h"
 #include "mysqlrouter/supported_routing_options.h"
 #include "plugin_config.h"
+#include "routing_guidelines_adapter.h"
 #include "scope_guard.h"
 #include "sql_lexer.h"  // init_library()
 
@@ -54,6 +56,7 @@ const mysql_harness::AppInfo *g_app_info;
 static const std::string kSectionName = "routing";
 std::mutex g_dest_tls_contexts_mtx;
 std::vector<std::unique_ptr<DestinationTlsContext>> g_dest_tls_contexts;
+std::mutex routing_guidelines_create_mtx;
 
 static void validate_socket_info(const std::string &err_prefix,
                                  const mysql_harness::ConfigSection *section,
@@ -84,7 +87,7 @@ static void validate_socket_info(const std::string &err_prefix,
 
   // validate bind_address : IP
   if (have_bind_addr &&
-      !mysql_harness::is_valid_domainname(config.bind_address.address())) {
+      !mysql_harness::is_valid_domainname(config.bind_address.hostname())) {
     throw std::invalid_argument(err_prefix +
                                 "invalid IP or name in bind_address '" +
                                 config.bind_address.str() + "'");
@@ -152,7 +155,7 @@ static void init(mysql_harness::PluginFuncEnv *env) {
       MySQLRoutingComponent::get_instance().init(*info->config);
       bool have_metadata_cache = false;
       bool need_metadata_cache = false;
-      std::vector<mysql_harness::TCPAddress> bind_addresses;
+      std::vector<mysql_harness::TcpDestination> bind_addresses;
       for (const mysql_harness::ConfigSection *section :
            info->config->sections()) {
         if (section->name == kSectionName) {
@@ -163,58 +166,61 @@ static void init(mysql_harness::PluginFuncEnv *env) {
               section->key.empty() ? "" : ":", section->key.c_str());
           // Check the configuration
           RoutingPluginConfig config(section);  // throws std::invalid_argument
-          validate_socket_info(err_prefix, section,
-                               config);  // throws std::invalid_argument
+          if (config.accept_connections) {
+            validate_socket_info(err_prefix, section,
+                                 config);  // throws std::invalid_argument
 
-          // ensure that TCP port is unique
-          if (config.bind_address.port()) {
-            const auto &config_addr = config.bind_address;
+            // ensure that TCP port is unique
+            if (config.bind_address.port() != 0) {
+              const auto &config_addr = config.bind_address;
 
-            // Check uniqueness of bind_address and port, using IP address
-            auto found_addr =
-                std::find(bind_addresses.begin(), bind_addresses.end(),
-                          config.bind_address);
-            if (found_addr != bind_addresses.end()) {
-              throw std::invalid_argument(
-                  err_prefix + "duplicate IP or name found in bind_address '" +
-                  config.bind_address.str() + "'");
-            }
-            // Check ADDR_ANY binding on same port
-            else if (config_addr.address() == "0.0.0.0" ||
-                     config_addr.address() == "::") {
-              found_addr = std::find_if(
-                  bind_addresses.begin(), bind_addresses.end(),
-                  [&config](const mysql_harness::TCPAddress &addr) {
-                    return config.bind_address.port() == addr.port();
-                  });
+              // Check uniqueness of bind_address and port, using IP address
+              auto found_addr =
+                  std::find(bind_addresses.begin(), bind_addresses.end(),
+                            config.bind_address);
               if (found_addr != bind_addresses.end()) {
                 throw std::invalid_argument(
                     err_prefix +
                     "duplicate IP or name found in bind_address '" +
                     config.bind_address.str() + "'");
               }
+              // Check ADDR_ANY binding on same port
+              else if (config_addr.hostname() == "0.0.0.0" ||
+                       config_addr.hostname() == "::") {
+                found_addr = std::find_if(
+                    bind_addresses.begin(), bind_addresses.end(),
+                    [&config](const mysql_harness::TcpDestination &dest) {
+                      return config.bind_address.port() == dest.port();
+                    });
+                if (found_addr != bind_addresses.end()) {
+                  throw std::invalid_argument(
+                      err_prefix +
+                      "duplicate IP or name found in bind_address '" +
+                      config.bind_address.str() + "'");
+                }
+              }
+              bind_addresses.push_back(config.bind_address);
             }
-            bind_addresses.push_back(config.bind_address);
-          }
 
-          // We check if we need special plugins based on URI
-          try {
-            auto uri = URI(config.destinations, false);
-            if (uri.scheme == "metadata-cache") {
-              need_metadata_cache = true;
+            // We check if we need special plugins based on URI
+            try {
+              auto uri = URI(config.destinations, false);
+              if (uri.scheme == "metadata-cache") {
+                need_metadata_cache = true;
+              }
+            } catch (URIError &) {
+              // No URI, no extra plugin needed
             }
-          } catch (URIError &) {
-            // No URI, no extra plugin needed
           }
         } else if (section->name == "metadata_cache") {
           have_metadata_cache = true;
         }
-      }
 
-      if (need_metadata_cache && !have_metadata_cache) {
-        throw std::invalid_argument(
-            "Routing needs Metadata Cache, but no none "
-            "was found in configuration.");
+        if (need_metadata_cache && !have_metadata_cache) {
+          throw std::invalid_argument(
+              "Routing needs Metadata Cache, but none "
+              "was found in configuration.");
+        }
       }
     }
     g_app_info = info;
@@ -252,6 +258,14 @@ static void ensure_readable_directory(const std::string &opt_name,
 
 static std::string get_default_ciphers() {
   return mysql_harness::join(TlsServerContext::default_ciphers(), ":");
+}
+
+static bool has_metadata_cache() {
+  for (const mysql_harness::ConfigSection *section :
+       g_app_info->config->sections()) {
+    if (section->name == "metadata_cache") return true;
+  }
+  return false;
 }
 
 static void start(mysql_harness::PluginFuncEnv *env) {
@@ -506,24 +520,70 @@ static void start(mysql_harness::PluginFuncEnv *env) {
     }
 
     net::io_context &io_ctx = IoComponent::get_instance().io_context();
+    {
+      auto &routing_component = MySQLRoutingComponent::get_instance();
+      std::lock_guard lock(routing_guidelines_create_mtx);
+      if (!routing_component.routing_guidelines_initialized()) {
+        const auto &routing_guidelines_document =
+            create_routing_guidelines_document(g_app_info->config->sections(),
+                                               io_ctx);
+        if (routing_guidelines_document) {
+          log_debug("Initial routing guidelines: \n%s",
+                    routing_guidelines_document.value().c_str());
+          routing_component.set_routing_guidelines(
+              routing_guidelines_document.value());
+        } else if (routing_guidelines_document.error() ==
+                   std::errc::not_supported) {
+          log_debug(
+              "Skip generating initial routing guidelines, only static routes "
+              "are configured");
+        } else {
+          throw std::runtime_error(
+              "Unable to create routing guidelines from configuration file: " +
+              routing_guidelines_document.error().message());
+        }
+      }
+    }
+
+    auto routing_guidelines =
+        MySQLRoutingComponent::get_instance().get_routing_guidelines();
     auto r = std::make_shared<MySQLRouting>(
-        config, io_ctx, name,
+        config, io_ctx, std::move(routing_guidelines), name,
         config.source_ssl_mode != SslMode::kDisabled ? &source_tls_ctx
                                                      : nullptr,
         config.dest_ssl_mode != SslMode::kDisabled ? dest_tls_context.get()
                                                    : nullptr);
 
-    try {
-      // don't allow rootless URIs as we did already in the
-      // get_option_destinations()
-      r->set_destinations_from_uri(URI(config.destinations, false));
-    } catch (const URIError &) {
-      r->set_destinations_from_csv(config.destinations);
-    }
+    r->set_destinations(config.destinations);
+
     MySQLRoutingComponent::get_instance().register_route(section->key, r);
 
-    Scope_guard guard{[section_key = section->key]() {
+    auto *mdc = metadata_cache::MetadataCacheAPI::instance();
+    using namespace std::chrono_literals;
+    const bool has_md = has_metadata_cache();
+    while (has_md && !mdc->is_initialized() && (!env || is_running(env))) {
+      std::this_thread::sleep_for(1ms);
+    }
+
+    if (mdc->is_initialized() && !r->is_standalone()) {
+      mdc->add_routing_guidelines_update_callbacks(
+          [r](const std::string &routing_guidelines_document) {
+            return r->update_routing_guidelines(routing_guidelines_document);
+          },
+          [&r](const auto &affected_routes) {
+            r->on_routing_guidelines_update(affected_routes);
+          });
+      mdc->add_router_info_update_callback([&r](const auto &router_info) {
+        r->on_router_info_update(router_info);
+      });
+    }
+
+    Scope_guard guard{[r, mdc, section_key = section->key]() {
       MySQLRoutingComponent::get_instance().erase(section_key);
+      if (mdc->is_initialized() && !r->is_standalone()) {
+        mdc->clear_routing_guidelines_update_callbacks();
+        mdc->clear_router_info_update_callback();
+      }
     }};
 
     {

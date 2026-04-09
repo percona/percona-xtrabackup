@@ -1,0 +1,207 @@
+################################################################################
+# Testcase routine_libraries.1: Ensure that the INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+#                   table has the following columns, in the following order:
+#
+#                   ROUTINE_CATALOG,
+#                   ROUTINE_SCHEMA (shows the database, or schema, in which
+#                          the routine that imports the libraries resides),
+#                   ROUTINE_NAME (shows the importing routine's name),
+#                   ROUTINE_TYPE (shows the type of the importing routine -
+#                          either PROCEDURE or FUNCTION),
+#                   LIBRARY_CATALOG,
+#                   LIBRARY_SCHEMA (shows the database, or schema, in which
+#                          the imported library resides),
+#                   LIBRARY_NAME (shows the imported library name -
+#                          may not exist),
+#                   LIBRARY_VERSION (shows the library's version),
+################################################################################
+# ========== routine_libraries.1 ==========
+USE INFORMATION_SCHEMA;
+SHOW CREATE VIEW INFORMATION_SCHEMA.ROUTINE_LIBRARIES;
+View	Create View	character_set_client	collation_connection
+ROUTINE_LIBRARIES	CREATE ALGORITHM=UNDEFINED DEFINER=`mysql.infoschema`@`localhost` SQL SECURITY DEFINER VIEW `ROUTINE_LIBRARIES` AS select `cat`.`name` AS `ROUTINE_CATALOG`,`sch`.`name` AS `ROUTINE_SCHEMA`,`rtn`.`name` AS `ROUTINE_NAME`,`rtn`.`type` AS `ROUTINE_TYPE`,if((`lib`.`catalog` is null),`cat`.`name`,`lib`.`catalog`) AS `LIBRARY_CATALOG`,if((`lib`.`sch` is null),`sch`.`name`,`lib`.`sch`) AS `LIBRARY_SCHEMA`,`lib`.`library_name` AS `LIBRARY_NAME`,`lib`.`version` AS `LIBRARY_VERSION` from (((`mysql`.`routines` `rtn` join `mysql`.`schemata` `sch` on((`rtn`.`schema_id` = `sch`.`id`))) join `mysql`.`catalogs` `cat` on((`cat`.`id` = `sch`.`catalog_id`))) join json_table(get_dd_property_key_value(`rtn`.`options`,'libraries'), '$[*]' columns (`catalog` varchar(64) character set utf8mb4 path '$.catalog', `sch` varchar(100) character set utf8mb4 path '$.schema', `library_name` varchar(100) character set utf8mb4 path '$.name', `version` varchar(100) character set utf8mb4 path '$.version')) `lib`) where ((0 <> can_access_routine(`sch`.`name`,`rtn`.`name`,`rtn`.`type`,`rtn`.`definer`,false)) and (`rtn`.`options` is not null) and (json_valid(get_dd_property_key_value(`rtn`.`options`,'libraries')) = 1))	utf8mb3	utf8mb3_general_ci
+SELECT * FROM information_schema.columns
+WHERE table_schema = 'information_schema'
+  AND table_name   = 'ROUTINE_LIBRARIES'
+ORDER BY ordinal_position;
+TABLE_CATALOG	TABLE_SCHEMA	TABLE_NAME	COLUMN_NAME	ORDINAL_POSITION	COLUMN_DEFAULT	IS_NULLABLE	DATA_TYPE	CHARACTER_MAXIMUM_LENGTH	CHARACTER_OCTET_LENGTH	NUMERIC_PRECISION	NUMERIC_SCALE	DATETIME_PRECISION	CHARACTER_SET_NAME	COLLATION_NAME	COLUMN_TYPE	COLUMN_KEY	EXTRA	PRIVILEGES	COLUMN_COMMENT	GENERATION_EXPRESSION	SRS_ID
+def	information_schema	ROUTINE_LIBRARIES	ROUTINE_CATALOG	1	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	ROUTINE_SCHEMA	2	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	ROUTINE_NAME	3	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8mb3	utf8mb3_general_ci	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	ROUTINE_TYPE	4	NULL	NO	enum	9	27	NULL	NULL	NULL	utf8mb3	utf8mb3_bin	enum('FUNCTION','PROCEDURE','LIBRARY')			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	LIBRARY_CATALOG	5	NULL	YES	varchar	64	256	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(64)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	LIBRARY_SCHEMA	6	NULL	YES	varchar	100	400	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	LIBRARY_NAME	7	NULL	YES	varchar	100	400	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)			select			NULL
+def	information_schema	ROUTINE_LIBRARIES	LIBRARY_VERSION	8	NULL	YES	varchar	100	400	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(100)			select			NULL
+DESCRIBE INFORMATION_SCHEMA.ROUTINE_LIBRARIES;
+Field	Type	Null	Key	Default	Extra
+ROUTINE_CATALOG	varchar(64)	NO		NULL	
+ROUTINE_SCHEMA	varchar(64)	NO		NULL	
+ROUTINE_NAME	varchar(64)	NO		NULL	
+ROUTINE_TYPE	enum('FUNCTION','PROCEDURE','LIBRARY')	NO		NULL	
+LIBRARY_CATALOG	varchar(64)	YES		NULL	
+LIBRARY_SCHEMA	varchar(100)	YES		NULL	
+LIBRARY_NAME	varchar(100)	YES		NULL	
+LIBRARY_VERSION	varchar(100)	YES		NULL	
+###############################################################################
+# Testcase routine_libraries.2:  Unsuccessful stored procedure CREATE will not
+#                     populate I_S.ROUTINE_LIBRARIES view
+###############################################################################
+# ========== routine_libraries.2 ==========
+CREATE DATABASE i_s_routine_libraries_test;
+USE i_s_routine_libraries_test;
+# Missing closing ')' character at the end of 's char(20) in func declaration
+CREATE LIBRARY test_library_2 LANGUAGE JAVASCRIPT AS $$
+export function f(n) {  return n } $$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE FUNCTION test_function_2(n INTEGER RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (test_library_2)
+AS $$ return test_library_2.f(n) $$;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (test_library_2)
+AS $$ return test_lib' at line 1
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'i_s_routine_libraries_test'
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+###############################################################################
+# Testcase routine_libraries.3:  DROP LIBRARY - Verify DROP of a function
+#                                     removes I_S.ROUTINE_LIBRARIES data for
+#                                     that function / procedure
+###############################################################################
+# ========== routine_libraries.3 ==========
+DROP DATABASE IF EXISTS i_s_routine_libraries_test;
+CREATE DATABASE i_s_routine_libraries_test;
+USE i_s_routine_libraries_test;
+CREATE LIBRARY test_library_3 LANGUAGE JAVASCRIPT AS $$
+export function f(n) {  return n } $$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE FUNCTION test_function_3(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (i_s_routine_libraries_test.test_library_3)
+AS $$ return test_library_3.f(n) $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'i_s_routine_libraries_test'
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	i_s_routine_libraries_test	test_function_3	FUNCTION	def	i_s_routine_libraries_test	test_library_3	NULL
+# Dropping a library in use won't affect the routines that import it.
+DROP LIBRARY test_library_3;
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'i_s_routine_libraries_test'
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	i_s_routine_libraries_test	test_function_3	FUNCTION	def	i_s_routine_libraries_test	test_library_3	NULL
+DROP FUNCTION test_function_3;
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'i_s_routine_libraries_test'
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+###############################################################################
+# Testcase routine_libraries.4:  ALTER ROUTINE USING
+###############################################################################
+# ========== routine_libraries.4 ==========
+DROP DATABASE IF EXISTS i_s_routine_libraries_test;
+CREATE DATABASE i_s_routine_libraries_test;
+USE i_s_routine_libraries_test;
+CREATE LIBRARY test_library_4 LANGUAGE JAVASCRIPT AS $$
+export function f(n) {  return n } $$;
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE FUNCTION test_function_4(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (i_s_routine_libraries_test.test_library_4)
+AS $$ return test_library_4.f(n) $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'i_s_routine_libraries_test'
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	i_s_routine_libraries_test	test_function_4	FUNCTION	def	i_s_routine_libraries_test	test_library_4	NULL
+ALTER FUNCTION test_function_4 COMMENT 'new comment added';
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'i_s_routine_libraries_test'
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	i_s_routine_libraries_test	test_function_4	FUNCTION	def	i_s_routine_libraries_test	test_library_4	NULL
+###############################################################################
+# Testcase routine_libraries.5:  Extra long USING clause
+###############################################################################
+# ========== routine_libraries.5 ==========
+DROP DATABASE IF EXISTS i_s_routine_libraries_test;
+CREATE DATABASE schema_1_0123456789212345678931234567894123456789512345678961234;
+USE schema_1_0123456789212345678931234567894123456789512345678961234;
+CREATE LIBRARY library_1_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_2_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_3_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_4_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_5_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_6_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_7_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_8_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_9_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE LIBRARY library_0_123456789212345678931234567894123456789512345678961234 LANGUAGE JAVASCRIPT AS " export function f(n) {  return n } ";
+Warnings:
+Warning	6001	Language component: Not available.
+CREATE DATABASE i_s_routine_libraries_test;
+USE i_s_routine_libraries_test;
+# extra long USING clause
+CREATE FUNCTION
+function_2123456789212345678931234567894123456789512345678961234()
+RETURNS INT LANGUAGE JAVASCRIPT
+USING (
+schema_1_0123456789212345678931234567894123456789512345678961234.library_1_123456789212345678931234567894123456789512345678961234 AS alias_1_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_2_123456789212345678931234567894123456789512345678961234 AS alias_2_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_3_123456789212345678931234567894123456789512345678961234 AS alias_3_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_4_123456789212345678931234567894123456789512345678961234 AS alias_4_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_5_123456789212345678931234567894123456789512345678961234 AS alias_5_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_6_123456789212345678931234567894123456789512345678961234 AS alias_6_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_7_123456789212345678931234567894123456789512345678961234 AS alias_7_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_8_123456789212345678931234567894123456789512345678961234 AS alias_8_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_9_123456789212345678931234567894123456789512345678961234 AS alias_9_91123456789212345678931234567894123456789512345678961234,
+schema_1_0123456789212345678931234567894123456789512345678961234.library_0_123456789212345678931234567894123456789512345678961234 AS alias_0_91123456789212345678931234567894123456789512345678961234
+) AS $$ return 42 $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES
+WHERE ROUTINE_SCHEMA = 'i_s_routine_libraries_test'
+ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE, LIBRARY_CATALOG, LIBRARY_SCHEMA, LIBRARY_NAME, LIBRARY_VERSION;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_0_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_1_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_2_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_3_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_4_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_5_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_6_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_7_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_8_123456789212345678931234567894123456789512345678961234	NULL
+def	i_s_routine_libraries_test	function_2123456789212345678931234567894123456789512345678961234	FUNCTION	def	schema_1_0123456789212345678931234567894123456789512345678961234	library_9_123456789212345678931234567894123456789512345678961234	NULL
+# final clean up
+DROP DATABASE i_s_routine_libraries_test;
+DROP DATABASE schema_1_0123456789212345678931234567894123456789512345678961234;
+USE test;
+SELECT * FROM INFORMATION_SCHEMA.ROUTINE_LIBRARIES;
+ROUTINE_CATALOG	ROUTINE_SCHEMA	ROUTINE_NAME	ROUTINE_TYPE	LIBRARY_CATALOG	LIBRARY_SCHEMA	LIBRARY_NAME	LIBRARY_VERSION
+# End of INFORMATION_SCHEMA.ROUTINE_LIBRARIES tests

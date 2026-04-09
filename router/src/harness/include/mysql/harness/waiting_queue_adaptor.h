@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -26,6 +26,7 @@
 #ifndef MYSQL_HARNESS_WAITING_QUEUE_ADAPTOR_INCLUDED
 #define MYSQL_HARNESS_WAITING_QUEUE_ADAPTOR_INCLUDED
 
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 
@@ -73,6 +74,31 @@ class WaitingQueueAdaptor {
     if (false == q_.dequeue(item)) {
       return false;
     }
+    notify_enqueueable();
+
+    return true;
+  }
+
+  /**
+   * Attempt to dequeue an item from a queue for a given period of time.
+   *
+   * @param item dequeued item if queue was not empty within the specified time.
+   * @param timeout max time to wait for the item to be available.
+   *
+   * @returns item
+   * @retval true item dequeued
+   * @retval false queue was empty
+   */
+  template <class Rep, class Period>
+  bool try_pop(value_type &item, std::chrono::duration<Rep, Period> timeout) {
+    {
+      std::unique_lock<std::mutex> lk(dequeueable_cond_mutex_);
+      if (!dequeueable_cond_.wait_for(
+              lk, timeout, [this, &item] { return q_.dequeue(item); })) {
+        return false;
+      }
+    }
+
     notify_enqueueable();
 
     return true;

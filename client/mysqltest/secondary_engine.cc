@@ -1,4 +1,4 @@
-// Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+// Copyright (c) 2018, 2025, Oracle and/or its affiliates.
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License, version 2.0,
@@ -25,7 +25,7 @@
 #include "client/mysqltest/error_names.h"
 #include "client/mysqltest/utils.h"
 
-#include <assert.h>
+#include <cassert>
 #include <cstring>
 #include <fstream>
 #include <iostream>
@@ -50,7 +50,7 @@ bool Secondary_engine::offload_count(MYSQL *mysql, const char *mode) {
       "SHOW GLOBAL STATUS LIKE 'Secondary_engine_execution_count'";
 
   if (query_get_string(mysql, query, 1, &offload_count)) {
-    int error = mysql_errno(mysql);
+    int const error = mysql_errno(mysql);
     if (error == 0 || error == 1104 || error == 2006) return false;
     std::cerr << "mysqltest: Query '" << query << "' failed, ERROR " << error
               << " (" << mysql_sqlstate(mysql) << "): " << mysql_error(mysql)
@@ -79,13 +79,13 @@ void Secondary_engine::report_offload_count(const char *filename) {
   if (!offload_count_after && offload_count_after < offload_count_before)
     offload_count_after = offload_count_before;
 
-  int count_val = offload_count_after - offload_count_before;
+  int const count_val = offload_count_after - offload_count_before;
   assert(count_val >= 0);
 
   std::ofstream report_file(filename, std::ios::out);
 
   if (report_file.is_open()) {
-    std::string count = std::to_string(count_val);
+    std::string const count = std::to_string(count_val);
     report_file << count << std::endl;
   }
 

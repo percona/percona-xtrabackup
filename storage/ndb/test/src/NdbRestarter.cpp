@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -37,6 +37,7 @@
 #include <NdbRestarter.hpp>
 #include <NodeBitmask.hpp>
 #include <ndb_cluster_connection.hpp>
+#include <storage/ndb/src/ndbapi/NdbInfo.hpp>
 #include "util/require.h"
 
 #define MGMERR(h)                                          \
@@ -60,72 +61,37 @@ NdbRestarter::NdbRestarter(const char *_addr, Ndb_cluster_connection *con)
 NdbRestarter::~NdbRestarter() { disconnect(); }
 
 int NdbRestarter::getDbNodeId(int _i) {
-  if (!isConnected()) return -1;
-
-  if (getStatus() != 0) return -1;
-
-  for (unsigned i = 0; i < ndbNodes.size(); i++) {
-    if (i == (unsigned)_i) {
-      return ndbNodes[i].node_id;
-    }
+  if (!isConnected() || getStatus() != 0) {
+    return -1;
   }
-  return -1;
+
+  const auto i = static_cast<unsigned>(_i);
+  if (i >= ndbNodes.size()) {
+    return -1;
+  }
+  return ndbNodes[i].node_id;
 }
 
 int NdbRestarter::restartOneDbNode(int _nodeId, bool inital, bool nostart,
-                                   bool abort, bool force, bool captureError) {
+                                   bool abort, bool force) {
   return restartNodes(&_nodeId, 1,
                       (inital ? NRRF_INITIAL : 0) |
                           (nostart ? NRRF_NOSTART : 0) |
-                          (abort ? NRRF_ABORT : 0) | (force ? NRRF_FORCE : 0),
-                      captureError);
+                          (abort ? NRRF_ABORT : 0) | (force ? NRRF_FORCE : 0));
 }
 
-int NdbRestarter::restartNodes(int *nodes, int cnt, Uint32 flags,
-                               bool captureError) {
+int NdbRestarter::restartNodes(int *nodes, int cnt, Uint32 flags) {
   if (!isConnected()) return -1;
 
-  int ret = 0;
   int unused;
-  if ((ret = ndb_mgm_restart4(handle, cnt, nodes, (flags & NRRF_INITIAL),
-                              (flags & NRRF_NOSTART), (flags & NRRF_ABORT),
-                              (flags & NRRF_FORCE), &unused)) <= 0) {
-    /**
-     * ndb_mgm_restart4 returned error, one reason could
-     * be that the node have not stopped fast enough!
-     * Check status of the node to see if it's on the
-     * way down. If that's the case ignore the error.
-     *
-     * Bug #11757421 is a special case where the
-     * error code and description is required in
-     * the test case. The call to getStatus()
-     * overwrites the error and is thus avoided
-     * by adding an option to capture the error.
-     */
-
-    if (!captureError && getStatus() != 0) return -1;
-
-    g_info << "ndb_mgm_restart4 returned with error, checking node state"
-           << endl;
-
-    for (int j = 0; j < cnt; j++) {
-      int _nodeId = nodes[j];
-      for (unsigned i = 0; i < ndbNodes.size(); i++) {
-        if (ndbNodes[i].node_id == _nodeId) {
-          g_info << _nodeId << ": status=" << ndbNodes[i].node_status << endl;
-          /* Node found check state */
-          switch (ndbNodes[i].node_status) {
-            case NDB_MGM_NODE_STATUS_RESTARTING:
-            case NDB_MGM_NODE_STATUS_SHUTTING_DOWN:
-              break;
-            default:
-              MGMERR(handle);
-              g_err << "Could not stop node with id = " << _nodeId << endl;
-              return -1;
-          }
-        }
-      }
-    }
+  if (ndb_mgm_restart4(handle, cnt, nodes, (flags & NRRF_INITIAL),
+                       (flags & NRRF_NOSTART), (flags & NRRF_ABORT),
+                       (flags & NRRF_FORCE), &unused) <= 0) {
+    MGMERR(handle);
+    int err = ndb_mgm_get_latest_error(handle);
+    const bool timedout = (err == ETIMEDOUT);
+    if (timedout) return -2;
+    return -1;
   }
 
   if ((flags & NRRF_NOSTART) == 0) {
@@ -529,7 +495,7 @@ int NdbRestarter::waitNodesState(const int *_nodes, int _num_nodes,
         if (ndbNode->node_status != _status) allInState = false;
       }
     }
-    g_info << "Waiting for cluster enter state"
+    g_info << "Waiting for cluster enter state "
            << ndb_mgm_get_node_status_string(_status) << endl;
     NdbSleep_SecSleep(1);
     attempts++;
@@ -1179,6 +1145,69 @@ int NdbRestarter::getNodeConnectCount(int nodeId) {
     if (ndbNodes[n].node_id == nodeId) return ndbNodes[n].connect_count;
   }
   return -1;
+}
+
+int NdbRestarter::getNumLdmThreads(int nodeId) {
+  NdbInfo ndbinfo(m_cluster_connection, "ndbinfo/");
+  if (!ndbinfo.init()) {
+    g_err << "ndbinfo.init failed" << endl;
+    return -1;
+  }
+
+  const NdbInfo::Table *table;
+  if (ndbinfo.openTable("ndbinfo/threads", &table) != 0) {
+    g_err << "Failed to openTable(threads)" << endl;
+    return -1;
+  }
+
+  NdbInfoScanOperation *scanOp = nullptr;
+  if (ndbinfo.createScanOperation(table, &scanOp)) {
+    g_err << "No NdbInfoScanOperation" << endl;
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  if (scanOp->readTuples() != 0) {
+    g_err << "scanOp->readTuples failed" << endl;
+    ndbinfo.releaseScanOperation(scanOp);
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  const NdbInfoRecAttr *node_id_col = scanOp->getValue("node_id");
+  const NdbInfoRecAttr *thr_name_col = scanOp->getValue("thread_name");
+
+  if (scanOp->execute() != 0) {
+    g_err << "scanOp->execute failed" << endl;
+    ndbinfo.releaseScanOperation(scanOp);
+    ndbinfo.closeTable(table);
+    return -1;
+  }
+
+  Uint32 ldm_count = 0;
+  int scan_next_result;
+  // Iterate through the result list
+  do {
+    scan_next_result = scanOp->nextResult();
+    if (scan_next_result == -1) {
+      g_err << "Failure to process ndbinfo records" << endl;
+      ndbinfo.releaseScanOperation(scanOp);
+      ndbinfo.closeTable(table);
+      return -1;
+    }
+    // Check thread_name of records from given nodeId
+    const Uint32 node_id_record = node_id_col->u_32_value();
+    if (node_id_record != static_cast<uint>(nodeId) && scan_next_result != 0) {
+      continue;
+    }
+    if (!strcmp(thr_name_col->c_str(), "ldm")) {
+      ldm_count++;
+    }
+  } while (scan_next_result != 0);
+  // All ndbinfo records processed
+  ndbinfo.releaseScanOperation(scanOp);
+  ndbinfo.closeTable(table);
+  return ldm_count;
 }
 
 template class Vector<ndb_mgm_node_state>;

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2019, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2019, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -57,9 +57,9 @@ std::string require_realm_router;
 
 using StringOption = mysql_harness::StringOption;
 
-#define GET_OPTION_CHECKED(option, section, name, value)                      \
-  static_assert(                                                              \
-      mysql_harness::str_in_collection(rest_plugin_supported_options, name)); \
+#define GET_OPTION_CHECKED(option, section, name, value)                 \
+  static_assert(                                                         \
+      mysql_harness::str_in_collection(plugin_supported_options, name)); \
   option = get_option(section, name, value);
 
 class RestRouterPluginConfig : public mysql_harness::BasePluginConfig {
@@ -358,8 +358,8 @@ mysql_harness::Plugin DLLEXPORT harness_plugin_rest_router = {
     start,    // start
     nullptr,  // stop
     true,     // declares_readiness
-    rest_plugin_supported_options.size(),
-    rest_plugin_supported_options.data(),
+    plugin_supported_options.size(),
+    plugin_supported_options.data(),
     expose_configuration,
 };
 }

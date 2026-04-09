@@ -1,4 +1,4 @@
-/* Copyright (c) 2020, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2020, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -72,8 +72,8 @@ class TLS_channel {
     @retval false initialized ok
 */
   static bool singleton_init(Ssl_acceptor_context_container **out,
-                             std::string channel, Ssl_init_callback *callbacks,
-                             bool db_init);
+                             const std::string &channel,
+                             Ssl_init_callback *callbacks, bool db_init);
 
   /**
     De-initialize the single instance of the acceptor

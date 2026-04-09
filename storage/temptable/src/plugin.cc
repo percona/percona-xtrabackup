@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -44,8 +44,7 @@ static handler *create_handler(handlerton *hton, TABLE_SHARE *table_share, bool,
 
 static int close_connection(handlerton *hton, THD *thd) {
   (void)hton;
-  temptable::kv_store_shards_debug_dump();
-  temptable::shared_block_pool_release(thd);
+  temptable::close_connection(thd);
   return 0;
 }
 
@@ -68,6 +67,7 @@ static int show_count_hit_max_ram_var(THD *, SHOW_VAR *var, char *buff) {
   return (0);
 }
 
+#ifdef HAVE_PSI_METRICS_INTERFACE
 static void get_count_hit_max_ram(void * /* measurement_context */,
                                   measurement_delivery_callback_t delivery,
                                   void *delivery_context) {
@@ -102,6 +102,7 @@ static PSI_meter_info_v1 meter[] = {
      .m_metrics = metrics,
      .m_metrics_size = std::size(metrics)},
 };
+#endif /* HAVE_PSI_METRICS_INTERFACE */
 
 /* Structure for TempTable engine specific status variables */
 static SHOW_VAR status_variables[] = {
@@ -128,14 +129,18 @@ static int init(void *p) {
   h->close_connection = close_connection;
 
   temptable::Allocator<uint8_t>::init();
+#ifdef HAVE_PSI_METRICS_INTERFACE
   mysql_meter_register(temptable::meter, std::size(temptable::meter));
+#endif /* HAVE_PSI_METRICS_INTERFACE */
   return 0;
 }
 
 /* De initialize the TempTable engine */
 static int deinit(MYSQL_PLUGIN plugin_info [[maybe_unused]]) {
   temptable::count_hit_max_ram.store(0);
+#ifdef HAVE_PSI_METRICS_INTERFACE
   mysql_meter_unregister(temptable::meter, std::size(temptable::meter));
+#endif /* HAVE_PSI_METRICS_INTERFACE */
   return 0;
 }
 

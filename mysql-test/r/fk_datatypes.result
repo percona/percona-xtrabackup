@@ -1,0 +1,1826 @@
+# FR 2.1) Foreign key must be supported for column types of variable length.
+# FR 2.1.1) Test foreign key support for BIGINT data type.
+# Create parent table pt_bigint and child tables ct_bigint, ct_bigint_uc, ct_bigint_un, ct_bigint_dc, ct_bigint_dn.
+# Insert data into parent and child tables.
+# Test ON UPDATE CASCADE, ON UPDATE SET NULL, ON DELETE CASCADE, and ON DELETE SET NULL actions.
+# Verify that attempts to modify or delete fail where we have a restrict FK relationship.
+CREATE TABLE pt_bigint (
+id INT PRIMARY KEY,
+p BIGINT NOT NULL UNIQUE
+);
+CREATE TABLE ct_bigint (
+id INT PRIMARY KEY,
+c BIGINT NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_bigint(p)
+);
+CREATE TABLE ct_bigint_uc (
+id INT PRIMARY KEY,
+c BIGINT,
+FOREIGN KEY (c) REFERENCES pt_bigint(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_bigint_un (
+id INT PRIMARY KEY,
+c BIGINT,
+FOREIGN KEY (c) REFERENCES pt_bigint(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_bigint_dc (
+id INT PRIMARY KEY,
+c BIGINT,
+FOREIGN KEY (c) REFERENCES pt_bigint(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_bigint_dn (
+id INT PRIMARY KEY,
+c BIGINT,
+FOREIGN KEY (c) REFERENCES pt_bigint(p) ON DELETE SET NULL
+);
+INSERT INTO pt_bigint (id, p) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+INSERT INTO ct_bigint (id, c) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+DELETE FROM ct_bigint WHERE id < 9;
+INSERT INTO ct_bigint_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_bigint_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_bigint_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_bigint_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_bigint SET p = 42 WHERE id = 1;
+SELECT * FROM ct_bigint_uc ORDER BY id;
+id	c
+1	42
+2	2
+DELETE FROM pt_bigint WHERE id = 3;
+SELECT * FROM ct_bigint_dc ORDER BY id;
+id	c
+4	4
+UPDATE pt_bigint SET p = 55 WHERE id = 5;
+SELECT * FROM ct_bigint_un ORDER BY id;
+id	c
+5	NULL
+6	6
+DELETE FROM pt_bigint WHERE id = 7;
+SELECT * FROM ct_bigint_dn ORDER BY id;
+id	c
+7	NULL
+8	8
+UPDATE pt_bigint SET p = 56 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_bigint`, CONSTRAINT `ct_bigint_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_bigint` (`p`))
+DELETE FROM pt_bigint WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_bigint`, CONSTRAINT `ct_bigint_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_bigint` (`p`))
+DROP TABLE ct_bigint;
+DROP TABLE ct_bigint_uc;
+DROP TABLE ct_bigint_dc;
+DROP TABLE ct_bigint_un;
+DROP TABLE ct_bigint_dn;
+DROP TABLE pt_bigint;
+# FR 2.1.2) Testing BINARY
+CREATE TABLE pt_binary (
+id INT PRIMARY KEY,
+p BINARY(3) NOT NULL UNIQUE
+);
+CREATE TABLE ct_binary (
+id INT PRIMARY KEY,
+c BINARY(3) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_binary(p)
+);
+CREATE TABLE ct_binary_uc (
+id INT PRIMARY KEY,
+c BINARY(3),
+FOREIGN KEY (c) REFERENCES pt_binary(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_binary_un (
+id INT PRIMARY KEY,
+c BINARY(3),
+FOREIGN KEY (c) REFERENCES pt_binary(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_binary_dc (
+id INT PRIMARY KEY,
+c BINARY(3),
+FOREIGN KEY (c) REFERENCES pt_binary(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_binary_dn (
+id INT PRIMARY KEY,
+c BINARY(3),
+FOREIGN KEY (c) REFERENCES pt_binary(p) ON DELETE SET NULL
+);
+INSERT INTO pt_binary (id, p) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+INSERT INTO ct_binary (id, c) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+DELETE FROM ct_binary WHERE id < 9;
+INSERT INTO ct_binary_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_binary_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_binary_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_binary_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_binary SET p = 42 WHERE id = 1;
+SELECT id, HEX(c) FROM ct_binary_uc ORDER BY id;
+id	HEX(c)
+1	343200
+2	320000
+DELETE FROM pt_binary WHERE id = 3;
+SELECT id, HEX(c) FROM ct_binary_dc ORDER BY id;
+id	HEX(c)
+4	340000
+UPDATE pt_binary SET p = 55 WHERE id = 5;
+SELECT id, HEX(c) FROM ct_binary_un ORDER BY id;
+id	HEX(c)
+5	NULL
+6	360000
+DELETE FROM pt_binary WHERE id = 7;
+SELECT id, HEX(c) FROM ct_binary_dn ORDER BY id;
+id	HEX(c)
+7	NULL
+8	380000
+UPDATE pt_binary SET p = 56 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_binary`, CONSTRAINT `ct_binary_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_binary` (`p`))
+DELETE FROM pt_binary WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_binary`, CONSTRAINT `ct_binary_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_binary` (`p`))
+DROP TABLE ct_binary;
+DROP TABLE ct_binary_uc;
+DROP TABLE ct_binary_dc;
+DROP TABLE ct_binary_un;
+DROP TABLE ct_binary_dn;
+DROP TABLE pt_binary;
+# FR 2.1.3) Testing BIT
+CREATE TABLE pt_bit (
+id INT PRIMARY KEY,
+p BIT(6) NOT NULL UNIQUE
+);
+CREATE TABLE ct_bit (
+id INT PRIMARY KEY,
+c BIT(6) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_bit(p)
+);
+CREATE TABLE ct_bit_uc (
+id INT PRIMARY KEY,
+c BIT(6),
+FOREIGN KEY (c) REFERENCES pt_bit(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_bit_un (
+id INT PRIMARY KEY,
+c BIT(6),
+FOREIGN KEY (c) REFERENCES pt_bit(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_bit_dc (
+id INT PRIMARY KEY,
+c BIT(6),
+FOREIGN KEY (c) REFERENCES pt_bit(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_bit_dn (
+id INT PRIMARY KEY,
+c BIT(6),
+FOREIGN KEY (c) REFERENCES pt_bit(p) ON DELETE SET NULL
+);
+INSERT INTO pt_bit (id, p) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+INSERT INTO ct_bit (id, c) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+DELETE FROM ct_bit WHERE id < 9;
+INSERT INTO ct_bit_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_bit_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_bit_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_bit_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_bit SET p = 42 WHERE id = 1;
+SELECT * FROM ct_bit_uc ORDER BY id;
+id	c
+1	*
+2	
+DELETE FROM pt_bit WHERE id = 3;
+SELECT * FROM ct_bit_dc ORDER BY id;
+id	c
+4	
+UPDATE pt_bit SET p = 55 WHERE id = 5;
+SELECT * FROM ct_bit_un ORDER BY id;
+id	c
+5	NULL
+6	
+DELETE FROM pt_bit WHERE id = 7;
+SELECT * FROM ct_bit_dn ORDER BY id;
+id	c
+7	NULL
+8	
+UPDATE pt_bit SET p = 56 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_bit`, CONSTRAINT `ct_bit_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_bit` (`p`))
+DELETE FROM pt_bit WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_bit`, CONSTRAINT `ct_bit_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_bit` (`p`))
+DROP TABLE ct_bit;
+DROP TABLE ct_bit_uc;
+DROP TABLE ct_bit_dc;
+DROP TABLE ct_bit_un;
+DROP TABLE ct_bit_dn;
+DROP TABLE pt_bit;
+# FR 2.1.4) Testing CHAR
+CREATE TABLE pt_char (
+id INT PRIMARY KEY,
+p CHAR(20) NOT NULL UNIQUE
+);
+CREATE TABLE ct_char (
+id INT PRIMARY KEY,
+c CHAR(20) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_char(p)
+);
+CREATE TABLE ct_char_uc (
+id INT PRIMARY KEY,
+c CHAR(20),
+FOREIGN KEY (c) REFERENCES pt_char(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_char_un (
+id INT PRIMARY KEY,
+c CHAR(20),
+FOREIGN KEY (c) REFERENCES pt_char(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_char_dc (
+id INT PRIMARY KEY,
+c CHAR(20),
+FOREIGN KEY (c) REFERENCES pt_char(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_char_dn (
+id INT PRIMARY KEY,
+c CHAR(20),
+FOREIGN KEY (c) REFERENCES pt_char(p) ON DELETE SET NULL
+);
+INSERT INTO pt_char (id, p) VALUES
+(1, X'61'),
+(2, X'61C3A1'),
+(3, X'61C3A162'),
+(4, X'61C3A16263'),
+(5, X'61C3A16263C3A7'),
+(6, X'61C3A16263C3A765'),
+(7, X'61C3A16263C3A765C3AA'),
+(8, X'61C3A16263C3A765C3AAC3AB'),
+(9, X'61C3A16263C3A765C3AAC3ABE282AC'),
+(10, X'61C3A16263C3A765C3AAC3ABE282ACC4B0');
+INSERT INTO ct_char (id, c) VALUES
+(7, X'61C3A16263C3A765C3AAC3ABE282AC'),
+(8, X'61C3A16263C3A765C3AAC3ABE282ACC4B0');
+INSERT INTO ct_char_uc (id, c) VALUES (1, 'a'), (2, X'61C3A1');
+INSERT INTO ct_char_dc (id, c) VALUES (3, X'61C3A162'), (4, X'61C3A16263');
+INSERT INTO ct_char_un (id, c) VALUES (5, X'61C3A16263C3A7'), (6, X'61C3A16263C3A765');
+INSERT INTO ct_char_dn (id, c) VALUES (7, X'61C3A16263C3A765C3AA'), (8, X'61C3A16263C3A765C3AAC3AB');
+UPDATE pt_char SET p = 'updated' WHERE id = 1;
+SELECT * FROM ct_char_uc ORDER BY id;
+id	c
+1	updated
+2	aá
+DELETE FROM pt_char WHERE id = 3;
+SELECT * FROM ct_char_dc ORDER BY id;
+id	c
+4	aábc
+UPDATE pt_char SET p = 'upd to null' WHERE id = 5;
+SELECT * FROM ct_char_un ORDER BY id;
+id	c
+5	NULL
+6	aábcçe
+DELETE FROM pt_char WHERE id = 7;
+SELECT * FROM ct_char_dn ORDER BY id;
+id	c
+7	NULL
+8	aábcçeêë
+# Verify that attempts to modify or delete fail where we have a restrict FK relationship.
+UPDATE pt_char SET p = 'can''t' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_char`, CONSTRAINT `ct_char_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_char` (`p`))
+DELETE FROM pt_char WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_char`, CONSTRAINT `ct_char_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_char` (`p`))
+SELECT id, p, HEX(p) FROM pt_char ORDER BY id;
+id	p	HEX(p)
+1	updated	75706461746564
+2	aá	61C3A1
+4	aábc	61C3A16263
+5	upd to null	75706420746F206E756C6C
+6	aábcçe	61C3A16263C3A765
+8	aábcçeêë	61C3A16263C3A765C3AAC3AB
+9	aábcçeêë€	61C3A16263C3A765C3AAC3ABE282AC
+10	aábcçeêë€İ	61C3A16263C3A765C3AAC3ABE282ACC4B0
+DROP TABLE ct_char;
+DROP TABLE ct_char_uc;
+DROP TABLE ct_char_dc;
+DROP TABLE ct_char_un;
+DROP TABLE ct_char_dn;
+DROP TABLE pt_char;
+# FR 2.1.5) Testing DATE
+CREATE TABLE pt_date (
+id INT PRIMARY KEY,
+p DATE NOT NULL UNIQUE
+);
+CREATE TABLE ct_date (
+id INT PRIMARY KEY,
+c DATE NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_date(p)
+);
+CREATE TABLE ct_date_uc (
+id INT PRIMARY KEY,
+c DATE,
+FOREIGN KEY (c) REFERENCES pt_date(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_date_un (
+id INT PRIMARY KEY,
+c DATE,
+FOREIGN KEY (c) REFERENCES pt_date(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_date_dc (
+id INT PRIMARY KEY,
+c DATE,
+FOREIGN KEY (c) REFERENCES pt_date(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_date_dn (
+id INT PRIMARY KEY,
+c DATE,
+FOREIGN KEY (c) REFERENCES pt_date(p) ON DELETE SET NULL
+);
+INSERT INTO pt_date (id, p) VALUES
+(1, '1972-01-01'), (2, '1972-01-02'), (3, '1972-01-03'), (4, '1972-01-04'), (5, '1972-01-05'),
+(6, '1972-01-06'), (7, '1972-01-07'), (8, '1972-01-08'), (9, '1972-01-09'), (10, '1972-01-10');
+INSERT INTO ct_date (id, c) VALUES (1, '1972-01-09'), (2, '1972-01-10');
+INSERT INTO ct_date_uc (id, c) VALUES (1, '1972-01-01'), (2, '1972-01-02');
+INSERT INTO ct_date_dc (id, c) VALUES (3, '1972-01-03'), (4, '1972-01-04');
+INSERT INTO ct_date_un (id, c) VALUES (5, '1972-01-05'), (6, '1972-01-06');
+INSERT INTO ct_date_dn (id, c) VALUES (7, '1972-01-07'), (8, '1972-01-08');
+UPDATE pt_date SET p = '1972-01-20' WHERE id = 1;
+SELECT * FROM ct_date_uc ORDER BY id;
+id	c
+1	1972-01-20
+2	1972-01-02
+DELETE FROM pt_date WHERE id = 3;
+SELECT * FROM ct_date_dc ORDER BY id;
+id	c
+4	1972-01-04
+UPDATE pt_date SET p = '1972-01-21' WHERE id = 5;
+SELECT * FROM ct_date_un ORDER BY id;
+id	c
+5	NULL
+6	1972-01-06
+DELETE FROM pt_date WHERE id = 7;
+SELECT * FROM ct_date_dn ORDER BY id;
+id	c
+7	NULL
+8	1972-01-08
+UPDATE pt_date SET p = '1972-01-22' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_date`, CONSTRAINT `ct_date_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_date` (`p`))
+DELETE FROM pt_date WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_date`, CONSTRAINT `ct_date_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_date` (`p`))
+DROP TABLE ct_date;
+DROP TABLE ct_date_uc;
+DROP TABLE ct_date_dc;
+DROP TABLE ct_date_un;
+DROP TABLE ct_date_dn;
+DROP TABLE pt_date;
+# FR 2.1.6) Testing DATETIME
+CREATE TABLE pt_datetime (
+id INT PRIMARY KEY,
+p DATETIME NOT NULL UNIQUE
+);
+CREATE TABLE ct_datetime (
+id INT PRIMARY KEY,
+c DATETIME NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_datetime(p)
+);
+CREATE TABLE ct_datetime_uc (
+id INT PRIMARY KEY,
+c DATETIME,
+FOREIGN KEY (c) REFERENCES pt_datetime(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_datetime_un (
+id INT PRIMARY KEY,
+c DATETIME,
+FOREIGN KEY (c) REFERENCES pt_datetime(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_datetime_dc (
+id INT PRIMARY KEY,
+c DATETIME,
+FOREIGN KEY (c) REFERENCES pt_datetime(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_datetime_dn (
+id INT PRIMARY KEY,
+c DATETIME,
+FOREIGN KEY (c) REFERENCES pt_datetime(p) ON DELETE SET NULL
+);
+INSERT INTO pt_datetime (id, p) VALUES
+(1, '2025-04-01 13:14:15'), (2, '2025-04-02 13:14:15'), (3, '2025-04-03 13:14:15'), (4, '2025-04-04 13:14:15'), (5, '2025-04-05 13:14:15'),
+(6, '2025-04-06 13:14:15'), (7, '2025-04-07 13:14:15'), (8, '2025-04-08 13:14:15'), (9, '2025-04-09 13:14:15'), (10, '2025-04-10 13:14:15');
+INSERT INTO ct_datetime (id, c) VALUES (1, '2025-04-09 13:14:15'), (2, '2025-04-10 13:14:15');
+INSERT INTO ct_datetime_uc (id, c) VALUES (1, '2025-04-01 13:14:15'), (2, '2025-04-02 13:14:15');
+INSERT INTO ct_datetime_dc (id, c) VALUES (3, '2025-04-03 13:14:15'), (4, '2025-04-04 13:14:15');
+INSERT INTO ct_datetime_un (id, c) VALUES (5, '2025-04-05 13:14:15'), (6, '2025-04-06 13:14:15');
+INSERT INTO ct_datetime_dn (id, c) VALUES (7, '2025-04-07 13:14:15'), (8, '2025-04-08 13:14:15');
+UPDATE pt_datetime SET p = '1972-01-20 16:17:18' WHERE id = 1;
+SELECT * FROM ct_datetime_uc ORDER BY id;
+id	c
+1	1972-01-20 16:17:18
+2	2025-04-02 13:14:15
+DELETE FROM pt_datetime WHERE id = 3;
+SELECT * FROM ct_datetime_dc ORDER BY id;
+id	c
+4	2025-04-04 13:14:15
+UPDATE pt_datetime SET p = '1972-01-21 18:19:20' WHERE id = 5;
+SELECT * FROM ct_datetime_un ORDER BY id;
+id	c
+5	NULL
+6	2025-04-06 13:14:15
+DELETE FROM pt_datetime WHERE id = 7;
+SELECT * FROM ct_datetime_dn ORDER BY id;
+id	c
+7	NULL
+8	2025-04-08 13:14:15
+UPDATE pt_datetime SET p = '1972-01-22 19:20:21' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_datetime`, CONSTRAINT `ct_datetime_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_datetime` (`p`))
+DELETE FROM pt_datetime WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_datetime`, CONSTRAINT `ct_datetime_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_datetime` (`p`))
+DROP TABLE ct_datetime;
+DROP TABLE ct_datetime_uc;
+DROP TABLE ct_datetime_dc;
+DROP TABLE ct_datetime_un;
+DROP TABLE ct_datetime_dn;
+DROP TABLE pt_datetime;
+# FR 2.1.7) Testing DECIMAL
+CREATE TABLE pt_decimal (
+id INT PRIMARY KEY,
+p DECIMAL(12, 4) NOT NULL UNIQUE
+);
+CREATE TABLE ct_decimal (
+id INT PRIMARY KEY,
+c DECIMAL(12, 4) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_decimal(p)
+);
+CREATE TABLE ct_decimal_uc (
+id INT PRIMARY KEY,
+c DECIMAL(12, 4),
+FOREIGN KEY (c) REFERENCES pt_decimal(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_decimal_un (
+id INT PRIMARY KEY,
+c DECIMAL(12, 4),
+FOREIGN KEY (c) REFERENCES pt_decimal(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_decimal_dc (
+id INT PRIMARY KEY,
+c DECIMAL(12, 4),
+FOREIGN KEY (c) REFERENCES pt_decimal(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_decimal_dn (
+id INT PRIMARY KEY,
+c DECIMAL(12, 4),
+FOREIGN KEY (c) REFERENCES pt_decimal(p) ON DELETE SET NULL
+);
+INSERT INTO pt_decimal (id, p) VALUES
+(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0),
+(6, 6.0), (7, 7.0), (8, 8.0), (9, 9.0), (10, 10.0);
+INSERT INTO ct_decimal (id, c) VALUES
+(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0),
+(6, 6.0), (7, 7.0), (8, 8.0), (9, 9.0), (10, 10.0);
+DELETE FROM ct_decimal WHERE id < 9;
+INSERT INTO ct_decimal_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_decimal_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_decimal_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_decimal_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_decimal SET p = 42 WHERE id = 1;
+SELECT * FROM ct_decimal_uc ORDER BY id;
+id	c
+1	42.0000
+2	2.0000
+DELETE FROM pt_decimal WHERE id = 3;
+SELECT * FROM ct_decimal_dc ORDER BY id;
+id	c
+4	4.0000
+UPDATE pt_decimal SET p = 55 WHERE id = 5;
+SELECT * FROM ct_decimal_un ORDER BY id;
+id	c
+5	NULL
+6	6.0000
+DELETE FROM pt_decimal WHERE id = 7;
+SELECT * FROM ct_decimal_dn ORDER BY id;
+id	c
+7	NULL
+8	8.0000
+UPDATE pt_decimal SET p = 99 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_decimal`, CONSTRAINT `ct_decimal_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_decimal` (`p`))
+DELETE FROM pt_decimal WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_decimal`, CONSTRAINT `ct_decimal_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_decimal` (`p`))
+DROP TABLE ct_decimal;
+DROP TABLE ct_decimal_uc;
+DROP TABLE ct_decimal_dc;
+DROP TABLE ct_decimal_un;
+DROP TABLE ct_decimal_dn;
+DROP TABLE pt_decimal;
+# FR 2.1.8) Testing DOUBLE
+CREATE TABLE pt_double (
+id INT PRIMARY KEY,
+p DOUBLE(12, 4) NOT NULL UNIQUE
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_double (
+id INT PRIMARY KEY,
+c DOUBLE(12, 4) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_double(p)
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_double_uc (
+id INT PRIMARY KEY,
+c DOUBLE(12, 4),
+FOREIGN KEY (c) REFERENCES pt_double(p) ON UPDATE CASCADE
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_double_un (
+id INT PRIMARY KEY,
+c DOUBLE(12, 4),
+FOREIGN KEY (c) REFERENCES pt_double(p) ON UPDATE SET NULL
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_double_dc (
+id INT PRIMARY KEY,
+c DOUBLE(12, 4),
+FOREIGN KEY (c) REFERENCES pt_double(p) ON DELETE CASCADE
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_double_dn (
+id INT PRIMARY KEY,
+c DOUBLE(12, 4),
+FOREIGN KEY (c) REFERENCES pt_double(p) ON DELETE SET NULL
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+INSERT INTO pt_double (id, p) VALUES
+(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0),
+(6, 6.0), (7, 7.0), (8, 8.0), (9, 9.0), (10, 10.0);
+INSERT INTO ct_double (id, c) VALUES
+(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0),
+(6, 6.0), (7, 7.0), (8, 8.0), (9, 9.0), (10, 10.0);
+DELETE FROM ct_double WHERE id < 9;
+INSERT INTO ct_double_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_double_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_double_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_double_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_double SET p = 42 WHERE id = 1;
+SELECT * FROM ct_double_uc ORDER BY id;
+id	c
+1	42.0000
+2	2.0000
+DELETE FROM pt_double WHERE id = 3;
+SELECT * FROM ct_double_dc ORDER BY id;
+id	c
+4	4.0000
+UPDATE pt_double SET p = 55 WHERE id = 5;
+SELECT * FROM ct_double_un ORDER BY id;
+id	c
+5	NULL
+6	6.0000
+DELETE FROM pt_double WHERE id = 7;
+SELECT * FROM ct_double_dn ORDER BY id;
+id	c
+7	NULL
+8	8.0000
+UPDATE pt_double SET p = 99 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_double`, CONSTRAINT `ct_double_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_double` (`p`))
+DELETE FROM pt_double WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_double`, CONSTRAINT `ct_double_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_double` (`p`))
+DROP TABLE ct_double;
+DROP TABLE ct_double_uc;
+DROP TABLE ct_double_dc;
+DROP TABLE ct_double_un;
+DROP TABLE ct_double_dn;
+DROP TABLE pt_double;
+# FR 2.1.9) Testing ENUM
+CREATE TABLE pt_enum (
+id INT PRIMARY KEY,
+p ENUM('a','b','c','d','e','f','g','h','i','j','k','l','m') NOT NULL UNIQUE
+);
+CREATE TABLE ct_enum (
+id INT PRIMARY KEY,
+c ENUM('a','b','c','d','e','f','g','h','i','j','k','l','m') NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_enum(p)
+);
+CREATE TABLE ct_enum_uc (
+id INT PRIMARY KEY,
+c ENUM('a','b','c','d','e','f','g','h','i','j','k','l','m'),
+FOREIGN KEY (c) REFERENCES pt_enum(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_enum_un (
+id INT PRIMARY KEY,
+c ENUM('a','b','c','d','e','f','g','h','i','j','k','l','m'),
+FOREIGN KEY (c) REFERENCES pt_enum(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_enum_dc (
+id INT PRIMARY KEY,
+c ENUM('a','b','c','d','e','f','g','h','i','j','k','l','m'),
+FOREIGN KEY (c) REFERENCES pt_enum(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_enum_dn (
+id INT PRIMARY KEY,
+c ENUM('a','b','c','d','e','f','g','h','i','j','k','l','m'),
+FOREIGN KEY (c) REFERENCES pt_enum(p) ON DELETE SET NULL
+);
+INSERT INTO pt_enum (id, p) VALUES
+(1,'a'), (2,'b'), (3,'c'), (4,'d'), (5,'e'),
+(6,'f'), (7,'g'), (8,'h'), (9,'i'), (10,'j');
+INSERT INTO ct_enum (id, c) VALUES (1,'i'), (2,'j');
+INSERT INTO ct_enum_uc (id, c) VALUES (1,'a'), (2,'b');
+INSERT INTO ct_enum_dc (id, c) VALUES (1,'c'), (2,'d');
+INSERT INTO ct_enum_un (id, c) VALUES (1,'e'), (2,'f');
+INSERT INTO ct_enum_dn (id, c) VALUES (1,'g'), (2,'h');
+UPDATE pt_enum SET p = 'k' WHERE id = 1;
+SELECT * FROM ct_enum_uc ORDER BY id;
+id	c
+1	k
+2	b
+DELETE FROM pt_enum WHERE id = 3;
+SELECT * FROM ct_enum_dc ORDER BY id;
+id	c
+2	d
+UPDATE pt_enum SET p = 'l' WHERE id = 5;
+SELECT * FROM ct_enum_un;
+id	c
+1	NULL
+2	f
+DELETE FROM pt_enum WHERE id = 7;
+SELECT * FROM ct_enum_dn ORDER BY id;
+id	c
+1	NULL
+2	h
+UPDATE pt_enum SET p = 'm' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_enum`, CONSTRAINT `ct_enum_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_enum` (`p`))
+DELETE FROM pt_enum WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_enum`, CONSTRAINT `ct_enum_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_enum` (`p`))
+DROP TABLE ct_enum;
+DROP TABLE ct_enum_uc;
+DROP TABLE ct_enum_dc;
+DROP TABLE ct_enum_un;
+DROP TABLE ct_enum_dn;
+DROP TABLE pt_enum;
+# FR 2.1.10) Testing FIXED
+CREATE TABLE pt_fixed (
+id INT PRIMARY KEY,
+p FIXED NOT NULL UNIQUE
+);
+CREATE TABLE ct_fixed (
+id INT PRIMARY KEY,
+c FIXED NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_fixed(p)
+);
+CREATE TABLE ct_fixed_uc (
+id INT PRIMARY KEY,
+c FIXED,
+FOREIGN KEY (c) REFERENCES pt_fixed(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_fixed_un (
+id INT PRIMARY KEY,
+c FIXED,
+FOREIGN KEY (c) REFERENCES pt_fixed(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_fixed_dc (
+id INT PRIMARY KEY,
+c FIXED,
+FOREIGN KEY (c) REFERENCES pt_fixed(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_fixed_dn (
+id INT PRIMARY KEY,
+c FIXED,
+FOREIGN KEY (c) REFERENCES pt_fixed(p) ON DELETE SET NULL
+);
+INSERT INTO pt_fixed (id, p) VALUES
+(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0),
+(6, 6.0), (7, 7.0), (8, 8.0), (9, 9.0), (10, 10.0);
+INSERT INTO ct_fixed (id, c) VALUES
+(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0),
+(6, 6.0), (7, 7.0), (8, 8.0), (9, 9.0), (10, 10.0);
+DELETE FROM ct_fixed WHERE id < 9;
+INSERT INTO ct_fixed_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_fixed_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_fixed_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_fixed_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_fixed SET p = 42 WHERE id = 1;
+SELECT * FROM ct_fixed_uc ORDER BY id;
+id	c
+1	42
+2	2
+DELETE FROM pt_fixed WHERE id = 3;
+SELECT * FROM ct_fixed_dc ORDER BY id;
+id	c
+4	4
+UPDATE pt_fixed SET p = 55 WHERE id = 5;
+SELECT * FROM ct_fixed_un ORDER BY id;
+id	c
+5	NULL
+6	6
+DELETE FROM pt_fixed WHERE id = 7;
+SELECT * FROM ct_fixed_dn ORDER BY id;
+id	c
+7	NULL
+8	8
+UPDATE pt_fixed SET p = 99 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_fixed`, CONSTRAINT `ct_fixed_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_fixed` (`p`))
+DELETE FROM pt_fixed WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_fixed`, CONSTRAINT `ct_fixed_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_fixed` (`p`))
+DROP TABLE ct_fixed;
+DROP TABLE ct_fixed_uc;
+DROP TABLE ct_fixed_dc;
+DROP TABLE ct_fixed_un;
+DROP TABLE ct_fixed_dn;
+DROP TABLE pt_fixed;
+# FR 2.1.11) Testing FLOAT
+CREATE TABLE pt_float (
+id INT PRIMARY KEY,
+p FLOAT(8, 6) NOT NULL UNIQUE
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_float (
+id INT PRIMARY KEY,
+c FLOAT(8, 6) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_float(p)
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_float_uc (
+id INT PRIMARY KEY,
+c FLOAT(8, 6),
+FOREIGN KEY (c) REFERENCES pt_float(p) ON UPDATE CASCADE
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_float_un (
+id INT PRIMARY KEY,
+c FLOAT(8, 6),
+FOREIGN KEY (c) REFERENCES pt_float(p) ON UPDATE SET NULL
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_float_dc (
+id INT PRIMARY KEY,
+c FLOAT(8, 6),
+FOREIGN KEY (c) REFERENCES pt_float(p) ON DELETE CASCADE
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+CREATE TABLE ct_float_dn (
+id INT PRIMARY KEY,
+c FLOAT(8, 6),
+FOREIGN KEY (c) REFERENCES pt_float(p) ON DELETE SET NULL
+);
+Warnings:
+Warning	1681	Specifying number of digits for floating point data types is deprecated and will be removed in a future release.
+INSERT INTO pt_float (id, p) VALUES
+(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0),
+(6, 6.0), (7, 7.0), (8, 8.0), (9, 9.0), (10, 10.0);
+INSERT INTO ct_float (id, c) VALUES
+(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0),
+(6, 6.0), (7, 7.0), (8, 8.0), (9, 9.0), (10, 10.0);
+DELETE FROM ct_float WHERE id < 9;
+INSERT INTO ct_float_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_float_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_float_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_float_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_float SET p = 42 WHERE id = 1;
+SELECT * FROM ct_float_uc ORDER BY id;
+id	c
+1	42.000000
+2	2.000000
+DELETE FROM pt_float WHERE id = 3;
+SELECT * FROM ct_float_dc ORDER BY id;
+id	c
+4	4.000000
+UPDATE pt_float SET p = 55 WHERE id = 5;
+SELECT * FROM ct_float_un ORDER BY id;
+id	c
+5	NULL
+6	6.000000
+DELETE FROM pt_float WHERE id = 7;
+SELECT * FROM ct_float_dn ORDER BY id;
+id	c
+7	NULL
+8	8.000000
+UPDATE pt_float SET p = 99 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_float`, CONSTRAINT `ct_float_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_float` (`p`))
+DELETE FROM pt_float WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_float`, CONSTRAINT `ct_float_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_float` (`p`))
+DROP TABLE ct_float;
+DROP TABLE ct_float_uc;
+DROP TABLE ct_float_dc;
+DROP TABLE ct_float_un;
+DROP TABLE ct_float_dn;
+DROP TABLE pt_float;
+# FR 2.1.12) Testing INT
+CREATE TABLE pt_int (
+id INT PRIMARY KEY,
+p INT NOT NULL UNIQUE
+);
+CREATE TABLE ct_int (
+id INT PRIMARY KEY,
+c INT NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_int(p)
+);
+CREATE TABLE ct_int_uc (
+id INT PRIMARY KEY,
+c INT,
+FOREIGN KEY (c) REFERENCES pt_int(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_int_un (
+id INT PRIMARY KEY,
+c INT,
+FOREIGN KEY (c) REFERENCES pt_int(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_int_dc (
+id INT PRIMARY KEY,
+c INT,
+FOREIGN KEY (c) REFERENCES pt_int(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_int_dn (
+id INT PRIMARY KEY,
+c INT,
+FOREIGN KEY (c) REFERENCES pt_int(p) ON DELETE SET NULL
+);
+INSERT INTO pt_int (id, p) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+INSERT INTO ct_int (id, c) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+DELETE FROM ct_int WHERE id < 9;
+INSERT INTO ct_int_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_int_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_int_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_int_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_int SET p = 42 WHERE id = 1;
+SELECT * FROM ct_int_uc ORDER BY id;
+id	c
+1	42
+2	2
+DELETE FROM pt_int WHERE id = 3;
+SELECT * FROM ct_int_dc ORDER BY id;
+id	c
+4	4
+UPDATE pt_int SET p = 55 WHERE id = 5;
+SELECT * FROM ct_int_un ORDER BY id;
+id	c
+5	NULL
+6	6
+DELETE FROM pt_int WHERE id = 7;
+SELECT * FROM ct_int_dn ORDER BY id;
+id	c
+7	NULL
+8	8
+UPDATE pt_int SET p = 56 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_int`, CONSTRAINT `ct_int_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_int` (`p`))
+DELETE FROM pt_int WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_int`, CONSTRAINT `ct_int_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_int` (`p`))
+DROP TABLE ct_int;
+DROP TABLE ct_int_uc;
+DROP TABLE ct_int_dc;
+DROP TABLE ct_int_un;
+DROP TABLE ct_int_dn;
+DROP TABLE pt_int;
+# FR 2.1.13) Testing MEDIUMINT
+CREATE TABLE pt_mediumint (
+id INT PRIMARY KEY,
+p MEDIUMINT NOT NULL UNIQUE
+);
+CREATE TABLE ct_mediumint (
+id INT PRIMARY KEY,
+c MEDIUMINT NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_mediumint(p)
+);
+CREATE TABLE ct_mediumint_uc (
+id INT PRIMARY KEY,
+c MEDIUMINT,
+FOREIGN KEY (c) REFERENCES pt_mediumint(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_mediumint_un (
+id INT PRIMARY KEY,
+c MEDIUMINT,
+FOREIGN KEY (c) REFERENCES pt_mediumint(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_mediumint_dc (
+id INT PRIMARY KEY,
+c MEDIUMINT,
+FOREIGN KEY (c) REFERENCES pt_mediumint(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_mediumint_dn (
+id INT PRIMARY KEY,
+c MEDIUMINT,
+FOREIGN KEY (c) REFERENCES pt_mediumint(p) ON DELETE SET NULL
+);
+INSERT INTO pt_mediumint (id, p) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+INSERT INTO ct_mediumint (id, c) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+DELETE FROM ct_mediumint WHERE id < 9;
+INSERT INTO ct_mediumint_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_mediumint_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_mediumint_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_mediumint_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_mediumint SET p = 42 WHERE id = 1;
+SELECT * FROM ct_mediumint_uc ORDER BY id;
+id	c
+1	42
+2	2
+DELETE FROM pt_mediumint WHERE id = 3;
+SELECT * FROM ct_mediumint_dc ORDER BY id;
+id	c
+4	4
+UPDATE pt_mediumint SET p = 55 WHERE id = 5;
+SELECT * FROM ct_mediumint_un ORDER BY id;
+id	c
+5	NULL
+6	6
+DELETE FROM pt_mediumint WHERE id = 7;
+SELECT * FROM ct_mediumint_dn ORDER BY id;
+id	c
+7	NULL
+8	8
+UPDATE pt_mediumint SET p = 56 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_mediumint`, CONSTRAINT `ct_mediumint_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_mediumint` (`p`))
+DELETE FROM pt_mediumint WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_mediumint`, CONSTRAINT `ct_mediumint_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_mediumint` (`p`))
+DROP TABLE ct_mediumint;
+DROP TABLE ct_mediumint_uc;
+DROP TABLE ct_mediumint_dc;
+DROP TABLE ct_mediumint_un;
+DROP TABLE ct_mediumint_dn;
+DROP TABLE pt_mediumint;
+# FR 2.1.14) Testing NCHAR
+CREATE TABLE pt_nchar (
+id INT PRIMARY KEY,
+p NCHAR(20) NOT NULL UNIQUE
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nchar (
+id INT PRIMARY KEY,
+c NCHAR(20) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_nchar(p)
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nchar_uc (
+id INT PRIMARY KEY,
+c NCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_nchar(p) ON UPDATE CASCADE
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nchar_un (
+id INT PRIMARY KEY,
+c NCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_nchar(p) ON UPDATE SET NULL
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nchar_dc (
+id INT PRIMARY KEY,
+c NCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_nchar(p) ON DELETE CASCADE
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nchar_dn (
+id INT PRIMARY KEY,
+c NCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_nchar(p) ON DELETE SET NULL
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+INSERT INTO pt_nchar (id, p) VALUES
+(1, X'61'),
+(2, X'61C3A1'),
+(3, X'61C3A162'),
+(4, X'61C3A16263'),
+(5, X'61C3A16263C3A7'),
+(6, X'61C3A16263C3A765'),
+(7, X'61C3A16263C3A765C3AA'),
+(8, X'61C3A16263C3A765C3AAC3AB'),
+(9, X'61C3A16263C3A765C3AAC3ABE282AC'),
+(10, X'61C3A16263C3A765C3AAC3ABE282ACC4B0');
+INSERT INTO ct_nchar (id, c) VALUES
+(7, X'61C3A16263C3A765C3AAC3ABE282AC'),
+(8, X'61C3A16263C3A765C3AAC3ABE282ACC4B0');
+INSERT INTO ct_nchar_uc (id, c) VALUES (1, 'a'), (2, X'61C3A1');
+INSERT INTO ct_nchar_dc (id, c) VALUES (3, X'61C3A162'), (4, X'61C3A16263');
+INSERT INTO ct_nchar_un (id, c) VALUES (5, X'61C3A16263C3A7'), (6, X'61C3A16263C3A765');
+INSERT INTO ct_nchar_dn (id, c) VALUES (7, X'61C3A16263C3A765C3AA'), (8, X'61C3A16263C3A765C3AAC3AB');
+# Now let's do some modifications...
+UPDATE pt_nchar SET p = 'updated' WHERE id = 1;
+SELECT * FROM ct_nchar_uc ORDER BY id;
+id	c
+1	updated
+2	aá
+DELETE FROM pt_nchar WHERE id = 3;
+SELECT * FROM ct_nchar_dc ORDER BY id;
+id	c
+4	aábc
+UPDATE pt_nchar SET p = 'upd to null' WHERE id = 5;
+SELECT * FROM ct_nchar_un ORDER BY id;
+id	c
+5	NULL
+6	aábcçe
+DELETE FROM pt_nchar WHERE id = 7;
+SELECT * FROM ct_nchar_dn ORDER BY id;
+id	c
+7	NULL
+8	aábcçeêë
+# Verify that attempts to modify or delete fail where we have a restrict FK relationship.
+UPDATE pt_nchar SET p = 'can''t' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_nchar`, CONSTRAINT `ct_nchar_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_nchar` (`p`))
+DELETE FROM pt_nchar WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_nchar`, CONSTRAINT `ct_nchar_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_nchar` (`p`))
+SELECT id, p, HEX(p) FROM pt_nchar ORDER BY id;
+id	p	HEX(p)
+1	updated	75706461746564
+2	aá	61C3A1
+4	aábc	61C3A16263
+5	upd to null	75706420746F206E756C6C
+6	aábcçe	61C3A16263C3A765
+8	aábcçeêë	61C3A16263C3A765C3AAC3AB
+9	aábcçeêë€	61C3A16263C3A765C3AAC3ABE282AC
+10	aábcçeêë€İ	61C3A16263C3A765C3AAC3ABE282ACC4B0
+DROP TABLE ct_nchar;
+DROP TABLE ct_nchar_uc;
+DROP TABLE ct_nchar_dc;
+DROP TABLE ct_nchar_un;
+DROP TABLE ct_nchar_dn;
+DROP TABLE pt_nchar;
+# FR 2.1.15) Testing NVARCHAR
+CREATE TABLE pt_nvarchar (
+id INT PRIMARY KEY,
+p NVARCHAR(20) NOT NULL UNIQUE
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nvarchar (
+id INT PRIMARY KEY,
+c NVARCHAR(20) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_nvarchar(p)
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nvarchar_uc (
+id INT PRIMARY KEY,
+c NVARCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_nvarchar(p) ON UPDATE CASCADE
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nvarchar_un (
+id INT PRIMARY KEY,
+c NVARCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_nvarchar(p) ON UPDATE SET NULL
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nvarchar_dc (
+id INT PRIMARY KEY,
+c NVARCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_nvarchar(p) ON DELETE CASCADE
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+CREATE TABLE ct_nvarchar_dn (
+id INT PRIMARY KEY,
+c NVARCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_nvarchar(p) ON DELETE SET NULL
+);
+Warnings:
+Warning	3720	NATIONAL/NCHAR/NVARCHAR implies the character set UTF8MB3, which will be replaced by UTF8MB4 in a future release. Please consider using CHAR(x) CHARACTER SET UTF8MB4 in order to be unambiguous.
+INSERT INTO pt_nvarchar (id, p) VALUES
+(1, X'61'),
+(2, X'61C3A1'),
+(3, X'61C3A162'),
+(4, X'61C3A16263'),
+(5, X'61C3A16263C3A7'),
+(6, X'61C3A16263C3A765'),
+(7, X'61C3A16263C3A765C3AA'),
+(8, X'61C3A16263C3A765C3AAC3AB'),
+(9, X'61C3A16263C3A765C3AAC3ABE282AC'),
+(10, X'61C3A16263C3A765C3AAC3ABE282ACC4B0');
+INSERT INTO ct_nvarchar (id, c) VALUES
+(7, X'61C3A16263C3A765C3AAC3ABE282AC'),
+(8, X'61C3A16263C3A765C3AAC3ABE282ACC4B0');
+INSERT INTO ct_nvarchar_uc (id, c) VALUES (1, 'a'), (2, X'61C3A1');
+INSERT INTO ct_nvarchar_dc (id, c) VALUES (3, X'61C3A162'), (4, X'61C3A16263');
+INSERT INTO ct_nvarchar_un (id, c) VALUES (5, X'61C3A16263C3A7'), (6, X'61C3A16263C3A765');
+INSERT INTO ct_nvarchar_dn (id, c) VALUES (7, X'61C3A16263C3A765C3AA'), (8, X'61C3A16263C3A765C3AAC3AB');
+# Now let's do some modifications...
+UPDATE pt_nvarchar SET p = 'updated' WHERE id = 1;
+SELECT * FROM ct_nvarchar_uc ORDER BY id;
+id	c
+1	updated
+2	aá
+DELETE FROM pt_nvarchar WHERE id = 3;
+SELECT * FROM ct_nvarchar_dc ORDER BY id;
+id	c
+4	aábc
+UPDATE pt_nvarchar SET p = 'upd to null' WHERE id = 5;
+SELECT * FROM ct_nvarchar_un ORDER BY id;
+id	c
+5	NULL
+6	aábcçe
+DELETE FROM pt_nvarchar WHERE id = 7;
+SELECT * FROM ct_nvarchar_dn ORDER BY id;
+id	c
+7	NULL
+8	aábcçeêë
+# Verify that attempts to modify or delete fail where we have a restrict FK relationship.
+UPDATE pt_nvarchar SET p = 'can''t' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_nvarchar`, CONSTRAINT `ct_nvarchar_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_nvarchar` (`p`))
+DELETE FROM pt_nvarchar WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_nvarchar`, CONSTRAINT `ct_nvarchar_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_nvarchar` (`p`))
+SELECT id, p, HEX(p) FROM pt_nvarchar ORDER BY id;
+id	p	HEX(p)
+1	updated	75706461746564
+2	aá	61C3A1
+4	aábc	61C3A16263
+5	upd to null	75706420746F206E756C6C
+6	aábcçe	61C3A16263C3A765
+8	aábcçeêë	61C3A16263C3A765C3AAC3AB
+9	aábcçeêë€	61C3A16263C3A765C3AAC3ABE282AC
+10	aábcçeêë€İ	61C3A16263C3A765C3AAC3ABE282ACC4B0
+DROP TABLE ct_nvarchar;
+DROP TABLE ct_nvarchar_uc;
+DROP TABLE ct_nvarchar_dc;
+DROP TABLE ct_nvarchar_un;
+DROP TABLE ct_nvarchar_dn;
+DROP TABLE pt_nvarchar;
+# FR 2.1.16) Testing SET
+CREATE TABLE pt_set (
+id INT PRIMARY KEY,
+p SET('a','b','c','d','e','f','g','h','i','j','k','l','m') NOT NULL UNIQUE
+);
+CREATE TABLE ct_set (
+id INT PRIMARY KEY,
+c SET('a','b','c','d','e','f','g','h','i','j','k','l','m') NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_set(p)
+);
+CREATE TABLE ct_set_uc (
+id INT PRIMARY KEY,
+c SET('a','b','c','d','e','f','g','h','i','j','k','l','m'),
+FOREIGN KEY (c) REFERENCES pt_set(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_set_un (
+id INT PRIMARY KEY,
+c SET('a','b','c','d','e','f','g','h','i','j','k','l','m'),
+FOREIGN KEY (c) REFERENCES pt_set(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_set_dc (
+id INT PRIMARY KEY,
+c SET('a','b','c','d','e','f','g','h','i','j','k','l','m'),
+FOREIGN KEY (c) REFERENCES pt_set(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_set_dn (
+id INT PRIMARY KEY,
+c SET('a','b','c','d','e','f','g','h','i','j','k','l','m'),
+FOREIGN KEY (c) REFERENCES pt_set(p) ON DELETE SET NULL
+);
+INSERT INTO pt_set (id, p) VALUES
+(1,'a'), (2,'b'), (3,'c'), (4,'d'), (5,'e'),
+(6,'f'), (7,'g'), (8,'h'), (9,'i'), (10,'j'),
+(11,'b,c'), (12,'d,e'), (13,'h,i,g'), (14,'c,a,b');
+INSERT INTO ct_set (id, c) VALUES (1,'i'), (2,'j');
+INSERT INTO ct_set_uc (id, c) VALUES (1,'a'), (2,'b'), (3,'e,d');
+INSERT INTO ct_set_dc (id, c) VALUES (1,'c'), (2,'d'), (3,'g,i,h');
+INSERT INTO ct_set_un (id, c) VALUES (1,'e'), (2,'f'), (3,'c,b');
+INSERT INTO ct_set_dn (id, c) VALUES (1,'g'), (2,'h'), (3,'b,c,a');
+UPDATE pt_set SET p = 'k' WHERE id = 1;
+SELECT * FROM ct_set_uc ORDER BY id;
+id	c
+1	k
+2	b
+3	d,e
+UPDATE pt_set SET p = 'g,f' WHERE id = 12;
+SELECT * FROM ct_set_uc ORDER BY id;
+id	c
+1	k
+2	b
+3	f,g
+DELETE FROM pt_set WHERE id = 3;
+SELECT * FROM ct_set_dc ORDER BY id;
+id	c
+2	d
+3	g,h,i
+DELETE FROM pt_set WHERE id = 13;
+SELECT * FROM ct_set_dc ORDER BY id;
+id	c
+2	d
+UPDATE pt_set SET p = 'l' WHERE id = 5;
+SELECT * FROM ct_set_un ORDER BY id;
+id	c
+1	NULL
+2	f
+3	b,c
+UPDATE pt_set SET p = 'l,b' WHERE id = 11;
+SELECT * FROM ct_set_un ORDER BY id;
+id	c
+1	NULL
+2	f
+3	NULL
+DELETE FROM pt_set WHERE id = 7;
+SELECT * FROM ct_set_dn ORDER BY id;
+id	c
+1	NULL
+2	h
+3	a,b,c
+DELETE FROM pt_set WHERE id = 14;
+SELECT * FROM ct_set_dn ORDER BY id;
+id	c
+1	NULL
+2	h
+3	NULL
+UPDATE pt_set SET p = 'm' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_set`, CONSTRAINT `ct_set_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_set` (`p`))
+DELETE FROM pt_set WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_set`, CONSTRAINT `ct_set_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_set` (`p`))
+DROP TABLE ct_set;
+DROP TABLE ct_set_uc;
+DROP TABLE ct_set_dc;
+DROP TABLE ct_set_un;
+DROP TABLE ct_set_dn;
+DROP TABLE pt_set;
+# FR 2.1.17) Testing SMALLINT
+CREATE TABLE pt_smallint (
+id INT PRIMARY KEY,
+p SMALLINT NOT NULL UNIQUE
+);
+CREATE TABLE ct_smallint (
+id INT PRIMARY KEY,
+c SMALLINT NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_smallint(p)
+);
+CREATE TABLE ct_smallint_uc (
+id INT PRIMARY KEY,
+c SMALLINT,
+FOREIGN KEY (c) REFERENCES pt_smallint(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_smallint_un (
+id INT PRIMARY KEY,
+c SMALLINT,
+FOREIGN KEY (c) REFERENCES pt_smallint(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_smallint_dc (
+id INT PRIMARY KEY,
+c SMALLINT,
+FOREIGN KEY (c) REFERENCES pt_smallint(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_smallint_dn (
+id INT PRIMARY KEY,
+c SMALLINT,
+FOREIGN KEY (c) REFERENCES pt_smallint(p) ON DELETE SET NULL
+);
+INSERT INTO pt_smallint (id, p) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+INSERT INTO ct_smallint (id, c) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+DELETE FROM ct_smallint WHERE id < 9;
+INSERT INTO ct_smallint_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_smallint_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_smallint_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_smallint_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_smallint SET p = 42 WHERE id = 1;
+SELECT * FROM ct_smallint_uc ORDER BY id;
+id	c
+1	42
+2	2
+DELETE FROM pt_smallint WHERE id = 3;
+SELECT * FROM ct_smallint_dc ORDER BY id;
+id	c
+4	4
+UPDATE pt_smallint SET p = 55 WHERE id = 5;
+SELECT * FROM ct_smallint_un ORDER BY id;
+id	c
+5	NULL
+6	6
+DELETE FROM pt_smallint WHERE id = 7;
+SELECT * FROM ct_smallint_dn ORDER BY id;
+id	c
+7	NULL
+8	8
+UPDATE pt_smallint SET p = 56 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_smallint`, CONSTRAINT `ct_smallint_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_smallint` (`p`))
+DELETE FROM pt_smallint WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_smallint`, CONSTRAINT `ct_smallint_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_smallint` (`p`))
+DROP TABLE ct_smallint;
+DROP TABLE ct_smallint_uc;
+DROP TABLE ct_smallint_dc;
+DROP TABLE ct_smallint_un;
+DROP TABLE ct_smallint_dn;
+DROP TABLE pt_smallint;
+# FR 2.1.18) Testing TIME
+CREATE TABLE pt_time (
+id INT PRIMARY KEY,
+p TIME(6) NOT NULL UNIQUE
+);
+CREATE TABLE ct_time (
+id INT PRIMARY KEY,
+c TIME(6) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_time(p)
+);
+CREATE TABLE ct_time_uc (
+id INT PRIMARY KEY,
+c TIME(6),
+FOREIGN KEY (c) REFERENCES pt_time(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_time_un (
+id INT PRIMARY KEY,
+c TIME(6),
+FOREIGN KEY (c) REFERENCES pt_time(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_time_dc (
+id INT PRIMARY KEY,
+c TIME(6),
+FOREIGN KEY (c) REFERENCES pt_time(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_time_dn (
+id INT PRIMARY KEY,
+c TIME(6),
+FOREIGN KEY (c) REFERENCES pt_time(p) ON DELETE SET NULL
+);
+INSERT INTO pt_time (id, p) VALUES
+(1, '13:14:15.123401'),
+(2, '13:14:15.123402'),
+(3, '13:14:15.123403'),
+(4, '13:14:15.123404'),
+(5, '13:14:15.123405'),
+(6, '13:14:15.123406'),
+(7, '13:14:15.123407'),
+(8, '13:14:15.123408'),
+(9, '13:14:15.123409'),
+(10, '13:14:15.123410');
+INSERT INTO ct_time (id, c) VALUES
+(1, '13:14:15.123409'),
+(2, '13:14:15.123410');
+INSERT INTO ct_time_uc (id, c) VALUES (1, '13:14:15.123401'), (2, '13:14:15.123402');
+INSERT INTO ct_time_dc (id, c) VALUES (3, '13:14:15.123403'), (4, '13:14:15.123404');
+INSERT INTO ct_time_un (id, c) VALUES (5, '13:14:15.123405'), (6, '13:14:15.123406');
+INSERT INTO ct_time_dn (id, c) VALUES (7, '13:14:15.123407'), (8, '13:14:15.123408');
+UPDATE pt_time SET p = '16:17:18' WHERE id = 1;
+SELECT * FROM ct_time_uc ORDER BY id;
+id	c
+1	16:17:18.000000
+2	13:14:15.123402
+DELETE FROM pt_time WHERE id = 3;
+SELECT * FROM ct_time_dc ORDER BY id;
+id	c
+4	13:14:15.123404
+UPDATE pt_time SET p = '18:19:20' WHERE id = 5;
+SELECT * FROM ct_time_un ORDER BY id;
+id	c
+5	NULL
+6	13:14:15.123406
+DELETE FROM pt_time WHERE id = 7;
+SELECT * FROM ct_time_dn ORDER BY id;
+id	c
+7	NULL
+8	13:14:15.123408
+UPDATE pt_time SET p = '19:20:21' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_time`, CONSTRAINT `ct_time_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_time` (`p`))
+DELETE FROM pt_time WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_time`, CONSTRAINT `ct_time_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_time` (`p`))
+DROP TABLE ct_time;
+DROP TABLE ct_time_uc;
+DROP TABLE ct_time_dc;
+DROP TABLE ct_time_un;
+DROP TABLE ct_time_dn;
+DROP TABLE pt_time;
+# FR 2.1.19) Testing TIMESTAMP
+CREATE TABLE pt_timestamp (
+id INT PRIMARY KEY,
+p TIMESTAMP NOT NULL UNIQUE
+);
+CREATE TABLE ct_timestamp (
+id INT PRIMARY KEY,
+c TIMESTAMP NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_timestamp(p)
+);
+CREATE TABLE ct_timestamp_uc (
+id INT PRIMARY KEY,
+c TIMESTAMP,
+FOREIGN KEY (c) REFERENCES pt_timestamp(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_timestamp_un (
+id INT PRIMARY KEY,
+c TIMESTAMP,
+FOREIGN KEY (c) REFERENCES pt_timestamp(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_timestamp_dc (
+id INT PRIMARY KEY,
+c TIMESTAMP,
+FOREIGN KEY (c) REFERENCES pt_timestamp(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_timestamp_dn (
+id INT PRIMARY KEY,
+c TIMESTAMP,
+FOREIGN KEY (c) REFERENCES pt_timestamp(p) ON DELETE SET NULL
+);
+INSERT INTO pt_timestamp (id, p) VALUES
+(1, '2025-04-01 13:14:15'), (2, '2025-04-02 13:14:15'), (3, '2025-04-03 13:14:15'), (4, '2025-04-04 13:14:15'), (5, '2025-04-05 13:14:15'),
+(6, '2025-04-06 13:14:15'), (7, '2025-04-07 13:14:15'), (8, '2025-04-08 13:14:15'), (9, '2025-04-09 13:14:15'), (10, '2025-04-10 13:14:15');
+INSERT INTO ct_timestamp (id, c) VALUES
+(1, '2025-04-09 13:14:15'),
+(2, '2025-04-10 13:14:15');
+INSERT INTO ct_timestamp_uc (id, c) VALUES (1, '2025-04-01 13:14:15'), (2, '2025-04-02 13:14:15');
+INSERT INTO ct_timestamp_dc (id, c) VALUES (3, '2025-04-03 13:14:15'), (4, '2025-04-04 13:14:15');
+INSERT INTO ct_timestamp_un (id, c) VALUES (5, '2025-04-05 13:14:15'), (6, '2025-04-06 13:14:15');
+INSERT INTO ct_timestamp_dn (id, c) VALUES (7, '2025-04-07 13:14:15'), (8, '2025-04-08 13:14:15');
+UPDATE pt_timestamp SET p = '1972-01-20 16:17:18' WHERE id = 1;
+SELECT * FROM ct_timestamp_uc ORDER BY id;
+id	c
+1	1972-01-20 16:17:18
+2	2025-04-02 13:14:15
+DELETE FROM pt_timestamp WHERE id = 3;
+SELECT * FROM ct_timestamp_dc ORDER BY id;
+id	c
+4	2025-04-04 13:14:15
+UPDATE pt_timestamp SET p = '1972-01-21 18:19:20' WHERE id = 5;
+SELECT * FROM ct_timestamp_un ORDER BY id;
+id	c
+5	NULL
+6	2025-04-06 13:14:15
+DELETE FROM pt_timestamp WHERE id = 7;
+SELECT * FROM ct_timestamp_dn ORDER BY id;
+id	c
+7	NULL
+8	2025-04-08 13:14:15
+UPDATE pt_timestamp SET p = '1972-01-22 19:20:21' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_timestamp`, CONSTRAINT `ct_timestamp_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_timestamp` (`p`))
+DELETE FROM pt_timestamp WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_timestamp`, CONSTRAINT `ct_timestamp_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_timestamp` (`p`))
+DROP TABLE ct_timestamp;
+DROP TABLE ct_timestamp_uc;
+DROP TABLE ct_timestamp_dc;
+DROP TABLE ct_timestamp_un;
+DROP TABLE ct_timestamp_dn;
+DROP TABLE pt_timestamp;
+# FR 2.1.20) Testing TINYINT
+CREATE TABLE pt_tinyint (
+id INT PRIMARY KEY,
+p TINYINT NOT NULL UNIQUE
+);
+CREATE TABLE ct_tinyint (
+id INT PRIMARY KEY,
+c TINYINT NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_tinyint(p)
+);
+CREATE TABLE ct_tinyint_uc (
+id INT PRIMARY KEY,
+c TINYINT,
+FOREIGN KEY (c) REFERENCES pt_tinyint(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_tinyint_un (
+id INT PRIMARY KEY,
+c TINYINT,
+FOREIGN KEY (c) REFERENCES pt_tinyint(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_tinyint_dc (
+id INT PRIMARY KEY,
+c TINYINT,
+FOREIGN KEY (c) REFERENCES pt_tinyint(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_tinyint_dn (
+id INT PRIMARY KEY,
+c TINYINT,
+FOREIGN KEY (c) REFERENCES pt_tinyint(p) ON DELETE SET NULL
+);
+INSERT INTO pt_tinyint (id, p) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+INSERT INTO ct_tinyint (id, c) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+DELETE FROM ct_tinyint WHERE id < 9;
+INSERT INTO ct_tinyint_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_tinyint_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_tinyint_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_tinyint_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_tinyint SET p = 42 WHERE id = 1;
+SELECT * FROM ct_tinyint_uc ORDER BY id;
+id	c
+1	42
+2	2
+DELETE FROM pt_tinyint WHERE id = 3;
+SELECT * FROM ct_tinyint_dc ORDER BY id;
+id	c
+4	4
+UPDATE pt_tinyint SET p = 55 WHERE id = 5;
+SELECT * FROM ct_tinyint_un ORDER BY id;
+id	c
+5	NULL
+6	6
+DELETE FROM pt_tinyint WHERE id = 7;
+SELECT * FROM ct_tinyint_dn ORDER BY id;
+id	c
+7	NULL
+8	8
+UPDATE pt_tinyint SET p = 56 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_tinyint`, CONSTRAINT `ct_tinyint_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_tinyint` (`p`))
+DELETE FROM pt_tinyint WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_tinyint`, CONSTRAINT `ct_tinyint_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_tinyint` (`p`))
+DROP TABLE ct_tinyint;
+DROP TABLE ct_tinyint_uc;
+DROP TABLE ct_tinyint_dc;
+DROP TABLE ct_tinyint_un;
+DROP TABLE ct_tinyint_dn;
+DROP TABLE pt_tinyint;
+# FR 2.1.21) Testing VARBINARY
+CREATE TABLE pt_varbinary (
+id INT PRIMARY KEY,
+p VARBINARY(20) NOT NULL UNIQUE
+);
+CREATE TABLE ct_varbinary (
+id INT PRIMARY KEY,
+c VARBINARY(20) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_varbinary(p)
+);
+CREATE TABLE ct_varbinary_uc (
+id INT PRIMARY KEY,
+c VARBINARY(20),
+FOREIGN KEY (c) REFERENCES pt_varbinary(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_varbinary_un (
+id INT PRIMARY KEY,
+c VARBINARY(20),
+FOREIGN KEY (c) REFERENCES pt_varbinary(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_varbinary_dc (
+id INT PRIMARY KEY,
+c VARBINARY(20),
+FOREIGN KEY (c) REFERENCES pt_varbinary(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_varbinary_dn (
+id INT PRIMARY KEY,
+c VARBINARY(20),
+FOREIGN KEY (c) REFERENCES pt_varbinary(p) ON DELETE SET NULL
+);
+INSERT INTO pt_varbinary (id, p) VALUES
+(1, 0x1), (2, 0x21), (3, 0x321), (4, 0x4321), (5, 0x54321),
+(6, 0x654321), (7, 0x7654321), (8, 0x87654321), (9, 0x987654321), (10, 0xA987654321);
+INSERT INTO ct_varbinary (id, c) VALUES (7, 0x987654321), (8, 0xa987654321);
+INSERT INTO ct_varbinary_uc (id, c) VALUES (1, 0x1), (2, 0x21);
+INSERT INTO ct_varbinary_dc (id, c) VALUES (1, 0x321), (2, 0x4321);
+INSERT INTO ct_varbinary_un (id, c) VALUES (3, 0x54321), (4, 0x654321);
+INSERT INTO ct_varbinary_dn (id, c) VALUES (5, 0x7654321), (6, 0x87654321);
+UPDATE pt_varbinary SET p = 0xb WHERE id = 1;
+SELECT id, HEX(c) FROM ct_varbinary_uc ORDER BY id;
+id	HEX(c)
+1	0B
+2	21
+DELETE FROM pt_varbinary WHERE id = 3;
+SELECT id, HEX(c) FROM ct_varbinary_dc ORDER BY id;
+id	HEX(c)
+2	4321
+UPDATE pt_varbinary SET p = 0xc WHERE id = 5;
+SELECT id, HEX(c) FROM ct_varbinary_un ORDER BY id;
+id	HEX(c)
+3	NULL
+4	654321
+DELETE FROM pt_varbinary WHERE id = 7;
+SELECT id, HEX(c) FROM ct_varbinary_dn ORDER BY id;
+id	HEX(c)
+5	NULL
+6	87654321
+UPDATE pt_varbinary SET p = 0xe WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_varbinary`, CONSTRAINT `ct_varbinary_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_varbinary` (`p`))
+DELETE FROM pt_varbinary WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_varbinary`, CONSTRAINT `ct_varbinary_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_varbinary` (`p`))
+DROP TABLE ct_varbinary;
+DROP TABLE ct_varbinary_uc;
+DROP TABLE ct_varbinary_dc;
+DROP TABLE ct_varbinary_un;
+DROP TABLE ct_varbinary_dn;
+DROP TABLE pt_varbinary;
+# FR 2.1.22) Testing VARCHAR
+CREATE TABLE pt_varchar (
+id INT PRIMARY KEY,
+p VARCHAR(20) NOT NULL UNIQUE
+);
+CREATE TABLE ct_varchar (
+id INT PRIMARY KEY,
+c VARCHAR(20) NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_varchar(p)
+);
+CREATE TABLE ct_varchar_uc (
+id INT PRIMARY KEY,
+c VARCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_varchar(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_varchar_un (
+id INT PRIMARY KEY,
+c VARCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_varchar(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_varchar_dc (
+id INT PRIMARY KEY,
+c VARCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_varchar(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_varchar_dn (
+id INT PRIMARY KEY,
+c VARCHAR(20),
+FOREIGN KEY (c) REFERENCES pt_varchar(p) ON DELETE SET NULL
+);
+INSERT INTO pt_varchar (id, p) VALUES
+(1, X'61'),
+(2, X'61C3A1'),
+(3, X'61C3A162'),
+(4, X'61C3A16263'),
+(5, X'61C3A16263C3A7'),
+(6, X'61C3A16263C3A765'),
+(7, X'61C3A16263C3A765C3AA'),
+(8, X'61C3A16263C3A765C3AAC3AB'),
+(9, X'61C3A16263C3A765C3AAC3ABE282AC'),
+(10, X'61C3A16263C3A765C3AAC3ABE282ACC4B0');
+INSERT INTO ct_varchar (id, c) VALUES
+(7, X'61C3A16263C3A765C3AAC3ABE282AC'),
+(8, X'61C3A16263C3A765C3AAC3ABE282ACC4B0');
+INSERT INTO ct_varchar_uc (id, c) VALUES (1, 'a'), (2, X'61C3A1');
+INSERT INTO ct_varchar_dc (id, c) VALUES (3, X'61C3A162'), (4, X'61C3A16263');
+INSERT INTO ct_varchar_un (id, c) VALUES (5, X'61C3A16263C3A7'), (6, X'61C3A16263C3A765');
+INSERT INTO ct_varchar_dn (id, c) VALUES (7, X'61C3A16263C3A765C3AA'), (8, X'61C3A16263C3A765C3AAC3AB');
+# Now let's do some modifications...
+UPDATE pt_varchar SET p = 'updated' WHERE id = 1;
+SELECT * FROM ct_varchar_uc ORDER BY id;
+id	c
+1	updated
+2	aá
+DELETE FROM pt_varchar WHERE id = 3;
+SELECT * FROM ct_varchar_dc ORDER BY id;
+id	c
+4	aábc
+UPDATE pt_varchar SET p = 'upd to null' WHERE id = 5;
+SELECT * FROM ct_varchar_un ORDER BY id;
+id	c
+5	NULL
+6	aábcçe
+DELETE FROM pt_varchar WHERE id = 7;
+SELECT * FROM ct_varchar_dn ORDER BY id;
+id	c
+7	NULL
+8	aábcçeêë
+# Verify that attempts to modify or delete fail where we have a restrict FK relationship.
+UPDATE pt_varchar SET p = 'can''t' WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_varchar`, CONSTRAINT `ct_varchar_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_varchar` (`p`))
+DELETE FROM pt_varchar WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_varchar`, CONSTRAINT `ct_varchar_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_varchar` (`p`))
+SELECT id, p, HEX(p) FROM pt_varchar ORDER BY id;
+id	p	HEX(p)
+1	updated	75706461746564
+2	aá	61C3A1
+4	aábc	61C3A16263
+5	upd to null	75706420746F206E756C6C
+6	aábcçe	61C3A16263C3A765
+8	aábcçeêë	61C3A16263C3A765C3AAC3AB
+9	aábcçeêë€	61C3A16263C3A765C3AAC3ABE282AC
+10	aábcçeêë€İ	61C3A16263C3A765C3AAC3ABE282ACC4B0
+DROP TABLE ct_varchar;
+DROP TABLE ct_varchar_uc;
+DROP TABLE ct_varchar_dc;
+DROP TABLE ct_varchar_un;
+DROP TABLE ct_varchar_dn;
+DROP TABLE pt_varchar;
+# FR 2.1.23) Testing YEAR
+CREATE TABLE pt_year (
+id INT PRIMARY KEY,
+p YEAR NOT NULL UNIQUE
+);
+CREATE TABLE ct_year (
+id INT PRIMARY KEY,
+c YEAR NOT NULL,
+FOREIGN KEY (c) REFERENCES pt_year(p)
+);
+CREATE TABLE ct_year_uc (
+id INT PRIMARY KEY,
+c YEAR,
+FOREIGN KEY (c) REFERENCES pt_year(p) ON UPDATE CASCADE
+);
+CREATE TABLE ct_year_un (
+id INT PRIMARY KEY,
+c YEAR,
+FOREIGN KEY (c) REFERENCES pt_year(p) ON UPDATE SET NULL
+);
+CREATE TABLE ct_year_dc (
+id INT PRIMARY KEY,
+c YEAR,
+FOREIGN KEY (c) REFERENCES pt_year(p) ON DELETE CASCADE
+);
+CREATE TABLE ct_year_dn (
+id INT PRIMARY KEY,
+c YEAR,
+FOREIGN KEY (c) REFERENCES pt_year(p) ON DELETE SET NULL
+);
+INSERT INTO pt_year (id, p) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+INSERT INTO ct_year (id, c) VALUES
+(1, 1), (2, 2), (3, 3), (4, 4), (5, 5),
+(6, 6), (7, 7), (8, 8), (9, 9), (10, 10);
+DELETE FROM ct_year WHERE id < 9;
+INSERT INTO ct_year_uc (id, c) VALUES (1, 1), (2, 2);
+INSERT INTO ct_year_dc (id, c) VALUES (3, 3), (4, 4);
+INSERT INTO ct_year_un (id, c) VALUES (5, 5), (6, 6);
+INSERT INTO ct_year_dn (id, c) VALUES (7, 7), (8, 8);
+UPDATE pt_year SET p = 42 WHERE id = 1;
+SELECT * FROM ct_year_uc ORDER BY id;
+id	c
+1	2042
+2	2002
+DELETE FROM pt_year WHERE id = 3;
+SELECT * FROM ct_year_dc ORDER BY id;
+id	c
+4	2004
+UPDATE pt_year SET p = 55 WHERE id = 5;
+SELECT * FROM ct_year_un ORDER BY id;
+id	c
+5	NULL
+6	2006
+DELETE FROM pt_year WHERE id = 7;
+SELECT * FROM ct_year_dn ORDER BY id;
+id	c
+7	NULL
+8	2008
+UPDATE pt_year SET p = 56 WHERE id = 9;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_year`, CONSTRAINT `ct_year_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_year` (`p`))
+DELETE FROM pt_year WHERE id = 10;
+ERROR 23000: Cannot delete or update a parent row: a foreign key constraint fails (`test`.`ct_year`, CONSTRAINT `ct_year_ibfk_1` FOREIGN KEY (`c`) REFERENCES `pt_year` (`p`))
+DROP TABLE ct_year;
+DROP TABLE ct_year_uc;
+DROP TABLE ct_year_dc;
+DROP TABLE ct_year_un;
+DROP TABLE ct_year_dn;
+DROP TABLE pt_year;
+# FR 2.1.24) Testing composite key with CHAR
+CREATE TABLE parent (
+f1 CHAR(12),
+f2 INT,
+PRIMARY KEY (f1, f2)
+);
+CREATE TABLE child (
+f1 CHAR(12),
+f2 INT,
+UNIQUE KEY (f1, f2),
+FOREIGN KEY (f1, f2) REFERENCES parent(f1, f2) ON UPDATE CASCADE
+);
+CREATE TABLE grandchild (
+f1 CHAR(12),
+f2 INT,
+UNIQUE KEY (f1, f2),
+FOREIGN KEY (f1, f2) REFERENCES child(f1, f2) ON UPDATE CASCADE
+);
+INSERT INTO parent (f1, f2) VALUES ('One', 1), ('Two', 2);
+INSERT INTO child (f1, f2) VALUES ('One', 1), ('Two', 2);
+INSERT INTO grandchild (f1, f2) VALUES ('One', 1), ('Two', 2);
+UPDATE parent SET f1 = 'Three', f2 = 3 WHERE f1 = 'One';
+SELECT * FROM parent;
+f1	f2
+Three	3
+Two	2
+SELECT * FROM child;
+f1	f2
+Three	3
+Two	2
+SELECT * FROM grandchild;
+f1	f2
+Three	3
+Two	2
+DROP TABLE parent, child, grandchild;
+# FR 2.1.25) Testing composite key with VARCHAR
+CREATE TABLE parent (
+f1 VARCHAR(12),
+f2 INT,
+PRIMARY KEY (f1, f2)
+);
+CREATE TABLE child (
+f1 VARCHAR(12),
+f2 INT,
+UNIQUE KEY (f1, f2),
+FOREIGN KEY (f1, f2) REFERENCES parent(f1, f2) ON UPDATE CASCADE
+);
+CREATE TABLE grandchild (
+f1 VARCHAR(12),
+f2 INT,
+UNIQUE KEY (f1, f2),
+FOREIGN KEY (f1, f2) REFERENCES child(f1, f2) ON UPDATE CASCADE
+);
+INSERT INTO parent (f1, f2) VALUES ('One', 1), ('Two', 2);
+INSERT INTO child (f1, f2) VALUES ('One', 1), ('Two', 2);
+INSERT INTO grandchild (f1, f2) VALUES ('One', 1), ('Two', 2);
+UPDATE parent SET f1 = 'Three', f2 = 3 WHERE f1 = 'One';
+SELECT * FROM parent;
+f1	f2
+Three	3
+Two	2
+SELECT * FROM child;
+f1	f2
+Three	3
+Two	2
+SELECT * FROM grandchild;
+f1	f2
+Three	3
+Two	2
+DROP TABLE parent, child, grandchild;

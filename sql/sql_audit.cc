@@ -1,4 +1,4 @@
-/* Copyright (c) 2007, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2007, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -963,7 +963,7 @@ int mysql_event_tracking_general_notify(
     const char *subclass_name, int error_code, const char *msg,
     size_t msg_len) {
   mysql_event_tracking_general_data event;
-  char user_buff[MAX_USER_HOST_SIZE];
+  char user_buff[MAX_USER_HOST_SIZE + 1];
 
   assert(thd);
 

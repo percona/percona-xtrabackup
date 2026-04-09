@@ -1,3 +1,4 @@
+include/rpl/set_gtid_mode_off.inc
 DROP DATABASE IF EXISTS mysqldump_test_db;
 #
 # Create the database for testing
@@ -44,3 +45,4 @@ include/restore_sysvars.inc
 Warnings:
 Warning	1287	'@@terminology_use_previous' is deprecated and will be removed in a future release.
 DROP DATABASE mysqldump_test_db;
+include/rpl/set_gtid_mode_on.inc

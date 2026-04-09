@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -87,10 +87,10 @@ const SYMBOL *Lex_hash::get_hash_symbol(const char *s, unsigned int len) const {
   uint32 cur_struct = uint4korr(hash_map + ((len - 1) * 4));
 
   for (;;) {
-    const uchar first_char = (uchar)cur_struct;
+    const auto first_char = (uchar)cur_struct;
 
     if (first_char == 0) {
-      const uint16 ires = (uint16)(cur_struct >> 16);
+      const auto ires = (uint16)(cur_struct >> 16);
       if (ires == array_elements(symbols)) return nullptr;
       const SYMBOL *res = symbols + ires;
       const uint count = (uint)(cur_str - s);
@@ -98,7 +98,7 @@ const SYMBOL *Lex_hash::get_hash_symbol(const char *s, unsigned int len) const {
                                                                   : res;
     }
 
-    const uchar cur_char = (uchar)to_upper_lex[(uchar)*cur_str];
+    const auto cur_char = (uchar)to_upper_lex[(uchar)*cur_str];
     if (cur_char < first_char) return nullptr;
     cur_struct >>= 8;
     if (cur_char > (uchar)cur_struct) return nullptr;

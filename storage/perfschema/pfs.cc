@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2008, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -3066,6 +3066,9 @@ static void *pfs_spawn_thread(void *arg) {
   /* Then, execute the user code for this thread. */
   (*user_start_routine)(user_arg);
 
+  /* Last, cleanup the thread instrumentation. */
+  pfs_delete_current_thread_vc();
+
   return nullptr;
 }
 }  // extern "C"
@@ -4381,7 +4384,7 @@ PSI_file_locker *pfs_get_thread_file_name_locker_vc(
   if (op == PSI_FILE_DELETE) {
     const uint len = (uint)strlen(name);
     PFS_file *pfs_file = find_file(pfs_thread, nullptr, name, len);
-    /* For other operations, state->m_file is set by start_file_open_wait(). */
+    /* For other operations, state->m_file is set by end_file_open_wait(). */
     state->m_file = reinterpret_cast<PSI_file *>(pfs_file);
 
     if (pfs_file) {
@@ -4453,7 +4456,7 @@ PSI_file_locker *pfs_get_thread_file_name_locker_vc(
 
   state->m_flags = flags;
   if (op != PSI_FILE_DELETE) {
-    /* Set by start_file_open_wait(). */
+    /* Set by end_file_open_wait(). */
     state->m_file = nullptr;
   }
   state->m_name = name;
@@ -6357,10 +6360,10 @@ PSI_statement_locker *pfs_get_thread_statement_locker_vc(
   assert(state != nullptr);
   assert(charset != nullptr);
 
-#ifndef DBUG_OFF
+#ifndef NDEBUG
   /* Detect uses of uninitialized data. */
   memset(state, 0xFF, sizeof(PSI_statement_locker_state));
-#endif /* DBUG_OFF */
+#endif /* NDEBUG */
 
   /*
     Required for both pfs and telemetry:
@@ -7492,6 +7495,8 @@ static inline enum_object_type sp_type_to_object_type(uint sp_type) {
       return OBJECT_TYPE_FUNCTION;
     case enum_sp_type::PROCEDURE:
       return OBJECT_TYPE_PROCEDURE;
+    case enum_sp_type::LIBRARY:
+      return OBJECT_TYPE_LIBRARY;
     case enum_sp_type::TRIGGER:
       return OBJECT_TYPE_TRIGGER;
     case enum_sp_type::EVENT:
@@ -8814,6 +8819,13 @@ void pfs_set_metadata_lock_duration_vc(PSI_metadata_lock *lock,
   pfs->m_mdl_duration = mdl_duration;
 }
 
+void pfs_set_metadata_lock_type_vc(PSI_metadata_lock *lock,
+                                   opaque_mdl_type mdl_type) {
+  auto *pfs = reinterpret_cast<PFS_metadata_lock *>(lock);
+  assert(pfs != nullptr);
+  pfs->m_mdl_type = mdl_type;
+}
+
 void pfs_destroy_metadata_lock_vc(PSI_metadata_lock *lock) {
   auto *pfs = reinterpret_cast<PFS_metadata_lock *>(lock);
   assert(pfs != nullptr);
@@ -9511,6 +9523,13 @@ PSI_mdl_service_v2 pfs_mdl_service_v2 = {
     pfs_set_metadata_lock_duration_vc, pfs_destroy_metadata_lock_vc,
     pfs_start_metadata_wait_vc,        pfs_end_metadata_wait_vc};
 
+PSI_mdl_service_v3 pfs_mdl_service_v3 = {
+    /* Old interface, for plugins. */
+    pfs_create_metadata_lock_vc,       pfs_set_metadata_lock_status_vc,
+    pfs_set_metadata_lock_duration_vc, pfs_set_metadata_lock_type_vc,
+    pfs_destroy_metadata_lock_vc,      pfs_start_metadata_wait_vc,
+    pfs_end_metadata_wait_vc};
+
 SERVICE_TYPE(psi_mdl_v1)
 SERVICE_IMPLEMENTATION(performance_schema, psi_mdl_v1) = {
     /* New interface, for components. */
@@ -9524,6 +9543,14 @@ SERVICE_IMPLEMENTATION(performance_schema, psi_mdl_v2) = {
     pfs_create_metadata_lock_vc,       pfs_set_metadata_lock_status_vc,
     pfs_set_metadata_lock_duration_vc, pfs_destroy_metadata_lock_vc,
     pfs_start_metadata_wait_vc,        pfs_end_metadata_wait_vc};
+
+SERVICE_TYPE(psi_mdl_v3)
+SERVICE_IMPLEMENTATION(performance_schema, psi_mdl_v3) = {
+    /* New interface, for components. */
+    pfs_create_metadata_lock_vc,       pfs_set_metadata_lock_status_vc,
+    pfs_set_metadata_lock_duration_vc, pfs_set_metadata_lock_type_vc,
+    pfs_destroy_metadata_lock_vc,      pfs_start_metadata_wait_vc,
+    pfs_end_metadata_wait_vc};
 
 PSI_idle_service_v1 pfs_idle_service_v1 = {
     /* Old interface, for plugins. */
@@ -9792,6 +9819,8 @@ static void *get_mdl_interface(int version) {
       return &pfs_mdl_service_v1;
     case PSI_MDL_VERSION_2:
       return &pfs_mdl_service_v2;
+    case PSI_MDL_VERSION_3:
+      return &pfs_mdl_service_v3;
     default:
       return nullptr;
   }
@@ -9994,9 +10023,11 @@ static void *services[] = {
     REFERENCES_SERVICE(performance_schema, psi_error_v1),
     REFERENCES_SERVICE(performance_schema, psi_file_v2),
     REFERENCES_SERVICE(performance_schema, psi_idle_v1),
-    /* Deprecated, use psi_mdl_v2. */
+    /* Deprecated, use psi_mdl_v3. */
     REFERENCES_SERVICE(performance_schema, psi_mdl_v1),
+    /* Deprecated, use psi_mdl_v3. */
     REFERENCES_SERVICE(performance_schema, psi_mdl_v2),
+    REFERENCES_SERVICE(performance_schema, psi_mdl_v3),
     REFERENCES_SERVICE(performance_schema, psi_memory_v2),
     REFERENCES_SERVICE(performance_schema, psi_mutex_v1),
     REFERENCES_SERVICE(performance_schema, psi_rwlock_v2),

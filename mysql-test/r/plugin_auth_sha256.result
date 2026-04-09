@@ -66,12 +66,16 @@ USER()	CURRENT_USER()
 kristofer@localhost	kristofer@%
 UPDATE mysql.user SET authentication_string= '$' WHERE user='kristofer';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT user,authentication_string,plugin FROM mysql.user WHERE user='kristofer';
 user	authentication_string	plugin
 kristofer	$	sha256_password
 ERROR 28000: Access denied for user 'kristofer'@'localhost' (using password: YES)
 UPDATE mysql.user SET authentication_string= '$5$asd' WHERE user='kristofer';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 SELECT user,authentication_string,plugin FROM mysql.user WHERE user='kristofer';
 user	authentication_string	plugin
 kristofer	$5$asd	sha256_password

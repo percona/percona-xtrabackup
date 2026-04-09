@@ -886,11 +886,13 @@ def	performance_schema	host_cache	COUNT_MAX_USER_CONNECTIONS_PER_HOUR_ERRORS	21	
 def	performance_schema	host_cache	COUNT_DEFAULT_DATABASE_ERRORS	22	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references			NULL
 def	performance_schema	host_cache	COUNT_INIT_CONNECT_ERRORS	23	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references			NULL
 def	performance_schema	host_cache	COUNT_LOCAL_ERRORS	24	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references			NULL
-def	performance_schema	host_cache	COUNT_UNKNOWN_ERRORS	25	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references			NULL
-def	performance_schema	host_cache	FIRST_SEEN	26	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select,insert,update,references			NULL
-def	performance_schema	host_cache	LAST_SEEN	27	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select,insert,update,references			NULL
-def	performance_schema	host_cache	FIRST_ERROR_SEEN	28	NULL	YES	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select,insert,update,references			NULL
-def	performance_schema	host_cache	LAST_ERROR_SEEN	29	NULL	YES	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select,insert,update,references			NULL
+def	performance_schema	host_cache	COUNT_ACCOUNT_LOCKED_ERRORS	25	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references			NULL
+def	performance_schema	host_cache	COUNT_TEMPORARY_ACCOUNT_LOCKED_ERRORS	26	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references			NULL
+def	performance_schema	host_cache	COUNT_UNKNOWN_ERRORS	27	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references			NULL
+def	performance_schema	host_cache	FIRST_SEEN	28	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select,insert,update,references			NULL
+def	performance_schema	host_cache	LAST_SEEN	29	NULL	NO	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select,insert,update,references			NULL
+def	performance_schema	host_cache	FIRST_ERROR_SEEN	30	NULL	YES	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select,insert,update,references			NULL
+def	performance_schema	host_cache	LAST_ERROR_SEEN	31	NULL	YES	timestamp	NULL	NULL	NULL	NULL	0	NULL	NULL	timestamp			select,insert,update,references			NULL
 def	performance_schema	innodb_redo_log_files	FILE_ID	1	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references	Id of the file.		NULL
 def	performance_schema	innodb_redo_log_files	FILE_NAME	2	NULL	NO	varchar	2000	8000	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(2000)			select,insert,update,references	Path to the file.		NULL
 def	performance_schema	innodb_redo_log_files	START_LSN	3	NULL	NO	bigint	NULL	NULL	19	0	NULL	NULL	NULL	bigint			select,insert,update,references	LSN of the first block in the file.		NULL
@@ -1456,6 +1458,14 @@ def	performance_schema	table_lock_waits_summary_by_table	SUM_TIMER_WRITE_EXTERNA
 def	performance_schema	table_lock_waits_summary_by_table	MIN_TIMER_WRITE_EXTERNAL	66	NULL	NO	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select,insert,update,references			NULL
 def	performance_schema	table_lock_waits_summary_by_table	AVG_TIMER_WRITE_EXTERNAL	67	NULL	NO	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select,insert,update,references			NULL
 def	performance_schema	table_lock_waits_summary_by_table	MAX_TIMER_WRITE_EXTERNAL	68	NULL	NO	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned			select,insert,update,references			NULL
+def	performance_schema	temporary_account_locks	USER	1	NULL	NO	char	32	128	NULL	NULL	NULL	utf8mb4	utf8mb4_bin	char(32)	PRI		select,insert,update,references			NULL
+def	performance_schema	temporary_account_locks	HOST	2	NULL	NO	char	255	255	NULL	NULL	NULL	ascii	ascii_general_ci	char(255)	PRI		select,insert,update,references			NULL
+def	performance_schema	temporary_account_locks	LOCKED	3	NULL	NO	enum	3	12	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	enum('YES','NO')			select,insert,update,references			NULL
+def	performance_schema	temporary_account_locks	FAILED_LOGIN_ATTEMPTS	4	NULL	NO	int	NULL	NULL	10	0	NULL	NULL	NULL	int			select,insert,update,references			NULL
+def	performance_schema	temporary_account_locks	REMAINING_LOGIN_ATTEMPTS	5	NULL	NO	int	NULL	NULL	10	0	NULL	NULL	NULL	int			select,insert,update,references			NULL
+def	performance_schema	temporary_account_locks	PASSWORD_LOCK_TIME	6	NULL	NO	int	NULL	NULL	10	0	NULL	NULL	NULL	int			select,insert,update,references			NULL
+def	performance_schema	temporary_account_locks	LOCKED_SINCE	7	NULL	YES	date	NULL	NULL	NULL	NULL	NULL	NULL	NULL	date			select,insert,update,references			NULL
+def	performance_schema	temporary_account_locks	LOCKED_UNTIL	8	NULL	YES	date	NULL	NULL	NULL	NULL	NULL	NULL	NULL	date			select,insert,update,references			NULL
 def	performance_schema	threads	THREAD_ID	1	NULL	NO	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint unsigned	PRI		select,insert,update,references			NULL
 def	performance_schema	threads	NAME	2	NULL	NO	varchar	128	512	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(128)	MUL		select,insert,update,references			NULL
 def	performance_schema	threads	TYPE	3	NULL	NO	varchar	10	40	NULL	NULL	NULL	utf8mb4	utf8mb4_0900_ai_ci	varchar(10)			select,insert,update,references			NULL

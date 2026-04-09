@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -968,30 +968,6 @@ bool restart_dictionary(THD *thd) {
   return false;
 }
 
-// Initialize dictionary in case of server restart.
-void recover_innodb_upon_upgrade(THD *thd) {
-  Dictionary_impl *d = dd::Dictionary_impl::instance();
-  store_predefined_tablespace_metadata(thd);
-  // RAII to handle error in execution of CREATE TABLE.
-  Key_length_error_handler key_error_handler;
-  /*
-    Ignore ER_TOO_LONG_KEY for dictionary tables during restart.
-    Do not print the error in error log as we are creating only the
-    cached objects and not physical tables.
-TODO: Workaround due to bug#20629014. Remove when the bug is fixed.
-   */
-  thd->push_internal_handler(&key_error_handler);
-  if (create_dd_schema(thd) || initialize_dd_properties(thd) ||
-      create_tables(thd, nullptr) ||
-      DDSE_dict_recover(thd, DICT_RECOVERY_RESTART_SERVER,
-                        d->get_actual_dd_version(thd))) {
-    // Error is not be handled in this case as we are on cleanup code path.
-    LogErr(WARNING_LEVEL, ER_DD_INIT_UPGRADE_FAILED);
-  }
-  thd->pop_internal_handler();
-  return;
-}
-
 bool setup_dd_objects_and_collations(THD *thd) {
   // Continue with server startup.
   bootstrap::DD_bootstrap_ctx::instance().set_stage(
@@ -1220,9 +1196,15 @@ bool initialize_dd_properties(THD *thd) {
                  actual_server_version, MYSQL_VERSION_ID);
           return true;
         } else if (MYSQL_VERSION_ID < server_downgrade_threshold) {
-          LogErr(ERROR_LEVEL, ER_BEYOND_SERVER_DOWNGRADE_THRESHOLD,
-                 actual_server_version, MYSQL_VERSION_ID,
-                 server_downgrade_threshold);
+          // Emit the most suitable error message. Patch downgrades are not
+          // supported for innovation releases, so print that if it's the case.
+          if (mysql_version_maturity == "INNOVATION")
+            LogErr(ERROR_LEVEL, ER_NO_PATCH_DOWNGRADE_FOR_INNOVATION_RELEASES,
+                   actual_server_version, MYSQL_VERSION_ID, MYSQL_VERSION_ID);
+          else
+            LogErr(ERROR_LEVEL, ER_BEYOND_SERVER_DOWNGRADE_THRESHOLD,
+                   actual_server_version, MYSQL_VERSION_ID,
+                   server_downgrade_threshold);
           return true;
         }
       }

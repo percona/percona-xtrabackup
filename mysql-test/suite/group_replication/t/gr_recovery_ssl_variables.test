@@ -9,8 +9,7 @@
 # 0. The test requires two servers: M1 and M2.
 # 1. Bootstrap the first server M1.
 # 2. On M2 take a backup of existing ssl specific variables.
-# 3. Set group_replication_recovery_use_ssl and
-#    group_replication_recovery_ssl_verify_server_cert variables.
+# 3. Set group_replication_recovery_ssl_verify_server_cert variable.
 # 4. Verify using SHOW REPLICA STATUS that none of these options options are
 #    enabled for recovery channel on M2.
 # 5. Verify that recovery cannot advance as SSL options are not configured
@@ -36,7 +35,6 @@ CREATE TABLE t1 (c1 INT NOT NULL PRIMARY KEY);
 
 --let $conf_rec_retries= `SELECT @@GLOBAL.group_replication_recovery_retry_count;`
 --let $conf_rec_ssl_verify= `SELECT @@GLOBAL.group_replication_recovery_ssl_verify_server_cert;`
---let $conf_rec_use_ssl= `SELECT @@GLOBAL.group_replication_recovery_use_ssl;`
 
 set session sql_log_bin=0;
 call mtr.add_suppression("There was an error when connecting to the donor*");
@@ -49,11 +47,10 @@ call mtr.add_suppression("The server was automatically set into offline mode aft
 set session sql_log_bin=1;
 
 --echo #
---echo # Set group_replication_recovery_use_ssl & group_replication_recovery_ssl_verify_server_cert
+--echo # Set group_replication_recovery_ssl_verify_server_cert
 --echo #
 
 SET GLOBAL group_replication_recovery_retry_count = 1;
-SET GLOBAL group_replication_recovery_use_ssl =  1;
 SET GLOBAL group_replication_recovery_ssl_verify_server_cert = 1;
 
 --echo #
@@ -100,7 +97,7 @@ INSERT INTO t1 VALUES (1);
 --echo # Reset SSL variables for recovery channel
 --echo #
 
-SET GLOBAL group_replication_recovery_use_ssl = default;                # Default = 0.
+SET GLOBAL group_replication_recovery_use_ssl = default;                # Default = 1.
 SET GLOBAL group_replication_recovery_ssl_verify_server_cert = default; # Default = 0.
 
 --echo #
@@ -140,10 +137,11 @@ DROP TABLE t1;
 --let $rpl_connection_name= server2
 --source include/connection.inc
 # No need to print this to the result file
+--disable_query_log
 --disable_result_log
---eval SET @@GLOBAL.group_replication_recovery_use_ssl= $conf_rec_use_ssl
 --eval SET @@GLOBAL.group_replication_recovery_ssl_verify_server_cert= $conf_rec_ssl_verify
 --eval SET @@GLOBAL.group_replication_recovery_retry_count= $conf_rec_retries
 --enable_result_log
+--enable_query_log
 
 --source include/group_replication_end.inc

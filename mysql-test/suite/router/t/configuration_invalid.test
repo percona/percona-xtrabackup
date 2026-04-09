@@ -1,0 +1,171 @@
+# Validate authentication application with SSL
+#
+#
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Set invalid values in `config.data` JSON object
+--echo #
+--echo # 1. `responseCache`.`maxCacheSize` text value
+--echo # 2. `fileCache`.`maxCacheSize` text value
+--echo # 3. `session`.`expiration` text value
+--echo # 4. `session`.`inactivity` text value
+--echo # 5. `jwt`.`expiration` text value
+--echo #
+--echo ## II. Set too large values in `config.data` JSON object
+--echo #
+--echo # 1. `session`.`expiration` text value
+--echo # 2. `session`.`inactivity` text value
+--echo # 3. `jwt`.`expiration` text value
+--echo #
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+
+--echo
+--echo #
+--echo # I.1
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "responseCache": {
+         "maxCacheSize": "xyz"
+       }
+     }';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # Verify the change
+
+--let $grep_pattern = .*WARNING .* Option responseCache.maxCacheSize has an invalid value and will fallback to the default.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo
+--echo #
+--echo # I.2
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "fileCache": {
+         "maxCacheSize": "xyz"
+       }
+     }';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # Verify the change
+
+--let $grep_pattern = .*WARNING .* Option fileCache.maxCacheSize has an invalid value and will fallback to the default.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo
+--echo #
+--echo # I.3
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "session": {
+         "expiration": "xyz"
+       }
+     }';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # Verify the change
+
+--let $grep_pattern = .*WARNING .* Option 'session.expiration' has an invalid value and will fallback to the default.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo
+--echo #
+--echo # I.4
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "session": {
+         "inactivity": "xyz"
+       }
+     }';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # Verify the change
+
+--let $grep_pattern = .*WARNING .* Option 'session.inactivity' has an invalid value and will fallback to the default.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo
+--echo #
+--echo # I.5
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "jwt": {
+         "expiration": "xyz"
+       }
+     }';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # Verify the change
+
+--let $grep_pattern = .*WARNING .* Option 'jwt.expiration' has an invalid value and will fallback to the default.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+
+--echo
+--echo #
+--echo # II.1
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "session": {
+         "expiration": 100000000000
+        }
+     }';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # Verify the change
+
+--let $grep_pattern = .*WARNING .* Option 'session.expiration' value is too large. It was truncated to the maximum allowed value: 43200*.*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo
+--echo #
+--echo # II.2
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "session": {
+         "inactivity": 100000000000
+       }
+     }';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # Verify the change
+
+--let $grep_pattern = .*WARNING .* Option 'session.inactivity' value is too large. It was truncated to the maximum allowed value: 43200*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+--echo
+--echo #
+--echo # II.3
+UPDATE mysql_rest_service_metadata.config SET `data` = '{
+       "jwt": {
+         "expiration": 100000000000
+       }
+     }';
+--source ../include/mrs/wait_mrs_read_metadata.inc
+
+--echo # Verify the change
+
+--let $grep_pattern = .*WARNING .* Option 'jwt.expiration' value is too large. It was truncated to the maximum allowed value: 60*
+--let $grep_file = $MYSQLROUTER_LOGFILE
+--let $wait_timeout = 60
+--source ../include/wait_for_pattern_in_file.inc
+
+
+--echo
+--echo # Cleanup
+
+--source ../include/mrs/cleanup.inc

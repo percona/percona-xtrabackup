@@ -39,6 +39,8 @@ CREATE USER userW IDENTIFIED BY 'abcd';
 UPDATE mysql.user SET plugin="" WHERE user like 'userW';
 call mtr.add_suppression("User entry .* has an empty plugin value. The user will be ignored and no one can login with this user anymore.");
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/save_binlog_file_position.inc
 # Attempt to GRANT privileges to userW
 GRANT SUPER ON *.* TO userX, userW, userY;
@@ -65,6 +67,8 @@ include/rpl/assert_binlog_events.inc
 # Restore userW to its former state
 UPDATE mysql.user SET plugin="caching_sha2_password" WHERE user like 'userW';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/save_binlog_file_position.inc
 # Case 4 : Use unprivileged account to create new user using GRANT
 CREATE USER userSUPER;
@@ -165,6 +169,8 @@ CREATE USER userW IDENTIFIED BY 'abcd';
 UPDATE mysql.user SET plugin="" WHERE user like 'userW';
 call mtr.add_suppression("User entry .* has an empty plugin value. The user will be ignored and no one can login with this user anymore.");
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/save_binlog_file_position.inc
 # Attempt to GRANT privileges to userW
 GRANT SELECT ON mysql.* TO userX, userW, userY;
@@ -189,6 +195,8 @@ include/rpl/assert_binlog_events.inc
 # Restore userW to its former state
 UPDATE mysql.user SET plugin="caching_sha2_password" WHERE user like 'userW';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Case 4 : Use unprivileged account to create new user using GRANT
 CREATE USER userSELECT;
 GRANT SELECT ON mysql.* TO userSELECT WITH GRANT OPTION;
@@ -301,6 +309,8 @@ CREATE USER userW IDENTIFIED BY 'abcd';
 UPDATE mysql.user SET plugin="" WHERE user like 'userW';
 call mtr.add_suppression("User entry .* has an empty plugin value. The user will be ignored and no one can login with this user anymore.");
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/save_binlog_file_position.inc
 # Attempt to GRANT privileges to userW
 GRANT PROXY ON proxied TO userX, userW, userY;
@@ -320,6 +330,8 @@ include/rpl/assert_binlog_events.inc
 # Restore userW to its former state
 UPDATE mysql.user SET plugin="caching_sha2_password" WHERE user like 'userW';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 include/rpl/save_binlog_file_position.inc
 # Case 4 : Use unprivileged account to create new user using GRANT
 CREATE USER userPROXY;

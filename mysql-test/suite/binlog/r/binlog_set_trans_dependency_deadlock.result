@@ -26,7 +26,7 @@ Warning	1868	file binlog.000002 was not purged because it is the active log file
 disconnect con1;
 connection con2;
 VARIABLE_NAME	VARIABLE_VALUE
-binlog_transaction_dependency_history_size	25000
+binlog_transaction_dependency_history_size	10000000
 disconnect con2;
 connection con3;
 disconnect con3;

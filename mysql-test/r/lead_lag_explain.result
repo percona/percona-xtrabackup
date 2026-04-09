@@ -1,6 +1,7 @@
 # Test of SQL window functions NTH_VALUE
 # ----------------------------------------------------------------------
 SET NAMES utf8mb4;
+SET explain_json_format_version = 1;
 CREATE TABLE t1 (d DOUBLE, id INT, sex CHAR(1), n INT NOT NULL AUTO_INCREMENT, PRIMARY KEY(n));
 INSERT INTO t1(d, id, sex) VALUES (1.0, 1, 'M'),
 (2.0, 2, 'F'),

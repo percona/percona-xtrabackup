@@ -31,6 +31,8 @@ create user sysadmin@localhost identified by 'sysadmin';
 grant SYSTEM_VARIABLES_ADMIN, CONNECTION_ADMIN, SYSTEM_USER on *.* to sysadmin@localhost;
 
 flush privileges;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Create power_session connection
 # Create regular_session connection
 # Create super_session connection (switches off OFFLINE_MODE)

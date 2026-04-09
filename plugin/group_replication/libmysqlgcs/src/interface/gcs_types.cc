@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -23,14 +23,14 @@
 
 #include "plugin/group_replication/libmysqlgcs/include/mysql/gcs/gcs_types.h"
 
-#include <stddef.h>
+#include <cstddef>
 #include <iostream>
 #include <map>
 #include <utility>
 
 void Gcs_interface_parameters::add_parameter(const std::string &name,
                                              const std::string &value) {
-  std::pair<const std::string, const std::string> to_add(name, value);
+  std::pair<const std::string, const std::string> const to_add(name, value);
 
   parameters.erase(name);
   parameters.insert(to_add);
@@ -40,7 +40,7 @@ void Gcs_interface_parameters::add_parameter(const std::string &name,
 bool Gcs_interface_parameters::check_parameters(const char *params[],
                                                 int size) const {
   for (int index = 0; index < size; index++) {
-    std::string param(params[index]);
+    std::string const param(params[index]);
     if (get_parameter(param)) return true;
   }
   return false;
@@ -48,9 +48,8 @@ bool Gcs_interface_parameters::check_parameters(const char *params[],
 
 bool Gcs_interface_parameters::check_parameters(
     const std::vector<std::string> &params) const {
-  for (std::vector<std::string>::const_iterator it = params.begin();
-       it != params.end(); ++it) {
-    if (get_parameter(*it)) return true;
+  for (const auto &param : params) {
+    if (get_parameter(param)) return true;
   }
   return false;
 }

@@ -6381,9 +6381,9 @@ Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (`test`.`t1`.`c1` = 1)
 EXPLAIN SELECT * FROM t1 WHERE c1=f1();
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	ref	c1	c1	5	const	1	100.00	Using index
+1	SIMPLE	t1	NULL	ref	c1	c1	5	const	1	100.00	Using where; Using index
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (`test`.`t1`.`c1` = `f1`())
+Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (`test`.`t1`.`c1` = <cache>(`f1`()))
 EXPLAIN SELECT * FROM v1 WHERE c1=1;
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	ref	c1	c1	5	const	1	100.00	Using index
@@ -6391,14 +6391,14 @@ Warnings:
 Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (`test`.`t1`.`c1` = 1)
 EXPLAIN SELECT * FROM v1 WHERE c1=f1();
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	ref	c1	c1	5	const	1	100.00	Using index
+1	SIMPLE	t1	NULL	ref	c1	c1	5	const	1	100.00	Using where; Using index
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (`test`.`t1`.`c1` = `f1`())
+Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (`test`.`t1`.`c1` = <cache>(`f1`()))
 EXPLAIN SELECT * FROM t1 WHERE c1=f2(10);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
-1	SIMPLE	t1	NULL	ref	c1	c1	5	const	1	100.00	Using index
+1	SIMPLE	t1	NULL	ref	c1	c1	5	const	1	100.00	Using where; Using index
 Warnings:
-Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (`test`.`t1`.`c1` = `f2`(10))
+Note	1003	/* select#1 */ select `test`.`t1`.`c1` AS `c1` from `test`.`t1` where (`test`.`t1`.`c1` = <cache>(`f2`(10)))
 EXPLAIN SELECT * FROM t1 WHERE c1=f2(c1);
 id	select_type	table	partitions	type	possible_keys	key	key_len	ref	rows	filtered	Extra
 1	SIMPLE	t1	NULL	index	NULL	c1	5	NULL	5	20.00	Using where; Using index
@@ -6925,7 +6925,7 @@ DROP FUNCTION f1;
 
 drop procedure if exists p;
 set @old_mode= @@sql_mode;
-set @@sql_mode= cast(pow(2,33)-1 as unsigned integer) & ~0x1003ff00;
+set @@sql_mode= cast(pow(2,34)-1 as unsigned integer) & ~0x1003ff00;
 Warnings:
 Warning	3090	Changing sql mode 'PAD_CHAR_TO_FULL_LENGTH' is deprecated. It will be removed in a future release.
 select @@sql_mode into @full_mode;
@@ -8198,10 +8198,14 @@ VALUES('%', 'mysqltest_1', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N',
 'N', 'N', 'N', 'Y', 'Y', 'N', 'N', 'Y', 'Y', 'N', 'N', 'N', 'N', 'N', 'Y', 'Y', 'N', '',
 '', '', '', '0', '0', '0', '0');
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 CREATE PROCEDURE p1(i INT) BEGIN END;
 DROP PROCEDURE p1;
 DELETE FROM mysql.user WHERE User='mysqltest_1';
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 #
 # Bug#44521 Prepared Statement: CALL p() - crashes: `! thd->main_da.is_sent' failed et.al.
 #

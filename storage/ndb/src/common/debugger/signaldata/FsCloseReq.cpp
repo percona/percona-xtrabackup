@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -27,7 +27,7 @@
 
 bool printFSCLOSEREQ(FILE *output, const Uint32 *theData, Uint32 len,
                      Uint16 /*receiverBlockNo*/) {
-  const FsCloseReq *const sig = (const FsCloseReq *)theData;
+  const auto *const sig = (const FsCloseReq *)theData;
 
   fprintf(output, " UserPointer: %d\n", sig->userPointer);
   fprintf(output, " FilePointer: %d\n", sig->filePointer);

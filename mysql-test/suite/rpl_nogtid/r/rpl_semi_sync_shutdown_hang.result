@@ -6,6 +6,7 @@ Note	####	Storing MySQL user name or password information in the connection meta
 include/rpl/install_semisync.inc
 call mtr.add_suppression("Read semi-sync reply network error");
 call mtr.add_suppression("SEMISYNC: Forced shutdown. Some updates might not be replicated.");
+call mtr.add_suppression("Semi-sync source failed on net_flush.. before waiting for replica reply");
 [connection master]
 SET GLOBAL rpl_semi_sync_source_timeout = 10000000;
 [connection slave]

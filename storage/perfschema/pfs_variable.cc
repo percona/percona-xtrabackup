@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -525,7 +525,9 @@ int PFS_system_persisted_variables_cache::do_materialize_all(THD *unsafe_thd) {
         for (auto &iter : variables_vector) {
           System_variable system_var;
           system_var.m_charset = system_charset_info;
-          system_var.m_name = iter.key.c_str();
+          strncpy(system_var.m_name_str, iter.key.c_str(),
+                  sizeof(system_var.m_name_str) - 1);
+          system_var.m_name_str[sizeof(system_var.m_name_str) - 1] = 0;
           system_var.m_name_length = iter.key.length();
           system_var.m_value_length =
               std::min(SHOW_VAR_FUNC_BUFF_SIZE, (int)iter.value.length());
@@ -557,7 +559,9 @@ int PFS_system_persisted_variables_cache::do_materialize_all(THD *unsafe_thd) {
           System_variable system_var;
           system_var.m_charset = system_charset_info;
 
-          system_var.m_name = iter.first.c_str();
+          strncpy(system_var.m_name_str, iter.first.c_str(),
+                  sizeof(system_var.m_name_str) - 1);
+          system_var.m_name_str[sizeof(system_var.m_name_str) - 1] = 0;
           system_var.m_name_length = iter.first.length();
           system_var.m_value_length =
               std::min(SHOW_VAR_FUNC_BUFF_SIZE,
@@ -601,8 +605,7 @@ int PFS_system_persisted_variables_cache::do_materialize_all(THD *unsafe_thd) {
   Empty placeholder.
 */
 System_variable::System_variable()
-    : m_name(nullptr),
-      m_name_length(0),
+    : m_name_length(0),
       m_value_length(0),
       m_type(SHOW_UNDEF),
       m_scope(0),
@@ -615,6 +618,7 @@ System_variable::System_variable()
       m_set_user_str_length(0),
       m_set_host_str_length(0),
       m_initialized(false) {
+  m_name_str[0] = '\0';
   m_value_str[0] = '\0';
   m_path_str[0] = '\0';
   m_min_value_str[0] = '\0';
@@ -628,8 +632,7 @@ System_variable::System_variable()
 */
 System_variable::System_variable(THD *target_thd, const SHOW_VAR *show_var,
                                  enum_var_type query_scope)
-    : m_name(nullptr),
-      m_name_length(0),
+    : m_name_length(0),
       m_value_length(0),
       m_type(SHOW_UNDEF),
       m_scope(0),
@@ -642,6 +645,7 @@ System_variable::System_variable(THD *target_thd, const SHOW_VAR *show_var,
       m_set_user_str_length(0),
       m_set_host_str_length(0),
       m_initialized(false) {
+  m_name_str[0] = '\0';
   m_value_str[0] = '\0';
   m_path_str[0] = '\0';
   m_min_value_str[0] = '\0';
@@ -655,8 +659,7 @@ System_variable::System_variable(THD *target_thd, const SHOW_VAR *show_var,
   GLOBAL and SESSION system variable.
 */
 System_variable::System_variable(THD *target_thd, const SHOW_VAR *show_var)
-    : m_name(nullptr),
-      m_name_length(0),
+    : m_name_length(0),
       m_value_length(0),
       m_type(SHOW_UNDEF),
       m_scope(0),
@@ -669,6 +672,7 @@ System_variable::System_variable(THD *target_thd, const SHOW_VAR *show_var)
       m_set_user_str_length(0),
       m_set_host_str_length(0),
       m_initialized(false) {
+  m_name_str[0] = '\0';
   m_value_str[0] = '\0';
   m_path_str[0] = '\0';
   m_min_value_str[0] = '\0';
@@ -691,8 +695,9 @@ void System_variable::init(THD *target_thd, const SHOW_VAR *show_var,
   assert(show_var_type == SHOW_SYS);
   THD *current_thread = current_thd;
 
-  m_name = show_var->name;
-  m_name_length = strlen(m_name);
+  strncpy(m_name_str, show_var->name, sizeof(m_name_str) - 1);
+  m_name_str[sizeof(m_name_str) - 1] = 0;
+  m_name_length = strlen(m_name_str);
 
   /* Block remote target thread from updating this system variable. */
   if (target_thd != current_thread) {
@@ -739,8 +744,9 @@ void System_variable::init(THD *target_thd, const SHOW_VAR *show_var) {
 
   const THD *current_thread = current_thd;
 
-  m_name = show_var->name;
-  m_name_length = strlen(m_name);
+  strncpy(m_name_str, show_var->name, sizeof(m_name_str) - 1);
+  m_name_str[sizeof(m_name_str) - 1] = 0;
+  m_name_length = strlen(m_name_str);
 
   /* Block remote target thread from updating this system variable. */
   if (target_thd != current_thread) {
@@ -808,8 +814,8 @@ void System_variable::init(THD *target_thd, const SHOW_VAR *show_var) {
       return false;
     };
 
-    if (find_variable(*persist_ro_variables, m_name))
-      (void)find_variable(*persist_parse_early_ro_variables, m_name);
+    if (find_variable(*persist_ro_variables, m_name_str))
+      (void)find_variable(*persist_parse_early_ro_variables, m_name_str);
 
     pv->unlock();
   }

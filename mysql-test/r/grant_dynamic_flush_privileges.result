@@ -19,6 +19,8 @@ GRANT FLUSH_PRIVILEGES ON mysql.* TO test@localhost;
 ERROR HY000: Illegal privilege level specified for FLUSH_PRIVILEGES
 # Grant FLUSH_PRIVILEGES and SYSTEM_VARIABLES_ADMIN to the test user.
 GRANT FLUSH_PRIVILEGES, SYSTEM_VARIABLES_ADMIN ON *.* TO test@localhost;
+Warnings:
+Warning	6016	The privilege 'FLUSH_PRIVILEGES' is deprecated.
 # Back to test user.
 # Try to change system variables to test the SYSTEM_VARIABLES_ADMIN privilege.
 SET @@GLOBAL.general_log=OFF;
@@ -44,6 +46,8 @@ Variable_name	Value
 general_log	ON
 # Flush the privileges.
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Privileges shall be gone now.
 SHOW GRANTS FOR CURRENT_USER;
 Grants for test@localhost
@@ -61,6 +65,8 @@ CREATE USER test_2@localhost;
 # Create a role, and then assign the privilege to the role.
 CREATE ROLE flusher;
 GRANT FLUSH_PRIVILEGES ON *.* TO flusher;
+Warnings:
+Warning	6016	The privilege 'FLUSH_PRIVILEGES' is deprecated.
 # Assign the role to the test_2 user.
 GRANT flusher TO test_2@localhost;
 # Switch to test_2 user.
@@ -77,6 +83,8 @@ GRANT `flusher`@`%` TO `test_2`@`localhost`
 SET ROLE flusher;
 # test_2 shall be able to execute the FLUSH PRIVILEGES now.
 FLUSH PRIVILEGES;
+Warnings:
+Warning	1681	'FLUSH PRIVILEGES' is deprecated and will be removed in a future release.
 # Clean up
 DROP ROLE flusher;
 DROP USER test@localhost;

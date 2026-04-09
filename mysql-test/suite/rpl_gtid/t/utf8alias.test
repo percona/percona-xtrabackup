@@ -1,0 +1,74 @@
+################################################################
+# WL#16779 User controlled aliasing for 'utf8'
+# Asynchronous replication topology with GTIDs.
+# Turn off/on INTERPRET_UTF8_AS_UTF8MB4 at the source and validate that
+# tables at the replica are identical.
+################################################################
+
+--source include/rpl/init_source_replica.inc
+
+SET @@sql_mode=REPLACE(@@sql_mode,'INTERPRET_UTF8_AS_UTF8MB4','');
+SELECT @@sql_mode;
+
+--disable_warnings
+CREATE TABLE t1(
+  a CHAR(42) CHARACTER SET UTF8,
+  b CHAR(42) CHARACTER SET UTF8
+  GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+  );
+--enable_warnings
+
+# sushi is illegal in utf8mb3
+--error ER_INVALID_CHARACTER_STRING
+INSERT INTO t1(a) VALUES(_utf8 x'F09F8DA3');
+
+SHOW CREATE TABLE t1;
+SELECT @@SQL_MODE;
+SELECT * FROM t1;
+
+# Note that sync_to_replica.inc will shift the connection to replica
+--source include/rpl/sync_to_replica.inc
+
+# Same result on replica ??
+SHOW CREATE TABLE t1;
+# INTERPRET_UTF8_AS_UTF8MB4 may be set in @@SQL_MODE on replica
+--replace_result ,INTERPRET_UTF8_AS_UTF8MB4 ""
+SELECT @@SQL_MODE;
+SELECT * FROM t1;
+
+--source include/rpl/connection_source.inc
+
+--echo
+SET @@sql_mode=CONCAT(@@sql_mode,",","INTERPRET_UTF8_AS_UTF8MB4");
+SELECT @@SQL_MODE;
+
+--disable_warnings
+CREATE TABLE t2(
+  a CHAR(42) CHARACTER SET UTF8,
+  b CHAR(42) CHARACTER SET UTF8
+  GENERATED ALWAYS AS (regexp_like(a, _UTF8'^[a-z0-9-]+$')) VIRTUAL
+  );
+--enable_warnings
+
+SHOW CREATE TABLE t2;
+SELECT @@SQL_MODE;
+INSERT INTO t2(a) VALUES(_utf8 x'F09F8DA3');
+SELECT * FROM t2;
+
+# Note that sync_to_replica.inc will shift the connection to replica
+--source include/rpl/sync_to_replica.inc
+
+# Same result on replica ??
+SHOW CREATE TABLE t2;
+# INTERPRET_UTF8_AS_UTF8MB4 may be set in @@SQL_MODE on replica
+--replace_result ,INTERPRET_UTF8_AS_UTF8MB4 ""
+SELECT @@SQL_MODE;
+SELECT * from t2;
+
+--source include/rpl/connection_source.inc
+
+SET @@sql_mode=default;
+DROP TABLE t1, t2;
+
+--source include/rpl/sync_to_replica.inc
+--source include/rpl/deinit.inc

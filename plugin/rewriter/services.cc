@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,7 +31,7 @@
 
 #include "my_config.h"
 
-#include <stddef.h>
+#include <cstddef>
 
 #include "template_utils.h"
 
@@ -63,7 +63,7 @@ Condition_handler::~Condition_handler() = default;
 */
 static int handle(int sql_errno, const char *sqlstate, const char *message,
                   void *state) {
-  Condition_handler *handler = static_cast<Condition_handler *>(state);
+  auto *handler = static_cast<Condition_handler *>(state);
   return handler->handle(sql_errno, sqlstate, message);
 }
 
@@ -74,23 +74,23 @@ static MYSQL_LEX_STRING make_lex_string(const string &str) {
 }
 
 void set_current_database(MYSQL_THD thd, const string &db) {
-  MYSQL_LEX_STRING db_str = make_lex_string(db);
+  MYSQL_LEX_STRING const db_str = make_lex_string(db);
   mysql_parser_set_current_database(thd, db_str);
 }
 
 bool parse(MYSQL_THD thd, const string &query, bool is_prepared,
            Condition_handler *handler) {
-  MYSQL_LEX_STRING query_str = make_lex_string(query);
+  MYSQL_LEX_STRING const query_str = make_lex_string(query);
   return mysql_parser_parse(thd, query_str, is_prepared, handle, handler);
 }
 
 bool parse(MYSQL_THD thd, const string &query, bool is_prepared) {
-  MYSQL_LEX_STRING query_str = make_lex_string(query);
+  MYSQL_LEX_STRING const query_str = make_lex_string(query);
   return mysql_parser_parse(thd, query_str, is_prepared, nullptr, nullptr);
 }
 
 bool is_supported_statement(MYSQL_THD thd) {
-  int type = mysql_parser_get_statement_type(thd);
+  int const type = mysql_parser_get_statement_type(thd);
   return (type == STATEMENT_TYPE_SELECT || type == STATEMENT_TYPE_UPDATE ||
           type == STATEMENT_TYPE_DELETE || type == STATEMENT_TYPE_INSERT ||
           type == STATEMENT_TYPE_REPLACE);
@@ -101,13 +101,13 @@ int get_number_params(MYSQL_THD thd) {
 }
 
 static int process_item(MYSQL_ITEM item, uchar *arg) {
-  Literal_visitor *visitor = pointer_cast<Literal_visitor *>(arg);
+  auto *visitor = pointer_cast<Literal_visitor *>(arg);
   if (visitor->visit(item)) return 1;
   return 0;
 }
 
 bool visit_parse_tree(MYSQL_THD thd, Literal_visitor *visitor) {
-  uchar *arg = pointer_cast<uchar *>(visitor);
+  auto *arg = pointer_cast<uchar *>(visitor);
   return mysql_parser_visit_tree(thd, process_item, arg) != 0;
 }
 
@@ -117,13 +117,13 @@ bool visit_parse_tree(MYSQL_THD thd, Literal_visitor *visitor) {
 */
 class Lex_str {
   MYSQL_LEX_STRING m_str;
-  Lex_str &operator=(const Lex_str &);
-  Lex_str(const Lex_str &);
+  Lex_str &operator=(const Lex_str &) = delete;
+  Lex_str(const Lex_str &) = delete;
 
  public:
   Lex_str(MYSQL_LEX_STRING str) : m_str(str) {}
 
-  const MYSQL_LEX_STRING get() { return m_str; }
+  MYSQL_LEX_STRING get() { return m_str; }
 
   ~Lex_str() { mysql_parser_free_string(m_str); }
 };
@@ -137,7 +137,8 @@ string print_item(MYSQL_ITEM item) {
 }
 
 string get_current_query_normalized(MYSQL_THD thd) {
-  MYSQL_LEX_STRING normalized_pattern = mysql_parser_get_normalized_query(thd);
+  MYSQL_LEX_STRING const normalized_pattern =
+      mysql_parser_get_normalized_query(thd);
   string s;
   s.assign(normalized_pattern.str, normalized_pattern.length);
   return s;
@@ -149,8 +150,8 @@ string get_current_query_normalized(MYSQL_THD thd) {
 */
 class Array_ptr {
   int *m_ptr;
-  Array_ptr &operator=(const Array_ptr &);
-  Array_ptr(const Array_ptr &);
+  Array_ptr &operator=(const Array_ptr &) = delete;
+  Array_ptr(const Array_ptr &) = delete;
 
  public:
   Array_ptr(int *str) : m_ptr(str) {}
@@ -160,7 +161,7 @@ class Array_ptr {
 };
 
 std::vector<int> get_parameter_positions(MYSQL_THD thd) {
-  int number_params = get_number_params(thd);
+  int const number_params = get_number_params(thd);
   Array_ptr parameter_positions(new int[number_params]);
   mysql_parser_extract_prepared_params(thd, parameter_positions.get());
   std::vector<int> positions(parameter_positions.get(),

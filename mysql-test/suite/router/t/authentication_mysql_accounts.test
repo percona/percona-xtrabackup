@@ -1,0 +1,147 @@
+# Verify MySQL internal authentication is properly handling mapping
+# MySQL Service accounts and their state.
+#
+#
+--source include/have_router.inc
+--source include/have_mysql_no_login_plugin.inc
+
+--replace_regex /\.dll/.so/
+eval INSTALL PLUGIN mysql_no_login SONAME '$MYSQL_NO_LOGIN';
+
+
+--let $extra_mrs_router_id=1
+--let $mrs_user_meta=mrs_user@'%'
+--let $mrs_user_data=mrs_user@'%'
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+CREATE USER user_valid@'%' IDENTIFIED BY 'pwd';
+CREATE USER user_valid_empty_pass@'%' IDENTIFIED BY '';
+CREATE USER user_no_login@'%' IDENTIFIED WITH 'mysql_no_login' AS 'pwd';
+CREATE USER user_wrong_host@'not-existing-invalid-host' IDENTIFIED BY 'pwd';
+CREATE USER user_locked@'%' IDENTIFIED BY 'pwd' ACCOUNT LOCK;
+GRANT ALL ON *.* TO user_no_login@'%';
+GRANT ALL ON *.* TO user_wrong_host@'not-existing-invalid-host';
+GRANT ALL ON *.* TO user_locked@'%';
+
+## Test starts here
+--echo
+--echo
+--echo ## I. Create service and MySQL authentication application,
+--echo ##    that is not locked just to existing accounts:
+--echo #
+--echo # 1. verify that MySQL internal auth-app is configured,
+--echo # 2. verify that valid MySQL account may be used with the auth-app,
+--echo # 3. verify that invalid/not-matching MySQL accounts are rejected by auth-app,
+--echo # 4. verify that authentication with invalid password is rejected,
+--echo # 5. verify that MySQL accounts without a password are rejected by auth-app,
+--echo #
+--echo #
+
+
+--source ../include/mrs/start_object_definition.inc
+
+--let $mrs_add_service_path="/svc"
+--let $mrs_add_host_name=""
+--let $mrs_add_service_options='{"logging":{"exceptions":true, "request":{"headers":true, "body":true}, "response":{"headers":true, "body":true}}}'
+--source ../include/mrs/service/add.inc
+
+--let $mrs_add_schema=basic_schema
+--let $mrs_add_schema_path=/basic
+--let $mrs_add_schema_auth=TRUE
+--source ../include/mrs/db_schema/add.inc
+
+--let $mrs_add_db_object=table1
+--let $mrs_add_db_object_path=/tab
+--source ../include/mrs/db_object/add.inc
+
+
+--let $mrs_add_auth_app=default authentication1
+--let $mrs_add_auth_vendor=MySQL Internal
+--let $mrs_add_auth_service=/svc
+--source ../include/mrs/auth_app/add.inc
+
+--source ../include/mrs/end_object_definition.inc
+
+--echo
+--echo #
+--echo # I.1
+
+--let $mrs_client_arg_path='/svc/authentication/authApps'
+--source ../include/mrs/mrs_client.inc
+
+--echo
+--echo #
+--echo # I.2
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  -u user_valid -p pwd
+  --session-file $MYSQL_TMP_DIR/user1_session.dat;
+
+exec $MRS_CLIENT_ARGS
+  -a basic_json
+  --session-type jwt
+  --path /svc/authentication/login
+  -u user_valid -p pwd
+  --session-file $MYSQL_TMP_DIR/user2_session.dat;
+
+--echo
+--echo #
+--echo # I.3
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  --expected-status Unauthorized
+  -u user_no_login -p pwd;
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  --expected-status Unauthorized
+  -u user_wrong_host -p pwd;
+
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  --expected-status Unauthorized
+  -u user_locked -p pwd;
+
+--echo
+--echo #
+--echo # I.4
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  --expected-status Unauthorized
+  -u user_valid
+  -p invalid_password;
+
+--echo
+--echo #
+--echo # I.5
+exec $MRS_CLIENT_ARGS
+  -a BASIC
+  --path /svc/authentication/login
+  --expected-status Unauthorized
+  -u user_valid_empty_pass;
+
+DROP USER user_valid@'%';
+DROP USER user_valid_empty_pass@'%';
+DROP USER user_no_login@'%';
+DROP USER user_wrong_host@'not-existing-invalid-host';
+DROP USER user_locked@'%';
+UNINSTALL PLUGIN mysql_no_login;
+remove_file $MYSQL_TMP_DIR/user1_session.dat;
+remove_file $MYSQL_TMP_DIR/user2_session.dat;
+
+--let $cleanup_keep_roles=1
+--source ../include/mrs/cleanup.inc
+
+# Using 'init-file' option in a test is trouble some, the cleanup must be done exactly to the state
+# like it was set by the file. Additionally all entries in mysql.user table, have a timestamp thus
+# the test can't drop the data and recreate it.
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'mysql_rest_service_meta_provider';
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'mysql_rest_service_data_provider';
+GRANT mysql_rest_service_meta_provider TO mrs_user WITH ADMIN OPTION;
+GRANT mysql_rest_service_data_provider TO mrs_user WITH ADMIN OPTION;

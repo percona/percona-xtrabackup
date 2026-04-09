@@ -50,24 +50,56 @@ SELECT col_aici FROM t UNION SELECT col_bin FROM t;
 SELECT col_aici FROM t UNION SELECT col_0900_bin FROM t;
 
 # Cannot decide whether to use PAD SPACE or NO_PAD.
---error ER_CANT_AGGREGATE_NCOLLATIONS
+--error ER_CANT_AGGREGATE_2COLLATIONS
 SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t;
---error ER_CANT_AGGREGATE_NCOLLATIONS
+--error ER_CANT_AGGREGATE_2COLLATIONS
 SELECT col_0900_bin FROM t UNION SELECT col_bin FROM t;
---error ER_CANT_AGGREGATE_NCOLLATIONS
+--error ER_CANT_AGGREGATE_3COLLATIONS
 SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t
   UNION SELECT col_aici FROM t;
 
-# Add an explicit collation into the mix. The explicit collation is used.
+--echo # Add an explicit collation in the first query term.
+--echo # The explicit collation is used.
 --sorted_result
-SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t
-  UNION SELECT col_aici COLLATE utf8mb4_0900_ai_ci FROM t;
+SELECT col_aici COLLATE utf8mb4_0900_ai_ci FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin FROM t;
 --sorted_result
-SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t
-  UNION SELECT col_aici COLLATE utf8mb4_bin FROM t;
+SELECT col_aici COLLATE utf8mb4_bin FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin FROM t;
 --sorted_result
-SELECT col_bin FROM t UNION SELECT col_0900_bin FROM t
-  UNION SELECT col_aici COLLATE utf8mb4_0900_bin FROM t;
+SELECT col_aici COLLATE utf8mb4_0900_bin FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin FROM t;
+
+--echo # Add an explicit collation in the last query term.
+--echo # The explicit collation is used, so same result as
+--echo # above.
+--sorted_result
+SELECT col_aici FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin COLLATE utf8mb4_0900_ai_ci FROM t;
+--sorted_result
+SELECT col_aici FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin COLLATE utf8mb4_bin FROM t;
+--sorted_result
+SELECT col_aici FROM t
+UNION
+SELECT col_bin FROM t
+UNION
+SELECT col_0900_bin COLLATE utf8mb4_0900_bin FROM t;
 
 DROP TABLE t;
 

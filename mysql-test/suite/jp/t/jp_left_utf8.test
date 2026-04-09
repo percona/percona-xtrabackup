@@ -38,63 +38,117 @@ INSERT INTO `Ｔ８` VALUES ('あいうえお'),('あいうえ'),('あいう'),(
 INSERT INTO `Ｔ９` VALUES ('龔龖龗龞龡'),('龔龖龗龞'),('龔龖龗'),('龔龖'),('龔'),('');
 
 #InnoDB
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ１`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ１`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ１`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ１`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ１`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ１`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ２`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ２`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ２`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ２`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ２`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ２`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ３`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ３`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ３`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ３`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ３`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ３`;
 
 #MyISAM
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ４`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ４`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ４`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ４`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ４`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ４`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ５`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ５`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ５`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ５`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ５`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ５`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ６`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ６`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ６`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ６`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ６`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ６`;
 
 #MEMORY
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ７`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ７`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ７`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ７`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ７`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ７`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ８`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ８`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ８`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ８`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ８`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ８`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,0) FROM `Ｔ９`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,1) FROM `Ｔ９`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,2) FROM `Ｔ９`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,3) FROM `Ｔ９`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,4) FROM `Ｔ９`;
+--sorted_result
 SELECT `Ｃ１`, LEFT(`Ｃ１`,5) FROM `Ｔ９`;
 
 DROP TABLE `Ｔ１`;

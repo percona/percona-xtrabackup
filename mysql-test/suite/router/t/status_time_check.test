@@ -1,0 +1,21 @@
+--source include/have_router.inc
+
+--let $extra_mrs_router_id=1
+--source ../include/predefined_setup/configure_router_mrs_root.inc
+--source ../include/schema/basic_schema.sql
+
+--echo
+--echo
+--echo ## I. Verify that duration of calculating the Router status is reflected in the metadata
+
+# Wait for a few metadata refresh cycles
+--sleep 5
+
+# metadata_refresh_interval = 1s is the test default
+--assert(`SELECT COUNT(*)=0 FROM mysql_rest_service_metadata.router_status WHERE timespan < 1000`)
+# Calculating the statistics should take some time, adding 1s refresh interval and it should take > 1000ms
+--assert(`SELECT COUNT(*)>0 FROM mysql_rest_service_metadata.router_status WHERE timespan > 1000`)
+
+
+# Cleanup
+--source ../include/mrs/cleanup.inc

@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2011, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -31,6 +31,8 @@
 #include <string>
 
 #include "decimal.h"
+#include "my_config.h"
+#include "my_temporal.h"
 #include "my_time.h"
 #include "mysql/strings/m_ctype.h"
 #include "mysql_time.h"
@@ -45,6 +47,8 @@
 #include "sql/system_variables.h"
 #include "sql_string.h"
 #include "string_with_len.h"
+#include "unittest/gunit/benchmark.h"
+#include "unittest/gunit/mysys_util.h"
 #include "unittest/gunit/test_utils.h"
 
 namespace item_timefunc_unittest {
@@ -73,6 +77,42 @@ TEST_F(ItemTimeFuncTest, dateAddInterval) {
 
   // The below result is not correct, see Bug#16198372
   EXPECT_DOUBLE_EQ(20130122145222.234567, item->val_real());
+}
+
+TEST_F(ItemTimeFuncTest, datetimeliteraltest) {
+  Datetime_val time1;
+  TIME_from_longlong_datetime_packed(&time1, 1845541820734373888);
+
+  Datetime_val time2;
+  TIME_from_longlong_datetime_packed(&time2, 914866242077065217);
+
+  auto *literal1 =
+      new Item_datetime_literal(&time1, 0, thd()->variables.time_zone);
+  auto *literal2 =
+      new Item_datetime_literal(&time2, 0, thd()->variables.time_zone);
+
+  EXPECT_NE(literal1->hash(), 0);
+  EXPECT_NE(literal1->hash(), literal2->hash());
+#if !defined(WORDS_BIGENDIAN)
+  EXPECT_EQ(literal1->hash(), 13033637353971124907ULL);
+#endif
+
+  MYSQL_TIME date1;
+  set_zero_time(&date1, MYSQL_TIMESTAMP_DATE);
+  TIME_from_longlong_date_packed(&date1, 914866242077065217);
+
+  MYSQL_TIME date2;
+  set_zero_time(&date2, MYSQL_TIMESTAMP_DATE);
+  TIME_from_longlong_date_packed(&date2, 1845541820734373888);
+
+  Item_date_literal *dliteral1 = new Item_date_literal(&date1);
+  Item_date_literal *dliteral2 = new Item_date_literal(&date2);
+
+  EXPECT_NE(dliteral1->hash(), 0);
+  EXPECT_NE(dliteral1->hash(), dliteral2->hash());
+#if !defined(WORDS_BIGENDIAN)
+  EXPECT_EQ(dliteral1->hash(), 12438047714759670047ULL);
+#endif
 }
 
 // Checks that the metadata and result are consistent for a time function that
@@ -309,6 +349,15 @@ TEST_F(ItemTimeFuncTest, CastAsYearMetadata) {
 
   CheckMetadataAndResult(
       thd(), new Item_typecast_year(POS(), new Item_int(2155)), 2155);
+
+  auto item_dec1 = new Item_typecast_decimal(POS(), new Item_int(2021), 4, 2);
+  auto item_dec2 = new Item_typecast_decimal(POS(), new Item_int(2021), 4, 2);
+  auto item_dec3 = new Item_typecast_decimal(POS(), new Item_int(3021), 4, 2);
+  EXPECT_EQ(item_dec1->hash(), item_dec2->hash());
+  EXPECT_NE(item_dec1->hash(), item_dec3->hash());
+#if !defined(WORDS_BIGENDIAN)
+  EXPECT_EQ(item_dec1->hash(), 16714317382683303445ULL);
+#endif
 }
 
 // Verifies that the results returned by the WEEKDAY function are consistent
@@ -409,19 +458,15 @@ INSTANTIATE_TEST_SUITE_P(a, ItemTimeFuncTestP,
   Test member function of @c Item_time_func
 
   @param item     item of a sub-class of @c Item_time_func
-  @param ltime    time structure that contains the expected result
+  @param time     time structure that contains the expected result
   @param decimals number of significant decimals in the expected result
 */
-void testItemTimeFunctions(Item_time_func *item, MYSQL_TIME *ltime,
-                           int decimals) {
+void testItemTimeFunctions(Item_time_func *item, Time_val *time, int decimals) {
   long long int mysql_time =
-      10000 * ltime->hour + 100 * ltime->minute + ltime->second;
+      (10000 * time->hour()) + (100 * time->minute()) + time->second();
   EXPECT_EQ(mysql_time, item->val_int());
 
-  long long int packed = TIME_to_longlong_packed(*ltime);
-  EXPECT_EQ(packed, item->val_time_temporal());
-
-  double d = mysql_time + ltime->second_part / 1000000.0;
+  double d = mysql_time + (time->microsecond() / 1000000.0);
   EXPECT_DOUBLE_EQ(d, item->val_real());
 
   my_decimal decval1, decval2;
@@ -430,9 +475,9 @@ void testItemTimeFunctions(Item_time_func *item, MYSQL_TIME *ltime,
   EXPECT_EQ(0, my_decimal_cmp(dec, &decval2));
 
   char s[20];
-  sprintf(s, "%02d:%02d:%02d", ltime->hour, ltime->minute, ltime->second);
-  if (ltime->second_part > 0) {  // Avoid trailing zeroes
-    int decs = ltime->second_part;
+  sprintf(s, "%02d:%02d:%02d", time->hour(), time->minute(), time->second());
+  if (time->microsecond() > 0) {  // Avoid trailing zeroes
+    int decs = time->microsecond();
     while (decs % 10 == 0) decs /= 10;
     sprintf(s + strlen(s), ".%d", decs);
   } else if (decimals > 0)
@@ -441,14 +486,14 @@ void testItemTimeFunctions(Item_time_func *item, MYSQL_TIME *ltime,
   String timeStr(20);
   EXPECT_STREQ(s, item->val_str(&timeStr)->c_ptr());
 
-  MYSQL_TIME ldate;
+  Datetime_val ldate;
   //> Second argument of Item_func_time::get_date is not used for anything
-  item->get_date(&ldate, 0);
+  item->val_datetime(&ldate, 0);
   // Todo: Should check that year, month, and day is relative to current date
-  EXPECT_EQ(ltime->hour % 24, ldate.hour);
-  EXPECT_EQ(ltime->minute, ldate.minute);
-  EXPECT_EQ(ltime->second, ldate.second);
-  EXPECT_EQ(ltime->second_part, ldate.second_part);
+  EXPECT_EQ(time->hour() % 24, ldate.hour);
+  EXPECT_EQ(time->minute(), ldate.minute);
+  EXPECT_EQ(time->second(), ldate.second);
+  EXPECT_EQ(time->microsecond(), ldate.second_part);
 
   // Todo: Item_time_func::save_in_field is not tested
 }
@@ -456,25 +501,22 @@ void testItemTimeFunctions(Item_time_func *item, MYSQL_TIME *ltime,
 TEST_P(ItemTimeFuncTestP, secToTime) {
   Item_decimal *sec = new Item_decimal(POS(), m_t.secs, strlen(m_t.secs),
                                        &my_charset_latin1_bin);
-  Item_func_sec_to_time *time = new Item_func_sec_to_time(POS(), sec);
+  Item_func_sec_to_time *fn = new Item_func_sec_to_time(POS(), sec);
 
   Parse_context pc(thd(), thd()->lex->current_query_block());
   Item *item;
-  EXPECT_FALSE(time->itemize(&pc, &item));
-  EXPECT_EQ(time, item);
-  EXPECT_FALSE(time->fix_fields(thd(), nullptr));
+  EXPECT_FALSE(fn->itemize(&pc, &item));
+  EXPECT_EQ(fn, item);
+  EXPECT_FALSE(fn->fix_fields(thd(), nullptr));
 
-  MYSQL_TIME ltime;
-  time->get_time(&ltime);
-  EXPECT_EQ(0U, ltime.year);
-  EXPECT_EQ(0U, ltime.month);
-  EXPECT_EQ(0U, ltime.day);
-  EXPECT_EQ(m_t.hour, ltime.hour);
-  EXPECT_EQ(m_t.minute, ltime.minute);
-  EXPECT_EQ(m_t.second, ltime.second);
-  EXPECT_EQ(m_t.second_part, ltime.second_part);
+  Time_val time;
+  EXPECT_EQ(0, fn->val_time(&time));
+  EXPECT_EQ(m_t.hour, time.hour());
+  EXPECT_EQ(m_t.minute, time.minute());
+  EXPECT_EQ(m_t.second, time.second());
+  EXPECT_EQ(m_t.second_part, time.microsecond());
 
-  testItemTimeFunctions(time, &ltime, sec->decimals);
+  testItemTimeFunctions(fn, &time, sec->decimals);
 }
 
 // Test for MODE_TIME_TRUNCATE_FRACTIONAL.
@@ -516,25 +558,22 @@ INSTANTIATE_TEST_SUITE_P(a, ItemTimeFuncTruncFracTestP,
 TEST_P(ItemTimeFuncTruncFracTestP, secToTime) {
   Item_decimal *sec = new Item_decimal(POS(), m_t.secs, strlen(m_t.secs),
                                        &my_charset_latin1_bin);
-  Item_func_sec_to_time *time = new Item_func_sec_to_time(POS(), sec);
+  Item_func_sec_to_time *fn = new Item_func_sec_to_time(POS(), sec);
 
   Parse_context pc(thd(), thd()->lex->current_query_block());
   Item *item;
-  EXPECT_FALSE(time->itemize(&pc, &item));
-  EXPECT_EQ(time, item);
-  EXPECT_FALSE(time->fix_fields(thd(), nullptr));
+  EXPECT_FALSE(fn->itemize(&pc, &item));
+  EXPECT_EQ(fn, item);
+  EXPECT_FALSE(fn->fix_fields(thd(), nullptr));
 
-  MYSQL_TIME ltime;
-  time->get_time(&ltime);
-  EXPECT_EQ(0U, ltime.year);
-  EXPECT_EQ(0U, ltime.month);
-  EXPECT_EQ(0U, ltime.day);
-  EXPECT_EQ(m_t.hour, ltime.hour);
-  EXPECT_EQ(m_t.minute, ltime.minute);
-  EXPECT_EQ(m_t.second, ltime.second);
-  EXPECT_EQ(m_t.second_part, ltime.second_part);
+  Time_val time;
+  fn->val_time(&time);
+  EXPECT_EQ(m_t.hour, time.hour());
+  EXPECT_EQ(m_t.minute, time.minute());
+  EXPECT_EQ(m_t.second, time.second());
+  EXPECT_EQ(m_t.second_part, time.microsecond());
 
-  testItemTimeFunctions(time, &ltime, sec->decimals);
+  testItemTimeFunctions(fn, &time, sec->decimals);
 }
 
 struct TimestampDiffParam {
@@ -637,5 +676,40 @@ TEST_P(ItemExtractMetadataTest, ExtractFromLowestTime) {
 INSTANTIATE_TEST_SUITE_P(IntervalTypes, ItemExtractMetadataTest,
                          testing::Range(static_cast<interval_type>(0),
                                         INTERVAL_LAST));
+/**
+  Benchmark the expression:
+
+  SELECT TIME'12:23:45.123456' + INTERVAL 1 HOUR + INTERVAL 1 MINUTE +
+         INTERVAL 1 SECOND
+*/
+static void BM_add_time_interval(size_t iters) {
+  StopBenchmarkTiming();
+
+  my_testing::Server_initializer initializer;
+  initializer.SetUp();
+
+  Time_val start_time(false, 12, 23, 45, 123456);
+  Item_time_literal *arg0 = new Item_time_literal(&start_time, 6);
+  Item_int *arg1 = new Item_int(1);
+  Item *item = new Item_date_add_interval(arg0, arg1, INTERVAL_HOUR, false);
+  item = new Item_date_add_interval(item, arg1, INTERVAL_MINUTE, false);
+  item = new Item_date_add_interval(item, arg1, INTERVAL_SECOND, false);
+
+  (void)item->fix_fields(initializer.thd(), nullptr);
+
+  StartBenchmarkTiming();
+
+  Time_val time;
+  int dummy = 0;
+  for (size_t i = 0; i < iters; ++i) {
+    (void)item->val_time(&time);
+    dummy += time.second();
+  }
+
+  ASSERT_NE(0, dummy);  // To keep the optimizer from removing the loop.
+  MysqlTime timex;
+  *implicit_cast<MYSQL_TIME *>(&timex) = MYSQL_TIME(time);
+}
+BENCHMARK(BM_add_time_interval)
 
 }  // namespace item_timefunc_unittest

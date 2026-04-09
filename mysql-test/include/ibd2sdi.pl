@@ -31,6 +31,9 @@ sub ibd2sdi_replace() {
     # Remove se_private_data: physical_pos & table_id.
     $_=~ s/("se_private_data":) "physical_pos=[0-9]+;table_id=[0-9]+;"/$1 "physical_pos=X;table_id=Y"/g;
 
+    # Remove se_private_data: table_id (also when there are prior fields)
+    $_=~ s/("se_private_data":) "(.*)table_id=[0-9]+;/$1 "$2table_id=Y;/g;
+
     # Remove se_private_data: id.
     $_=~ s/("se_private_data":) "id=[0-9]+;"/$1 "id=X"/g;
 

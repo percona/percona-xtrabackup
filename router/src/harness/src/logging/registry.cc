@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2016, 2024, Oracle and/or its affiliates.
+  Copyright (c) 2016, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -260,6 +260,15 @@ void set_log_level_for_all_loggers(Registry &registry, LogLevel level) {
   }
 }
 
+void set_log_level_for_handler(std::string name, LogLevel level) {
+  auto &registry = DIM::instance().get_LoggingRegistry();
+  try {
+    auto handler = registry.get_handler(name);
+    handler->set_level(level);
+  } catch (std::logic_error &) {
+  }
+}
+
 void set_log_level_for_all_handlers(const Registry &registry, LogLevel level) {
   for (const std::string &handler_name : registry.get_handler_names()) {
     std::shared_ptr<Handler> handler = registry.get_handler(handler_name);
@@ -497,6 +506,12 @@ void unregister_handler(std::string name) {
   mysql_harness::logging::Registry &registry =
       mysql_harness::DIM::instance().get_LoggingRegistry();
   registry.remove_handler(name);
+}
+
+bool handler_registered(std::string name) {
+  mysql_harness::logging::Registry &registry =
+      mysql_harness::DIM::instance().get_LoggingRegistry();
+  return registry.get_handler_names().count(name) > 0;
 }
 
 void set_log_level_for_all_loggers(LogLevel level) {

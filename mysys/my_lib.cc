@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -33,11 +33,11 @@
 
 /* TODO: check for overrun of memory for names. */
 
-#include <errno.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <algorithm>
-#include <memory>
+#include <cassert>
+#include <cerrno>
+#include <cstring>
 #include <new>
 
 #include "m_string.h"
@@ -70,8 +70,8 @@ typedef Prealloced_array<FILEINFO, 100> Entries_array;
 void my_dirend(MY_DIR *buffer) {
   DBUG_TRACE;
   if (buffer != nullptr) {
-    Entries_array *array = pointer_cast<Entries_array *>(
-        pointer_cast<char *>(buffer) + ALIGN_SIZE(sizeof(MY_DIR)));
+    auto *array = pointer_cast<Entries_array *>(pointer_cast<char *>(buffer) +
+                                                ALIGN_SIZE(sizeof(MY_DIR)));
     array->~Entries_array();
     ::destroy_at(pointer_cast<MEM_ROOT *>(pointer_cast<char *>(buffer) +
                                           ALIGN_SIZE(sizeof(MY_DIR)) +

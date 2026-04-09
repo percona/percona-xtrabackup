@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -140,7 +140,7 @@ GroupIndexSkipScanIterator::~GroupIndexSkipScanIterator() {
     true if error
 */
 
-bool GroupIndexSkipScanIterator::Init() {
+bool GroupIndexSkipScanIterator::DoInit() {
   empty_record(table());
   m_seen_eof = false;
 
@@ -197,7 +197,7 @@ bool GroupIndexSkipScanIterator::Init() {
   Get the next key containing the MIN and/or MAX key for the next group.
 
   SYNOPSIS
-    GroupIndexSkipScanIterator::Read()
+    GroupIndexSkipScanIterator::DoRead()
 
   DESCRIPTION
     The method finds the next subsequent group of records that satisfies the
@@ -217,7 +217,7 @@ bool GroupIndexSkipScanIterator::Init() {
   RETURN
     See RowIterator::Read()
  */
-int GroupIndexSkipScanIterator::Read() {
+int GroupIndexSkipScanIterator::DoRead() {
   if (m_seen_eof) {
     return -1;
   }
@@ -239,7 +239,8 @@ int GroupIndexSkipScanIterator::Read() {
     */
     if (!result) {
       is_last_prefix =
-          key_cmp(index_info->key_part, last_prefix, group_prefix_len);
+          key_cmp(index_info->key_part, last_prefix, group_prefix_len,
+                  /*is_reverse_multi_valued_index_scan=*/false);
       assert(is_last_prefix <= 0);
     } else {
       if (result == HA_ERR_KEY_NOT_FOUND) continue;
@@ -408,7 +409,8 @@ int GroupIndexSkipScanIterator::next_min() {
         For this add a new member 'this->next_group_prefix'.
       */
       if (!result) {
-        if (key_cmp(index_info->key_part, group_prefix, real_prefix_len))
+        if (key_cmp(index_info->key_part, group_prefix, real_prefix_len,
+                    /*is_reverse_multi_valued_index_scan=*/false))
           key_restore(table()->record[0], key_buf, index_info, 0);
       } else if (result == HA_ERR_KEY_NOT_FOUND || result == HA_ERR_END_OF_FILE)
         result = 0; /* There is a result in any case. */
@@ -788,7 +790,9 @@ int GroupIndexSkipScanIterator::next_min_in_range() {
     */
     if (it != min_max_ranges->begin() && !(cur_range->flag & NO_MAX_RANGE) &&
         (key_cmp(min_max_arg_part, (const uchar *)cur_range->max_key,
-                 min_max_arg_len) == (min_max_keypart_asc ? 1 : -1)) &&
+                 min_max_arg_len,
+                 /*is_reverse_multi_valued_index_scan=*/false) ==
+         (min_max_keypart_asc ? 1 : -1)) &&
         !result)
       continue;
 
@@ -834,7 +838,8 @@ int GroupIndexSkipScanIterator::next_min_in_range() {
     }
 
     /* Check if record belongs to the current group. */
-    if (key_cmp(index_info->key_part, group_prefix, real_prefix_len)) {
+    if (key_cmp(index_info->key_part, group_prefix, real_prefix_len,
+                /*is_reverse_multi_valued_index_scan=*/false)) {
       result = HA_ERR_KEY_NOT_FOUND;
       continue;
     }
@@ -848,7 +853,8 @@ int GroupIndexSkipScanIterator::next_min_in_range() {
              cur_range->max_length);
       /* Compare the found key with max_key. */
       int cmp_res = key_cmp(index_info->key_part, max_key,
-                            real_prefix_len + min_max_arg_len);
+                            real_prefix_len + min_max_arg_len,
+                            /*is_reverse_multi_valued_index_scan=*/false);
       /*
         The key is outside of the range if:
         the interval is open and the key is equal to the maximum boundary
@@ -915,7 +921,9 @@ int GroupIndexSkipScanIterator::next_max_in_range() {
     */
     if (it != min_max_ranges->end() && !(cur_range->flag & NO_MIN_RANGE) &&
         (key_cmp(min_max_arg_part, (const uchar *)cur_range->min_key,
-                 min_max_arg_len) == (min_max_keypart_asc ? -1 : 1)) &&
+                 min_max_arg_len,
+                 /*is_reverse_multi_valued_index_scan=*/false) ==
+         (min_max_keypart_asc ? -1 : 1)) &&
         !result)
       continue;
 
@@ -949,7 +957,8 @@ int GroupIndexSkipScanIterator::next_max_in_range() {
       return 0; /* No need to perform the checks below for equal keys. */
 
     /* Check if record belongs to the current group. */
-    if (key_cmp(index_info->key_part, group_prefix, real_prefix_len)) {
+    if (key_cmp(index_info->key_part, group_prefix, real_prefix_len,
+                /*is_reverse_multi_valued_index_scan=*/false)) {
       result = HA_ERR_KEY_NOT_FOUND;
       continue;  // Row not found
     }
@@ -963,7 +972,8 @@ int GroupIndexSkipScanIterator::next_max_in_range() {
              cur_range->min_length);
       /* Compare the found key with min_key. */
       int cmp_res = key_cmp(index_info->key_part, min_key,
-                            real_prefix_len + min_max_arg_len);
+                            real_prefix_len + min_max_arg_len,
+                            /*is_reverse_multi_valued_index_scan=*/false);
       /*
         The key is outside of the range if:
         the interval is open and the key is equal to the minimum boundary

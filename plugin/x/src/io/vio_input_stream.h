@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2024, Oracle and/or its affiliates.
+ * Copyright (c) 2018, 2025, Oracle and/or its affiliates.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 2.0,
@@ -28,6 +28,7 @@
 
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <my_inttypes.h>
+#include <cstdint>
 #include <memory>
 
 #include "plugin/x/src/interface/vio.h"
@@ -35,9 +36,6 @@
 namespace xpl {
 
 class Vio_input_stream : public google::protobuf::io::ZeroCopyInputStream {
- public:
-  using gint64 = google::protobuf::int64;
-
  public:
   explicit Vio_input_stream(const std::shared_ptr<iface::Vio> &connection);
   ~Vio_input_stream() override;
@@ -58,7 +56,7 @@ class Vio_input_stream : public google::protobuf::io::ZeroCopyInputStream {
   bool Next(const void **data, int *size) override;
   void BackUp(int count) override;
   bool Skip(int count) override;
-  gint64 ByteCount() const override;
+  int64_t ByteCount() const override;
 
  private:
   bool read_more_data();

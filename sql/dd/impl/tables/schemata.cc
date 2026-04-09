@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2014, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -38,11 +38,10 @@
 
 struct CHARSET_INFO;
 
-namespace dd {
-namespace tables {
+namespace dd::tables {
 
 const Schemata &Schemata::instance() {
-  static Schemata *s_instance = new Schemata();
+  static auto *s_instance = new Schemata();
   return *s_instance;
 }
 
@@ -125,5 +124,4 @@ Object_key *Schemata::create_key_by_catalog_id(Object_id catalog_id) {
 
 ///////////////////////////////////////////////////////////////////////////
 
-}  // namespace tables
-}  // namespace dd
+}  // namespace dd::tables

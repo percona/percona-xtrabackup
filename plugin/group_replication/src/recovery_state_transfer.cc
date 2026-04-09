@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2015, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -395,9 +395,6 @@ void Recovery_state_transfer::build_donor_list(string *selected_donor_uuid) {
         valid_donor = true;
       } else if (Compatibility_module::do_all_versions_belong_to_the_same_lts(
                      local_and_donor_member_versions)) {
-        suitable_donors.push_back(member);
-        valid_donor = true;
-      } else if (get_allow_local_lower_version_join()) {
         suitable_donors.push_back(member);
         valid_donor = true;
       }

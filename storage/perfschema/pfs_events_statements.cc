@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2010, 2025, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -160,7 +160,12 @@ void cleanup_events_statements_history_long() {
 static inline void copy_events_statements(PFS_events_statements *dest,
                                           const PFS_events_statements *source) {
   /* Copy all attributes except SQL TEXT, DIGEST and MESSAGE_TEXT */
+  // Ignore warning C26437: Do not slice (es.63).
+  MY_COMPILER_DIAGNOSTIC_PUSH()
+  MY_COMPILER_MSVC_DIAGNOSTIC_IGNORE(26437)
   dest->PFS_events::operator=(*source);
+  MY_COMPILER_DIAGNOSTIC_POP()
+
   memcpy(&dest->m_statement_id, &source->m_statement_id,
          pointer_cast<const char *>(&source->m_sqltext) -
              pointer_cast<const char *>(&source->m_statement_id));

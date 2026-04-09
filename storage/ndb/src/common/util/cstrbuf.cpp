@@ -1,4 +1,4 @@
-/* Copyright (c) 2021, 2024, Oracle and/or its affiliates.
+/* Copyright (c) 2021, 2025, Oracle and/or its affiliates.
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
    as published by the Free Software Foundation.
@@ -43,7 +43,6 @@ int cstrbuf_vsnprintf_noerr(char str[], size_t size, const char fmt[],
 
 #ifdef TEST_CSTRBUF
 
-#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -51,7 +50,7 @@ int cstrbuf_vsnprintf_noerr(char str[], size_t size, const char fmt[],
 #include "util/span.h"
 
 int main() {
-  plan(39);
+  plan(40);
 
   char buf[30];
 
@@ -116,6 +115,7 @@ int main() {
   ok1(cstrbuf_copy({buf + 3, 5}, "Mugge vigge") == 1);
   ok1(cstrbuf_format(ndb::span(buf + 19, buf + 27), "Mugge %zu", sizeof(buf)) ==
       1);
+  ok1(cstrbuf_format(buf, "Mugge %zu", sizeof(buf)) == 0);
 
   std::vector<char> vec(10);
   cstrbuf h(vec);

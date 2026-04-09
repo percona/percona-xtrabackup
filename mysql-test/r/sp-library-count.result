@@ -1,0 +1,237 @@
+#
+# TODO:WL#16737 count the successful and failed statements.
+#
+CREATE DATABASE counting;
+USE counting;
+# CREATE LIBRARY
+CREATE LIBRARY lib1 LANGUAGE JAVASCRIPT
+AS $$ export function f(n) { return n } $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE LIBRARY lib1;
+Library	sql_mode	Create Library
+lib1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib1`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) { return n } $$
+CREATE LIBRARY lib2 COMMENT "Library Commnet" LANGUAGE JAVASCRIPT
+AS $$ export function f(n) { return n } $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE LIBRARY lib2;
+Library	sql_mode	Create Library
+lib2	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib2`
+    COMMENT 'Library Commnet'
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) { return n } $$
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	0
+Com_create_library	2
+Com_drop_library	0
+Com_show_create_library	2
+CREATE LIBRARY library_with_error
+COMMENT 'my comment'
+AS $$
+export function foo() {return 1}
+$$;
+ERROR 42000: Language is not specified for library. near 'AS $$
+export function foo() {return 1}
+$$' at line 3
+SHOW CREATE LIBRARY library_with_error;
+ERROR 42000: LIBRARY library_with_error does not exist
+# should be 2 Com_create_library and 2 Com_show_create_library
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	0
+Com_create_library	2
+Com_drop_library	0
+Com_show_create_library	3
+CREATE LIBRARY IF NOT EXISTS lib1 LANGUAGE JAVASCRIPT
+AS 'export function f(n) {return n}';
+Warnings:
+Warning	6001	Language component: Not available.
+Note	1304	LIBRARY lib1 already exists
+SHOW CREATE LIBRARY lib1;
+Library	sql_mode	Create Library
+lib1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE LIBRARY `lib1`
+    LANGUAGE JAVASCRIPT
+AS $$ export function f(n) { return n } $$
+# should be 2 Com_create_library and 3 Com_show_create_library
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	0
+Com_create_library	3
+Com_drop_library	0
+Com_show_create_library	4
+# ALTER LIBRARY #
+ALTER LIBRARY lib1 COMMENT "JS Library Comment";
+ALTER LIBRARY lib2 COMMENT "JS Library Comment";
+# should be 2 Com_alter_library
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	2
+Com_create_library	3
+Com_drop_library	0
+Com_show_create_library	4
+ALTER LIBRARY library_with_error COMMENT "JS Library Comment";
+ERROR 42000: LIBRARY counting.library_with_error does not exist
+# should be 2 Com_alter_library
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	3
+Com_create_library	3
+Com_drop_library	0
+Com_show_create_library	4
+ALTER LIBRARY lib1 LANGUAGE JAVASCRIPT;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'LANGUAGE JAVASCRIPT' at line 1
+# should be 2 Com_alter_library
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	3
+Com_create_library	3
+Com_drop_library	0
+Com_show_create_library	4
+# DROP LIBRARY #
+DROP LIBRARY lib1;
+DROP LIBRARY lib2;
+# should be 2 Com_drop_library
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	3
+Com_create_library	3
+Com_drop_library	2
+Com_show_create_library	4
+DROP LIBRARY library_with_error;
+ERROR 42000: LIBRARY counting.library_with_error does not exist
+# should be 2 Com_drop_library
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	3
+Com_create_library	3
+Com_drop_library	3
+Com_show_create_library	4
+DROP LIBRARY IF EXISTS lib1;
+Warnings:
+Note	1305	LIBRARY counting.lib1 does not exist
+# should be 2 Com_drop_library
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	3
+Com_create_library	3
+Com_drop_library	4
+Com_show_create_library	4
+###################
+# CREATE FUNCTION #
+###################
+CREATE FUNCTION f1(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+AS $$ return 42 $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION f1;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+AS $$ return 42 $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+CREATE FUNCTION f2(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+AS $$ return 42 $$;
+Warnings:
+Warning	6001	Language component: Not available.
+SHOW CREATE FUNCTION f2;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f2	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f2`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+AS $$ return 42 $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+SHOW STATUS LIKE 'Com%function';
+Variable_name	Value
+Com_alter_function	0
+Com_create_function	2
+Com_drop_function	0
+CREATE FUNCTION function_with_error(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+USING (lib1 AS lib2)
+USING (lib3)
+AS $$ return lib2.f(n) $$;
+ERROR 42000: You have an error in your SQL syntax; Multiple USING clauses are not supported near 'USING (lib3)
+AS $$ return lib2.f(n) $$' at line 3
+SHOW CREATE FUNCTION function_with_error;
+ERROR 42000: FUNCTION function_with_error does not exist
+# should be 2 Com_create_function and 2 Com_show_create_function
+SHOW STATUS LIKE 'Com%function';
+Variable_name	Value
+Com_alter_function	0
+Com_create_function	2
+Com_drop_function	0
+CREATE FUNCTION IF NOT EXISTS f1(n INTEGER) RETURNS INTEGER LANGUAGE JAVASCRIPT
+AS $$ return lib2.f(n) $$;
+Warnings:
+Warning	6001	Language component: Not available.
+Note	1304	FUNCTION f1 already exists
+SHOW CREATE FUNCTION f1;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+AS $$ return 42 $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+# should be 2 Com_create_function and 3 Com_show_create_function
+SHOW STATUS LIKE 'Com%function';
+Variable_name	Value
+Com_alter_function	0
+Com_create_function	3
+Com_drop_function	0
+# ALTER FUNCTION #
+ALTER FUNCTION f1 COMMENT "Updated Function's Comment";
+SHOW CREATE FUNCTION f1;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    COMMENT 'Updated Function''s Comment'
+AS $$ return 42 $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+ALTER FUNCTION f2 COMMENT "Updated Function's Comment";
+SHOW CREATE FUNCTION f1;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    COMMENT 'Updated Function''s Comment'
+AS $$ return 42 $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+# should be 2 Com_create_function and 3 Com_show_create_function
+SHOW STATUS LIKE 'Com%function';
+Variable_name	Value
+Com_alter_function	2
+Com_create_function	3
+Com_drop_function	0
+ALTER FUNCTION function_with_error COMMENT "Updated Function's Comment";
+ERROR 42000: FUNCTION counting.function_with_error does not exist
+# should be 2 Com_create_function and 3 Com_show_create_function
+SHOW STATUS LIKE 'Com%function';
+Variable_name	Value
+Com_alter_function	3
+Com_create_function	3
+Com_drop_function	0
+SHOW CREATE FUNCTION function_with_error;
+ERROR 42000: FUNCTION function_with_error does not exist
+# should be 2 Com_create_function and 3 Com_show_create_function
+SHOW STATUS LIKE 'Com%function';
+Variable_name	Value
+Com_alter_function	3
+Com_create_function	3
+Com_drop_function	0
+ALTER FUNCTION f1 COMMENT "Updated Function's Comment" UNKNOWN_ARGUMENT;
+ERROR 42000: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'UNKNOWN_ARGUMENT' at line 1
+SHOW CREATE FUNCTION f1;
+Function	sql_mode	Create Function	character_set_client	collation_connection	Database Collation
+f1	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	CREATE DEFINER=`root`@`localhost` FUNCTION `f1`(n INTEGER) RETURNS int
+    LANGUAGE JAVASCRIPT
+    COMMENT 'Updated Function''s Comment'
+AS $$ return 42 $$	utf8mb4	utf8mb4_0900_ai_ci	utf8mb4_0900_ai_ci
+# should be 2 Com_create_function and 3 Com_show_create_function
+SHOW STATUS LIKE 'Com%function';
+Variable_name	Value
+Com_alter_function	3
+Com_create_function	3
+Com_drop_function	0
+# Cleanup.
+DROP DATABASE counting;
+SHOW STATUS LIKE 'Com%library';
+Variable_name	Value
+Com_alter_library	3
+Com_create_library	3
+Com_drop_library	4
+Com_show_create_library	4

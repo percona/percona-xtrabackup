@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2003, 2024, Oracle and/or its affiliates.
+   Copyright (c) 2003, 2025, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -133,10 +133,10 @@ class ScanFragReq {
   static Uint32 getMultiFragFlag(const Uint32 &requestInfo);
 
   static void setFirstMatchFlag(Uint32 &requestInfo, Uint32 val);
-  static Uint32 getFirstMatchFlag(const Uint32 requestInfo);
+  static Uint32 getFirstMatchFlag(Uint32 requestInfo);
 
   static void setQueryThreadFlag(Uint32 &requestInfo, Uint32 val);
-  static Uint32 getQueryThreadFlag(const Uint32 requestInfo);
+  static Uint32 getQueryThreadFlag(Uint32 requestInfo);
 };
 
 /*
