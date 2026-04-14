@@ -178,6 +178,7 @@ get_sources(){
     sed -i "s:@@XB_VERSION_EXTRA@@:${EXTRAVER}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_RPM_VERSION_EXTRA@@:${RPM_EXTRAVER}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@XB_REVISION@@:${REVISION}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
+    sed -i "s:@@RPM_RELEASE@@:${RPM_RELEASE}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     #
     # create a PXB tar
     cd ${WORKDIR}/percona-xtrabackup
@@ -200,6 +201,12 @@ get_system(){
         export RHEL=$(rpm --eval %rhel)
         export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
         export OS_NAME="el$RHEL"
+        export OS="rpm"
+    elif [ -f /etc/amazon-linux-release ]; then
+        GLIBC_VER_TMP="$(rpm glibc -qa --qf %{VERSION})"
+        export RHEL=$(rpm --eval %amzn)
+        export ARCH=$(echo $(uname -m) | sed -e 's:i686:i386:g')
+        export OS_NAME="amzn$RHEL"
         export OS="rpm"
     else
         GLIBC_VER_TMP="$(dpkg-query -W -f='${Version}' libc6 | awk -F'-' '{print $1}')"
@@ -247,25 +254,30 @@ install_deps() {
         yum -y install git wget yum-utils curl
         yum install -y https://repo.percona.com/yum/percona-release-latest.noarch.rpm
         if [ x"$ARCH" = "xx86_64" ]; then
-            if [ $RHEL = 9 ]; then
-                yum-config-manager --enable ol9_distro_builder
-                yum-config-manager --enable ol9_codeready_builder
-                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+            if [ ${RHEL} = 9 -o ${RHEL} = 10 ]; then
+                yum-config-manager --enable ol${RHEL}_distro_builder
+                yum-config-manager --enable ol${RHEL}_codeready_builder
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL}.noarch.rpm
             else
-                add_percona_yum_repo
+                # add_percona_yum_repo
                 percona-release enable tools testing
             fi
         else
             yum-config-manager --enable ol"${RHEL}"_codeready_builder
-            yum -y install epel-release
+            if [ ${RHEL} = 10 ]; then
+                yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+                yum -y install epel-release
+            else
+                yum -y install epel-release
+            fi
         fi
-        if [ ${RHEL} = 8 -o ${RHEL} = 9 ]; then
-            PKGLIST+=" binutils-devel python3-pip python3-setuptools libtirpc-devel"
+        if [[ "${RHEL}" = "8" || "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
+            PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel"
-            PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel"
-            if [ $RHEL = 9 ]; then
-                PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++"
+            PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel libtirpc-devel"
+            if [[ "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
+                PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++ gcc-gfortran"
             else
                 if [ x"$ARCH" = "xx86_64" ]; then
                     yum-config-manager --enable powertools
@@ -282,19 +294,20 @@ install_deps() {
                 sleep 1
             done
             if [ $RHEL = 8 ]; then
-                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-gcc-c++ gcc-toolset-10-binutils"
-                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-valgrind gcc-toolset-10-valgrind-devel gcc-toolset-10-libatomic-devel"
-                DEVTOOLSET10_PKGLIST+=" gcc-toolset-10-libasan-devel gcc-toolset-10-libubsan-devel gcc-toolset-10-annobin"
+#                DEVTOOLSET11_PKGLIST+=" gcc-toolset-11-gcc-c++ gcc-toolset-11-binutils"
+#                DEVTOOLSET11_PKGLIST+=" gcc-toolset-11-valgrind gcc-toolset-11-valgrind-devel gcc-toolset-11-libatomic-devel"
+#                DEVTOOLSET11_PKGLIST+=" gcc-toolset-11-libasan-devel gcc-toolset-11-libubsan-devel gcc-toolset-11-annobin"
                 DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-gcc-c++ gcc-toolset-12-binutils"
                 DEVTOOLSET12_PKGLIST+=" gcc-toolset-12-libasan-devel gcc-toolset-12-libubsan-devel gcc-toolset-12-annobin-annocheck gcc-toolset-12-annobin-plugin-gcc"
+/*
                 if [ x"$ARCH" = "xx86_64" ]; then
                     yum -y install centos-release-stream
-                    until yum -y install ${DEVTOOLSET10_PKGLIST}; do
+                    until yum -y install ${DEVTOOLSET12_PKGLIST}; do
                         echo "waiting"
                         sleep 1
                     done
-                    update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-10/root/usr/bin/gcc 10
-                    update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-10/root/usr/bin/g++ 10
+                    update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-11/root/usr/bin/gcc 11
+                    update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-11/root/usr/bin/g++ 11
                     gcc --version
                     yum -y remove centos-release-stream
                 else
@@ -304,8 +317,18 @@ install_deps() {
                     done
                     update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-12/root/usr/bin/gcc 12
                     update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-12/root/usr/bin/g++ 12
+                    scl enable gcc-toolset-12 bash
                     gcc --version
                 fi
+*/
+                    until yum -y install ${DEVTOOLSET12_PKGLIST}; do
+                        echo "waiting"
+                        sleep 1
+                    done
+                    update-alternatives --install /usr/bin/gcc gcc /opt/rh/gcc-toolset-12/root/usr/bin/gcc 12
+                    update-alternatives --install /usr/bin/g++ g++ /opt/rh/gcc-toolset-12/root/usr/bin/g++ 12
+                    scl enable gcc-toolset-12 bash
+                    gcc --version
             fi
         else
             until yum -y install epel-release centos-release-scl; do
@@ -322,28 +345,14 @@ install_deps() {
                 echo "waiting"
             done
             PKGLIST+=" wget libcurl-devel cmake cmake3 make gcc gcc-c++ libev-devel openssl-devel rpm-build"
-            PKGLIST+=" libaio-devel perl-DBD-MySQL vim-common ncurses-devel readline-devel readline"
+            PKGLIST+=" libaio-devel vim-common ncurses-devel readline-devel readline"
             PKGLIST+=" zlib-devel libgcrypt-devel bison patchelf"
             PKGLIST+=" socat numactli libudev-devel libicu-devel"
             PKGLIST+=" procps-ng-devel"
-            if [[ "${RHEL}" -eq 7 ]]; then
-                PKGLIST+=" numactl-libs perl-Digest-MD5  python3-pip python3-setuptools python3-wheel rh-python36-python-sphinx"
-            elif [[ "${RHEL}" -eq 6 ]]; then
-                PKGLIST+=" rh-python36-python-pip rh-python36-docutils rh-python36-python-setuptools"
-            fi
             until yum -y install ${PKGLIST}; do
                 echo "waiting"
                 sleep 1
             done
-            if [[ "${RHEL}" -eq 7 ]]; then
-                yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-11-gcc-c++ devtoolset-11-binutils devtoolset-11-valgrind devtoolset-11-valgrind-devel devtoolset-11-libatomic-devel
-                yum -y --enablerepo=centos-sclo-rh-testing install devtoolset-11-libasan-devel devtoolset-11-libubsan-devel
-                yum -y update nss
-                scl enable devtoolset-11 bash
-            elif [[ "${RHEL}" -eq 6 ]]; then
-                source /opt/rh/rh-python36/enable
-                pip install sphinx
-            fi
         fi
     else
         apt-get update
@@ -356,26 +365,23 @@ install_deps() {
         PKGLIST+=" bison cmake devscripts debconf debhelper automake bison ca-certificates libcurl4-openssl-dev"
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev vim-common"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev pkg-config"
-        PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf libicu-dev"
-        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" ]; then
+        PKGLIST+=" build-essential rsync libnuma1 socat libssl-dev patchelf libicu-dev"
+        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             PKGLIST+=" libproc2-dev"
         else
             PKGLIST+=" libprocps-dev"
         fi
-        if [ "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
             dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
         fi
-        if [ "${OS_NAME}" == "bionic" ]; then
-            PKGLIST+=" gcc-8 g++-8"
-	fi
         if [ "${OS_NAME}" == "focal" ]; then
             PKGLIST+=" gcc-10 g++-10"
         fi
-        if [ "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             PKGLIST+=" libtirpc-dev"
         fi
-        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" ]; then
+        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
             PKGLIST+=" python-sphinx python-docutils"
@@ -467,6 +473,19 @@ build_srpm(){
     sed -i "/^%changelog/a - Release ${VERSION}-${RELEASE}" percona-xtrabackup.spec
     sed -i "/^%changelog/a * $(date "+%a") $(date "+%b") $(date "+%d") $(date "+%Y") Percona Development Team <info@percona.com> - ${VERSION}-${RELEASE}" percona-xtrabackup.spec
     #
+    cd ${WORKDIR}/rpmbuild/SOURCES
+    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
+    cd ${WORKDIR}/rpmbuild/SPECS
+    line_number=$(grep -n SOURCE999 percona-xtrabackup.spec | awk -F ':' '{print $1}')
+    cp ../SOURCES/call-home.sh ./
+    awk -v n=$line_number 'NR <= n {print > "part1.txt"} NR > n {print > "part2.txt"}' percona-xtrabackup.spec
+    head -n -1 part1.txt > temp && mv temp part1.txt
+    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> part1.txt
+    cat call-home.sh >> part1.txt
+    echo "CALLHOME" >> part1.txt
+    cat part2.txt >> part1.txt
+    rm -f call-home.sh part2.txt
+    mv part1.txt percona-xtrabackup.spec
     cd $WORKDIR
     #
     mv -fv $TARFILE $WORKDIR/rpmbuild/SOURCES
@@ -524,10 +543,16 @@ build_rpm(){
 
     enable_venv
 
-    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .el${RHEL}" --rebuild rpmbuild/SRPMS/${SRCRPM}
+    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .${OS_NAME}" --rebuild rpmbuild/SRPMS/${SRCRPM}
     return_code=$?
     if [ $return_code != 0 ]; then
         exit $return_code
+    fi
+
+    # Verify RPMs were actually produced
+    if [ -z "$(find ${WORKDIR}/rpmbuild/RPMS -name '*.rpm' 2>/dev/null)" ]; then
+        echo "ERROR: rpmbuild succeeded but no RPM files were generated!"
+        exit 1
     fi
     mkdir -p ${WORKDIR}/rpm
     mkdir -p ${CURDIR}/rpm
@@ -557,7 +582,7 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-91_${VERSION}.orig.tar.gz
+    NEWTAR=${NAME}-96_${VERSION}.orig.tar.gz
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}
@@ -611,6 +636,18 @@ build_deb(){
     dpkg-source -x $DSC
     cd $DIRNAME
     dch -m -D "$OS_NAME" --force-distribution -v "$VERSION-$DEB_RELEASE.$OS_NAME" 'Update distribution'
+    cd debian/
+    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
+    sed -i 's:exit 0::' percona-xtrabackup-96.postinst
+    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> percona-xtrabackup-96.postinst
+    cat call-home.sh >> percona-xtrabackup-96.postinst
+    echo "CALLHOME" >> percona-xtrabackup-96.postinst
+    echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-96.postinst
+    echo "rm -rf /tmp/call-home.sh" >> percona-xtrabackup-96.postinst
+    echo "exit 0" >> percona-xtrabackup-96.postinst
+    rm -f call-home.sh
+    cd ../
+
     dpkg-buildpackage -rfakeroot -uc -us -b
 
     cd ${WORKDIR}
