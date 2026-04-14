@@ -168,14 +168,12 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
                               [[maybe_unused]] bool punch_hole_supported) {
   auto local_file = ((ds_local_file_t *)file->ptr);
   File fd = local_file->fd;
-  [[maybe_unused]] ulonglong seek = 0;
 
   const uchar *ptr = static_cast<const uchar *>(buf);
 
   for (size_t i = 0; i < sparse_map_size; ++i) {
     my_off_t rc;
 
-    seek = my_tell(fd, MYF(MY_WME));
     rc = my_seek(fd, sparse_map[i].skip, MY_SEEK_CUR, MYF(MY_WME));
     if (rc == MY_FILEPOS_ERROR) {
       return 1;
@@ -186,13 +184,6 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
       return 1;
     }
 
-#ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
-    if (punch_hole_supported) {
-      fallocate(fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, seek,
-                sparse_map[i].skip);
-    }
-#endif
-
     ptr += sparse_map[i].len;
   }
   /* to track if last page is sparse */
@@ -200,6 +191,8 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
     local_file->last_seek = sparse_map[sparse_map_size - 1].skip;
   } else
     local_file->last_seek = 0;
+
+  posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
 
   return 0;
 }
