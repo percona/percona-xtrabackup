@@ -37,6 +37,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef page0page_h
 #define page0page_h
 
+#include <unordered_map>
 #include "univ.i"
 
 #include "buf0buf.h"
@@ -761,15 +762,33 @@ bool page_simple_validate_old(
 bool page_simple_validate_new(
     const page_t *page); /*!< in: index page in ROW_FORMAT!=REDUNDANT */
 
+/** A blob map to track the first page no of external LOB and its parent record
+which is the <page_no, heap_no>. This is used to find duplicate external LOB
+pages that are shared between two records.  This can happen only on corruption.
+--check-tables uses this map to report corruption. */
+using blob_ref_map = std::unordered_map<page_no_t, std::pair<page_no_t, ulint>>;
+
 /** This function checks the consistency of an index page.
-@param[in]  page   index page
-@param[in]  index  data dictionary index containing the page record type
+@param[in]  page      index page
+@param[in]  index     data dictionary index containing the page record type
 definition
 @param[in]  check_min_rec  check whether min rec flag (REC_INFO_MIN_REC_FLAG)
 is correctly set in the page. The default value is true.
+@param[in]  blob_map  optional blob reference map for LOB duplicate tracking
 @return true if ok */
 bool page_validate(const page_t *page, dict_index_t *index,
-                   bool check_min_rec = true);
+                   bool check_min_rec = true, blob_ref_map *blob_map = nullptr);
+
+/** Validate that the external LOB's first page is not shared between records of
+a clustered index.
+@param[in] rec       physical record
+@param[in] index     index of the table
+@param[in] offsets   the record offset array
+@param[in] blob_map  optional blob reference map for tracking
+@return true if OK, false if external LOB is shared between two records */
+bool page_rec_blob_validate(const rec_t *rec, const dict_index_t *index,
+                            const ulint *offsets,
+                            blob_ref_map *blob_map = nullptr);
 
 /** Looks in the page record list for a record with the given heap number.
  @return record, NULL if not found */

@@ -4096,7 +4096,8 @@ static void btr_validate_report2(
 @return true if ok */
 static bool btr_validate_level(
     dict_index_t *index, const trx_t *trx, ulint level,
-    bool lockout IF_DEBUG(, Index_details &index_details)) {
+    bool lockout IF_DEBUG(, Index_details &index_details),
+    blob_ref_map *blob_map = nullptr) {
   buf_block_t *block;
   page_t *page;
   buf_block_t *right_block = nullptr; /* remove warning */
@@ -4169,13 +4170,40 @@ static bool btr_validate_level(
       ret = false;
     }
 
+#ifdef XTRABACKUP
+    /* In xtrabackup --check-tables we report corruption instead of crashing.
+       InnoDB uses ut_a here because space ID mismatch or wrong page level
+       during B-tree descent is unrecoverable for a running server. In
+       xtrabackup we only need a damage report. */
+    if (index->space != block->page.id.space() ||
+        index->space != page_get_space_id(page)) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: space ID mismatch during descent."
+                  << " Expected " << index->space << ", got block space "
+                  << block->page.id.space() << ", page space "
+                  << page_get_space_id(page) << " in index " << index->name();
+      mtr_commit(&mtr);
+      mem_heap_free(heap);
+      return false;
+    }
+    if (page_is_leaf(page)) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: unexpected leaf page "
+                  << page_get_page_no(page) << " during descent to level "
+                  << level << " in index " << index->name();
+      mtr_commit(&mtr);
+      mem_heap_free(heap);
+      return false;
+    }
+#else
     ut_a(index->space == block->page.id.space());
     ut_a(index->space == page_get_space_id(page));
+    ut_a(!page_is_leaf(page));
+#endif /* XTRABACKUP */
 #ifdef UNIV_ZIP_DEBUG
     page_zip = buf_block_get_page_zip(block);
     ut_a(!page_zip || page_zip_validate(page_zip, page, index));
 #endif /* UNIV_ZIP_DEBUG */
-    ut_a(!page_is_leaf(page));
 
     page_cur_set_before_first(block, &cursor);
     page_cur_move_to_next(&cursor);
@@ -4222,6 +4250,7 @@ static bool btr_validate_level(
   }
 
   do {
+    ulint cur_page_no;
     mem_heap_empty(heap);
     offsets = offsets2 = nullptr;
     if (!srv_read_only_mode) {
@@ -4237,7 +4266,32 @@ static bool btr_validate_level(
     ut_a(!page_zip || page_zip_validate(page_zip, page, index));
 #endif /* UNIV_ZIP_DEBUG */
 
+#ifdef XTRABACKUP
+    /* In xtrabackup --check-tables we report corruption instead of crashing.
+       Space ID mismatch in the page scan means the page does not belong to
+       this index's tablespace -- severe corruption. Stop traversing this
+       index because sibling links on a corrupted page are untrustworthy. */
+    if (block->page.id.space() != index->space) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: page space ID "
+                  << block->page.id.space() << " != index space "
+                  << index->space << " on page " << block->page.id.page_no()
+                  << " in index " << index->name();
+      ret = false;
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+    }
+#else
     ut_a(block->page.id.space() == index->space);
+#endif /* XTRABACKUP */
+
+    DBUG_EXECUTE_IF("check_table_wrong_index_id", {
+      thread_local bool injected = false;
+      if (!injected && btr_page_get_index_id(page) == index->id) {
+        mach_write_to_8(page + PAGE_HEADER + PAGE_INDEX_ID, index->id + 1);
+        injected = true;
+      }
+    });
 
     if (fseg_page_is_free(seg, block->page.id.space(),
                           block->page.id.page_no())) {
@@ -4252,7 +4306,7 @@ static bool btr_validate_level(
 
       ret = false;
 
-    } else if (!page_validate(page, index)) {
+    } else if (!page_validate(page, index, true, blob_map)) {
       btr_validate_report1(index, level, block);
       ret = false;
 
@@ -4263,17 +4317,53 @@ static bool btr_validate_level(
       ret = false;
     }
 
+#ifdef XTRABACKUP
+    /* In xtrabackup --check-tables we report corruption instead of crashing.
+       Page level mismatch means the page has wrong metadata (e.g. all-zero
+       page from unflushed redo). Stop traversal -- sibling links are
+       untrustworthy on a corrupted page. */
+    if (btr_page_get_level(page) != level) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: page level "
+                  << btr_page_get_level(page) << " != expected level " << level
+                  << " on page " << page_get_page_no(page) << " in index "
+                  << index->name();
+      ret = false;
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+    }
+#else
     ut_a(btr_page_get_level(page) == level);
+#endif /* XTRABACKUP */
     right_page_no = btr_page_get_next(page, &mtr);
     left_page_no = btr_page_get_prev(page, &mtr);
-    const ulint cur_page_no = page_get_page_no(page);
+    cur_page_no = page_get_page_no(page);
 
 #ifdef UNIV_DEBUG
     index_details.add_page(cur_page_no, level);
 #endif /* UNIV_DEBUG */
 
+#ifdef XTRABACKUP
+    /* In xtrabackup --check-tables we report corruption instead of crashing.
+       An empty non-root page indicates corruption (e.g. all-zero page from
+       unflushed redo, or truncated tablespace). Stop traversal -- an
+       all-zero page has FIL_PAGE_NEXT=0 which would loop through non-B-tree
+       pages indefinitely. */
+    if (page_is_empty(page) &&
+        !(level == 0 && page_get_page_no(page) == dict_index_get_page(index))) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: page " << page_get_page_no(page)
+                  << " is empty but is not the root page"
+                  << " in index " << index->name()
+                  << ". Possible all-zero (unflushed) page.";
+      ret = false;
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+    }
+#else
     ut_a(!page_is_empty(page) ||
          (level == 0 && page_get_page_no(page) == dict_index_get_page(index)));
+#endif /* XTRABACKUP */
 
     if (right_page_no != FIL_NULL) {
       const rec_t *right_rec;
@@ -4285,6 +4375,14 @@ static bool btr_validate_level(
 
       right_page = buf_block_get_frame(right_block);
 
+      DBUG_EXECUTE_IF("check_table_break_sibling_link", {
+        thread_local bool injected = false;
+        if (!injected && btr_page_get_prev(right_page, &mtr) != 0) {
+          mach_write_to_4(right_page + FIL_PAGE_PREV, 0);
+          injected = true;
+        }
+      });
+
       const auto fil_page_prev = btr_page_get_prev(right_page, &mtr);
       if (fil_page_prev != cur_page_no) {
         btr_validate_report2(index, level, block, right_block);
@@ -4295,9 +4393,15 @@ static bool btr_validate_level(
 
         ret = false;
 #ifdef UNIV_DEBUG
-        /* In debug build, it is best to fail with an assert. */
-        const bool siblings_link_correct = false;
-        ut_ad(siblings_link_correct);
+        {
+          bool skip_assert = false;
+          DBUG_EXECUTE_IF("check_table_break_sibling_link",
+                          skip_assert = true;);
+          if (!skip_assert) {
+            const bool siblings_link_correct = false;
+            ut_ad(siblings_link_correct);
+          }
+        }
 #endif /* UNIV_DEBUG */
       }
 
@@ -4342,9 +4446,25 @@ static bool btr_validate_level(
     }
 
     if (level > 0 && left_page_no == FIL_NULL) {
+#ifdef XTRABACKUP
+      /* In xtrabackup --check-tables we report corruption instead of
+         crashing. Missing min-record flag on the leftmost non-leaf page
+         indicates B-tree structural corruption. */
+      if (!(REC_INFO_MIN_REC_FLAG &
+            rec_get_info_bits(page_rec_get_next(page_get_infimum_rec(page)),
+                              page_is_comp(page)))) {
+        btr_validate_report1(index, level, block);
+        ib::error() << "B-tree corruption: min-record flag missing on"
+                    << " leftmost page " << page_get_page_no(page)
+                    << " at level " << level << " in index " << index->name();
+        ret = false;
+        goto node_ptr_fails;
+      }
+#else
       ut_a(REC_INFO_MIN_REC_FLAG &
            rec_get_info_bits(page_rec_get_next(page_get_infimum_rec(page)),
                              page_is_comp(page)));
+#endif /* XTRABACKUP */
     }
 
     /* Similarly skip the father node check for spatial index for now,
@@ -4425,15 +4545,61 @@ static bool btr_validate_level(
       }
 
       if (left_page_no == FIL_NULL) {
+#ifdef XTRABACKUP
+        /* In xtrabackup --check-tables we report corruption instead of
+           crashing. Wrong father pointer for leftmost child or unexpected
+           prev link on father page indicates structural corruption. */
+        if (node_ptr != page_rec_get_next(page_get_infimum_rec(father_page))) {
+          btr_validate_report1(index, level, block);
+          ib::error() << "B-tree corruption: leftmost child page "
+                      << page_get_page_no(page)
+                      << " has wrong father node pointer"
+                      << " in index " << index->name();
+          ret = false;
+          goto node_ptr_fails;
+        }
+        if (btr_page_get_prev(father_page, &mtr) != FIL_NULL) {
+          btr_validate_report1(index, level, block);
+          ib::error() << "B-tree corruption: father page of leftmost child"
+                      << " has unexpected prev link"
+                      << " in index " << index->name();
+          ret = false;
+          goto node_ptr_fails;
+        }
+#else
         ut_a(node_ptr == page_rec_get_next(page_get_infimum_rec(father_page)));
         ut_a(btr_page_get_prev(father_page, &mtr) == FIL_NULL);
+#endif /* XTRABACKUP */
       }
 
       if (right_page_no == FIL_NULL) {
         const rec_t *expected_node_ptr =
             page_rec_get_prev(page_get_supremum_rec(father_page));
+#ifdef XTRABACKUP
+        /* In xtrabackup --check-tables we report corruption instead of
+           crashing. Wrong father pointer for rightmost child or unexpected
+           next link on father page indicates structural corruption. */
+        if (node_ptr != expected_node_ptr) {
+          btr_validate_report1(index, level, block);
+          ib::error() << "B-tree corruption: rightmost child page "
+                      << page_get_page_no(page)
+                      << " has wrong father node pointer"
+                      << " in index " << index->name();
+          ret = false;
+          goto node_ptr_fails;
+        }
+        if (btr_page_get_next(father_page, &mtr) != FIL_NULL) {
+          btr_validate_report1(index, level, block);
+          ib::error() << "B-tree corruption: father page of rightmost child"
+                      << " has unexpected next link"
+                      << " in index " << index->name();
+          ret = false;
+          goto node_ptr_fails;
+        }
+#else
         ut_a(node_ptr == expected_node_ptr);
         ut_a(btr_page_get_next(father_page, &mtr) == FIL_NULL);
+#endif /* XTRABACKUP */
       } else {
         const rec_t *right_node_ptr;
 
@@ -4584,9 +4750,10 @@ static bool btr_validate_spatial_index(
 /** Checks the consistency of an index tree.
  @return true if ok */
 bool btr_validate_index(
-    dict_index_t *index, /*!< in: index */
-    const trx_t *trx,    /*!< in: transaction or NULL */
-    bool lockout)        /*!< in: true if X-latch index is intended */
+    dict_index_t *index,    /*!< in: index */
+    const trx_t *trx,       /*!< in: transaction or NULL */
+    bool lockout,           /*!< in: true if X-latch index is intended */
+    blob_ref_map *blob_map) /*!< in: optional LOB reference map */
 {
 #ifdef UNIV_DEBUG
   Index_details index_details;
@@ -4650,7 +4817,7 @@ bool btr_validate_index(
 
   for (ulint i = 0; i <= n; ++i) {
     if (!btr_validate_level(index, trx, n - i,
-                            lockout IF_DEBUG(, index_details))) {
+                            lockout IF_DEBUG(, index_details), blob_map)) {
       ok = false;
       break;
     }

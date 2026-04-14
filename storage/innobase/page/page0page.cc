@@ -46,6 +46,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "lock0lock.h"
 #include "srv0srv.h"
 #endif /* !UNIV_HOTBACKUP */
+#include "lob0lob.h"
 
 /*                      THE INDEX PAGE
                         ==============
@@ -1721,6 +1722,114 @@ bool page_rec_validate(
   return true;
 }
 
+bool page_rec_blob_validate(const rec_t *rec, const dict_index_t *index,
+                            const ulint *offsets, blob_ref_map *blob_map) {
+  if (blob_map == nullptr) {
+    return true;
+  }
+
+  if (!index->is_clustered()) {
+    return true;
+  }
+
+  const page_t *page = page_align(rec);
+  if (!page_is_leaf(page)) {
+    return true;
+  }
+
+  if (!page_rec_is_user_rec(rec)) {
+    return true;
+  }
+
+  if (!rec_offs_any_extern(offsets)) {
+    return true;
+  }
+
+  if (rec_get_deleted_flag(rec, rec_offs_comp(offsets))) {
+    return true;
+  }
+
+  ulint n_fields = rec_offs_n_fields(offsets);
+
+  for (ulint i = 0; i < n_fields; i++) {
+    if (rec_offs_nth_extern(index, offsets, i)) {
+      byte *field_ref = const_cast<byte *>(
+          lob::btr_rec_get_field_ref(index, rec, offsets, i));
+
+      lob::ref_t ref(field_ref);
+      if (!ref.is_owner() || ref.is_null_relaxed() || ref.is_being_modified()) {
+        continue;
+      }
+
+      if (ref.length() == 0) {
+        continue;
+      }
+
+      space_id_t blob_space_id = ref.space_id();
+      page_no_t blob_page_no = ref.page_no();
+
+      page_id_t blob_page_id(blob_space_id, blob_page_no);
+
+      if (fil_space_get(blob_space_id) == nullptr) {
+        ib::error() << "Invalid record. The record's blob reference points"
+                    << " to a missing tablespace " << blob_space_id
+                    << " page_no: " << page_get_page_no(page)
+                    << " heap_no: " << page_rec_get_heap_no(rec);
+        return false;
+      }
+
+      page_no_t blob_space_size = fil_space_get_size(blob_space_id);
+      if (blob_page_no >= blob_space_size) {
+        ib::error() << "Invalid record. The record's blob reference points"
+                    << " outside the tablespace"
+                    << " page_no: " << page_get_page_no(page)
+                    << " heap_no: " << page_rec_get_heap_no(rec) << " blob "
+                    << blob_page_id << " space_size: " << blob_space_size;
+        return false;
+      }
+
+      bool is_free = fseg_page_is_free(nullptr, blob_space_id, blob_page_no);
+      if (is_free) {
+        ib::error() << "Invalid record. The record's blob reference is marked"
+                    << " as free although the record owns it "
+                    << " page_no: " << page_get_page_no(page)
+                    << " heap_no: " << page_rec_get_heap_no(rec);
+        ib::error() << "BLOB reference that is marked free " << blob_page_id;
+
+        return false;
+      }
+
+      DBUG_EXECUTE_IF(
+          "simulate_lob_corruption", if (blob_map->size() >= 5) {
+            (*blob_map)[blob_page_no] = std::make_pair(
+                page_get_page_no(page) - 1, page_rec_get_heap_no(rec) - 1);
+          });
+
+      auto it = blob_map->find(blob_page_no);
+      if (it == blob_map->end()) {
+        (*blob_map)[blob_page_no] =
+            std::make_pair(page_get_page_no(page), page_rec_get_heap_no(rec));
+      } else {
+        auto val = it->second;
+        ib::error() << "Invalid record! External LOB first page cannot be "
+                       "shared between "
+                       "two records";
+        ib::error() << "The external LOB first page is " << blob_page_id;
+        ib::error() << "The first occurrence of the external LOB first page is "
+                       "in record : page_no: "
+                    << val.first << " with heap_no: " << val.second;
+        ib::error()
+            << "The second occurrence of the external LOB first page is "
+               "in record: page_no: "
+            << page_get_page_no(page)
+            << " with heap no: " << page_rec_get_heap_no(rec);
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 #ifndef UNIV_HOTBACKUP
 #ifdef UNIV_DEBUG
 /** Checks that the first directory slot points to the infimum record and
@@ -2123,8 +2232,8 @@ bool page_is_spatial_non_leaf(const rec_t *rec, dict_index_t *index) {
   return (dict_index_is_spatial(index) && !page_is_leaf(page_align(rec)));
 }
 
-bool page_validate(const page_t *page, dict_index_t *index,
-                   bool check_min_rec) {
+bool page_validate(const page_t *page, dict_index_t *index, bool check_min_rec,
+                   blob_ref_map *blob_map) {
   const page_dir_slot_t *slot;
   mem_heap_t *heap;
   byte *buf;
@@ -2232,6 +2341,11 @@ bool page_validate(const page_t *page, dict_index_t *index,
     }
 
     if (UNIV_UNLIKELY(!page_rec_validate(rec, offsets))) {
+      goto func_exit;
+    }
+
+    if (!page_rec_blob_validate(const_cast<byte *>(rec), index, offsets,
+                                blob_map)) {
       goto func_exit;
     }
 
