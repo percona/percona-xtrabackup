@@ -1,0 +1,5 @@
+#!/bin/bash
+
+. /usr/share/debconf/confmodule
+
+exit 0 
