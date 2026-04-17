@@ -3554,20 +3554,39 @@ bool fseg_page_is_free(fseg_header_t *seg_header, /*!< in: segment header */
 
   fil_space_t *space = fil_space_get(space_id);
 
+#ifdef XTRABACKUP
+  if (space == nullptr) {
+    ib::error() << "Cannot load tablespace for space_id: " << space_id
+                << " page_no: " << page;
+    return true;
+  }
+#endif /* XTRABACKUP */
+
   mtr_start(&mtr);
 
   mtr_x_lock_space(space, &mtr);
 
   const page_size_t page_size(space->flags);
 
-  seg_inode = fseg_inode_get(seg_header, space_id, page_size, &mtr);
+  if (seg_header != nullptr) {
+    seg_inode = fseg_inode_get(seg_header, space_id, page_size, &mtr);
 
-  ut_a(seg_inode);
-  ut_ad(mach_read_from_4(seg_inode + FSEG_MAGIC_N) == FSEG_MAGIC_N_VALUE);
-  ut_ad(!((page_offset(seg_inode) - FSEG_ARR_OFFSET) % FSEG_INODE_SIZE));
+    ut_a(seg_inode);
+    ut_ad(mach_read_from_4(seg_inode + FSEG_MAGIC_N) == FSEG_MAGIC_N_VALUE);
+    ut_ad(!((page_offset(seg_inode) - FSEG_ARR_OFFSET) % FSEG_INODE_SIZE));
+  }
 
   descr = xdes_get_descriptor(space_id, page, page_size, &mtr);
+#ifdef XTRABACKUP
+  if (descr == nullptr) {
+    ib::error() << "Cannot get extent descriptor for space_id: " << space_id
+                << " page_no: " << page;
+    mtr_commit(&mtr);
+    return true;
+  }
+#else
   ut_a(descr);
+#endif /* XTRABACKUP */
 
   auto is_free =
       xdes_mtr_get_bit(descr, XDES_FREE_BIT, page % FSP_EXTENT_SIZE, &mtr);

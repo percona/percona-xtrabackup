@@ -131,6 +131,7 @@ extern ulong xtrabackup_encrypt_algo;
 extern uint xtrabackup_encrypt_threads;
 extern ulonglong xtrabackup_encrypt_chunk_size;
 extern bool xtrabackup_export;
+extern bool xtrabackup_check_tables;
 extern char *xtrabackup_incremental_basedir;
 extern char *xtrabackup_extra_lsndir;
 extern char *xtrabackup_incremental_dir;
