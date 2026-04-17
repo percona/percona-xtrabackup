@@ -61,6 +61,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <sys/resource.h>
 
+#include <btr0btr.h>
 #include <btr0sea.h>
 #include <buf0dblwr.h>
 #include <dict0dd.h>
@@ -159,6 +160,7 @@ bool xtrabackup_print_param = false;
 
 bool xtrabackup_export = false;
 bool xtrabackup_apply_log_only = false;
+bool xtrabackup_check_tables = false;
 
 longlong xtrabackup_use_memory = 100 * 1024 * 1024L;
 bool xtrabackup_use_memory_set = false;
@@ -784,6 +786,7 @@ enum options_xtrabackup {
   OPT_XTRA_TABLES_COMPATIBILITY_CHECK,
   OPT_XTRA_CHECK_PRIVILEGES,
   OPT_XTRA_READ_BUFFER_SIZE,
+  OPT_XTRA_CHECK_TABLES,
 };
 
 struct my_option xb_client_options[] = {
@@ -804,6 +807,12 @@ struct my_option xb_client_options[] = {
      "create files to import to another database when prepare.",
      (G_PTR *)&xtrabackup_export, (G_PTR *)&xtrabackup_export, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"check-tables", OPT_XTRA_CHECK_TABLES,
+     "Validate all InnoDB B-tree indexes during --prepare. "
+     "Runs after redo apply (including --apply-log-only). "
+     "Read-only: does not modify any InnoDB data.",
+     (G_PTR *)&xtrabackup_check_tables, (G_PTR *)&xtrabackup_check_tables, 0,
+     GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"apply-log-only", OPT_XTRA_APPLY_LOG_ONLY,
      "stop recovery process not to progress LSN after applying log when "
      "prepare.",
@@ -3397,7 +3406,6 @@ void io_watching_thread() {
   io_watching_thread_running = false;
 }
 
-
 /**************************************************************************
 Datafiles copying thread.*/
 static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
@@ -3618,7 +3626,6 @@ Initializes the I/O and tablespace cache subsystems. */
 static bool xb_fil_io_init(void)
 /*================*/
 {
-
   if (!os_aio_init(srv_n_read_io_threads, srv_n_write_io_threads)) {
     xb::error() << "Cannot initialize AIO sub-system.";
     return false;
@@ -3756,7 +3763,6 @@ void xb_data_files_close(void)
   fil_close_all_files();
 
   fil_close();
-
 
   srv_shutdown_state = SRV_SHUTDOWN_NONE;
 }
@@ -6734,6 +6740,67 @@ static void space_extend_thread_func(data_thread_ctxt_t *ctxt) {
   my_thread_end();
 }
 
+/** Validate all indexes of all tables in tablespaces assigned to this thread.
+Threads share a datafiles_iter and each grabs the next tablespace to check.
+On corruption, sets *ctxt->error to true but does NOT stop -- all threads
+run to completion so the operator gets a full damage report.
+@param[in]     ctxt          shared context used by all threads */
+static void check_tables_thread_func(data_thread_ctxt_t *ctxt) {
+  fil_node_t *node;
+
+  my_thread_init();
+  THD *thd = create_thd(false, false, true, 0, 0);
+
+  while ((node = datafiles_iter_next(ctxt->it)) != NULL) {
+    fil_space_t *space = node->space;
+
+    if (!fsp_is_ibd_tablespace(space->id)) {
+      continue;
+    }
+
+    auto result = xb::prepare::dict_load_from_spaces_sdi(space->id);
+    if (std::get<0>(result) != DB_SUCCESS) {
+      xb::error() << "Cannot load dictionary for tablespace " << space->name;
+      mutex_enter(ctxt->count_mutex);
+      *(ctxt->error) = true;
+      mutex_exit(ctxt->count_mutex);
+      continue;
+    }
+
+    for (auto table : std::get<1>(result)) {
+      xb::info() << "Checking: " << table->name.m_name;
+      blob_ref_map blob_map;
+      for (dict_index_t *index = table->first_index(); index != nullptr;
+           index = index->next()) {
+        if (!index->is_committed()) continue;
+        blob_ref_map *blob_map_ptr = nullptr;
+        if (index->is_clustered()) {
+          blob_map_ptr = &blob_map;
+        }
+        bool valid = btr_validate_index(index, nullptr, false, blob_map_ptr);
+        DBUG_EXECUTE_IF("check_table_inject_corruption", valid = false;);
+        if (!valid) {
+          xb::error() << "Index " << index->name() << " of table "
+                      << table->name.m_name << " is corrupted.";
+          mutex_enter(ctxt->count_mutex);
+          *(ctxt->error) = true;
+          mutex_exit(ctxt->count_mutex);
+        }
+      }
+      mutex_enter(&(dict_sys->mutex));
+      dd_table_close(table, thd, nullptr, true);
+      mutex_exit(&(dict_sys->mutex));
+    }
+  }
+
+  mutex_enter(ctxt->count_mutex);
+  (*ctxt->count)--;
+  mutex_exit(ctxt->count_mutex);
+
+  destroy_thd(thd);
+  my_thread_end();
+}
+
 static void xtrabackup_prepare_func(int argc, char **argv) {
   ulint err;
   datafiles_iter_t *it;
@@ -6974,7 +7041,6 @@ skip_check:
 
   srv_apply_log_only = (bool)xtrabackup_apply_log_only;
 
-
   xb::info() << "Starting InnoDB instance for recovery.";
   xb::info() << "Using " << xtrabackup_use_memory
              << " bytes for buffer pool (set by "
@@ -7087,6 +7153,61 @@ skip_check:
     }
 
     datafiles_iter_free(it);
+  }
+
+  /* TODO: When both --export and --check-tables are specified, both blocks
+  iterate tablespaces and call dict_load_from_spaces_sdi() independently.
+  A future optimization should unify them into a single pass to avoid
+  loading the dictionary twice. */
+
+  if (xtrabackup_check_tables) {
+    xb::info() << "Starting table checks (--check-tables).";
+    bool check_failed = false;
+    uint ct_count;
+    ib_mutex_t ct_count_mutex;
+
+    it = datafiles_iter_new(nullptr);
+    if (it == NULL) {
+      xb::error() << "datafiles_iter_new() failed.";
+      exit(EXIT_FAILURE);
+    }
+
+    data_thread_ctxt_t *ct_threads = (data_thread_ctxt_t *)ut::malloc_withkey(
+        UT_NEW_THIS_FILE_PSI_KEY,
+        sizeof(data_thread_ctxt_t) * xtrabackup_parallel);
+    ct_count = xtrabackup_parallel;
+    mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &ct_count_mutex);
+
+    for (uint i = 0; i < (uint)xtrabackup_parallel; i++) {
+      ct_threads[i].it = it;
+      ct_threads[i].num = i + 1;
+      ct_threads[i].count = &ct_count;
+      ct_threads[i].count_mutex = &ct_count_mutex;
+      ct_threads[i].error = &check_failed;
+      os_thread_create(PFS_NOT_INSTRUMENTED, i, check_tables_thread_func,
+                       ct_threads + i)
+          .start();
+    }
+
+    while (1) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      mutex_enter(&ct_count_mutex);
+      if (ct_count == 0) {
+        mutex_exit(&ct_count_mutex);
+        break;
+      }
+      mutex_exit(&ct_count_mutex);
+    }
+
+    mutex_free(&ct_count_mutex);
+    ut::free(ct_threads);
+    datafiles_iter_free(it);
+
+    if (check_failed) {
+      xb::error() << "Table check failed. The backup may be corrupted.";
+      goto error_cleanup;
+    }
+    xb::info() << "All table checks passed.";
   }
 
   /* Check whether the log is applied enough or not. */
@@ -8019,6 +8140,11 @@ int main(int argc, char **argv) {
   if (xtrabackup_throttle && !xtrabackup_backup) {
     xtrabackup_throttle = 0;
     xb::warn() << "--throttle has effect only with --backup";
+  }
+
+  if (xtrabackup_check_tables && !xtrabackup_prepare) {
+    xb::error() << "--check-tables is only valid with --prepare";
+    exit(EXIT_FAILURE);
   }
 
   /* cannot execute both for now */

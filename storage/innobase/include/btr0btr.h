@@ -41,6 +41,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "gis0type.h"
 #include "mtr0mtr.h"
 #include "page0cur.h"
+#include "page0page.h"
 #include "univ.i"
 
 /** Maximum record size which can be stored on a page, without using the
@@ -571,7 +572,8 @@ the index.
 [[nodiscard]] bool btr_validate_index(
     dict_index_t *index, /*!< in: index */
     const trx_t *trx,    /*!< in: transaction or 0 */
-    bool lockout);       /*!< in: true if X-latch index is intended */
+    bool lockout,        /*!< in: true if X-latch index is intended */
+    blob_ref_map *blob_map = nullptr); /*!< in: optional LOB reference map */
 
 /** Creates SDI index and stores the root page numbers in page 1 & 2
 @param[in]      space_id        tablespace id
