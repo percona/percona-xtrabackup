@@ -65,9 +65,17 @@ static const char *s_component_metadata[][2] = {
 const std::string config_file_name = "component_keyring_kmip.cnf";
 
 /* Config names */
-const std::string config_options[] = {
-    "read_local_config", "server_addr", "server_port", "client_ca",
-    "client_key",        "server_ca",   "object_group"};
+const std::string config_options[] = {"read_local_config",
+                                      "server_addr",
+                                      "server_port",
+                                      "client_ca",
+                                      "client_key",
+                                      "server_ca",
+                                      "object_group",
+                                      "max_objects",
+                                      "kmip_timeout_ms",
+                                      "tls_peer_verification",
+                                      "tls_hostname_verification"};
 
 bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod) {
   std::unique_ptr<Config_pod> config_pod_tmp = std::make_unique<Config_pod>();
@@ -140,6 +148,28 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod) {
           config_options[6], config_pod_tmp.get()->object_group)) {
     // optional attribute
   }
+
+  if (config_reader->get_element<size_t>(config_options[7],
+                                         config_pod_tmp.get()->max_objects)) {
+    // optional attribute
+  }
+
+  if (config_reader->get_element<int>(config_options[8],
+                                      config_pod_tmp.get()->kmip_timeout_ms)) {
+    // optional attribute
+  }
+
+  if (config_reader->get_element<bool>(
+          config_options[9], config_pod_tmp.get()->tls_peer_verification)) {
+    // optional attribute
+  }
+
+  if (config_reader->get_element<bool>(
+          config_options[10],
+          config_pod_tmp.get()->tls_hostname_verification)) {
+    // optional attribute
+  }
+
   config_pod.swap(config_pod_tmp);
   return false;
 }
@@ -207,6 +237,28 @@ bool create_config(
       ((global_config_available)
            ? ((config_pod.object_group.length() == 0) ? "<NONE>"
                                                       : config_pod.object_group)
+           : "<NOT APPLICABLE>")));
+
+  metadata.get()->push_back(std::make_pair(
+      "Max_objects",
+      (global_config_available ? std::to_string(config_pod.max_objects)
+                               : "<NOT APPLICABLE>")));
+
+  metadata.get()->push_back(std::make_pair(
+      "Kmip_timeout_ms",
+      (global_config_available ? std::to_string(config_pod.kmip_timeout_ms)
+                               : "<NOT APPLICABLE>")));
+
+  metadata.get()->push_back(std::make_pair(
+      "Tls_peer_verification",
+      (global_config_available
+           ? (config_pod.tls_peer_verification ? "true" : "false")
+           : "<NOT APPLICABLE>")));
+
+  metadata.get()->push_back(std::make_pair(
+      "Tls_hostname_verification",
+      (global_config_available
+           ? (config_pod.tls_hostname_verification ? "true" : "false")
            : "<NOT APPLICABLE>")));
 
   return false;
