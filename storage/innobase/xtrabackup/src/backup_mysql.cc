@@ -1912,6 +1912,26 @@ char *get_xtrabackup_info(MYSQL *connection) {
 
   ut_a(ret != 0);
 
+  /* uncompressed_backup_size is only meaningful under --compress: it
+  reports the raw, pre-compression logical volume that fed the main
+  backup pipeline.  Without --compress, logical == physical, and the
+  backup_size line above already captures it. */
+  if (xtrabackup_compress != XTRABACKUP_COMPRESS_NONE) {
+    const unsigned long long uncompressed_backup_size =
+        get_uncompressed_backup_size();
+
+    char *tmp = NULL;
+    int ret2 = asprintf(&tmp, "%suncompressed_backup_size = %llu\n", result,
+                        uncompressed_backup_size);
+    if (ret2 < 0) {
+      xb::warn() << "Failed to append uncompressed_backup_size to"
+                 << " xtrabackup_info: " << strerror(errno);
+    } else {
+      free(result);
+      result = tmp;
+    }
+  }
+
   free(server_version);
   return result;
 }

@@ -21,7 +21,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #ifndef XB_DATASINK_H
 #define XB_DATASINK_H
 
+#include <my_compiler.h>
 #include <my_dir.h>
+#include <atomic>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -32,6 +34,39 @@ extern "C" {
 
 struct datasink_struct;
 typedef struct datasink_struct datasink_t;
+
+/* ---------------------------------------------------------------------
+   Backup-run uncompressed byte counter.
+
+   A single global instance (defined in xtrabackup.cc) receives the raw
+   byte count of every top-level ds_write / ds_write_sparse that has
+   tracking enabled.  Its definition lives here rather than in
+   xtrabackup.h so datasink.cc can inline add_uncompressed() without
+   pulling in the full xtrabackup include cone, which keeps standalone
+   tools (xbcrypt, xbstream) cheap to link.
+
+   Kept lexically distinct from the tier-1 ds_metric / report_metrics /
+   ds_find_metric system: that one describes per-datasink observations,
+   this one is a single backup-run aggregate.  No shared names.
+   --------------------------------------------------------------------- */
+
+struct xb_uncomp_bytes {
+  /** Record the raw byte count of one top-level ds_write /
+  ds_write_sparse.  Called by the datasink framework when the
+  issuing ds_file_t has tracking enabled. */
+  ALWAYS_INLINE void add_uncompressed(uint64_t n) {
+    uncompressed_bytes_.fetch_add(n, std::memory_order_relaxed);
+  }
+
+  /** @return total raw (pre-compression, hole-excluded) bytes
+  accumulated across all top-level tracked opens this run. */
+  ALWAYS_INLINE uint64_t get_uncompressed_backup_size() const {
+    return uncompressed_bytes_.load(std::memory_order_relaxed);
+  }
+
+ private:
+  std::atomic<uint64_t> uncompressed_bytes_{0};
+};
 
 typedef struct ds_ctxt {
   datasink_t *datasink = nullptr;
@@ -49,6 +84,11 @@ typedef struct {
   ds_open() so that leaves and other per-datasink counters can reach
   their private state via file->ctxt->ptr. */
   ds_ctxt_t *ctxt = nullptr;
+  /* Optional pointer to a backup-run uncompressed-byte counter that
+  should receive the raw byte count of every ds_write/ds_write_sparse
+  on this file.  NULL disables tracking.  Set by ds_track_uncomp() or
+  by the ds_open_track_uncomp() convenience. */
+  xb_uncomp_bytes *uncomp_bytes = nullptr;
 } ds_file_t;
 
 typedef struct {
@@ -119,8 +159,33 @@ Create a datasink of the specified type */
 ds_ctxt_t *ds_create(const char *root, ds_type_t type);
 
 /************************************************************************
-Open a datasink file. */
+Open a datasink file.  The returned file has uncompressed-byte tracking
+disabled (file->uncomp_bytes == NULL); callers that want per-byte
+accounting into a backup-run counter use ds_open_track_uncomp() or
+ds_track_uncomp(). */
 ds_file_t *ds_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat);
+
+/** Enable uncompressed-byte tracking on an already-opened ds_file_t.
+After this call, every ds_write / ds_write_sparse on @p file adds its
+raw byte count to *@p uncomp_bytes.  Safe to call with file == nullptr
+(no-op).
+@param[in,out] file         file to bind; nullptr makes the call a no-op
+@param[in]     uncomp_bytes backup-run counter to receive the counts;
+                            nullptr leaves tracking disabled. */
+void ds_track_uncomp(ds_file_t *file, xb_uncomp_bytes *uncomp_bytes);
+
+/** Convenience: ds_open() followed by ds_track_uncomp().  Use at
+top-level backup opens (ds_data / ds_redo / ds_meta /
+ds_uncompressed_data).  Pipeline-internal opens inside wrappers keep
+using plain ds_open() so every logical byte is counted exactly once at
+the top.
+@param[in]     ctxt         pipeline to open through
+@param[in]     path         path relative to the pipeline root
+@param[in]     stat         size/mode hints for downstream datasinks
+@param[in,out] uncomp_bytes backup-run counter; nullptr to skip tracking
+@return newly opened file, or nullptr on error. */
+ds_file_t *ds_open_track_uncomp(ds_ctxt_t *ctxt, const char *path,
+                                MY_STAT *stat, xb_uncomp_bytes *uncomp_bytes);
 
 /************************************************************************
 Write to a datasink file.

@@ -396,6 +396,18 @@ ds_ctxt_t *ds_meta = nullptr;
 ds_ctxt_t *ds_redo = nullptr;
 ds_ctxt_t *ds_uncompressed_data = nullptr;
 
+/* Backup-run uncompressed byte aggregate.  Populated via
+ds_open_track_uncomp() at top-level open sites; read back by
+get_uncompressed_backup_size(). */
+xb_uncomp_bytes xb_uncomp_bytes_counter;
+
+/** Return the raw, hole-excluded, pre-compression backup volume.
+Only populated under --compress (xb_global_track_uncomp_bytes() is the
+gate); zero otherwise. */
+unsigned long long get_uncompressed_backup_size() {
+  return xb_uncomp_bytes_counter.get_uncompressed_backup_size();
+}
+
 /** Return the total bytes written to the physical sink (the leaf of
 ds_data).  Derived at read time by querying the leaf node directly
 with ds_find_metric(ds_leaf(ds_data), "bytes_written", ...) -- the
@@ -2783,7 +2795,8 @@ static bool xtrabackup_stream_metadata(ds_ctxt_t *ds_ctxt) {
   mystat.st_size = len;
   mystat.st_mtime = time(nullptr);
 
-  stream = ds_open(ds_ctxt, XTRABACKUP_METADATA_FILENAME, &mystat);
+  stream = ds_open_track_uncomp(ds_ctxt, XTRABACKUP_METADATA_FILENAME, &mystat,
+                                xb_global_track_uncomp_bytes());
   if (stream == NULL) {
     xb::error() << "cannot open output stream for "
                 << XTRABACKUP_METADATA_FILENAME;
@@ -2900,7 +2913,8 @@ bool xb_write_delta_metadata(const char *filename,
   mystat.st_size = len;
   mystat.st_mtime = time(nullptr);
 
-  f = ds_open(ds_meta, filename, &mystat);
+  f = ds_open_track_uncomp(ds_meta, filename, &mystat,
+                           xb_global_track_uncomp_bytes());
   if (f == NULL) {
     xb::error() << "cannot open output stream for " << filename;
     return (false);
@@ -3270,9 +3284,12 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
 
   /* do not compress encrypted tablespaces */
   if (cursor.is_encrypted) {
-    dstfile = ds_open(ds_uncompressed_data, dst_name, &cursor.statinfo);
+    dstfile =
+        ds_open_track_uncomp(ds_uncompressed_data, dst_name, &cursor.statinfo,
+                             xb_global_track_uncomp_bytes());
   } else {
-    dstfile = ds_open(ds_data, dst_name, &cursor.statinfo);
+    dstfile = ds_open_track_uncomp(ds_data, dst_name, &cursor.statinfo,
+                                   xb_global_track_uncomp_bytes());
   }
   if (dstfile == NULL) {
     xb::error() << "cannot open the destination stream for " << dst_name;
