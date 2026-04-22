@@ -60,9 +60,9 @@ static int xbstream_write_sparse(ds_file_t *file, const void *buf, size_t len,
 static int xbstream_close(ds_file_t *file);
 static void xbstream_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_xbstream = {&xbstream_init,  &xbstream_open,
-                                &xbstream_write, &xbstream_write_sparse,
-                                &xbstream_close, &xbstream_deinit};
+datasink_t datasink_xbstream = {
+    &xbstream_init,  &xbstream_open,   &xbstream_write, &xbstream_write_sparse,
+    &xbstream_close, &xbstream_deinit, nullptr /* report_metrics */};
 
 static ssize_t my_xbstream_write_callback(xb_wstream_file_t *f
                                           __attribute__((unused)),
@@ -90,7 +90,10 @@ static ds_ctxt_t *xbstream_init(const char *root __attribute__((unused))) {
       my_malloc(PSI_NOT_INSTRUMENTED,
                 sizeof(ds_ctxt_t) + sizeof(ds_parallel_stream_ctxt_t) +
                     (sizeof(ds_stream_ctxt_t) * (xtrabackup_fifo_streams + 1)),
-                MYF(MY_FAE)));
+                MYF(MY_FAE | MY_ZEROFILL)));
+  /* xbstream's wire format carries sparse chunks natively, so it can
+  faithfully round-trip holes regardless of the extraction filesystem. */
+  ctxt->fs_support_punch_hole = true;
 
   for (uint i = 0; i < xtrabackup_fifo_streams; i++) {
     ds_stream_ctxt_t *stream_ctxt = new ds_stream_ctxt_t;

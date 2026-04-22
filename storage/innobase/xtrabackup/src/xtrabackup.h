@@ -78,7 +78,13 @@ extern char *innobase_data_home_dir;
 extern char *innobase_buffer_pool_filename;
 extern ds_ctxt_t *ds_meta;
 extern ds_ctxt_t *ds_data;
+extern ds_ctxt_t *ds_redo;
 extern ds_ctxt_t *ds_uncompressed_data;
+
+/** @return total bytes written by the leaf of the main data pipeline.
+Derived at read time by querying the leaf of ds_data via
+ds_find_metric(ds_leaf(ds_data), "bytes_written", ...). */
+unsigned long long get_final_backup_size();
 
 extern pagetracking::xb_space_map *changed_page_tracking;
 

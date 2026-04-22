@@ -396,6 +396,26 @@ ds_ctxt_t *ds_meta = nullptr;
 ds_ctxt_t *ds_redo = nullptr;
 ds_ctxt_t *ds_uncompressed_data = nullptr;
 
+/** Return the total bytes written to the physical sink (the leaf of
+ds_data).  Derived at read time by querying the leaf node directly
+with ds_find_metric(ds_leaf(ds_data), "bytes_written", ...) -- the
+metric is published by ds_local / ds_stdout / ds_fifo.  Returns 0 and
+warns if the leaf did not publish the metric (e.g. on a prepare run
+where the main data pipeline was never constructed). */
+unsigned long long get_final_backup_size() {
+  if (ds_data == nullptr) {
+    return 0;
+  }
+  const ds_ctxt_t *leaf = ds_leaf(ds_data);
+  uint64_t bytes = 0;
+  if (!ds_find_metric(leaf, "bytes_written", &bytes)) {
+    xb::warn() << "Cannot determine backup size: leaf datasink "
+                  "does not publish \"bytes_written\"";
+    return 0;
+  }
+  return bytes;
+}
+
 static long innobase_log_files_in_group_save;
 static char *srv_log_group_home_dir_save;
 static longlong innobase_log_file_size_save;
@@ -4585,10 +4605,6 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
-  if (!backup_finish(backup_ctxt)) {
-    exit(EXIT_FAILURE);
-  }
-
   if (xtrabackup_extra_lsndir) {
     char filename[FN_REFLEN];
 
@@ -4598,18 +4614,20 @@ void xtrabackup_backup_func(void) {
       xb::error() << "failed to write metadata to " << filename;
       exit(EXIT_FAILURE);
     }
-
-    sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_INFO);
-    if (!xtrabackup_write_info(filename)) {
-      xb::error() << "failed to write info to " << filename;
-      exit(EXIT_FAILURE);
-    }
   }
 
   if (opt_lock_ddl_per_table) {
     mdl_unlock_all();
   }
 
+  /* Tablespace_map::serialize() and the ts_key_dumper flush both
+  write additional files through ds_data, which drains down to the
+  leaf.  Run them BEFORE backup_finish() so the leaf "bytes_written"
+  counter sampled inside backup_finish() already includes those
+  bytes; otherwise the reported backup_size would be short by their
+  size.  The xtrabackup_info copy under --extra-lsndir stays AFTER
+  backup_finish() -- it is a second copy of the already-sampled
+  xtrabackup_info file and adds no ds_data bytes itself. */
   Tablespace_map::instance().serialize(ds_data);
 
   if (ts_key_dumper.is_initialized()) {
@@ -4629,6 +4647,20 @@ void xtrabackup_backup_func(void) {
   }
 
   ts_key_dumper.finalize();
+
+  if (!backup_finish(backup_ctxt)) {
+    exit(EXIT_FAILURE);
+  }
+
+  if (xtrabackup_extra_lsndir) {
+    char filename[FN_REFLEN];
+
+    sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_INFO);
+    if (!xtrabackup_write_info(filename)) {
+      xb::error() << "failed to write info to " << filename;
+      exit(EXIT_FAILURE);
+    }
+  }
 
   xtrabackup_destroy_datasinks();
 
