@@ -87,6 +87,129 @@ function die()
   exit 1
 }
 
+########################################################################
+# xtrabackup_info / backup_size helpers
+#
+# Shared across tests that validate backup_size / uncompressed_backup_size.
+# Kept here so suites do not duplicate (and drift) their own copies.
+########################################################################
+
+# get_field <info_file> <field>
+#   Read one "<field> = <value>" line from an xtrabackup_info file and
+#   echo the value (third whitespace-separated token).  Empty output if
+#   the field is not present.
+#   $1 info_file - path to xtrabackup_info
+#   $2 field     - name of the field to look up
+get_field() { grep "^$2 = " "$1" | awk '{print $3}'; }
+
+# file_size <path>
+#   Echo the size in bytes of a single regular file.
+file_size() { stat -c '%s' "$1"; }
+
+# sum_file_bytes <dir>
+#   Echo the sum of the sizes of every regular file under <dir>
+#   (recursive).  0 if the directory is empty or does not exist.
+#   The explicit -d guard keeps find from spraying a "No such file"
+#   message to stderr when callers probe a path that may be absent.
+sum_file_bytes() {
+  [ -d "$1" ] || { echo 0; return; }
+  find "$1" -type f -printf '%s\n' | awk '{s+=$1} END{print s+0}'
+}
+
+# find_info_file <dir>
+#   Locate xtrabackup_info (or one of its compressed/encrypted variants)
+#   under <dir>, echo the path, and return 0.  die()s if none found.
+#   Understands the extensions produced by --compress (.lz4, .zst, .qp)
+#   and --encrypt (.xbcrypt, combined with compression).
+find_info_file() {
+  local dir=$1 ext f
+  for ext in "" .lz4 .zst .qp .xbcrypt .lz4.xbcrypt .zst.xbcrypt .qp.xbcrypt ; do
+    f="$dir/xtrabackup_info$ext"
+    if [ -f "$f" ]; then echo "$f"; return 0; fi
+  done
+  die "no xtrabackup_info* found under $dir"
+}
+
+# assert_positive <val> <label>
+#   die() unless <val> is a non-empty decimal integer > 0.
+assert_positive() {
+  local val=$1 label=$2
+  if ! [[ "$val" =~ ^[0-9]+$ ]] || [ "$val" -le 0 ]; then
+    die "$label: expected positive integer, got '$val'"
+  fi
+}
+
+# assert_no_field <info_file> <field>
+#   die() if <field> is present as an "<field> = ..." line in <info_file>.
+assert_no_field() {
+  local file=$1 field=$2
+  if grep -q "^$field = " "$file" ; then
+    die "$field should not be present in $file"
+  fi
+}
+
+# assert_eq <actual> <expected> <label>
+#   Byte-perfect equality check with a readable diff on failure.
+assert_eq() {
+  local actual=$1 expected=$2 label=$3
+  if [ -z "$actual" ];   then die "$label: actual is empty";   fi
+  if [ -z "$expected" ]; then die "$label: expected is empty"; fi
+  if [ "$actual" -ne "$expected" ]; then
+    die "$label: actual=$actual expected=$expected diff=$((actual - expected))"
+  fi
+  vlog "$label: $actual (EXACT)"
+}
+
+# assert_target_strict <dir> <bs> <label>
+#   backup_size (bs) read from extra-lsndir/xtrabackup_info must equal
+#   the sum of file sizes under <dir>.  Uses the extra-lsndir copy
+#   because it is sampled AFTER the target's xtrabackup_info has flowed
+#   through the leaf, so bs already includes that file.
+assert_target_strict() {
+  local dir=$1 bs=$2 label=$3
+  local total=$(sum_file_bytes "$dir")
+  assert_eq "$bs" "$total" \
+    "$label A: backup_size($bs) == sum_file_bytes($dir)"
+}
+
+# assert_stream_strict <xbs> <bs> <label>
+#   Strict invariant for --stream=xbstream backups.  The .xbs is the
+#   complete stdout of the leaf (xbstream wrapping included for every
+#   file, xtrabackup_info included).  bs from extra-lsndir is the
+#   post-write sample, so bs == size of the .xbs file.
+assert_stream_strict() {
+  local xbs=$1 bs=$2 label=$3
+  local xbs_size=$(file_size "$xbs")
+  assert_eq "$bs" "$xbs_size" \
+    "$label A': backup_size($bs) == size of $(basename $xbs) ($xbs_size)"
+}
+
+# assert_decompressed_strict <dir> <us> <label> [enc_key]
+#   Strict invariant used with --compress (and optionally --encrypt).
+#   Decrypts in-place if enc_key is passed, --decompresses in-place,
+#   drops the original .xbcrypt/.lz4/.zst leftovers, then asserts that
+#   uncompressed_backup_size (us) equals the sum of file sizes under
+#   the now-plaintext <dir>.  Requires the extra-lsndir copy of
+#   xtrabackup_info (sampled AFTER the plaintext info has flowed
+#   through the metric-bound top-level ds_data).
+assert_decompressed_strict() {
+  local dir=$1 us=$2 label=$3 enc_key=$4
+  if [ -n "$enc_key" ]; then
+    xtrabackup --decrypt=AES256 --encrypt-key="$enc_key" --target-dir="$dir" \
+        2>/dev/null || die "$label: --decrypt failed"
+    find "$dir" -name '*.xbcrypt' -delete
+  fi
+  xtrabackup --decompress --target-dir="$dir" 2>/dev/null \
+      || die "$label: --decompress failed"
+  find "$dir" -name '*.lz4' -delete
+  find "$dir" -name '*.zst' -delete
+  find "$dir" -name '*.qp'  -delete
+
+  local total=$(sum_file_bytes "$dir")
+  assert_eq "$us" "$total" \
+    "$label B: uncompressed_backup_size($us) == sum_file_bytes(decompressed $dir)"
+}
+
 function call_mysql_install_db()
 {
         vlog "Calling mysql_install_db"

@@ -1594,6 +1594,24 @@ bool backup_start(Backup_context &context) {
   return (true);
 }
 
+/** Report backup_size to the error log.  A successful backup run must
+have produced on-disk output, so the leaf counter must be non-zero;
+a zero value indicates a silent reporting bug: assert in debug, warn
+and skip in release. */
+static void report_backup_size() {
+  const unsigned long long backup_size = get_final_backup_size();
+
+  ut_ad(backup_size > 0);
+  if (backup_size == 0) {
+    xb::warn() << "Backup size reporting failed: leaf counter returned 0";
+    return;
+  }
+
+  xb::info() << "Backup size: "
+             << xtrabackup::utils::human_readable(backup_size) << " ("
+             << backup_size << " bytes)";
+}
+
 /* Finsh the backup. Release all locks. Write down backup metadata.
 @return true if success. */
 bool backup_finish(Backup_context &context) {
@@ -1649,6 +1667,8 @@ bool backup_finish(Backup_context &context) {
   if (!write_xtrabackup_info(mysql_connection)) {
     return (false);
   }
+
+  report_backup_size();
 
   return (true);
 }

@@ -111,6 +111,10 @@ ds_file_t *ds_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat) {
   file = ctxt->datasink->open(ctxt, path, stat);
   if (file != NULL) {
     file->datasink = ctxt->datasink;
+    /* Save the ctxt this file is attached to so per-datasink state
+    (e.g. leaf bytes_written counters) can be reached from the write
+    paths via file->ctxt->ptr. */
+    file->ctxt = ctxt;
   }
 
   return file;
@@ -160,4 +164,30 @@ Set the destination pipe for a datasink (only makes sense for compress and
 tmpfile). */
 void ds_set_pipe(ds_ctxt_t *ctxt, ds_ctxt_t *pipe_ctxt) {
   ctxt->pipe_ctxt = pipe_ctxt;
+}
+
+const ds_ctxt_t *ds_leaf(const ds_ctxt_t *head) {
+  const ds_ctxt_t *c = head;
+  if (c == nullptr) return nullptr;
+  while (c->pipe_ctxt != nullptr) {
+    c = c->pipe_ctxt;
+  }
+  return c;
+}
+
+bool ds_find_metric(const ds_ctxt_t *node, std::string_view name,
+                    uint64_t *out) {
+  if (node == nullptr || node->datasink == nullptr ||
+      node->datasink->report_metrics == nullptr) {
+    return false;
+  }
+  std::vector<ds_metric> v;
+  node->datasink->report_metrics(node, v);
+  for (const auto &m : v) {
+    if (m.name == name) {
+      if (out != nullptr) *out = m.value;
+      return true;
+    }
+  }
+  return false;
 }
