@@ -10899,9 +10899,6 @@ const byte *fil_tablespace_redo_rename(
 
 #else /* !UNIV_HOTBACKUP */
 
-  std::string space_name;
-  fil_update_partition_name(page_id.space(), 0, false, space_name, to_name);
-
   if (from_name == to_name) {
     ib::error(ER_IB_MSG_360)
         << "MLOG_FILE_RENAME: The from and to name are the"
