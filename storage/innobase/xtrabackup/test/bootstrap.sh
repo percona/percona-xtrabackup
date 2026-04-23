@@ -113,7 +113,7 @@ main () {
 
     case "${TYPE}" in
         innodb9x)
-            url="https://dev.mysql.com/get/Downloads/MySQL-9.6"
+            url="https://dev.mysql.com/get/Downloads/MySQL-9.7"
             fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
 	    # Strip '-<number>' where <number> is 1-100
             clean_version="${VERSION%-[0-9][0-9]}"
@@ -134,7 +134,7 @@ main () {
         *) 
             echo "Err: Specified unsupported ${TYPE}."
             echo "Supported types are: innodb9x, xtradb9x."
-            echo "Example: $0 --type=xtradb9x --version=9.6.0-1"
+            echo "Example: $0 --type=xtradb9x --version=9.7.0-1"
             exit 1
             ;;
     esac
@@ -176,7 +176,7 @@ main () {
 
 TYPE="xtradb9x"
 PXB_TYPE="release"
-VERSION="9.6.0-1"
+VERSION="9.7.0-1"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main
