@@ -381,6 +381,10 @@ bool check_server_version(unsigned long version_number,
                   version_string = "8.1.1";);
   DBUG_EXECUTE_IF("simulate_90_version", version_number = 90000;
                   version_string = "9.0.1";);
+  DBUG_EXECUTE_IF("simulate_96_version", version_number = 90699;
+                  version_string = "9.6.99";);
+  DBUG_EXECUTE_IF("simulate_98_version", version_number = 90800;
+                  version_string = "9.8.0";);
   DBUG_EXECUTE_IF("simulate_higher_version", version_number = 90799;
                   version_string = "9.7.99";);
   if (!xtrabackup::utils::get_major_minor_version(MYSQL_SERVER_VERSION,
