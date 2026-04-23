@@ -420,9 +420,19 @@ bool check_server_version(unsigned long version_number,
   pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
+<<<<<<< HEAD
   // we will use xtrabckup 9.1 from server versions 9.1 to 9.7.
   mysql9x = pxb_version == "9.1" &&
             (version_number >= 90100 && version_number < 90800);
+||||||| d1747e2ede8
+  // we will use xtrabckup 9.1 from server versions 9.1 to 9.6.
+  mysql9x = pxb_version == "9.1" &&
+            (version_number >= 90100 && version_number < 90700);
+=======
+  // we will use xtrabckup 9.1 from server versions 9.1 to 9.6.
+  mysql9x = pxb_version == "9.6" &&
+            (version_number >= 90100 && version_number < 90700);
+>>>>>>> origin/release-9.6.0-1
 
   if (!mysql9x && pxb_version != server_version) {
     xb::error() << "Unsupported server version: " << SQUOTE(version_string);

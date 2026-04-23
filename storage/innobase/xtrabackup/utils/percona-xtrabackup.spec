@@ -4,6 +4,7 @@
 %define xb_version_extra  @@XB_VERSION_EXTRA@@
 %define xb_rpm_version_extra @@XB_RPM_VERSION_EXTRA@@
 %define xb_revision       @@XB_REVISION@@
+%define rpm_release       @@RPM_RELEASE@@
 %if 0%{?rhel} == 8
 %define cmake_bin cmake
 %else
@@ -29,11 +30,12 @@ Group:          Applications/Databases
 License:        GPLv2
 URL:            http://www.percona.com/software/percona-xtrabackup
 Source:         percona-xtrabackup-%{version}%{xb_version_extra}.tar.gz
+Source999:      call-home.sh
 
 BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80, percona-xtrabackup-81, percona-xtrabackup-82, percona-xtrabackup-84
-Requires:       perl(DBD::mysql), rsync, zstd
+Requires:       rsync, zstd
 Requires:	perl(Digest::MD5), lz4
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
@@ -116,6 +118,11 @@ rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/l*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/p*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
 
+%post
+cp %SOURCE999 /tmp/ 2>/dev/null ||
+bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
+rm -f /tmp/call-home.sh
+
 %clean
 rm -rf $RPM_BUILD_ROOT
 
@@ -128,7 +135,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_bindir}/xbcloud
 %{_bindir}/xbcloud_osenv
 /usr/lib/private/libprotobuf*
-/usr/lib/private/icudt73l
+/usr/lib/private/icudt77l*
+/usr/lib/private/libicu*
 /usr/lib/private/libabsl_*
 %{_libdir}/xtrabackup/plugin/component_keyring_vault.so
 %{_libdir}/xtrabackup/plugin/component_keyring_file.so
