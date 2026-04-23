@@ -2625,7 +2625,7 @@ static bool xtrabackup_read_info(char *filename) {
   xb_server_version =
       xtrabackup::utils::get_version_number(mysql_server_version_str);
 
-  ut_ad(xb_server_version > 80000 && xb_server_version < 90700);
+  ut_ad(xb_server_version > 80000 && xb_server_version < 90800);
   if (xb_server_version < 80019) {
     cfg_version = IB_EXPORT_CFG_VERSION_V3;
   } else if (xb_server_version < 80020) {
