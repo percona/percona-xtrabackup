@@ -13373,7 +13373,81 @@ ER_AUDIT_LOG_DATABASE_NAME_TOO_LONG
 ER_AUDIT_LOG_DATABASE_NAME_EMPTY
   eng "Database name cannot be empty."
 
-<<<<<<< ours
+ER_RPL_REPLICA_VERSION_INCOMPATIBLE
+  eng "Replication from higher version source (%s) to lower version replica (%s) is disallowed due to replica_allow_higher_version_source=OFF."
+
+ER_COMPONENT_OBJECT_POLICY_CANNOT_ACCESS_TABLE
+  eng "Cannot access %s.%s table."
+
+ER_COMPONENT_OBJECT_POLICY_OPTION_TRACKER_INIT_FAILED
+  eng "Failed to initialize option tracker for '%s'."
+
+ER_COMPONENT_OBJECT_POLICY_OPTION_TRACKER_DEINIT_FAILED
+  eng "Failed to deinitialize option tracker for '%s'."
+
+ER_COMPONNENT_OBJECT_POLICY_STATUS_VARIABLE_REGISTER_FAILED
+  eng "Failed to register status variable '%s'."
+
+ER_COMPONENT_OBJECT_POLICY_STATUS_VARIABLE_UNREGISTER_FAILED
+  eng "Failed to unregister status variable '%s'."
+
+ER_COMPONENT_OBJECT_POLICY_LOCK_INIT_FAILED
+  eng "Failed to initialize lock manager for the component. Most likely this is due to OOM."
+
+ER_COMPONENT_OBJECT_POLICY_MASKING_POLICY_CACHE_INIT_FAILED
+  eng "Failed to initialize masking policy cache. Most likely this is due to OOM."
+
+ER_COMPONENT_OBJECT_POLICY_VAR_REGISTRATION_FAILED
+  eng "Cannot register variable '%s'.'%s'."
+
+ER_WARN_COMPONENT_OBJECT_POLICY_INVALID_FLUSH_INTERVAL_VALUE
+   eng "Invalid flush interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d."
+
+ER_COMPONENT_OBJECT_POLICY_SCHEDULER_REGISTRATION_FAILED
+  eng "Registration of scheduler service failed."
+
+ER_COMPONENT_OBJECT_POLICY_NOTIFICATION_REGISTRATION_FAILED
+  eng "Failed to register notification service. Periodical policy data flush will not work."
+
+ER_COMPONENT_OBJECT_POLICY_MASKING_POLICY_DATA_LOAD_FAILED
+  eng "Failed to load data masking policy data to cache."
+
+ER_COMPONENT_OBJECT_POLICY_TABLE_CHECK_FAILED
+  eng "Table check returned: '%s'."
+
+ER_COMPONENT_OBJECT_POLICY_TABLE_INDEX_INIT_FAILED
+  eng "Failed to initialize index '%s' for table '%s'. Table may not be in expected format."
+
+ER_COMPONENT_OBJECT_POLICY_TABLE_READ_FAILED
+  eng "Failed to read data from table '%s'."
+
+ER_COMPONENT_OBJECT_POLICY_CACHE_UPDATE_FAILED
+  eng "Failed to perform '%s' operation on '%s' cache for entry '%s'."
+
+ER_COMPONENT_OBJECT_POLICY_CREATE_MASKING_POLICY_FAILED
+  eng "Failed to create masking policy '%s'."
+
+ER_COMPONENT_OBJECT_POLICY_POLICY_EXISTS
+  eng "Failed to create masking policy '%s'. A policy with the same name already exists."
+
+ER_COMPONENT_OBJECT_POLICY_DROP_MASKING_POLICY_FAILED
+  eng "Failed to drop masking policy '%s'."
+
+ER_COMPONENT_OBJECT_POLICY_INIT_FAILED
+  eng "Failed to initialize component_object_policy. Check logs for more details."
+
+ER_COMPONENT_OBJECT_POLICY_DEINIT_FAILED
+  eng "Failed to deinitialize component_object_policy. Check logs for more details."
+
+ER_RPL_STMT_FORCE_DISABLE_CASCADE_TRIGGERS
+  eng "Executing triggers on foreign key cascade operations is supported only with SQL Foreign Key Handling. State of the variable \'enable_cascade_triggers\' is logged as OFF in binlog for an event in this case."
+
+ER_WARN_AUDIT_LOG_SYSVAR_ADJUSTED
+  eng "Variable '%s' was adjusted to value '%lld', to make pruning slower than rotation."
+
+ER_WARN_AUDIT_LOG_SYSVAR_DISCARDED
+  eng "Variable '%s' value change was discarded, to make pruning slower than rotation."
+
 #
 # End of MySQL 9.x error messages intended to be written to the server error log.
 #
@@ -13746,83 +13820,6 @@ ER_AUDIT_SYS_VAR_INVALID_FILE_DIRECTORY
 # End of Percona Server 8.0 server error log messages
 #
 
-=======
-
-ER_RPL_REPLICA_VERSION_INCOMPATIBLE
-  eng "Replication from higher version source (%s) to lower version replica (%s) is disallowed due to replica_allow_higher_version_source=OFF."
-
-ER_COMPONENT_OBJECT_POLICY_CANNOT_ACCESS_TABLE
-  eng "Cannot access %s.%s table."
-
-ER_COMPONENT_OBJECT_POLICY_OPTION_TRACKER_INIT_FAILED
-  eng "Failed to initialize option tracker for '%s'."
-
-ER_COMPONENT_OBJECT_POLICY_OPTION_TRACKER_DEINIT_FAILED
-  eng "Failed to deinitialize option tracker for '%s'."
-
-ER_COMPONNENT_OBJECT_POLICY_STATUS_VARIABLE_REGISTER_FAILED
-  eng "Failed to register status variable '%s'."
-
-ER_COMPONENT_OBJECT_POLICY_STATUS_VARIABLE_UNREGISTER_FAILED
-  eng "Failed to unregister status variable '%s'."
-
-ER_COMPONENT_OBJECT_POLICY_LOCK_INIT_FAILED
-  eng "Failed to initialize lock manager for the component. Most likely this is due to OOM."
-
-ER_COMPONENT_OBJECT_POLICY_MASKING_POLICY_CACHE_INIT_FAILED
-  eng "Failed to initialize masking policy cache. Most likely this is due to OOM."
-
-ER_COMPONENT_OBJECT_POLICY_VAR_REGISTRATION_FAILED
-  eng "Cannot register variable '%s'.'%s'."
-
-ER_WARN_COMPONENT_OBJECT_POLICY_INVALID_FLUSH_INTERVAL_VALUE
-   eng "Invalid flush interval specified: %lu. Valid values are 0 (off) or greater than or equal to %d. Adjusting to %d."
-
-ER_COMPONENT_OBJECT_POLICY_SCHEDULER_REGISTRATION_FAILED
-  eng "Registration of scheduler service failed."
-
-ER_COMPONENT_OBJECT_POLICY_NOTIFICATION_REGISTRATION_FAILED
-  eng "Failed to register notification service. Periodical policy data flush will not work."
-
-ER_COMPONENT_OBJECT_POLICY_MASKING_POLICY_DATA_LOAD_FAILED
-  eng "Failed to load data masking policy data to cache."
-
-ER_COMPONENT_OBJECT_POLICY_TABLE_CHECK_FAILED
-  eng "Table check returned: '%s'."
-
-ER_COMPONENT_OBJECT_POLICY_TABLE_INDEX_INIT_FAILED
-  eng "Failed to initialize index '%s' for table '%s'. Table may not be in expected format."
-
-ER_COMPONENT_OBJECT_POLICY_TABLE_READ_FAILED
-  eng "Failed to read data from table '%s'."
-
-ER_COMPONENT_OBJECT_POLICY_CACHE_UPDATE_FAILED
-  eng "Failed to perform '%s' operation on '%s' cache for entry '%s'."
-
-ER_COMPONENT_OBJECT_POLICY_CREATE_MASKING_POLICY_FAILED
-  eng "Failed to create masking policy '%s'."
-
-ER_COMPONENT_OBJECT_POLICY_POLICY_EXISTS
-  eng "Failed to create masking policy '%s'. A policy with the same name already exists."
-
-ER_COMPONENT_OBJECT_POLICY_DROP_MASKING_POLICY_FAILED
-  eng "Failed to drop masking policy '%s'."
-
-ER_COMPONENT_OBJECT_POLICY_INIT_FAILED
-  eng "Failed to initialize component_object_policy. Check logs for more details."
-
-ER_COMPONENT_OBJECT_POLICY_DEINIT_FAILED
-  eng "Failed to deinitialize component_object_policy. Check logs for more details."
-
-ER_RPL_STMT_FORCE_DISABLE_CASCADE_TRIGGERS
-  eng "Executing triggers on foreign key cascade operations is supported only with SQL Foreign Key Handling. State of the variable \'enable_cascade_triggers\' is logged as OFF in binlog for an event in this case."
-
-ER_WARN_AUDIT_LOG_SYSVAR_ADJUSTED
-  eng "Variable '%s' was adjusted to value '%lld', to make pruning slower than rotation."
-
-ER_WARN_AUDIT_LOG_SYSVAR_DISCARDED
-  eng "Variable '%s' value change was discarded, to make pruning slower than rotation."
->>>>>>> theirs
 
 ################################################################################
 # Error numbers 50000 to 51999 are reserved. Please do not use them for
