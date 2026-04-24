@@ -29,7 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 typedef struct {
   ZSTD_threadPool *thread_pool;
-} ds_compress_ctxt_t;
+} zstd_compress_ctxt_t;
 
 typedef struct {
   ds_file_t *dest_file;
@@ -38,7 +38,7 @@ typedef struct {
   size_t raw_bytes;
   size_t comp_bytes;
   ZSTD_CCtx *cctx;
-} ds_compress_file_t;
+} zstd_compress_file_t;
 
 /* Compression options */
 extern char *xtrabackup_compress_alg;
@@ -57,7 +57,7 @@ datasink_t datasink_compress_zstd = {&compress_init,  &compress_open,
                                      &compress_close, &compress_deinit};
 
 static ds_ctxt_t *compress_init(const char *root) {
-  ds_compress_ctxt_t *compress_ctxt = new ds_compress_ctxt_t;
+  zstd_compress_ctxt_t *compress_ctxt = new zstd_compress_ctxt_t;
   compress_ctxt->thread_pool =
       ZSTD_createThreadPool(xtrabackup_compress_threads);
 
@@ -75,7 +75,7 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
   xb_ad(ctxt->pipe_ctxt != nullptr);
   ds_ctxt_t *dest_ctxt = ctxt->pipe_ctxt;
 
-  ds_compress_ctxt_t *comp_ctxt = (ds_compress_ctxt_t *)ctxt->ptr;
+  zstd_compress_ctxt_t *comp_ctxt = (zstd_compress_ctxt_t *)ctxt->ptr;
 
   /* Append the .zst extension to the filename */
   fn_format(new_name, path, "", ".zst", MYF(MY_APPEND_EXT));
@@ -85,7 +85,7 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
     return nullptr;
   }
 
-  ds_compress_file_t *comp_file = new ds_compress_file_t;
+  zstd_compress_file_t *comp_file = new zstd_compress_file_t;
   comp_file->dest_file = dest_file;
   comp_file->comp_buf = nullptr;
   comp_file->comp_buf_size = 0;
@@ -108,7 +108,7 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
 }
 
 static int compress_write(ds_file_t *file, const void *buf, size_t len) {
-  ds_compress_file_t *comp_file = (ds_compress_file_t *)file->ptr;
+  zstd_compress_file_t *comp_file = (zstd_compress_file_t *)file->ptr;
   ds_file_t *dest_file = comp_file->dest_file;
 
   /* make sure we have enough memory for compression */
@@ -174,7 +174,7 @@ err:
 }
 
 static int compress_close(ds_file_t *file) {
-  ds_compress_file_t *comp_file = (ds_compress_file_t *)file->ptr;
+  zstd_compress_file_t *comp_file = (zstd_compress_file_t *)file->ptr;
   ds_file_t *dest_file = comp_file->dest_file;
 
   ZSTD_freeCCtx(comp_file->cctx);
@@ -191,7 +191,7 @@ static int compress_close(ds_file_t *file) {
 static void compress_deinit(ds_ctxt_t *ctxt) {
   xb_ad(ctxt->pipe_ctxt != nullptr);
 
-  ds_compress_ctxt_t *comp_ctxt = (ds_compress_ctxt_t *)ctxt->ptr;
+  zstd_compress_ctxt_t *comp_ctxt = (zstd_compress_ctxt_t *)ctxt->ptr;
 
   ZSTD_freeThreadPool(comp_ctxt->thread_pool);
   delete comp_ctxt;
