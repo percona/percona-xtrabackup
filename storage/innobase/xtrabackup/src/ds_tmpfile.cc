@@ -53,7 +53,8 @@ static int tmpfile_close(ds_file_t *file);
 static void tmpfile_deinit(ds_ctxt_t *ctxt);
 
 datasink_t datasink_tmpfile = {&tmpfile_init, &tmpfile_open,  &tmpfile_write,
-                               nullptr,       &tmpfile_close, &tmpfile_deinit};
+                               nullptr,       &tmpfile_close, &tmpfile_deinit,
+                               nullptr /* report_metrics */};
 
 extern MY_TMPDIR mysql_tmpdir_list;
 
@@ -61,9 +62,9 @@ static ds_ctxt_t *tmpfile_init(const char *root) {
   ds_ctxt_t *ctxt;
   ds_tmpfile_ctxt_t *tmpfile_ctxt;
 
-  ctxt = static_cast<ds_ctxt_t *>(
-      my_malloc(PSI_NOT_INSTRUMENTED,
-                sizeof(ds_ctxt_t) + sizeof(ds_tmpfile_ctxt_t), MYF(MY_FAE)));
+  ctxt = static_cast<ds_ctxt_t *>(my_malloc(
+      PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t) + sizeof(ds_tmpfile_ctxt_t),
+      MYF(MY_FAE | MY_ZEROFILL)));
   tmpfile_ctxt = (ds_tmpfile_ctxt_t *)(ctxt + 1);
   tmpfile_ctxt->file_list = NULL;
   ctxt->ptr = tmpfile_ctxt;

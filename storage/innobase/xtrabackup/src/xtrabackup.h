@@ -78,7 +78,29 @@ extern char *innobase_data_home_dir;
 extern char *innobase_buffer_pool_filename;
 extern ds_ctxt_t *ds_meta;
 extern ds_ctxt_t *ds_data;
+extern ds_ctxt_t *ds_redo;
 extern ds_ctxt_t *ds_uncompressed_data;
+
+/** Global uncompressed-byte counter for the current backup run (type
+is defined in datasink.h to keep that header self-contained for
+standalone tools).  Only enabled on top-level ds_file_t handles via
+ds_open_track_uncomp(xb_global_track_uncomp_bytes()); internal wrapper
+opens do not contribute, so every logical byte is counted exactly
+once. */
+extern xb_uncomp_bytes xb_uncomp_bytes_counter;
+
+/** @return total raw (pre-compression, hole-excluded) bytes
+accumulated by xb_uncomp_bytes_counter across all top-level tracked
+opens this run.  Only meaningful when --compress is used; returns 0
+otherwise. */
+unsigned long long get_uncompressed_backup_size();
+
+/** @return total bytes written by the leaf of the main data pipeline.
+Equals the post-compression size under --compress and equals the
+uncompressed size otherwise.  Derived at read time by querying the
+leaf of ds_data via ds_find_metric(ds_leaf(ds_data), "bytes_written",
+...). */
+unsigned long long get_final_backup_size();
 
 extern pagetracking::xb_space_map *changed_page_tracking;
 
@@ -103,6 +125,20 @@ extern char *xtrabackup_databases_exclude;
 
 extern xtrabackup_compress_t xtrabackup_compress;
 extern bool xtrabackup_encrypt;
+
+/** Counter pointer passed to ds_open_track_uncomp() for top-level
+backup files.  Tracking is only useful when --compress is active:
+without compression the logical bytes equal what the leaf writes
+anyway, and get_final_backup_size() already returns the same number
+from the leaf counter.  Returning nullptr outside --compress keeps
+the hot write path free of any extra work in the common case.
+@return &xb_uncomp_bytes_counter when --compress is active, nullptr
+        otherwise. */
+inline xb_uncomp_bytes *xb_global_track_uncomp_bytes() {
+  return xtrabackup_compress != XTRABACKUP_COMPRESS_NONE
+             ? &xb_uncomp_bytes_counter
+             : nullptr;
+}
 
 extern bool xtrabackup_backup;
 extern bool xtrabackup_prepare;

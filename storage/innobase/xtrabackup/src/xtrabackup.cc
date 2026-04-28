@@ -397,6 +397,38 @@ ds_ctxt_t *ds_meta = nullptr;
 ds_ctxt_t *ds_redo = nullptr;
 ds_ctxt_t *ds_uncompressed_data = nullptr;
 
+/* Backup-run uncompressed byte aggregate.  Populated via
+ds_open_track_uncomp() at top-level open sites; read back by
+get_uncompressed_backup_size(). */
+xb_uncomp_bytes xb_uncomp_bytes_counter;
+
+/** Return the raw, hole-excluded, pre-compression backup volume.
+Only populated under --compress (xb_global_track_uncomp_bytes() is the
+gate); zero otherwise. */
+unsigned long long get_uncompressed_backup_size() {
+  return xb_uncomp_bytes_counter.get_uncompressed_backup_size();
+}
+
+/** Return the total bytes written to the physical sink (the leaf of
+ds_data).  Derived at read time by querying the leaf node directly
+with ds_find_metric(ds_leaf(ds_data), "bytes_written", ...) -- the
+metric is published by ds_local / ds_stdout / ds_fifo.  Returns 0 and
+warns if the leaf did not publish the metric (e.g. on a prepare run
+where the main data pipeline was never constructed). */
+unsigned long long get_final_backup_size() {
+  if (ds_data == nullptr) {
+    return 0;
+  }
+  const ds_ctxt_t *leaf = ds_leaf(ds_data);
+  uint64_t bytes = 0;
+  if (!ds_find_metric(leaf, "bytes_written", &bytes)) {
+    xb::warn() << "Cannot determine backup size: leaf datasink "
+                  "does not publish \"bytes_written\"";
+    return 0;
+  }
+  return bytes;
+}
+
 static char *srv_log_group_home_dir_save;
 static longlong innobase_redo_log_capacity_save;
 
@@ -2745,7 +2777,8 @@ static bool xtrabackup_stream_metadata(ds_ctxt_t *ds_ctxt) {
   mystat.st_size = len;
   mystat.st_mtime = time(nullptr);
 
-  stream = ds_open(ds_ctxt, XTRABACKUP_METADATA_FILENAME, &mystat);
+  stream = ds_open_track_uncomp(ds_ctxt, XTRABACKUP_METADATA_FILENAME, &mystat,
+                                xb_global_track_uncomp_bytes());
   if (stream == NULL) {
     xb::error() << "cannot open output stream for "
                 << XTRABACKUP_METADATA_FILENAME;
@@ -2862,7 +2895,8 @@ bool xb_write_delta_metadata(const char *filename,
   mystat.st_size = len;
   mystat.st_mtime = time(nullptr);
 
-  f = ds_open(ds_meta, filename, &mystat);
+  f = ds_open_track_uncomp(ds_meta, filename, &mystat,
+                           xb_global_track_uncomp_bytes());
   if (f == NULL) {
     xb::error() << "cannot open output stream for " << filename;
     return (false);
@@ -3232,9 +3266,12 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
 
   /* do not compress encrypted tablespaces */
   if (cursor.is_encrypted) {
-    dstfile = ds_open(ds_uncompressed_data, dst_name, &cursor.statinfo);
+    dstfile =
+        ds_open_track_uncomp(ds_uncompressed_data, dst_name, &cursor.statinfo,
+                             xb_global_track_uncomp_bytes());
   } else {
-    dstfile = ds_open(ds_data, dst_name, &cursor.statinfo);
+    dstfile = ds_open_track_uncomp(ds_data, dst_name, &cursor.statinfo,
+                                   xb_global_track_uncomp_bytes());
   }
   if (dstfile == NULL) {
     xb::error() << "cannot open the destination stream for " << dst_name;
@@ -4565,10 +4602,6 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
-  if (!backup_finish(backup_ctxt)) {
-    exit(EXIT_FAILURE);
-  }
-
   if (xtrabackup_extra_lsndir) {
     char filename[FN_REFLEN];
 
@@ -4578,18 +4611,20 @@ void xtrabackup_backup_func(void) {
       xb::error() << "failed to write metadata to " << filename;
       exit(EXIT_FAILURE);
     }
-
-    sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_INFO);
-    if (!xtrabackup_write_info(filename)) {
-      xb::error() << "failed to write info to " << filename;
-      exit(EXIT_FAILURE);
-    }
   }
 
   if (opt_lock_ddl_per_table) {
     mdl_unlock_all();
   }
 
+  /* Tablespace_map::serialize() and the ts_key_dumper flush both
+  write additional files through ds_data, which drains down to the
+  leaf.  Run them BEFORE backup_finish() so the leaf "bytes_written"
+  counter sampled inside backup_finish() already includes those
+  bytes; otherwise the reported backup_size would be short by their
+  size.  The xtrabackup_info copy under --extra-lsndir stays AFTER
+  backup_finish() -- it is a second copy of the already-sampled
+  xtrabackup_info file and adds no ds_data bytes itself. */
   Tablespace_map::instance().serialize(ds_data);
 
   if (ts_key_dumper.is_initialized()) {
@@ -4609,6 +4644,20 @@ void xtrabackup_backup_func(void) {
   }
 
   ts_key_dumper.finalize();
+
+  if (!backup_finish(backup_ctxt)) {
+    exit(EXIT_FAILURE);
+  }
+
+  if (xtrabackup_extra_lsndir) {
+    char filename[FN_REFLEN];
+
+    sprintf(filename, "%s/%s", xtrabackup_extra_lsndir, XTRABACKUP_INFO);
+    if (!xtrabackup_write_info(filename)) {
+      xb::error() << "failed to write info to " << filename;
+      exit(EXIT_FAILURE);
+    }
+  }
 
   xtrabackup_destroy_datasinks();
 

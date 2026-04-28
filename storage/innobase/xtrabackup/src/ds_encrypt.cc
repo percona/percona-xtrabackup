@@ -95,7 +95,8 @@ static int encrypt_close(ds_file_t *file);
 static void encrypt_deinit(ds_ctxt_t *ctxt);
 
 datasink_t datasink_encrypt = {&encrypt_init, &encrypt_open,  &encrypt_write,
-                               nullptr,       &encrypt_close, &encrypt_deinit};
+                               nullptr,       &encrypt_close, &encrypt_deinit,
+                               nullptr /* report_metrics */};
 
 static uint encrypt_iv_len = 0;
 
