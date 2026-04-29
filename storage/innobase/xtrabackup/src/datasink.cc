@@ -111,8 +111,28 @@ ds_file_t *ds_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat) {
   file = ctxt->datasink->open(ctxt, path, stat);
   if (file != NULL) {
     file->datasink = ctxt->datasink;
+    /* Save the ctxt this file is attached to so per-datasink state
+    (e.g. leaf bytes_written counters) can be reached from the write
+    paths via file->ctxt->ptr.  Tracking defaults to off; callers that
+    want uncompressed-byte accounting call ds_track_uncomp() or use
+    the ds_open_track_uncomp() convenience. */
+    file->ctxt = ctxt;
+    file->uncomp_bytes = nullptr;
   }
 
+  return file;
+}
+
+void ds_track_uncomp(ds_file_t *file, xb_uncomp_bytes *uncomp_bytes) {
+  if (file != nullptr) {
+    file->uncomp_bytes = uncomp_bytes;
+  }
+}
+
+ds_file_t *ds_open_track_uncomp(ds_ctxt_t *ctxt, const char *path,
+                                MY_STAT *stat, xb_uncomp_bytes *uncomp_bytes) {
+  ds_file_t *file = ds_open(ctxt, path, stat);
+  ds_track_uncomp(file, uncomp_bytes);
   return file;
 }
 
@@ -120,7 +140,15 @@ ds_file_t *ds_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *stat) {
 Write to a datasink file.
 @return 0 on success, 1 on error. */
 int ds_write(ds_file_t *file, const void *buf, size_t len) {
-  return file->datasink->write(file, buf, len);
+  const int rc = file->datasink->write(file, buf, len);
+  /* Bump the backup-run uncompressed byte counter with the logical
+  byte count only on success.  Wrapper-internal opens do not set
+  file->uncomp_bytes, so every logical byte is counted exactly once
+  at the top. */
+  if (rc == 0 && file->uncomp_bytes != nullptr) {
+    file->uncomp_bytes->add_uncompressed(len);
+  }
+  return rc;
 }
 
 /************************************************************************
@@ -139,11 +167,18 @@ Write sparse chunk if supported.
 int ds_write_sparse(ds_file_t *file, const void *buf, size_t len,
                     size_t sparse_map_size, const ds_sparse_chunk_t *sparse_map,
                     bool punch_hole_supported) {
-  if (file->datasink->write_sparse != nullptr) {
-    return file->datasink->write_sparse(file, buf, len, sparse_map_size,
-                                        sparse_map, punch_hole_supported);
+  if (file->datasink->write_sparse == nullptr) {
+    return 1;
   }
-  return 1;
+  const int rc = file->datasink->write_sparse(file, buf, len, sparse_map_size,
+                                              sparse_map, punch_hole_supported);
+  if (rc == 0 && file->uncomp_bytes != nullptr) {
+    /* `len` is the packed (hole-excluded) payload size: callers pre-pack
+    the buffer and pass its length here, and local_write_sparse writes
+    exactly that many bytes across the sparse_map chunks. */
+    file->uncomp_bytes->add_uncompressed(len);
+  }
+  return rc;
 }
 
 /************************************************************************
@@ -160,4 +195,30 @@ Set the destination pipe for a datasink (only makes sense for compress and
 tmpfile). */
 void ds_set_pipe(ds_ctxt_t *ctxt, ds_ctxt_t *pipe_ctxt) {
   ctxt->pipe_ctxt = pipe_ctxt;
+}
+
+const ds_ctxt_t *ds_leaf(const ds_ctxt_t *head) {
+  const ds_ctxt_t *c = head;
+  if (c == nullptr) return nullptr;
+  while (c->pipe_ctxt != nullptr) {
+    c = c->pipe_ctxt;
+  }
+  return c;
+}
+
+bool ds_find_metric(const ds_ctxt_t *node, std::string_view name,
+                    uint64_t *out) {
+  if (node == nullptr || node->datasink == nullptr ||
+      node->datasink->report_metrics == nullptr) {
+    return false;
+  }
+  std::vector<ds_metric> v;
+  node->datasink->report_metrics(node, v);
+  for (const auto &m : v) {
+    if (m.name == name) {
+      if (out != nullptr) *out = m.value;
+      return true;
+    }
+  }
+  return false;
 }

@@ -25,6 +25,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/service_mysql_alloc.h>
 #include <mysql_version.h>
 #include <mysys_err.h>
+#include <atomic>
 
 #ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
 #include <linux/falloc.h>
@@ -40,6 +41,13 @@ typedef struct {
   size_t last_seek;  // to track last page sparse_file
 } ds_local_file_t;
 
+/* Per-datasink private state.  Stored in ds_ctxt_t::ptr.  bytes_written
+is the tier-1 metric exposed through local_report_metrics() and is the
+authoritative source for backup_size (final on-disk volume). */
+struct ds_local_ctxt_t {
+  std::atomic<unsigned long long> bytes_written{0};
+};
+
 static ds_ctxt_t *local_init(const char *root);
 static ds_file_t *local_open(ds_ctxt_t *ctxt, const char *path,
                              MY_STAT *mystat);
@@ -50,9 +58,12 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
                               bool punch_hole_supported);
 static int local_close(ds_file_t *file);
 static void local_deinit(ds_ctxt_t *ctxt);
+static void local_report_metrics(const ds_ctxt_t *ctxt,
+                                 std::vector<ds_metric> &out);
 
-datasink_t datasink_local = {&local_init,         &local_open,  &local_write,
-                             &local_write_sparse, &local_close, &local_deinit};
+datasink_t datasink_local = {&local_init,          &local_open,  &local_write,
+                             &local_write_sparse,  &local_close, &local_deinit,
+                             &local_report_metrics};
 
 /**
   Checks if punch hole via fallocate is supported
@@ -94,9 +105,10 @@ static ds_ctxt_t *local_init(const char *root) {
     return NULL;
   }
 
-  ctxt = static_cast<ds_ctxt_t *>(
-      my_malloc(PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t), MYF(MY_FAE)));
+  ctxt = static_cast<ds_ctxt_t *>(my_malloc(
+      PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t), MYF(MY_FAE | MY_ZEROFILL)));
 
+  ctxt->ptr = new ds_local_ctxt_t{};
   ctxt->root = my_strdup(PSI_NOT_INSTRUMENTED, root, MYF(MY_FAE));
 
   is_fallocate_punch_hole_supported(ctxt);
@@ -156,6 +168,8 @@ static int local_write(ds_file_t *file, const void *buf, size_t len) {
   if (!my_write(fd, static_cast<const uchar *>(buf), len,
                 MYF(MY_WME | MY_NABP))) {
     posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+    auto local_ctxt = static_cast<ds_local_ctxt_t *>(file->ctxt->ptr);
+    local_ctxt->bytes_written.fetch_add(len, std::memory_order_relaxed);
     return 0;
   }
 
@@ -184,6 +198,12 @@ static int local_write_sparse(ds_file_t *file, const void *buf, size_t len,
     rc = my_write(fd, ptr, sparse_map[i].len, MYF(MY_WME | MY_NABP));
     if (rc != 0) {
       return 1;
+    }
+
+    {
+      auto local_ctxt = static_cast<ds_local_ctxt_t *>(file->ctxt->ptr);
+      local_ctxt->bytes_written.fetch_add(sparse_map[i].len,
+                                          std::memory_order_relaxed);
     }
 
 #ifdef HAVE_FALLOC_PUNCH_HOLE_AND_KEEP_SIZE
@@ -221,6 +241,9 @@ static int local_close(ds_file_t *file) {
     if (rc != 0) {
       return 1;
     }
+    /* Account for the 1-byte trailing-hole write above in bytes_written. */
+    auto local_ctxt = static_cast<ds_local_ctxt_t *>(file->ctxt->ptr);
+    local_ctxt->bytes_written.fetch_add(1, std::memory_order_relaxed);
   }
 
   my_free(file);
@@ -231,6 +254,14 @@ static int local_close(ds_file_t *file) {
 }
 
 static void local_deinit(ds_ctxt_t *ctxt) {
+  delete static_cast<ds_local_ctxt_t *>(ctxt->ptr);
   my_free(ctxt->root);
   my_free(ctxt);
+}
+
+static void local_report_metrics(const ds_ctxt_t *ctxt,
+                                 std::vector<ds_metric> &out) {
+  const auto *c = static_cast<const ds_local_ctxt_t *>(ctxt->ptr);
+  out.push_back(
+      {"bytes_written", c->bytes_written.load(std::memory_order_relaxed)});
 }

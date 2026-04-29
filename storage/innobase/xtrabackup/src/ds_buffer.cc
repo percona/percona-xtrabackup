@@ -52,7 +52,8 @@ static int buffer_close(ds_file_t *file);
 static void buffer_deinit(ds_ctxt_t *ctxt);
 
 datasink_t datasink_buffer = {&buffer_init, &buffer_open,  &buffer_write,
-                              nullptr,      &buffer_close, &buffer_deinit};
+                              nullptr,      &buffer_close, &buffer_deinit,
+                              nullptr /* report_metrics */};
 
 /* Change the default buffer size */
 void ds_buffer_set_size(ds_ctxt_t *ctxt, size_t size) {
@@ -65,9 +66,9 @@ static ds_ctxt_t *buffer_init(const char *root) {
   ds_ctxt_t *ctxt;
   ds_buffer_ctxt_t *buffer_ctxt;
 
-  ctxt = static_cast<ds_ctxt *>(
-      my_malloc(PSI_NOT_INSTRUMENTED,
-                sizeof(ds_ctxt_t) + sizeof(ds_buffer_ctxt_t), MYF(MY_FAE)));
+  ctxt = static_cast<ds_ctxt *>(my_malloc(
+      PSI_NOT_INSTRUMENTED, sizeof(ds_ctxt_t) + sizeof(ds_buffer_ctxt_t),
+      MYF(MY_FAE | MY_ZEROFILL)));
   buffer_ctxt = (ds_buffer_ctxt_t *)(ctxt + 1);
   buffer_ctxt->buffer_size = DS_DEFAULT_BUFFER_SIZE;
 
