@@ -41,21 +41,21 @@ typedef struct {
   char *to;
   size_t to_len;
   size_t to_size;
-} comp_thread_ctxt_t;
+} lz4_thread_ctxt_t;
 
 typedef struct {
   Thread_pool *thread_pool;
-} ds_compress_ctxt_t;
+} lz4_compress_ctxt_t;
 
 typedef struct {
   ds_file_t *dest_file;
-  ds_compress_ctxt_t *comp_ctxt;
+  lz4_compress_ctxt_t *comp_ctxt;
   size_t bytes_processed;
   char *comp_buf;
   size_t comp_buf_size;
   std::vector<std::future<void>> tasks;
-  std::vector<comp_thread_ctxt_t> contexts;
-} ds_compress_file_t;
+  std::vector<lz4_thread_ctxt_t> contexts;
+} lz4_compress_file_t;
 
 /* Compression options */
 extern char *xtrabackup_compress_alg;
@@ -76,7 +76,7 @@ datasink_t datasink_compress_lz4 = {
 static inline int write_uint32_le(ds_file_t *file, uint32_t n);
 
 static ds_ctxt_t *compress_init(const char *root) {
-  ds_compress_ctxt_t *compress_ctxt = new ds_compress_ctxt_t;
+  lz4_compress_ctxt_t *compress_ctxt = new lz4_compress_ctxt_t;
   compress_ctxt->thread_pool = new Thread_pool(xtrabackup_compress_threads);
 
   ds_ctxt_t *ctxt = new ds_ctxt_t;
@@ -93,7 +93,7 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
   xb_ad(ctxt->pipe_ctxt != nullptr);
   ds_ctxt_t *dest_ctxt = ctxt->pipe_ctxt;
 
-  ds_compress_ctxt_t *comp_ctxt = (ds_compress_ctxt_t *)ctxt->ptr;
+  lz4_compress_ctxt_t *comp_ctxt = (lz4_compress_ctxt_t *)ctxt->ptr;
 
   /* Append the .lz4 extension to the filename */
   fn_format(new_name, path, "", ".lz4", MYF(MY_APPEND_EXT));
@@ -103,7 +103,7 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
     return nullptr;
   }
 
-  ds_compress_file_t *comp_file = new ds_compress_file_t;
+  lz4_compress_file_t *comp_file = new lz4_compress_file_t;
   comp_file->dest_file = dest_file;
   comp_file->comp_ctxt = comp_ctxt;
   comp_file->bytes_processed = 0;
@@ -118,8 +118,8 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
 }
 
 static int compress_write(ds_file_t *file, const void *buf, size_t len) {
-  ds_compress_file_t *comp_file = (ds_compress_file_t *)file->ptr;
-  ds_compress_ctxt_t *comp_ctxt = comp_file->comp_ctxt;
+  lz4_compress_file_t *comp_file = (lz4_compress_file_t *)file->ptr;
+  lz4_compress_ctxt_t *comp_ctxt = comp_file->comp_ctxt;
   ds_file_t *dest_file = comp_file->dest_file;
 
   /* make sure we have enough memory for compression */
@@ -275,7 +275,7 @@ err:
 }
 
 static int compress_close(ds_file_t *file) {
-  ds_compress_file_t *comp_file = (ds_compress_file_t *)file->ptr;
+  lz4_compress_file_t *comp_file = (lz4_compress_file_t *)file->ptr;
   ds_file_t *dest_file = comp_file->dest_file;
 
   int rc = ds_close(dest_file);
@@ -290,7 +290,7 @@ static int compress_close(ds_file_t *file) {
 static void compress_deinit(ds_ctxt_t *ctxt) {
   xb_ad(ctxt->pipe_ctxt != nullptr);
 
-  ds_compress_ctxt_t *comp_ctxt = (ds_compress_ctxt_t *)ctxt->ptr;
+  lz4_compress_ctxt_t *comp_ctxt = (lz4_compress_ctxt_t *)ctxt->ptr;
 
   delete comp_ctxt->thread_pool;
   delete comp_ctxt;
