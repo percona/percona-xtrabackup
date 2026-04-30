@@ -471,7 +471,7 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
 
 Redo_Log_Writer::Redo_Log_Writer() {
   scratch_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
-                            ut::Count{16 * 1024 * 1024});
+                            ut::Count{redo_log_read_buffer_size});
 }
 
 bool Redo_Log_Writer::create_logfile(const char *name) {
@@ -519,6 +519,11 @@ bool Redo_Log_Writer::write_buffer(byte *buf, size_t len) {
   byte *write_buf = buf;
 
   if (srv_redo_log_encrypt) {
+    /* encrypt_log writes len bytes into scratch_buf with no
+    release-build bounds check on dst. Guard against any future drift
+    between the read buffer size and the scratch buffer size. */
+    ut_a(len <= redo_log_read_buffer_size);
+
     IORequest req_type(IORequest::WRITE);
     req_type.get_encryption_info().set(log_sys->m_encryption_metadata);
     ut_ad(req_type.is_encrypted());
