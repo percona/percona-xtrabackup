@@ -24,6 +24,7 @@ KEYRING_TYPE="component"
 # anything set above. Append our options after sourcing so they survive.
 MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS}
 innodb_log_buffer_size=64M
+innodb_redo_log_capacity=256M
 "
 
 configure_server_with_component
@@ -54,6 +55,7 @@ mkdir $topdir/backup
 vlog "starting backup paused after redo catchup"
 xtrabackup --backup --target-dir=$topdir/backup \
            --debug-sync="xtrabackup_pause_after_redo_catchup" \
+	   --register-redo-log-consumer \
            2> >(tee $topdir/backup.log) &
 job_pid=$!
 pid_file=$topdir/backup/xtrabackup_debug_sync
