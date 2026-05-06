@@ -1,4 +1,8 @@
 # PXB-2854 - Quicklz decompression memory corruption issue
+# xbstream still decompresses legacy .qp streams; skip cleanly when
+# the standalone qpress binary used to build the fixture is missing.
+
+require_qpress
 
 head -c 100000 </dev/urandom > $topdir/payload.bin
 qpress $topdir/payload.bin $topdir/payload.qp
