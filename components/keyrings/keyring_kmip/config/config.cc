@@ -149,9 +149,15 @@ bool find_and_read_config_file(std::unique_ptr<Config_pod> &config_pod) {
     // optional attribute
   }
 
-  if (config_reader->get_element<size_t>(config_options[7],
-                                         config_pod_tmp.get()->max_objects)) {
-    // optional attribute
+  // rapidjson's TypeHelper has specializations for the fixed-width integer
+  // typedefs (uint64_t etc.) but not for size_t. On macOS / Apple clang +
+  // libc++, size_t is 'unsigned long' which has no TypeHelper specialization,
+  // so get_element<size_t>() fails to compile. Read into a uint64_t and
+  // assign back on success; uint64_t is recognized on all platforms.
+  if (uint64_t max_objects_tmp = config_pod_tmp.get()->max_objects;
+      !config_reader->get_element<uint64_t>(config_options[7],
+                                            max_objects_tmp)) {
+    config_pod_tmp.get()->max_objects = static_cast<size_t>(max_objects_tmp);
   }
 
   if (config_reader->get_element<int>(config_options[8],
