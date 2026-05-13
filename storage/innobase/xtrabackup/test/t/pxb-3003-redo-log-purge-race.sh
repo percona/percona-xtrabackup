@@ -11,8 +11,14 @@
 require_server_version_higher_than 8.0.29
 require_debug_pxb_version
 
+# Start at 16M capacity so we can later shrink to 8M. The shrink sets
+# target_capacity < current_capacity, the one log_files governor case
+# that reliably fires here and forces reclamation behind the registered
+# PXB consumer. Without it, none of the other governor cases trigger on
+# a release build merely because PXB has crossed the oldest file's
+# end_lsn, and MIN_FILEID would never advance.
 MYSQLD_EXTRA_MY_CNF_OPTS="
-innodb_redo_log_capacity=8M
+innodb_redo_log_capacity=16M
 "
 start_server
 
@@ -28,8 +34,15 @@ $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE redo_log_consumer (
   str BLOB
 );" test
 
+# Ensure at least 2 redo files exist before xtrabackup starts. The
+# PFS loop makes this deterministic regardless of bootstrap redo.
 $MYSQL $MYSQL_ARGS -Ns -e "INSERT INTO test.redo_log_consumer VALUES (NULL, REPEAT('a', 63 * 1024))"
 $MYSQL $MYSQL_ARGS -Ns -e "INSERT INTO test.redo_log_consumer VALUES (NULL, REPEAT('a', 63 * 1024))"
+NUM_REDO_FILES=`$MYSQL $MYSQL_ARGS -Ns -e "SELECT COUNT(*) FROM performance_schema.innodb_redo_log_files"`
+while [ "${NUM_REDO_FILES}" -lt 2 ]; do
+  $MYSQL $MYSQL_ARGS -Ns -e "INSERT INTO test.redo_log_consumer VALUES (NULL, REPEAT('a', 63 * 1024))"
+  NUM_REDO_FILES=`$MYSQL $MYSQL_ARGS -Ns -e "SELECT COUNT(*) FROM performance_schema.innodb_redo_log_files"`
+done
 
 mkdir -p $topdir/backup/
 
@@ -43,7 +56,16 @@ xb_pid=`cat $pid_file`
 
 vlog "backup pid is $job_pid"
 
+# Snapshot redo log file layout at suspend time for diagnosability.
+vlog "performance_schema.innodb_redo_log_files at suspend:"
+$MYSQL $MYSQL_ARGS -t -e \
+  "SELECT file_id, start_lsn, end_lsn, is_full FROM performance_schema.innodb_redo_log_files ORDER BY file_id" >&2
+
 INITIAL_MIN_FILEID=`$MYSQL $MYSQL_ARGS -Ns -e "SELECT MIN(file_id) FROM performance_schema.innodb_redo_log_files"`
+
+# Force file reclamation by shrinking redo capacity (see top of file).
+vlog "Shrinking innodb_redo_log_capacity to 8M to force file reclamation"
+$MYSQL $MYSQL_ARGS -Ns -e "SET GLOBAL innodb_redo_log_capacity = 8 * 1024 * 1024"
 
 run_inserts &
 insert_pid=$!

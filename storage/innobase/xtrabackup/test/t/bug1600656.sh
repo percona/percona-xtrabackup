@@ -24,4 +24,10 @@ xbstream -xv -C $topdir/backup < $topdir/backup/stream.xbs
 vlog "#########################################################################"
 vlog "Verifying that streamed and 'extra copy' of xtrabackup_info do not differ"
 
-diff -q $topdir/backup/xtrabackup_info $topdir/lsndir/xtrabackup_info
+# The (uncompressed_)backup_size lines are sampled at different times
+# in the two copies, so they intentionally differ. Strip them before
+# diffing and verify everything else matches.
+diff <(sed -E '/^(uncompressed_)?backup_size = /d' \
+           $topdir/backup/xtrabackup_info) \
+     <(sed -E '/^(uncompressed_)?backup_size = /d' \
+           $topdir/lsndir/xtrabackup_info)
