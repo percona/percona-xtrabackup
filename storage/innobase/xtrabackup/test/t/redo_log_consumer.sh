@@ -59,17 +59,58 @@ xb_pid=`cat $pid_file`
 echo "backup pid is $job_pid"
 
 run_inserts &
+inserts_pid=$!
 
-# ER_IB_MSG_LOG_WRITER_WAIT_ON_CONSUMER
-while ! grep -q "Redo log writer is waiting for" ${MYSQLD_ERRFILE} ; do
+# Wait for backpressure: with 8M capacity and the registered PXB/MEB
+# consumer pinned at the catch-up LSN, the server cannot reclaim redo
+# files. Exit on the first of: a consumer-lagging warning anchored on
+# the consumer name (avoids false matches from the prior backup's
+# log_checkpointer warnings), or PFS reporting >= 3 redo files (proof
+# we're past 8M with the consumer holding it back). Bound the wait so
+# MTR fails with diagnostics instead of Jenkins killing the job.
+max_wait_s=60
+for ((i=1; i<=max_wait_s; i++)) ; do
+	if grep -qE "(Redo log writer is waiting for (PXB|MEB) redo log consumer|'(PXB|MEB)' consumer still lagging behind)" \
+			${MYSQLD_ERRFILE} ; then
+		vlog "consumer-lagging warning observed in mysql error file"
+		break
+	fi
+
+	n_files=$($MYSQL $MYSQL_ARGS -Ns -e \
+		"SELECT COUNT(*) FROM performance_schema.innodb_redo_log_files" \
+		2>/dev/null || echo 0)
+	if [ "${n_files:-0}" -ge 3 ] ; then
+		vlog "redo log accumulated ${n_files} files;" \
+			"consumer is holding the server back as expected"
+		break
+	fi
+
+	vlog "waiting for redo log backpressure" \
+		"(#files=${n_files:-?}, ${i}/${max_wait_s}s)"
 	sleep 1
-	vlog "waiting for redo log writer message in mysql error file"
 done
+
+if [ ${i} -gt ${max_wait_s} ] ; then
+	vlog "ERROR: timed out waiting for redo log backpressure"
+	vlog "performance_schema.innodb_redo_log_files at timeout:"
+	$MYSQL $MYSQL_ARGS -t -e \
+		"SELECT file_id, start_lsn, end_lsn, is_full FROM performance_schema.innodb_redo_log_files ORDER BY file_id" \
+		>&2 || true
+	vlog "tail of mysqld error file ${MYSQLD_ERRFILE}:"
+	tail -100 ${MYSQLD_ERRFILE} >&2 || true
+	kill ${inserts_pid} 2>/dev/null || true
+	kill -SIGCONT ${xb_pid} 2>/dev/null || true
+	die "redo_log_consumer: timeout waiting for backpressure"
+fi
 
 # Resume the xtrabackup process
 vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
+
+# Stop background inserts before stop_server to avoid ERROR 2002 spam.
+kill ${inserts_pid} 2>/dev/null || true
+wait ${inserts_pid} 2>/dev/null || true
 
 xtrabackup --prepare --target-dir=$topdir/backup
 
