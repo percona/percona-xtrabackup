@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 percona-xtrabackup-97 (9.7) unstable; urgency=low
 
   * Packaging changes for version 9.7
@@ -8,6 +9,14 @@ percona-xtrabackup-96 (9.6) unstable; urgency=low
   * Packaging changes for version 9.6
 
  -- Vadim Yalovets <vadim.yalovets@percona.com>  Thu, 09 Apr 2026 11:10:28 +0300
+||||||| 84a2dfad056
+=======
+percona-xtrabackup-96 (9.6) unstable; urgency=low
+
+  * Packaging changes for version 9.6
+
+ -- Vadim Yalovets <vadim.yalovets@percona.com>  Thu, 09 Apr 2026 11:10:28 +0300
+>>>>>>> origin/trunk
 percona-xtrabackup-91 (9.1) unstable; urgency=low
 
   * Packaging changes for version 9.1

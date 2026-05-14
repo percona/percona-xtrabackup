@@ -23,6 +23,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <my_thread_local.h>
 #include <mysql/service_mysql_alloc.h>
 #include <mysys_err.h>
+#include <atomic>
 #include <mutex>
 #include <unordered_map>
 #include "common.h"
@@ -35,6 +36,10 @@ struct ds_fifo_ctxt_t {
   std::unordered_map<std::string, File> FIFO_list;
   /* Mutex protecting FIFO list */
   std::mutex fifo_mutex;
+  /* Tier-1 metric: total bytes written across all FIFO streams under
+  this ctxt.  Published via fifo_report_metrics(); backup_size uses
+  this to report the on-disk volume for FIFO-streamed backups. */
+  std::atomic<unsigned long long> bytes_written{0};
 
   /* Add a new pair of fullpath and fd to FIFO_list */
   void populate_list(std::string fullpath, File fd) {
@@ -82,9 +87,12 @@ static ds_file_t *fifo_open(ds_ctxt_t *ctxt, const char *path, MY_STAT *mystat);
 static int fifo_write(ds_file_t *file, const void *buf, size_t len);
 static int fifo_close(ds_file_t *file);
 static void fifo_deinit(ds_ctxt_t *ctxt);
+static void fifo_report_metrics(const ds_ctxt_t *ctxt,
+                                std::vector<ds_metric> &out);
 
-datasink_t datasink_fifo = {&fifo_init, &fifo_open,  &fifo_write,
-                            nullptr,    &fifo_close, &fifo_deinit};
+datasink_t datasink_fifo = {
+    &fifo_init,  &fifo_open,   &fifo_write,         nullptr,
+    &fifo_close, &fifo_deinit, &fifo_report_metrics};
 
 static void cleanup_on_error(const char *root, ds_fifo_ctxt_t *ctxt) {
   std::string path;
@@ -185,10 +193,19 @@ static int fifo_write(ds_file_t *file, const void *buf, size_t len) {
   if (!my_write(fd, static_cast<const uchar *>(buf), len,
                 MYF(MY_WME | MY_NABP))) {
     posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+    auto fifo_context = static_cast<ds_fifo_ctxt_t *>(file->ctxt->ptr);
+    fifo_context->bytes_written.fetch_add(len, std::memory_order_relaxed);
     return 0;
   }
 
   return 1;
+}
+
+static void fifo_report_metrics(const ds_ctxt_t *ctxt,
+                                std::vector<ds_metric> &out) {
+  const auto *c = static_cast<const ds_fifo_ctxt_t *>(ctxt->ptr);
+  out.push_back(
+      {"bytes_written", c->bytes_written.load(std::memory_order_relaxed)});
 }
 
 static int fifo_close(ds_file_t *file) {

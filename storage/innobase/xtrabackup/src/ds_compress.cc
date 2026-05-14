@@ -41,21 +41,21 @@ typedef struct {
   size_t to_size;
   uint32_t adler;
   qlz_state_compress state;
-} comp_thread_ctxt_t;
+} qpress_thread_ctxt_t;
 
 typedef struct {
   Thread_pool *thread_pool;
-} ds_compress_ctxt_t;
+} qpress_compress_ctxt_t;
 
 typedef struct {
   ds_file_t *dest_file;
-  ds_compress_ctxt_t *comp_ctxt;
+  qpress_compress_ctxt_t *comp_ctxt;
   size_t bytes_processed;
   char *comp_buf;
   size_t comp_buf_size;
   std::vector<std::future<void>> tasks;
-  std::vector<comp_thread_ctxt_t> contexts;
-} ds_compress_file_t;
+  std::vector<qpress_thread_ctxt_t> contexts;
+} qpress_compress_file_t;
 
 /* Compression options */
 extern char *xtrabackup_compress_alg;
@@ -69,15 +69,15 @@ static int compress_write(ds_file_t *file, const void *buf, size_t len);
 static int compress_close(ds_file_t *file);
 static void compress_deinit(ds_ctxt_t *ctxt);
 
-datasink_t datasink_compress = {&compress_init,  &compress_open,
-                                &compress_write, nullptr,
-                                &compress_close, &compress_deinit};
+datasink_t datasink_compress = {
+    &compress_init,  &compress_open,   &compress_write, nullptr,
+    &compress_close, &compress_deinit, nullptr /* report_metrics */};
 
 static inline int write_uint32_le(ds_file_t *file, uint32_t n);
 static inline int write_uint64_le(ds_file_t *file, ulonglong n);
 
 static ds_ctxt_t *compress_init(const char *root) {
-  ds_compress_ctxt_t *compress_ctxt = new ds_compress_ctxt_t;
+  qpress_compress_ctxt_t *compress_ctxt = new qpress_compress_ctxt_t;
   compress_ctxt->thread_pool = new Thread_pool(xtrabackup_compress_threads);
 
   ds_ctxt_t *ctxt = new ds_ctxt_t;
@@ -92,7 +92,7 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
   xb_ad(ctxt->pipe_ctxt != nullptr);
   ds_ctxt_t *dest_ctxt = ctxt->pipe_ctxt;
 
-  ds_compress_ctxt_t *comp_ctxt = (ds_compress_ctxt_t *)ctxt->ptr;
+  qpress_compress_ctxt_t *comp_ctxt = (qpress_compress_ctxt_t *)ctxt->ptr;
 
   /* Append the .qp extension to the filename */
   char new_name[FN_REFLEN];
@@ -103,7 +103,7 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
     return nullptr;
   }
 
-  ds_compress_file_t *comp_file = new ds_compress_file_t;
+  qpress_compress_file_t *comp_file = new qpress_compress_file_t;
   comp_file->dest_file = dest_file;
   comp_file->comp_ctxt = comp_ctxt;
   comp_file->bytes_processed = 0;
@@ -139,8 +139,8 @@ static ds_file_t *compress_open(ds_ctxt_t *ctxt, const char *path,
 }
 
 static int compress_write(ds_file_t *file, const void *buf, size_t len) {
-  ds_compress_file_t *comp_file = (ds_compress_file_t *)file->ptr;
-  ds_compress_ctxt_t *comp_ctxt = comp_file->comp_ctxt;
+  qpress_compress_file_t *comp_file = (qpress_compress_file_t *)file->ptr;
+  qpress_compress_ctxt_t *comp_ctxt = comp_file->comp_ctxt;
   ds_file_t *dest_file = comp_file->dest_file;
 
   /* make sure we have enough memory for compression */
@@ -229,7 +229,7 @@ err:
 }
 
 static int compress_close(ds_file_t *file) {
-  ds_compress_file_t *comp_file = (ds_compress_file_t *)file->ptr;
+  qpress_compress_file_t *comp_file = (qpress_compress_file_t *)file->ptr;
   ds_file_t *dest_file = comp_file->dest_file;
 
   /* Write the qpress file trailer */
@@ -253,7 +253,7 @@ static int compress_close(ds_file_t *file) {
 static void compress_deinit(ds_ctxt_t *ctxt) {
   xb_ad(ctxt->pipe_ctxt != nullptr);
 
-  ds_compress_ctxt_t *comp_ctxt = (ds_compress_ctxt_t *)ctxt->ptr;
+  qpress_compress_ctxt_t *comp_ctxt = (qpress_compress_ctxt_t *)ctxt->ptr;
 
   delete comp_ctxt->thread_pool;
   delete comp_ctxt;

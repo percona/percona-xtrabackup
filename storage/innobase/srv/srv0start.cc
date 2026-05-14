@@ -390,7 +390,7 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
 
   if (found && recv_key->lsn >= page_lsn) {
     // Condition 1: Use key from redo if available and appropriate
-    encryption_success = use_dumped_tablespace_keys
+    encryption_success = (use_dumped_tablespace_keys && !srv_backup_mode)
                              ? load_key_from_dump()
                              : set_encryption(recv_key->ptr, recv_key->iv);
   } else if (is_enc) {

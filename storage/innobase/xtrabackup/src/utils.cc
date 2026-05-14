@@ -258,5 +258,18 @@ std::string formatElapsedTime(std::chrono::nanoseconds elapsed) {
   return result.str();
 }
 
+std::string human_readable(unsigned long long bytes) {
+  char buf[64];
+  if (bytes >= 1ULL << 30)
+    snprintf(buf, sizeof(buf), "%.2f GiB", (double)bytes / (1ULL << 30));
+  else if (bytes >= 1ULL << 20)
+    snprintf(buf, sizeof(buf), "%.2f MiB", (double)bytes / (1ULL << 20));
+  else if (bytes >= 1ULL << 10)
+    snprintf(buf, sizeof(buf), "%.2f KiB", (double)bytes / (1ULL << 10));
+  else
+    snprintf(buf, sizeof(buf), "%llu bytes", bytes);
+  return buf;
+}
+
 }  // namespace utils
 }  // namespace xtrabackup

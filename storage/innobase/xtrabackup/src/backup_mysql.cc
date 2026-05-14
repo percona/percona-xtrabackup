@@ -423,6 +423,16 @@ bool check_server_version(unsigned long version_number,
   pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
+<<<<<<< HEAD
+||||||| 84a2dfad056
+  // we will use xtrabckup 9.1 from server versions 9.1 to 9.6.
+  mysql9x = pxb_version == "9.1" &&
+            (version_number >= 90100 && version_number < 90700);
+=======
+  // we will use xtrabckup 9.1 from server versions 9.1 to 9.6.
+  mysql9x = pxb_version == "9.6" &&
+            (version_number >= 90100 && version_number < 90700);
+>>>>>>> origin/trunk
 
   /* Percona XtraBackup 9.7 only supports backing up 9.7.x servers
   (i.e. 9.7.0 up to the highest 9.7.x release, currently expected to be no
@@ -1859,6 +1869,11 @@ char *get_xtrabackup_info(MYSQL *connection) {
   format_time(history_start_time, buf_start_time, time_buf_size);
   format_time(history_end_time, buf_end_time, time_buf_size);
 
+  /* Sampled here, after all data has drained to the leaf (see the
+  reordering in xtrabackup_backup_func()).  Embedded directly into
+  xtrabackup_info so consumers see the final on-disk byte count. */
+  const unsigned long long backup_size = get_final_backup_size();
+
   ut_a(uuid);
   ut_a(server_version);
   char *result = NULL;
@@ -1885,7 +1900,8 @@ char *get_xtrabackup_info(MYSQL *connection) {
                "format = %s\n"
                "compressed = %s\n"
                "encrypted = %s\n"
-               "lock_ddl_type = %s\n",
+               "lock_ddl_type = %s\n"
+               "backup_size = %llu\n",
                uuid,                                 /* uuid */
                opt_history ? opt_history : "",       /* name */
                tool_name,                            /* tool_name */
@@ -1911,9 +1927,30 @@ char *get_xtrabackup_info(MYSQL *connection) {
                xtrabackup_compress ? "compressed" : "N",     /* compressed */
                xtrabackup_encrypt ? "Y" : "N",               /* encrypted */
                ddl_lock_type_to_str(static_cast<lock_ddl_type_t>(opt_lock_ddl))
-                   .c_str()); /* lock-ddl */
+                   .c_str(), /* lock-ddl */
+               backup_size); /* backup_size */
 
   ut_a(ret != 0);
+
+  /* uncompressed_backup_size is only meaningful under --compress: it
+  reports the raw, pre-compression logical volume that fed the main
+  backup pipeline.  Without --compress, logical == physical, and the
+  backup_size line above already captures it. */
+  if (xtrabackup_compress != XTRABACKUP_COMPRESS_NONE) {
+    const unsigned long long uncompressed_backup_size =
+        get_uncompressed_backup_size();
+
+    char *tmp = NULL;
+    int ret2 = asprintf(&tmp, "%suncompressed_backup_size = %llu\n", result,
+                        uncompressed_backup_size);
+    if (ret2 < 0) {
+      xb::warn() << "Failed to append uncompressed_backup_size to"
+                 << " xtrabackup_info: " << strerror(errno);
+    } else {
+      free(result);
+      result = tmp;
+    }
+  }
 
   free(server_version);
   return result;

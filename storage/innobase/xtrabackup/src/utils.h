@@ -74,6 +74,16 @@ constexpr HighResTimePoint INVALID_TIME = HighResTimePoint::min();
 
 std::string formatElapsedTime(std::chrono::nanoseconds elapsed);
 
+/**
+  Format a byte count as a human-readable string (e.g. "1.23 MiB",
+  "456 bytes").  Uses base-2 units (KiB / MiB / GiB) and two decimal
+  places once the magnitude is >= 1 KiB; exact byte counts are printed
+  verbatim below that threshold.
+
+  @param[in] bytes  number of bytes to format
+  @return  formatted string */
+std::string human_readable(unsigned long long bytes);
+
 // Helper to convert single values to strings
 template <typename T>
 std::string to_string(const T &value) {
