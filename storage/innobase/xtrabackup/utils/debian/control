@@ -1,10 +1,4 @@
-<<<<<<< HEAD
 Source: percona-xtrabackup-97
-||||||| 84a2dfad056
-Source: percona-xtrabackup-91
-=======
-Source: percona-xtrabackup-96
->>>>>>> origin/trunk
 Section: database
 Priority: extra
 Maintainer: Percona Development Team <opensource-dev@percona.com>
@@ -31,13 +25,7 @@ Build-Depends: automake,
 Standards-Version: 3.9.5
 Homepage: http://www.percona.com/software/percona-xtrabackup
 
-<<<<<<< HEAD
 Package: percona-xtrabackup-97
-||||||| 84a2dfad056
-Package: percona-xtrabackup-91
-=======
-Package: percona-xtrabackup-96
->>>>>>> origin/trunk
 Architecture: any
 Depends: libcurl4-openssl-dev, rsync, zstd, lz4, ${misc:Depends}, ${shlibs:Depends}
 Provides: xtrabackup
@@ -51,41 +39,17 @@ Description: Open source backup tool for InnoDB and XtraDB
  InnoDB, XtraDB and MyISAM tables on MySQL/Percona Server/MariaDB
  servers, and has many advanced features.
 
-<<<<<<< HEAD
 Package: percona-xtrabackup-dbg-97
-||||||| 84a2dfad056
-Package: percona-xtrabackup-dbg-91
-=======
-Package: percona-xtrabackup-dbg-96
->>>>>>> origin/trunk
 Section: debug
 Architecture: any
-<<<<<<< HEAD
 Depends: percona-xtrabackup-97 (= ${binary:Version}), ${misc:Depends}
-||||||| 84a2dfad056
-Depends: percona-xtrabackup-91 (= ${binary:Version}), ${misc:Depends}
-=======
-Depends: percona-xtrabackup-96 (= ${binary:Version}), ${misc:Depends}
->>>>>>> origin/trunk
 Description: Debug symbols for Percona XtraBackup
  Debug symbols for the binaries in percona-xtrabackup. Install this
  package if you need to run any of those with gdb.
 
-<<<<<<< HEAD
 Package: percona-xtrabackup-test-97
-||||||| 84a2dfad056
-Package: percona-xtrabackup-test-91
-=======
-Package: percona-xtrabackup-test-96
->>>>>>> origin/trunk
 Architecture: any
-<<<<<<< HEAD
 Depends: mysql-client, percona-xtrabackup-97, ${misc:Depends}
-||||||| 84a2dfad056
-Depends: mysql-client, percona-xtrabackup-91, ${misc:Depends}
-=======
-Depends: mysql-client, percona-xtrabackup-96, ${misc:Depends}
->>>>>>> origin/trunk
 Description: Test suite for Percona XtraBackup
  Test suite for Percona XtraBackup. Install this package if you intend
  to run XtraBackup's test suite.
