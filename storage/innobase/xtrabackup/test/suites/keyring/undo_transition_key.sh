@@ -25,7 +25,7 @@ KEYRING_TYPE="component"
 # to lag behind redo-encryption records right after key rotation.
 MYSQLD_EXTRA_MY_CNF_OPTS="${MYSQLD_EXTRA_MY_CNF_OPTS}
 innodb_buffer_pool_size=512M
-innodb_log_file_size=256M
+innodb_redo_log_capacity=512M
 innodb_io_capacity=100
 innodb_io_capacity_max=200
 innodb_max_dirty_pages_pct=95
