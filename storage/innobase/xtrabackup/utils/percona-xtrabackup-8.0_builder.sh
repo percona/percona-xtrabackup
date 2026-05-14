@@ -582,7 +582,7 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-97_${VERSION}.orig.tar.gz
+    NEWTAR=${NAME}-96_${VERSION}.orig.tar.gz
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}
@@ -638,13 +638,13 @@ build_deb(){
     dch -m -D "$OS_NAME" --force-distribution -v "$VERSION-$DEB_RELEASE.$OS_NAME" 'Update distribution'
     cd debian/
     wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
-    sed -i 's:exit 0::' percona-xtrabackup-97.postinst
-    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> percona-xtrabackup-97.postinst
-    cat call-home.sh >> percona-xtrabackup-97.postinst
-    echo "CALLHOME" >> percona-xtrabackup-97.postinst
-    echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-97.postinst
-    echo "rm -rf /tmp/call-home.sh" >> percona-xtrabackup-97.postinst
-    echo "exit 0" >> percona-xtrabackup-97.postinst
+    sed -i 's:exit 0::' percona-xtrabackup-96.postinst
+    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> percona-xtrabackup-96.postinst
+    cat call-home.sh >> percona-xtrabackup-96.postinst
+    echo "CALLHOME" >> percona-xtrabackup-96.postinst
+    echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-96.postinst
+    echo "rm -rf /tmp/call-home.sh" >> percona-xtrabackup-96.postinst
+    echo "exit 0" >> percona-xtrabackup-96.postinst
     rm -f call-home.sh
     cd ../
 
