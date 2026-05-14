@@ -423,16 +423,6 @@ bool check_server_version(unsigned long version_number,
   pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
-<<<<<<< HEAD
-||||||| 84a2dfad056
-  // we will use xtrabckup 9.1 from server versions 9.1 to 9.6.
-  mysql9x = pxb_version == "9.1" &&
-            (version_number >= 90100 && version_number < 90700);
-=======
-  // we will use xtrabckup 9.1 from server versions 9.1 to 9.6.
-  mysql9x = pxb_version == "9.6" &&
-            (version_number >= 90100 && version_number < 90700);
->>>>>>> origin/trunk
 
   /* Percona XtraBackup 9.7 only supports backing up 9.7.x servers
   (i.e. 9.7.0 up to the highest 9.7.x release, currently expected to be no
