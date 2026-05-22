@@ -130,13 +130,14 @@ rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/p*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
 
 %post
+tfn=$(/usr/bin/mktemp -p "$(/usr/bin/mktemp -d /tmp/XXXXXXXX)" call-home.XXXXXX.sh)
 cp %SOURCE999 /tmp/ 2>/dev/null ||
 %if 0%{?enable_fipsmode}
-bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release}-pro -d "PACKAGE" &>/dev/null || :
+bash $tfn -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release}-pro -d "PACKAGE" &>/dev/null || :
 %else
-bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
+bash $tfn -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
 %endif
-rm -f /tmp/call-home.sh
+rm -f $tfn
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -159,6 +160,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_includedir}/kmippp.h
 /usr/lib/libkmip.a
 /usr/lib/libkmippp.a
+/usr/lib/libkmipclient.a
+/usr/lib/libkmipcore.a
 %{_libdir}/xtrabackup/plugin/component_keyring_kmip.so
 %doc LICENSE
 %doc %{_mandir}/man1/*.1.gz
