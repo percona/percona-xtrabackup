@@ -39,8 +39,9 @@ BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, read
 BuildRequires:  libcurl-devel
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80, percona-xtrabackup-81, percona-xtrabackup-82
 Conflicts:      percona-xtrabackup-pro-%{xb_version_major}%{xb_version_minor}
-Requires:       perl(DBD::mysql), rsync, zstd
-Requires:	perl(Digest::MD5), lz4
+Requires:       rsync, zstd
+Requires:       lz4
+Recommends:     perl(Digest::MD5)
 BuildRoot:      %{_tmppath}/%{name}-%{version}%{xb_version_extra}-root
 
 
