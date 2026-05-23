@@ -2457,17 +2457,61 @@ IF(WIN32)
   ENDIF()
 ENDIF()
 
+# =============================================================================
+# CPack Packaging — Percona XtraBackup 8.0
+# =============================================================================
+SET(CPACK_PACKAGE_NAME "percona-xtrabackup")
+SET(CPACK_PACKAGE_VENDOR "Percona LLC")
+SET(CPACK_PACKAGE_CONTACT "Percona Development Team <info@percona.com>")
+SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+  "Percona XtraBackup - Online backup for MySQL / InnoDB")
+SET(CPACK_PACKAGE_VERSION
+  "${MAJOR_VERSION}.${MINOR_VERSION}.${PATCH_VERSION}")
+SET(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+
+# Packaging components:
+#   Runtime -> main package (binaries, plugins, private libs, man pages)
+#   Test    -> test suite package
+SET(CPACK_COMPONENTS_ALL Runtime Test)
+SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "Runtime")
+
 IF(WIN32)
   SET(CPACK_GENERATOR "ZIP")
 ELSE()
   SET(CPACK_GENERATOR "TGZ")
-ENDIF() 
+
+  IF(LINUX)
+    FIND_PROGRAM(RPMBUILD_EXECUTABLE rpmbuild)
+    IF(RPMBUILD_EXECUTABLE)
+      LIST(APPEND CPACK_GENERATOR "RPM")
+      INCLUDE(cpack_rpm)
+    ENDIF()
+
+    FIND_PROGRAM(DPKG_EXECUTABLE dpkg)
+    IF(DPKG_EXECUTABLE)
+      LIST(APPEND CPACK_GENERATOR "DEB")
+      INCLUDE(cpack_deb)
+    ENDIF()
+  ENDIF()
+ENDIF()
 
 # Produce separate tarballs for each INSTALL COMPONENT
 IF(PACK_SEPARATE_COMPONENTS)
   SET(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
   SET(CPACK_COMPONENTS_GROUPING IGNORE)
 ENDIF()
+
+# Debug binary: pass -DPXB_DEBUG_BINARY=/path/to/debug/xtrabackup on cmake line
+IF(PXB_DEBUG_BINARY AND EXISTS "${PXB_DEBUG_BINARY}")
+  INSTALL(PROGRAMS "${PXB_DEBUG_BINARY}"
+    DESTINATION ${INSTALL_BINDIR}
+    RENAME xtrabackup-debug
+    COMPONENT Runtime)
+ENDIF()
+
+# Install tree cleanup — removes unwanted MySQL files before packaging
+INSTALL(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/cpack_filter_install.cmake"
+  COMPONENT Runtime)
 
 #
 # RPM installs documentation directly from the source tree

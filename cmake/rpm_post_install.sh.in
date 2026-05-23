@@ -1,0 +1,10 @@
+#!/bin/bash
+# Percona XtraBackup RPM post-install — call-home telemetry (best-effort)
+if [[ -f /tmp/call-home.sh ]]; then
+    bash /tmp/call-home.sh \
+        -f "PRODUCT_FAMILY_PXB" \
+        -v "@XB_VERSION_MAJOR@.@XB_VERSION_MINOR@.@XB_VERSION_PATCH@@XB_VERSION_EXTRA@-@RPM_RELEASE@" \
+        -d "PACKAGE" &>/dev/null || :
+    rm -f /tmp/call-home.sh
+fi
+exit 0
