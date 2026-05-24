@@ -182,6 +182,9 @@ get_sources(){
     sed -i "s:@@XB_REVISION@@:${REVISION}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@RPM_RELEASE@@:${RPM_RELEASE}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     #
+    # == fix for resolute ==
+    sed -i.bak -z 's|IF(NOT WIN32)\n  ADD_COMPILE_FLAGS(${ZLIB_SRCS} COMPILE_FLAGS "-fvisibility=hidden")\nENDIF()|IF(NOT WIN32)\n  ADD_COMPILE_FLAGS(${ZLIB_SRCS} COMPILE_FLAGS "-fvisibility=hidden")\n  ADD_COMPILE_FLAGS(${ZLIB_SRCS} COMPILE_FLAGS "-fno-lto")\nENDIF()|' extra/zlib/zlib-1.2.13/CMakeLists.txt
+    #
     # create a PXB tar
     cd ${WORKDIR}/percona-xtrabackup
     tar --owner=0 --group=0 --exclude=.bzr --exclude=.git -czf ${PXBDIR}.tar.gz ${PXBDIR}
@@ -258,6 +261,8 @@ install_deps() {
                 yum-config-manager --enable ol${RHEL}_distro_builder
                 yum-config-manager --enable ol${RHEL}_codeready_builder
                 yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-${RHEL}.noarch.rpm
+                dnf install -y oracle-epel-release-el${RHEL}
+                dnf config-manager --set-enabled ol${RHEL}_codeready_builder
             else
                 add_percona_yum_repo
                 percona-release enable tools testing
@@ -267,6 +272,8 @@ install_deps() {
             if [ ${RHEL} = 10 ]; then
                 yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
                 yum -y install epel-release
+                dnf install -y oracle-epel-release-el${RHEL}
+                dnf config-manager --set-enabled ol${RHEL}_codeready_builder
             else
                 yum -y install epel-release
             fi
@@ -354,7 +361,7 @@ install_deps() {
     else
         apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get -y install lsb-release gnupg git wget curl
-        export OS_NAME="$(lsb_release -sc)"
+        export OS_NAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
         wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb && dpkg -i percona-release_latest.$(lsb_release -sc)_all.deb
         percona-release enable tools testing
         apt-get update
@@ -363,7 +370,7 @@ install_deps() {
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev vim-common"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev"
         PKGLIST+=" build-essential rsync libdbd-mysql-perl libnuma1 socat libssl-dev patchelf libicu-dev"
-        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
+        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" -o "${OS_NAME}" == "resolute" ]; then
             PKGLIST+=" libproc2-dev"
         else
             PKGLIST+=" libprocps-dev"
@@ -371,7 +378,7 @@ install_deps() {
         if [ "${OS_NAME}" == "bionic" ]; then
             PKGLIST+=" gcc-8 g++-8"
 	fi
-        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
+        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" -o "${OS_NAME}" == "resolute" ]; then
             PKGLIST+=" python3-sphinx python3-docutils"
         else
             PKGLIST+=" python-sphinx python-docutils"
@@ -470,7 +477,7 @@ build_srpm(){
     cp ../SOURCES/call-home.sh ./
     awk -v n=$line_number 'NR <= n {print > "part1.txt"} NR > n {print > "part2.txt"}' percona-xtrabackup.spec
     head -n -1 part1.txt > temp && mv temp part1.txt
-    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> part1.txt
+    echo "cat <<'CALLHOME' > \$tfn" >> part1.txt
     cat call-home.sh >> part1.txt
     echo "CALLHOME" >> part1.txt
     cat part2.txt >> part1.txt
@@ -540,6 +547,13 @@ build_rpm(){
     if [ $return_code != 0 ]; then
         exit $return_code
     fi
+
+    # Verify RPMs were actually produced
+    if [ -z "$(find ${WORKDIR}/rpmbuild/RPMS -name '*.rpm' 2>/dev/null)" ]; then
+        echo "ERROR: rpmbuild succeeded but no RPM files were generated!"
+        exit 1
+    fi
+
     mkdir -p ${WORKDIR}/rpm
     mkdir -p ${CURDIR}/rpm
     cp rpmbuild/RPMS/*/*.rpm ${WORKDIR}/rpm
@@ -625,11 +639,12 @@ build_deb(){
     cd debian/
     wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
     sed -i 's:exit 0::' percona-xtrabackup-80.postinst
-    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> percona-xtrabackup-80.postinst
+    echo "tfn=\$(/usr/bin/mktemp -p \$(/usr/bin/mktemp -d /tmp/XXXXXXXX) call-home.XXXXXX.sh)" >> percona-xtrabackup-80.postinst
+    echo "cat <<'CALLHOME' > \$tfn" >> percona-xtrabackup-80.postinst
     cat call-home.sh >> percona-xtrabackup-80.postinst
     echo "CALLHOME" >> percona-xtrabackup-80.postinst
-    echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-80.postinst
-    echo "rm -rf /tmp/call-home.sh" >> percona-xtrabackup-80.postinst
+    echo "bash +x \$tfn -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-80.postinst
+    echo "rm -rf \$tfn" >> percona-xtrabackup-80.postinst
     echo "exit 0" >> percona-xtrabackup-80.postinst
     rm -f call-home.sh
     cd ../
