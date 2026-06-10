@@ -1038,6 +1038,21 @@ fseg_inode_t *fseg_inode_get(const fseg_header_t *header, space_id_t space,
                              const page_size_t &page_size, mtr_t *mtr,
                              buf_block_t **block = nullptr);
 
+#ifdef XTRABACKUP
+/** Validate a B-tree root file-segment header without aborting on
+corruption.  fseg_inode_get() asserts ut_a(inode) when a corrupt
+FSEG_HDR_PAGE_NO references a page that is not a live segment inode; the
+xtrabackup --check-tables path uses this to report corruption instead of
+crashing.  The caller must have already verified FSEG_HDR_SPACE.
+@param[in]      header          Segment header inside a B-tree root page
+@param[in]      space           Tablespace id the header must reference
+@param[in]      page_size       Page size of the tablespace
+@param[in,out]  mtr             Mini-transaction
+@return true if the header references a valid, allocated segment inode */
+bool fseg_root_header_validate(const fseg_header_t *header, space_id_t space,
+                               const page_size_t &page_size, mtr_t *mtr);
+#endif /* XTRABACKUP */
+
 struct Page_alloc_info {
   Page_alloc_info(space_id_t space_id, const page_size_t &page_size,
                   fseg_header_t *fseg_hdr)
