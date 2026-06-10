@@ -236,12 +236,8 @@ xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup2 \
            2> >(tee $topdir/prepare_s2_alog.log >&2)
 
 vlog "Corrupt PAGE_INDEX_ID on leaf page 6 of test/t1.ibd"
-page_size=16384
-page_no=6
 # PAGE_INDEX_ID sits at PAGE_HEADER(38) + 28 = 66 bytes from page start
-index_id_offset=$((page_size * page_no + 66))
-printf '\xff\xff\xff\xff\xff\xff\xff\xff' | dd of=$topdir/backup2/test/t1.ibd \
-  bs=1 seek=$index_id_offset count=8 conv=notrunc
+mach_write_8 "$topdir/backup2/test/t1.ibd" 6 66 0xFFFFFFFFFFFFFFFF
 $MYSQL_BASEDIR/bin/innochecksum -w crc32 --no-check $topdir/backup2/test/t1.ibd
 
 vlog "Prepare with --check-tables should fail"
@@ -280,11 +276,7 @@ xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup3 \
            2> >(tee $topdir/prepare_s3_alog.log >&2)
 
 vlog "Corrupt a data byte in page 4 WITHOUT fixing checksum"
-page_size=16384
-page_no=4
-offset=$((page_size * page_no + 100))
-printf '\xDE' | dd of=$topdir/backup3/test/t2.ibd \
-  bs=1 seek=$offset count=1 conv=notrunc
+mach_write_n "$topdir/backup3/test/t2.ibd" 4 100 0xDE 1
 
 vlog "Prepare with --check-tables should fail (checksum mismatch)"
 run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --check-tables \
@@ -364,13 +356,8 @@ xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup5 \
            2> >(tee $topdir/prepare_s5_alog.log >&2)
 
 vlog "Corrupt PAGE_INDEX_ID on all three tables"
-page_size=16384
-page_no=5
-
 for tbl in t_multi1 t_multi2 t_multi3; do
-  index_id_offset=$((page_size * page_no + 66))
-  printf '\xff\xff\xff\xff\xff\xff\xff\xff' | dd of=$topdir/backup5/test/${tbl}.ibd \
-    bs=1 seek=$index_id_offset count=8 conv=notrunc
+  mach_write_8 "$topdir/backup5/test/${tbl}.ibd" 5 66 0xFFFFFFFFFFFFFFFF
   $MYSQL_BASEDIR/bin/innochecksum -w crc32 --no-check $topdir/backup5/test/${tbl}.ibd
 done
 

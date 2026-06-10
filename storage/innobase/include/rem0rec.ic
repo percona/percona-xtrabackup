@@ -166,20 +166,24 @@ static inline ulint rec_get_next_offs(const rec_t *rec, ulint comp) {
   field_value = mach_read_from_2(rec - REC_NEXT);
 
   if (comp) {
+#ifndef XTRABACKUP
     /** Check if the result offset is still on the same page. We allow
     `field_value` to be interpreted as negative 16bit integer. This check does
     nothing for 64KB pages. */
     ut_ad(static_cast<uint16_t>(field_value +
                                 ut_align_offset(rec, UNIV_PAGE_SIZE)));
+#endif /* !XTRABACKUP */
 
     if (field_value == 0) {
       return (0);
     }
 
+#ifndef XTRABACKUP
     /* There must be at least REC_N_NEW_EXTRA_BYTES + 1
     between each record. */
     ut_ad((field_value > REC_N_NEW_EXTRA_BYTES && field_value < 32768) ||
           field_value < (uint16_t)-REC_N_NEW_EXTRA_BYTES);
+#endif /* !XTRABACKUP */
 
     return (ut_align_offset(rec + field_value, UNIV_PAGE_SIZE));
   } else {
