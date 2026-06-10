@@ -4087,6 +4087,24 @@ static void btr_validate_report2(
   }
 }
 
+#ifdef XTRABACKUP
+/** Check that a page number read from page data refers to a page that
+actually exists within the tablespace. A corrupt FIL_PAGE_NEXT /
+FIL_PAGE_PREV (or node-pointer) field can hold an arbitrary value such as
+0xDEADBEEF; following it would make the buffer pool try to extend the
+tablespace to cover that page -- e.g. a multi-terabyte posix_fallocate that
+never completes and hangs --check-tables indefinitely. Used by the
+xtrabackup --check-tables validation path to report corruption and stop
+instead of chasing the bogus pointer.
+@param[in] space_id  tablespace id
+@param[in] page_no   page number read from page data (must not be FIL_NULL)
+@return true if page_no is within the current size of the tablespace */
+static bool btr_page_no_in_bounds(space_id_t space_id, page_no_t page_no) {
+  const page_no_t space_size = fil_space_get_size(space_id);
+  return space_size != 0 && page_no < space_size;
+}
+#endif /* XTRABACKUP */
+
 /** Validates index tree level.
 @param[in] index  index dictionary object.
 @param[in] trx    transaction or nullptr
@@ -4344,6 +4362,27 @@ static bool btr_validate_level(
 #endif /* UNIV_DEBUG */
 
 #ifdef XTRABACKUP
+    /* In xtrabackup --check-tables we report corruption instead of crashing
+       or hanging. A corrupt FIL_PAGE_NEXT/FIL_PAGE_PREV can hold an
+       arbitrary page number; fetching it below (right sibling, or the next
+       loop iteration) would make the buffer pool extend the tablespace to
+       cover that page -- e.g. a multi-terabyte posix_fallocate that never
+       returns. Verify both sibling links are within the tablespace before
+       following them, and stop this level's traversal if either is not. */
+    if ((right_page_no != FIL_NULL &&
+         !btr_page_no_in_bounds(index->space, right_page_no)) ||
+        (left_page_no != FIL_NULL &&
+         !btr_page_no_in_bounds(index->space, left_page_no))) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: out-of-bounds sibling link on page "
+                  << cur_page_no << " (FIL_PAGE_PREV=" << left_page_no
+                  << ", FIL_PAGE_NEXT=" << right_page_no << ") in index "
+                  << index->name() << " of table " << index->table->name;
+      ret = false;
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+    }
+
     /* In xtrabackup --check-tables we report corruption instead of crashing.
        An empty non-root page indicates corruption (e.g. all-zero page from
        unflushed redo, or truncated tablespace). Stop traversal -- an
