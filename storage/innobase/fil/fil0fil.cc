@@ -6884,6 +6884,12 @@ static dberr_t fil_write_zeros(const fil_node_t *file, ulint page_size,
   return err;
 }
 
+#ifdef XTRABACKUP
+/* See fil0fil.h. Off by default; enabled only around the --check-tables
+phase, which must never modify the backup. */
+std::atomic<bool> fil_check_tables_no_extend = false;
+#endif /* XTRABACKUP */
+
 /** Try to extend a tablespace if it is smaller than the specified size.
 @param[in,out]  space           tablespace
 @param[in]      size            desired size in pages
@@ -8206,6 +8212,26 @@ dberr_t Fil_shard::do_io(const IORequest &type, bool sync,
 
       return DB_ERROR;
     }
+
+#ifdef XTRABACKUP
+    /* --check-tables is strictly read-only. An out-of-bounds page number
+    reaching here during table validation comes from corrupt page data (a
+    bad sibling/child/segment pointer), not from a short-copied file that
+    needs extending during redo apply (PXB-1819). Refuse to grow the file:
+    return an error so the read fails fast (no retry, no multi-terabyte
+    posix_fallocate) and the backup is left untouched. The corruption
+    itself is reported by the validation-layer gates in btr_validate_*. */
+    if (fil_check_tables_no_extend.load()) {
+      ib::error(ER_IB_MSG_319)
+          << "check-tables: page " << page_no << " is outside the bounds of "
+          << "tablespace " << space->id << " (" << space->name << ", size "
+          << file->size
+          << " pages); refusing to extend a backup file during"
+             " read-only validation. The page pointer is corrupt.";
+      mutex_release();
+      return DB_ERROR;
+    }
+#endif /* XTRABACKUP */
 
     /* Extend the file if the page_no does not fall inside its bounds
     because xtrabackup may have copied it when it was smaller */
