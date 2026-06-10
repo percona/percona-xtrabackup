@@ -4431,7 +4431,16 @@ static bool btr_validate_level(
             stderr);
 
         ret = false;
-#ifdef UNIV_DEBUG
+#ifdef XTRABACKUP
+        /* In xtrabackup --check-tables we report corruption instead of
+           crashing. A broken FIL_PAGE_PREV back-link (the right sibling
+           does not point back to the current page) means the leaf chain is
+           inconsistent. Stop traversing this level: the remaining sibling
+           links are untrustworthy and following them risks chasing
+           arbitrary page numbers. */
+        right_page_no = FIL_NULL;
+        goto node_ptr_fails;
+#elif defined(UNIV_DEBUG)
         {
           bool skip_assert = false;
           DBUG_EXECUTE_IF("check_table_break_sibling_link",
@@ -4441,7 +4450,7 @@ static bool btr_validate_level(
             ut_ad(siblings_link_correct);
           }
         }
-#endif /* UNIV_DEBUG */
+#endif /* XTRABACKUP */
       }
 
       if (page_is_comp(right_page) != page_is_comp(page)) {
