@@ -7215,6 +7215,11 @@ skip_check:
     uint ct_count;
     ib_mutex_t ct_count_mutex;
 
+    /* --check-tables only reads; redo has already been applied. Forbid the
+    Fil_shard::do_io() out-of-bounds auto-extend (PXB-1819) for the duration
+    of validation so a corrupt page pointer cannot grow a backup file. */
+    fil_check_tables_no_extend.store(true);
+
     it = datafiles_iter_new(nullptr);
     if (it == NULL) {
       xb::error() << "datafiles_iter_new() failed.";
@@ -7251,6 +7256,12 @@ skip_check:
     mutex_free(&ct_count_mutex);
     ut::free(ct_threads);
     datafiles_iter_free(it);
+
+    /* Validation is done. Re-enable do_io() auto-extend for any later
+    phase (the multi-threaded FSP_SIZE reconciliation already ran before
+    check-tables, but shutdown/flush paths may still legitimately grow a
+    file). */
+    fil_check_tables_no_extend.store(false);
 
     if (check_failed) {
       xb::error() << "Table check failed. The backup may be corrupted.";
