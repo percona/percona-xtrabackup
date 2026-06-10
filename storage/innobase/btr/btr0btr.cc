@@ -721,6 +721,21 @@ static ulint *btr_page_get_father_node_ptr_func(
                             UT_LOCATION_HERE, &heap);
 
   if (btr_node_ptr_get_child_page_no(node_ptr, offsets) != page_no) {
+#ifdef XTRABACKUP
+    /* In xtrabackup --check-tables we report corruption instead of crashing.
+       During validation (BTR_CONT_SEARCH_TREE) a father node pointer whose
+       child page number does not match the child page is B-tree corruption;
+       return nullptr so the validate caller fails the check gracefully, and
+       skip the page_rec_print() calls below which re-parse the records. */
+    if (latch_mode == BTR_CONT_SEARCH_TREE) {
+      ib::error(ER_IB_MSG_28)
+          << "Corruption of an index tree: table " << index->table->name
+          << " index " << index->name << ", father ptr page no "
+          << btr_node_ptr_get_child_page_no(node_ptr, offsets)
+          << ", child page no " << page_no;
+      return nullptr;
+    }
+#endif /* XTRABACKUP */
     rec_t *print_rec;
 
     ib::error(ER_IB_MSG_28)
@@ -4544,6 +4559,22 @@ static bool btr_validate_level(
       offsets = btr_page_get_father_node_ptr_for_validate(
           offsets, heap, &node_cur, UT_LOCATION_HERE, &mtr);
 
+#ifdef XTRABACKUP
+      /* nullptr => the father node pointer's child page number did not match
+         (or the cursor was not on a user record): report corruption and stop
+         instead of dereferencing the missing offsets. */
+      if (offsets == nullptr) {
+        btr_validate_report1(index, level, block);
+        ib::error()
+            << "B-tree corruption: invalid father node pointer for page "
+            << block->page.id.page_no() << " in index " << index->name()
+            << " of table " << index->table->name;
+        ret = false;
+        right_page_no = FIL_NULL;
+        goto node_ptr_fails;
+      }
+#endif /* XTRABACKUP */
+
       father_page = btr_cur_get_page(&node_cur);
       node_ptr = btr_cur_get_rec(&node_cur);
 
@@ -4556,6 +4587,18 @@ static bool btr_validate_level(
 
       offsets = btr_page_get_father_node_ptr_for_validate(
           offsets, heap, &node_cur, UT_LOCATION_HERE, &mtr);
+
+#ifdef XTRABACKUP
+      if (offsets == nullptr) {
+        btr_validate_report1(index, level, block);
+        ib::error()
+            << "B-tree corruption: invalid father node pointer for page "
+            << block->page.id.page_no() << " in index " << index->name();
+        ret = false;
+        right_page_no = FIL_NULL;
+        goto node_ptr_fails;
+      }
+#endif /* XTRABACKUP */
 
       if (node_ptr != btr_cur_get_rec(&node_cur) ||
           btr_node_ptr_get_child_page_no(node_ptr, offsets) !=
@@ -4688,6 +4731,21 @@ static bool btr_validate_level(
 
         offsets = btr_page_get_father_node_ptr_for_validate(
             offsets, heap, &right_node_cur, UT_LOCATION_HERE, &mtr);
+
+#ifdef XTRABACKUP
+        /* nullptr => the right sibling's father node pointer did not match its
+           child page (e.g. a corrupt record link landed the search on the
+           wrong leaf): report corruption and stop instead of aborting. */
+        if (offsets == nullptr) {
+          btr_validate_report1(index, level, block);
+          ib::error() << "B-tree corruption: invalid father node pointer for"
+                         " right page "
+                      << right_page_no << " in index " << index->name();
+          ret = false;
+          right_page_no = FIL_NULL;
+          goto node_ptr_fails;
+        }
+#endif /* XTRABACKUP */
 
         if (right_node_ptr != page_get_supremum_rec(father_page)) {
           if (btr_cur_get_rec(&right_node_cur) != right_node_ptr) {
