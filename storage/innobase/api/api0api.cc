@@ -40,16 +40,19 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "api0api.h"
 #include "api0misc.h"
+#include "btr0btr.h"
 #include "btr0pcur.h"
 #include "dict0crea.h"
 #include "dict0dd.h"
 #include "dict0dict.h"
 #include "dict0priv.h"
+#include "fil0fil.h"
 #include "fsp0fsp.h"
 #include "ha_prototypes.h"
 #include "lob0lob.h"
 #include "lock0lock.h"
 #include "lock0types.h"
+#include "rem0rec.h"
 
 #include "ddl0ddl.h"
 #include "dict0sdi-decompress.h"
@@ -2874,6 +2877,37 @@ dberr_t ib_sdi_set(uint32_t tablespace_id, const ib_sdi_key_t *ib_sdi_key,
   ib_cursor_close(ib_crsr);
   return (err);
 }
+
+#ifdef XTRABACKUP
+dberr_t ib_sdi_validate(uint32_t tablespace_id, void *thd) {
+  if (fsp_has_sdi(tablespace_id) != DB_SUCCESS) {
+    /* Tablespace has no SDI -- nothing to validate. */
+    return (DB_SUCCESS);
+  }
+
+  ib_trx_t ib_trx = ib_trx_begin(IB_TRX_READ_COMMITTED, false, false, thd);
+
+  ib_crsr_t ib_crsr = nullptr;
+  dberr_t err = ib_sdi_open_table(tablespace_id, ib_trx, &ib_crsr);
+
+  if (err == DB_SUCCESS) {
+    /* ib_sdi_open_table() built the in-memory SDI dict_index_t (with its real
+    root page); validate the whole SDI B-tree through btr_validate_index() ->
+    page_validate(), which is crash-safe under XTRABACKUP and reports
+    corruption instead of aborting. */
+    dict_index_t *sdi_index = ib_crsr->prebuilt->index;
+    if (sdi_index != nullptr && !btr_validate_index(sdi_index, ib_trx, false)) {
+      err = DB_CORRUPTION;
+    }
+    ib_cursor_close(ib_crsr);
+  }
+
+  ib_trx_commit(ib_trx);
+  ib_trx_release(ib_trx);
+
+  return (err);
+}
+#endif /* XTRABACKUP */
 
 /** Get the SDI keys in a tablespace into vector.
 @param[in]      tablespace_id   tablespace id
