@@ -6758,6 +6758,20 @@ static void check_tables_thread_func(data_thread_ctxt_t *ctxt) {
       continue;
     }
 
+    /* Validate the SDI index of this tablespace once, before reading it to
+       load the dictionary: a corrupt SDI would otherwise crash the SDI scan
+       (ib_sdi_get_keys -> ... -> rec_get_offsets). ib_sdi_validate() runs the
+       whole SDI B-tree through btr_validate_index() -> page_validate(), the
+       same crash-safe per-page validator used for user indexes. */
+    if (ib_sdi_validate(space->id, thd) != DB_SUCCESS) {
+      xb::error() << "SDI index of tablespace " << space->name
+                  << " is corrupted.";
+      mutex_enter(ctxt->count_mutex);
+      *(ctxt->error) = true;
+      mutex_exit(ctxt->count_mutex);
+      continue;
+    }
+
     auto result = xb::prepare::dict_load_from_spaces_sdi(space->id);
     if (std::get<0>(result) != DB_SUCCESS) {
       xb::error() << "Cannot load dictionary for tablespace " << space->name;

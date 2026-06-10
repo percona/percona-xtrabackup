@@ -4340,22 +4340,34 @@ static bool btr_validate_level(
 
       ib::warn(ER_IB_MSG_40) << "Page is marked as free";
       ret = false;
-
-    } else if (btr_page_get_index_id(page) != index->id) {
-      ib::error(ER_IB_MSG_41) << "Page index id " << btr_page_get_index_id(page)
-                              << " != data dictionary index id " << index->id;
-
-      ret = false;
+#ifdef XTRABACKUP
+      /* A free page in the index is corruption; don't traverse it further. */
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+#endif /* XTRABACKUP */
 
     } else if (!page_validate(page, index, true, blob_map)) {
+      /* page_validate() is the single per-page validator. Under XTRABACKUP
+         it also performs the page-type, index-id and record-chain checks, so
+         it never aborts on a corrupt page; on failure we stop traversing this
+         level because the father-pointer search and sibling record compares
+         below would otherwise parse a page already known to be corrupt. */
       btr_validate_report1(index, level, block);
       ret = false;
+#ifdef XTRABACKUP
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+#endif /* XTRABACKUP */
 
     } else if (level == 0 && !btr_index_page_validate(block, index)) {
       /* We are on level 0. Check that the records have the right
       number of fields, and field lengths are right. */
 
       ret = false;
+#ifdef XTRABACKUP
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+#endif /* XTRABACKUP */
     }
 
 #ifdef XTRABACKUP

@@ -258,6 +258,20 @@ static const uint8_t REC_N_FIELDS_ONE_BYTE_MAX = 0x7F;
                                      ulint n_fields, ut::Location location,
                                      mem_heap_t **heap);
 
+#ifdef XTRABACKUP
+/** Structurally validate the record chain of a COMPACT index page without
+calling rec_get_offsets() (which aborts with ut_error on an invalid
+REC_STATUS).  Walks infimum -> ... -> supremum checking that every record has
+a valid status and that each "next" link stays within the page and reaches
+supremum within a bounded number of steps.  Used by xtrabackup --check-tables
+to report a smashed record header on an index or SDI page as corruption
+instead of crashing while parsing it.
+@param[in] page  index page frame
+@return true if the record chain is structurally sane (or the page is not
+COMPACT) */
+[[nodiscard]] bool rec_validate_page_chain(const page_t *page);
+#endif /* XTRABACKUP */
+
 /** The following function determines the offsets to each field
  in the record.  It can reuse a previously allocated array. */
 void rec_get_offsets_reverse(
