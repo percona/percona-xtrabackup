@@ -6823,6 +6823,25 @@ static bool xb_checksum_system_undo_spaces() {
         xb::error() << "check-tables: checksum mismatch on page " << space_id
                     << ":" << page_no << "; the tablespace is corrupted.";
         ok = false;
+        /* A corrupt page's LSN field is unreliable; skip the LSN check. */
+        continue;
+      }
+
+      /* The checksum is valid. Unlike innochecksum -- which has no system LSN
+      to compare against -- we run inside the engine after recovery, so we know
+      the recovered system LSN. A page whose LSN is ahead of it carries changes
+      beyond the redo we applied (an incomplete/over-applied backup, the wrong
+      redo, or a corrupt LSN field), so report it and fail the check. */
+      lsn_t page_lsn = mach_read_from_8(buf + FIL_PAGE_LSN);
+      const lsn_t sys_lsn = log_get_lsn(*log_sys);
+      DBUG_EXECUTE_IF("check_system_inject_future_lsn",
+                      page_lsn = (page_no > 0) ? sys_lsn + 1 : page_lsn;);
+      if (page_lsn > sys_lsn) {
+        xb::error() << "check-tables: page " << space_id << ":" << page_no
+                    << " has LSN " << page_lsn
+                    << " ahead of the recovered system LSN " << sys_lsn
+                    << "; the backup is missing redo or the page is corrupt.";
+        ok = false;
       }
     }
   }
