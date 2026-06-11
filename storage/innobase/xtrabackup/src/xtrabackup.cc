@@ -7447,6 +7447,19 @@ skip_check:
 
 error_cleanup:
 
+  /* Shut InnoDB down so a graceful failure exit (e.g. --check-tables reporting
+     corruption) does not leak the entire InnoDB startup footprint. Without
+     this, an ASAN/LeakSanitizer build reports ~6 MB still reachable (the trx
+     pools, buffer pool, fil system, dict, latch registry) and aborts.
+     innodb_end() -> srv_shutdown() performs the complete, balanced teardown
+     (including sync_check_close()/os_thread_close()), so nothing else is
+     needed here. Guarded by innodb_inited: srv_shutdown() assumes a fully
+     completed init, so a partial-startup failure (innodb_inited == 0) must be
+     left untouched -- we only free what was fully allocated. */
+  if (innodb_inited) {
+    innodb_end();
+  }
+
   xb_keyring_shutdown();
   destroy_internal_thd(thd);
   my_thread_end();
