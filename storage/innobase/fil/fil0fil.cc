@@ -8277,6 +8277,11 @@ dberr_t Fil_shard::do_io(const IORequest &type, bool sync,
           << file->size
           << " pages); refusing to extend a backup file during"
              " read-only validation. The page pointer is corrupt.";
+      /* Balance prepare_file_for_io() above (which incremented
+         file->n_pending_ios); otherwise the leaked pending-I/O reference pins
+         the file and trips the n_pending_ios == 0 assertions during the
+         InnoDB shutdown that follows a graceful --check-tables failure. */
+      complete_io(file, req_type);
       mutex_release();
       return DB_ERROR;
     }
