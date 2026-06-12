@@ -4527,6 +4527,27 @@ static bool btr_validate_level(
         goto node_ptr_fails;
       }
 
+#ifdef XTRABACKUP
+      /* The adjacent-key check below parses the first record of right_page,
+         but right_page is only run through page_validate() on the NEXT
+         iteration (when it becomes the current page). Validate it here first
+         so a corrupt right sibling -- wrong page type or a bad REC_STATUS in
+         its record chain -- is reported instead of aborting rec_get_offsets()
+         (rec.cc "default: ut_error") on this still-unvalidated page. */
+      if (!fil_page_index_page_check(right_page) ||
+          !rec_validate_page_chain(right_page)) {
+        btr_validate_report2(index, level, block, right_block);
+        ib::error() << "B-tree corruption: right sibling page "
+                    << page_get_page_no(right_page)
+                    << " is not a valid index page (bad type or record chain)"
+                       " in index "
+                    << index->name();
+        ret = false;
+        right_page_no = FIL_NULL;
+        goto node_ptr_fails;
+      }
+#endif /* XTRABACKUP */
+
       rec = page_rec_get_prev(page_get_supremum_rec(page));
       right_rec = page_rec_get_next(page_get_infimum_rec(right_page));
       offsets = rec_get_offsets(rec, index, offsets, ULINT_UNDEFINED,
