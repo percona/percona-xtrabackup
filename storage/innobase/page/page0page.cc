@@ -2281,6 +2281,14 @@ bool page_validate(const page_t *page, dict_index_t *index, bool check_min_rec,
                             << " != data dictionary index id " << index->id;
     goto func_exit2;
   }
+  /* Reject an out-of-range PAGE_LEVEL here so callers (e.g. the level scan in
+     btr_validate_level) can safely use btr_page_get_level() on a page whose
+     header was overwritten by a partial write. */
+  if (!btr_page_level_is_sane(page)) {
+    ib::error() << "Page " << page_no << " has an out-of-range B-tree level "
+                << btr_page_get_level(page) << " in index " << index->name();
+    goto func_exit2;
+  }
   if (!rec_validate_page_chain(page)) {
     ib::error() << "Page " << page_no
                 << " has an invalid record chain (bad record status or"
