@@ -4180,6 +4180,19 @@ static bool btr_validate_level(
   page = buf_block_get_frame(block);
   seg = page + PAGE_HEADER + PAGE_BTR_SEG_TOP;
 
+#ifdef XTRABACKUP
+  /* Check the root before the descent loop reads its level. */
+  if (!btr_page_level_is_sane(page)) {
+    btr_validate_report1(index, level, block);
+    ib::error() << "B-tree corruption: root page " << page_get_page_no(page)
+                << " has an out-of-range level " << btr_page_get_level(page)
+                << " in index " << index->name();
+    mtr_commit(&mtr);
+    mem_heap_free(heap);
+    return false;
+  }
+#endif /* XTRABACKUP */
+
 #ifdef UNIV_RTR_DEBUG
   if (dict_index_is_spatial(index)) {
     fprintf(stderr, "Root page no: %lu\n", (ulong)page_get_page_no(page));
@@ -4256,6 +4269,23 @@ static bool btr_validate_level(
     savepoint2 = mtr_set_savepoint(&mtr);
     block = btr_node_ptr_get_child(node_ptr, index, offsets, &mtr);
     page = buf_block_get_frame(block);
+
+#ifdef XTRABACKUP
+    /* Check the freshly loaded child before the loop re-reads its level with
+       btr_page_get_level(). A partial write that set this page's PAGE_LEVEL
+       out of range would otherwise abort there, or have the descent treat the
+       page as an internal node and parse its records as node pointers. */
+    if (!btr_page_level_is_sane(page)) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: child page " << page_get_page_no(page)
+                  << " reached during descent has an"
+                     " out-of-range level "
+                  << btr_page_get_level(page) << " in index " << index->name();
+      mtr_commit(&mtr);
+      mem_heap_free(heap);
+      return false;
+    }
+#endif /* XTRABACKUP */
 
     /* For R-Tree, since record order might not be the same as
     linked index page in the lower level, we need to traverse
