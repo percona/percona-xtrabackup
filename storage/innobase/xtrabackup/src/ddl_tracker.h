@@ -184,6 +184,10 @@ bool prepare_handle_ren_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */
     void * /*data*/);
 
+/** Finalize deferred two-pass .ren handling.
+@return true on success */
+bool prepare_finalize_ren_files();
+
 /**
  * Handle .crpt files. These files should be removed before we do *.ibd scan
  * @return true on success

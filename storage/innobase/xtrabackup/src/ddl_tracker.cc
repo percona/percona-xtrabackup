@@ -43,8 +43,71 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xtrabackup.h"  // datafiles_iter_t
 
 static const int REN_FILE_VERSION = 1;
+static const char *REN_TMP_SUFFIX = ".temp";
+static const char *REN_TMP_SCHEMA_PREFIX = "xbt";
+
+struct pending_ren_file_t {
+  space_id_t space_id{};
+  bool rename_tablespace{false};
+  std::string ren_path;
+  std::string temp_space_name;
+  std::string temp_path;
+  std::string dest_space_name;
+  std::string temp_delta_path;
+  std::string dest_delta_path;
+  std::string temp_meta_path;
+  std::string dest_meta_path;
+};
+
+static std::vector<pending_ren_file_t> pending_ren_files;
+static std::string pending_ren_schema_name;
 
 extern bool xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info);
+
+static bool schema_name_exists(const std::string &schema_name) {
+  bool exists = false;
+
+  Fil_space_iterator::for_each_space([&](fil_space_t *space) {
+    if (space == nullptr || space->name == nullptr) {
+      return DB_SUCCESS;
+    }
+
+    const std::string_view space_name(space->name);
+    const std::string_view schema_prefix(schema_name);
+
+    if (space_name.size() > schema_prefix.size() &&
+        space_name.compare(0, schema_prefix.size(), schema_prefix) == 0 &&
+        space_name[schema_prefix.size()] == '/') {
+      exists = true;
+    }
+
+    return DB_SUCCESS;
+  });
+
+  return exists;
+}
+
+static std::string get_temp_schema_name() {
+  if (!pending_ren_schema_name.empty()) {
+    return pending_ren_schema_name;
+  }
+
+  for (uint32_t suffix = 0;; ++suffix) {
+    std::string candidate_schema(REN_TMP_SCHEMA_PREFIX);
+    if (suffix != 0) {
+      candidate_schema.append(std::to_string(suffix));
+    }
+
+    if (!schema_name_exists(candidate_schema)) {
+      pending_ren_schema_name = candidate_schema;
+      return pending_ren_schema_name;
+    }
+  }
+}
+
+static std::string make_temp_space_name(space_id_t space_id) {
+  return get_temp_schema_name() + "/s" + std::to_string(space_id);
+}
 
 void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                                    const byte *buf, ulint len,
@@ -988,6 +1051,11 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
 
   fil_space_t *fil_space = fil_space_get(source_space_id);
 
+  pending_ren_file_t pending_ren;
+  pending_ren.space_id = source_space_id;
+  pending_ren.ren_path = ren_path;
+  pending_ren.dest_space_name = dest_space_name;
+
   if (fil_space != nullptr) {
     char *source_path = nullptr, *source_space_name = nullptr;
     bool res = fil_space_read_name_and_filepath(
@@ -1014,18 +1082,23 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
       xb::info() << "prepare_handle_ren_files: ren_file: " << ren_path
                  << " already has desired file name: " << dest_path
                  << " source path is: " << source_path;
+      os_file_delete(0, ren_path.c_str());
       return true;
     }
 
-    ut_ad(!os_file_exists(dest_path));
+    pending_ren.rename_tablespace = true;
+    pending_ren.temp_space_name = make_temp_space_name(source_space_id);
+    pending_ren.temp_path = std::string(source_path) + REN_TMP_SUFFIX;
 
-    xb::info() << "prepare_handle_ren_files: renaming " << fil_space->name
-               << " to " << dest_space_name;
+    xb::info() << "prepare_handle_ren_files: staging " << fil_space->name
+               << " to temporary path " << pending_ren.temp_path;
 
     if (!fil_rename_tablespace(fil_space->id, source_path,
-                               dest_space_name.c_str(), NULL)) {
+                               pending_ren.temp_space_name.c_str(),
+                               pending_ren.temp_path.c_str())) {
       xb::error() << "prepare_handle_ren_files: Cannot rename "
-                  << fil_space->name << " to " << dest_space_name;
+                  << fil_space->name << " to temporary path "
+                  << pending_ren.temp_path;
       return false;
     }
   } else {
@@ -1056,15 +1129,17 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
       truncate_suffix(EXT_META, delta_file);
       delta_file.append(EXT_DELTA);
 
-      std::string to_delta(to_path + EXT_DELTA);
+      pending_ren.temp_delta_path = delta_file + REN_TMP_SUFFIX;
+      pending_ren.dest_delta_path = to_path + EXT_DELTA;
       xb::info() << "Renaming incremental delta file from: " << delta_file
-                 << " to: " << to_delta;
-      rename_force(delta_file, to_delta);
+                 << " to temporary path: " << pending_ren.temp_delta_path;
+      rename_force(delta_file, pending_ren.temp_delta_path);
 
-      std::string to_meta(to_path + EXT_META);
+      pending_ren.temp_meta_path = meta_file + REN_TMP_SUFFIX;
+      pending_ren.dest_meta_path = to_path + EXT_META;
       xb::info() << "Renaming incremental meta file from: " << meta_file
-                 << " to: " << to_meta;
-      rename_force(meta_file, to_meta);
+                 << " to temporary path: " << pending_ren.temp_meta_path;
+      rename_force(meta_file, pending_ren.temp_meta_path);
     } else if (fil_space == nullptr) {
       // This means the tablespace is neither found in the fullbackup dir
       // nor in the inc backup directory as .meta and .delta
@@ -1078,8 +1153,48 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
     }
   }
 
-  // delete the .ren file, we don't need it anymore
-  os_file_delete(0, ren_path.c_str());
+  pending_ren_files.push_back(std::move(pending_ren));
+  return true;
+}
+
+bool prepare_finalize_ren_files() {
+  for (const auto &pending_ren : pending_ren_files) {
+    if (pending_ren.rename_tablespace) {
+      xb::info() << "prepare_finalize_ren_files: renaming "
+                 << pending_ren.temp_path << " to "
+                 << pending_ren.dest_space_name;
+
+      if (!fil_rename_tablespace(pending_ren.space_id,
+                                 pending_ren.temp_path.c_str(),
+                                 pending_ren.dest_space_name.c_str(), NULL)) {
+        xb::error() << "prepare_finalize_ren_files: Cannot rename "
+                    << pending_ren.temp_path << " to "
+                    << pending_ren.dest_space_name;
+        pending_ren_files.clear();
+        pending_ren_schema_name.clear();
+        return false;
+      }
+    }
+
+    if (!pending_ren.temp_delta_path.empty()) {
+      xb::info() << "prepare_finalize_ren_files: renaming incremental delta "
+                 << pending_ren.temp_delta_path << " to "
+                 << pending_ren.dest_delta_path;
+      rename_force(pending_ren.temp_delta_path, pending_ren.dest_delta_path);
+    }
+
+    if (!pending_ren.temp_meta_path.empty()) {
+      xb::info() << "prepare_finalize_ren_files: renaming incremental meta "
+                 << pending_ren.temp_meta_path << " to "
+                 << pending_ren.dest_meta_path;
+      rename_force(pending_ren.temp_meta_path, pending_ren.dest_meta_path);
+    }
+
+    os_file_delete(0, pending_ren.ren_path.c_str());
+  }
+
+  pending_ren_files.clear();
+  pending_ren_schema_name.clear();
   return true;
 }
 

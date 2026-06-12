@@ -7019,6 +7019,11 @@ skip_check:
       goto error_cleanup;
     }
 
+    if (!prepare_finalize_ren_files()) {
+      xb_data_files_close();
+      goto error_cleanup;
+    }
+
     xb_data_files_close();
     fil_close();
     innodb_free_param();
