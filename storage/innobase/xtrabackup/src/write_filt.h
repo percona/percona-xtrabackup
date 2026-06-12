@@ -33,6 +33,10 @@ typedef struct {
   byte *delta_buf_base;
   byte *delta_buf;
   ulint npages;
+  /* When true, copy every page regardless of its LSN so the resulting .delta
+  can rebuild a complete file (used for tablespaces recopied after a rename,
+  whose old-name base file is deleted during prepare). */
+  bool full_copy;
 } xb_wf_incremental_ctxt_t;
 
 /* Page filter context used as an opaque structure by callers */

@@ -3282,6 +3282,16 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
     goto error;
   }
 
+  /* A tablespace that is both recopied and renamed during the backup has its
+  old-name base file deleted (.del) and its new name reconstructed from the
+  recopied .new.delta during prepare. A sparse incremental delta would leave
+  hole pages on the freshly-created file, so force the delta to include every
+  page for such tablespaces. */
+  if (write_filter == &wf_incremental && ddl_tracker != nullptr &&
+      ddl_tracker->is_recopy_renamed(node->space->id)) {
+    write_filt_ctxt.wf_incremental_ctxt.full_copy = true;
+  }
+
   /* do not compress encrypted tablespaces */
   if (cursor.is_encrypted) {
     dstfile =

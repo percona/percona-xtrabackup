@@ -323,6 +323,11 @@ bool ddl_tracker_t::is_tablespace_dropped(const space_id_t space_id) {
   return (drops.find(space_id) != drops.end());
 }
 
+bool ddl_tracker_t::is_recopy_renamed(const space_id_t space_id) {
+  std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
+  return (recopy_renamed_spaces.find(space_id) != recopy_renamed_spaces.end());
+}
+
 void ddl_tracker_t::add_rename_ibd_scan(const space_id_t &space_id,
                                         std::string new_name) {
   // undo tablespaces are tracked separately.
@@ -658,6 +663,11 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
         backup_file_printf(
             convert_file_name(table, old_table_name, flags, EXT_DEL).c_str(),
             "%s", "");
+        /* The old-name base file is deleted via the .del above and the new
+        name is reconstructed from the .new file during prepare. A sparse
+        incremental delta would leave hole pages for such a table, so mark it
+        to force a full (write-through) recopy. */
+        recopy_renamed_spaces.insert(table);
       }
       string table_name = tables_copied_no_lock[table].first;
       new_tables[table] = table_name;

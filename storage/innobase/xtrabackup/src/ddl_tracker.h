@@ -51,6 +51,12 @@ class ddl_tracker_t {
   name_to_space_id_t after_lock_undo;
   /** Tablespaces involved in encryption or bulk index load.*/
   std::unordered_set<space_id_t> recopy_tables;
+  /** Tablespaces that are both recopied and renamed during the backup. For
+  these, prepare deletes the old-name base file (.del) and reconstructs the
+  new name by applying the recopied .new.delta onto a freshly-created file.
+  A sparse incremental delta would leave hole pages, so the recopy must emit a
+  delta containing every page (full_copy) for these tablespaces. */
+  std::unordered_set<space_id_t> recopy_renamed_spaces;
   /** Drop operations found in redo log. */
   space_id_to_name_t drops;
   /* For DDL operation found in redo log,  */
@@ -159,6 +165,11 @@ class ddl_tracker_t {
   /** @return true if tablespace is dropped
   @param[in]    space_id tablespace id */
   bool is_tablespace_dropped(const space_id_t space_id);
+
+  /** @return true if the tablespace is both recopied and renamed during the
+  backup, in which case the recopy must write a full (non-sparse) copy.
+  @param[in]    space_id tablespace id */
+  bool is_recopy_renamed(const space_id_t space_id);
 };
 
 /** Insert into meta files map. This map is later used to delete the right
