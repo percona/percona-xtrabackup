@@ -1077,30 +1077,34 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
       return false;
     }
 
-    // space_id.ren is already with the desired name. Nothing to do.
-    if (source_path != nullptr && dest_path != nullptr &&
-        strcmp(source_path, dest_path) == 0) {
+    const bool source_equals_dest =
+        source_path != nullptr && dest_path != nullptr &&
+        strcmp(source_path, dest_path) == 0;
+
+    // The .ibd may already have the desired name, but for incremental backups
+    // we still need to move the corresponding .delta/.meta files.
+    if (source_equals_dest) {
       xb::info() << "prepare_handle_ren_files: ren_file: " << ren_path
                  << " already has desired file name: " << dest_path
                  << " source path is: " << source_path;
-      os_file_delete(0, ren_path.c_str());
-      return true;
     }
 
-    pending_ren.rename_tablespace = true;
-    pending_ren.temp_space_name = make_temp_space_name(source_space_id);
-    pending_ren.temp_path = std::string(source_path) + REN_TMP_SUFFIX;
+    if (!source_equals_dest) {
+      pending_ren.rename_tablespace = true;
+      pending_ren.temp_space_name = make_temp_space_name(source_space_id);
+      pending_ren.temp_path = std::string(source_path) + REN_TMP_SUFFIX;
 
-    xb::info() << "prepare_handle_ren_files: staging " << fil_space->name
-               << " to temporary path " << pending_ren.temp_path;
+      xb::info() << "prepare_handle_ren_files: staging " << fil_space->name
+                 << " to temporary path " << pending_ren.temp_path;
 
-    if (!fil_rename_tablespace(fil_space->id, source_path,
-                               pending_ren.temp_space_name.c_str(),
-                               pending_ren.temp_path.c_str())) {
-      xb::error() << "prepare_handle_ren_files: Cannot rename "
-                  << fil_space->name << " to temporary path "
-                  << pending_ren.temp_path;
-      return false;
+      if (!fil_rename_tablespace(fil_space->id, source_path,
+                                 pending_ren.temp_space_name.c_str(),
+                                 pending_ren.temp_path.c_str())) {
+        xb::error() << "prepare_handle_ren_files: Cannot rename "
+                    << fil_space->name << " to temporary path "
+                    << pending_ren.temp_path;
+        return false;
+      }
     }
   } else {
     // In case source file doesn't exist we check if destination file is already
