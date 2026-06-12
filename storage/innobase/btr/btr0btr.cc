@@ -4218,8 +4218,30 @@ static bool btr_validate_level(
     return (false);
   }
 
+#ifdef XTRABACKUP
+  /* Bound the descent. Each step must move strictly one level down, so a
+     well-formed descent takes at most BTR_MAX_NODE_LEVEL steps. A node pointer
+     whose child-page-number is corrupted to point sideways/upward (e.g. back to
+     the root) would otherwise loop here forever -- btr_page_level_is_sane()
+     only checks the level is in range, not that it decreases, and check-tables
+     runs with trx=nullptr so trx_is_interrupted() never fires. */
+  ulint descent_steps = 0;
+#endif /* XTRABACKUP */
   while (level != btr_page_get_level(page)) {
     const rec_t *node_ptr;
+
+#ifdef XTRABACKUP
+    if (++descent_steps > BTR_MAX_NODE_LEVEL) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: descent to level " << level
+                  << " of index " << index->name() << " exceeded "
+                  << BTR_MAX_NODE_LEVEL
+                  << " steps -- cyclic or non-decreasing node pointers";
+      mtr_commit(&mtr);
+      mem_heap_free(heap);
+      return false;
+    }
+#endif /* XTRABACKUP */
 
     if (fseg_page_is_free(seg, block->page.id.space(),
                           block->page.id.page_no())) {
