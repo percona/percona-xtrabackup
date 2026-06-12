@@ -1050,6 +1050,17 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
     }
   });
 
+  // CREATE DATABASE during the backup does not produce MLOG_FILE_* records,
+  // so the destination schema directory may not exist yet in the backup dir.
+  // fil_rename_tablespace() -> os_file_rename() will not create parent dirs,
+  // so make sure the destination schema dir exists before any rename happens.
+  if (dest_path != nullptr &&
+      os_file_create_subdirs_if_needed(dest_path) != DB_SUCCESS) {
+    xb::error() << "prepare_handle_ren_files: cannot create parent directory "
+                << "for " << dest_path;
+    return false;
+  }
+
   fil_space_t *fil_space = fil_space_get(source_space_id);
 
   pending_ren_file_t pending_ren;
