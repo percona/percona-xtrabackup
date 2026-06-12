@@ -5022,6 +5022,21 @@ bool btr_validate_index(
 
   bool ok = true;
   page_t *root = btr_root_get(index, &mtr);
+
+#ifdef XTRABACKUP
+  /* Check the root level before btr_page_get_level() uses it below. A corrupt
+     root PAGE_LEVEL would otherwise make n huge and spin btr_validate_level()
+     up to 65536 times. This is above btr_validate_level(), so its own level
+     guards do not cover this read. */
+  if (!btr_page_level_is_sane(root)) {
+    ib::error() << "B-tree corruption: root page " << page_get_page_no(root)
+                << " of index " << index->name()
+                << " has an out-of-range level " << btr_page_get_level(root);
+    mtr_commit(&mtr);
+    return false;
+  }
+#endif /* XTRABACKUP */
+
   ulint n = btr_page_get_level(root);
 
   for (ulint i = 0; i <= n; ++i) {
