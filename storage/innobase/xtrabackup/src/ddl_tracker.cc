@@ -825,6 +825,27 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     new_tables[elem.second] = elem.first;
   }
 
+  /* Every .crpt marker must be paired with either a DROP (.del) or a
+  successful recopy (.new). Otherwise prepare_handle_corrupt_files() would
+  silently delete the .ibd in the backup with no replacement, producing a
+  successful-looking backup that has actually lost the table. This must be
+  checked here, before the early-return below: when there is no other DDL,
+  new_tables is empty and the recopy loop is skipped, but the .crpt marker
+  still ends up on disk and must not be allowed to silently destroy data. */
+  for (const auto &cor : corrupted_tablespaces) {
+    space_id_t sid = cor.first;
+    const std::string &name = cor.second.first;
+    const bool dropped = drops.find(sid) != drops.end();
+    const bool recopied = new_tables.find(sid) != new_tables.end();
+    if (!dropped && !recopied) {
+      xb::error() << "DDL tracking : corrupted tablespace " << name
+                  << " (space_id=" << sid
+                  << ") is neither dropped nor recopied; aborting backup to"
+                     " avoid silent data loss.";
+      return DB_ERROR;
+    }
+  }
+
   if (new_tables.empty()) {
     xb::info() << "DDL tracking : no new files are being copied.";
     return DB_SUCCESS;

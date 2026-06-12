@@ -3315,7 +3315,8 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
 
   if (res == XB_FIL_CUR_ERROR ||
       (res == XB_FIL_CUR_CORRUPTED &&
-       (ddl_tracker == nullptr || opt_lock_ddl != LOCK_DDL_REDUCED))) {
+       (ddl_tracker == nullptr || opt_lock_ddl != LOCK_DDL_REDUCED ||
+        is_server_locked()))) {
     goto error;
   }
 
