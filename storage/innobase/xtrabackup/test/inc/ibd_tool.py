@@ -58,6 +58,7 @@ FIL_PAGE_TYPE = 24         # page type (2 bytes)
 FIL_PAGE_FILE_FLUSH_LSN = 26  # flush LSN (page 0) / key version (8 bytes)
 FIL_PAGE_SPACE_ID = 34     # space id (4 bytes)
 FIL_PAGE_DATA = 38         # start of the data / index header on the page
+FIL_NULL = 0xFFFFFFFF       # "no page" sentinel for FIL_PAGE_PREV / FIL_PAGE_NEXT
 # FIL trailer: last 8 bytes of the page = FIL_PAGE_END_LSN_OLD_CHKSUM
 #   [old-style checksum (4)] [low 32 bits of FIL_PAGE_LSN (4)]
 FIL_PAGE_END_LSN_OLD_CHKSUM_LEN = 8
@@ -259,6 +260,65 @@ def mach_write_field(path, page_no, offset, value, n, page_size):
         f.write(value.to_bytes(n, "big"))
 
 
+# --- ut_crc32 / page checksum (checksum.cc) --------------------------------
+# InnoDB's ut_crc32 is CRC-32C (Castagnoli), NOT zlib's CRC-32: reflected,
+# poly 0x1EDC6F41 (reflected 0x82F63B78), init/xorout 0xFFFFFFFF.
+# Verified: ut_crc32(b"123456789") == 0xE3069283.
+_CRC32C_POLY = 0x82F63B78
+_CRC32C_TABLE = []
+for _n in range(256):
+    _c = _n
+    for _ in range(8):
+        _c = (_c >> 1) ^ _CRC32C_POLY if (_c & 1) else (_c >> 1)
+    _CRC32C_TABLE.append(_c)
+
+
+def ut_crc32(data):
+    """CRC-32C over a bytes-like object (mirrors InnoDB's ut_crc32)."""
+    crc = 0xFFFFFFFF
+    for b in data:
+        crc = (crc >> 8) ^ _CRC32C_TABLE[(crc ^ b) & 0xFF]
+    return crc ^ 0xFFFFFFFF
+
+
+def buf_calc_page_crc32(page, page_size):
+    """InnoDB CRC32 page checksum (checksum.cc buf_calc_page_crc32):
+    c1 over [FIL_PAGE_OFFSET, FIL_PAGE_FILE_FLUSH_LSN), c2 over
+    [FIL_PAGE_DATA, page_size - 8); result is c1 ^ c2."""
+    c1 = ut_crc32(page[FIL_PAGE_OFFSET:FIL_PAGE_FILE_FLUSH_LSN])
+    c2 = ut_crc32(page[FIL_PAGE_DATA:page_size - FIL_PAGE_END_LSN_OLD_CHKSUM_LEN])
+    return (c1 ^ c2) & 0xFFFFFFFF
+
+
+def update_page_checksum(path, page_no, page_size):
+    """Recompute and store the CRC32 page checksum so a corrupted page still
+    passes checksum validation (mirrors the colleague's update_checksum). The
+    CRC32 algorithm stores the value in FIL_PAGE_SPACE_OR_CHKSUM (offset 0) and
+    in the first 4 bytes of the FIL trailer (page_size - 8); the last 4 trailer
+    bytes (low 32 bits of the LSN) are left unchanged."""
+    page = bytearray(read_page(path, page_no, page_size))
+    chk = buf_calc_page_crc32(page, page_size)
+    page[FIL_PAGE_SPACE_OR_CHKSUM:FIL_PAGE_SPACE_OR_CHKSUM + 4] = chk.to_bytes(4, "big")
+    trailer = page_size - FIL_PAGE_END_LSN_OLD_CHKSUM_LEN
+    page[trailer:trailer + 4] = chk.to_bytes(4, "big")
+    with open(path, "r+b") as f:
+        f.seek(page_no * page_size)
+        f.write(page)
+    return chk
+
+
+def fill_page_bytes(path, page_no, start, end, value, page_size):
+    """Set page bytes [start, end) to value -- simulates a partial/torn page
+    write that overwrites a run of bytes. Unlike a single mach_write field, this
+    fills an arbitrary-length range with one repeated byte. Returns the count."""
+    if not 0 <= start < end <= page_size:
+        raise ValueError("range out of page bounds")
+    with open(path, "r+b") as f:
+        f.seek(page_no * page_size + start)
+        f.write(bytes([value & 0xFF]) * (end - start))
+    return end - start
+
+
 def iter_index_pages(path, page_size):
     """Scan the file page by page, yielding (page_no, level, index_id) for every
     user FIL_PAGE_INDEX page (the clustered/secondary B-trees). Deliberately
@@ -310,6 +370,21 @@ def find_leftmost_node_ptr(path, page_size):
 def find_first_user_rec_origin(path, page_no, page_size):
     """In-page offset of the first user record (infimum -> next), COMPACT page."""
     return rec_get_next_offs(read_page(path, page_no, page_size), PAGE_NEW_INFIMUM)
+
+
+def find_leftmost_leaf(path, page_size):
+    """(leaf_page_no, right_sibling_page_no) for the leftmost clustered leaf --
+    the FIL_PAGE_INDEX page at level 0 whose FIL_PAGE_PREV is FIL_NULL -- and the
+    page its FIL_PAGE_NEXT points to (FIL_NULL if it is the only leaf). Returns
+    None if no leaf is found. The B-tree descent lands on this leaf first, so
+    its right sibling is parsed (right_rec) before being validated -- the path
+    the sibling-corruption tests exercise."""
+    for page_no, level, _id in iter_index_pages(path, page_size):
+        if level == 0:
+            page = read_page(path, page_no, page_size)
+            if fil_page_get_prev(page) == FIL_NULL:
+                return page_no, fil_page_get_next(page)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -606,9 +681,12 @@ Commands:
   space-id                        space id (FSP_SPACE_ID on page 0)
   read  <page> <off> <nbytes> [psz]          big-endian unsigned field
   write <page> <off> <value> <nbytes> [psz]  write a field (value may be 0x-hex)
+  fill  <page> <start> <end> <value> [psz]   set page bytes [start,end) to value
+  update-checksum <page> [psz]               recompute+store the CRC32 page checksum
   find-index-page <level> [psz]
   clustered-pages [psz]           -> "MAXLEVEL L0 L1 L2"
   leftmost-node-ptr [psz]         -> "ROOT OFF"
+  leftmost-leaf [psz]             -> "LEAF NEXT" (leftmost level-0 page + its sibling)
   first-user-rec-origin <page> [psz]
 
 List the space id of every tablespace file under a directory:
@@ -626,8 +704,8 @@ Examples:
 _SUBCOMMANDS = {
     "summary", "page-size", "read", "write", "header", "trailer", "scan",
     "flags", "encryption", "space-id", "space-ids",
-    "find-index-page", "clustered-pages", "leftmost-node-ptr",
-    "first-user-rec-origin",
+    "find-index-page", "clustered-pages", "leftmost-node-ptr", "leftmost-leaf",
+    "first-user-rec-origin", "fill", "update-checksum",
 }
 
 
@@ -656,6 +734,8 @@ COMMAND_USAGE = {
     "write":                 "<file> write <page> <off> <value> <nbytes> [psz]",
     "find-index-page":       "<file> find-index-page <level> [psz]",
     "first-user-rec-origin": "<file> first-user-rec-origin <page_no> [psz]",
+    "fill":                  "<file> fill <page> <start> <end> <value> [psz]",
+    "update-checksum":       "<file> update-checksum <page> [psz]",
 }
 
 
@@ -762,9 +842,26 @@ def _dispatch(cmd, path, rest):
         res = find_leftmost_node_ptr(path, _psz(path, _opt(rest, 0)))
         print("ERR not enough levels" if res is None else "%d %d" % res)
 
+    elif cmd == "leftmost-leaf":
+        res = find_leftmost_leaf(path, _psz(path, _opt(rest, 0)))
+        print("NONE NONE" if res is None else "%d %d" % res)
+
     elif cmd == "first-user-rec-origin":
         _require("first-user-rec-origin", rest, 1)
         print(find_first_user_rec_origin(path, _int(rest[0]), _psz(path, _opt(rest, 1))))
+
+    elif cmd == "fill":
+        _require("fill", rest, 4)
+        page_no, start, end = _int(rest[0]), _int(rest[1]), _int(rest[2])
+        value = _int(rest[3])
+        n = fill_page_bytes(path, page_no, start, end, value,
+                            _psz(path, _opt(rest, 4)))
+        print(n)
+
+    elif cmd == "update-checksum":
+        _require("update-checksum", rest, 1)
+        chk = update_page_checksum(path, _int(rest[0]), _psz(path, _opt(rest, 1)))
+        print("0x%08x" % chk)
 
 
 if __name__ == "__main__":

@@ -1745,6 +1745,14 @@ find_index_page() { _ibd_tool "$1" find-index-page "${2:-0}" "${PAGE_SIZE:-}"; }
 # usage: read ROOT OFF <<< "$(find_leftmost_node_ptr <file>)"
 find_leftmost_node_ptr() { _ibd_tool "$1" leftmost-node-ptr "${PAGE_SIZE:-}"; }
 
+# Print "LEAF NEXT": the leftmost clustered leaf (the level-0 page whose
+# FIL_PAGE_PREV is FIL_NULL) and the page its FIL_PAGE_NEXT points to (the
+# sentinel 4294967295 == FIL_NULL if it is the only leaf). Prints "NONE NONE"
+# if no leaf is found. The B-tree descent lands on this leaf first, so its
+# right sibling is parsed before being validated.
+# usage: read LEAF NEXT <<< "$(find_leftmost_leaf <file>)"
+find_leftmost_leaf() { _ibd_tool "$1" leftmost-leaf "${PAGE_SIZE:-}"; }
+
 # Print "MAXLEVEL L0 L1 L2": the deepest clustered-index level, and a
 # clustered-index page number at levels 0/1/2 (or NONE if absent).
 # usage: read MAXLEVEL L0 L1 L2 <<< "$(find_clustered_pages_by_level <file>)"
@@ -1754,6 +1762,17 @@ find_clustered_pages_by_level() { _ibd_tool "$1" clustered-pages "${PAGE_SIZE:-}
 # index page (infimum -> next link).
 # usage: origin=$(find_first_user_rec_origin <file> <page_no>)
 find_first_user_rec_origin() { _ibd_tool "$1" first-user-rec-origin "$2" "${PAGE_SIZE:-}"; }
+
+# Overwrite page bytes [START, END) of PAGE_NO in FILE with VALUE (one byte,
+# e.g. 0xFF) -- simulates a partial/torn page write over a run of bytes.
+# usage: fill_page_bytes <file> <page_no> <start> <end> <value>
+fill_page_bytes() { _ibd_tool "$1" fill "$2" "$3" "$4" "$5" "${PAGE_SIZE:-}"; }
+
+# Recompute and store the CRC32 page checksum for PAGE_NO in FILE, so a
+# corrupted page still passes checksum validation (mirrors InnoDB's on-write
+# checksum). Prints the new checksum as 0x........
+# usage: update_page_checksum <file> <page_no>
+update_page_checksum() { _ibd_tool "$1" update-checksum "$2" "${PAGE_SIZE:-}"; }
 
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=
