@@ -35,6 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "btr0btr.h"
 
 #include <sys/types.h>
+#include <unordered_set>
 
 #ifndef UNIV_HOTBACKUP
 #include "btr0cur.h"
@@ -4325,9 +4326,33 @@ static bool btr_validate_level(
     seg -= PAGE_BTR_SEG_TOP - PAGE_BTR_SEG_LEAF;
   }
 
+#ifdef XTRABACKUP
+  /* Detect a cyclic FIL_PAGE_NEXT chain on this level. A page can appear only
+     once on a level, so revisiting one means the sibling links loop back.
+     Without this the scan never terminates: on a self-consistent cycle the
+     back-link and bounds checks pass, the key-order check reports but does not
+     stop, and check-tables runs with trx=nullptr so trx_is_interrupted() never
+     fires. Only the page number is stored, and only when a page becomes the
+     current page (once per left->right step) -- re-reads/re-latches of a page
+     during this iteration are never re-inserted, and the root re-descended for
+     other subtrees belongs to a different (per-level) call with its own set. */
+  std::unordered_set<page_no_t> seen_pages;
+#endif /* XTRABACKUP */
+
   do {
     ulint cur_page_no;
     mem_heap_empty(heap);
+#ifdef XTRABACKUP
+    if (!seen_pages.insert(block->page.id.page_no()).second) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: page " << block->page.id.page_no()
+                  << " revisited on level " << level << " of index "
+                  << index->name() << " -- FIL_PAGE_NEXT chain forms a cycle";
+      ret = false;
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+    }
+#endif /* XTRABACKUP */
     offsets = offsets2 = nullptr;
     if (!srv_read_only_mode) {
       if (lockout) {
