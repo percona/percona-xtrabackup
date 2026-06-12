@@ -683,10 +683,11 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     /* Remove from missing */
     missing_after_discovery.erase(space_id);
 
-    /* Remove from new tables and skip drop*/
+    /* Remove from new tables. Recopy can temporarily promote an already
+    copied tablespace into new_tables, but a captured DROP must still leave
+    a .del marker. */
     if (new_tables.find(space_id) != new_tables.end()) {
       new_tables.erase(space_id);
-      continue;
     }
 
     /* Table not in the backup, nothing to drop, skip drop*/
