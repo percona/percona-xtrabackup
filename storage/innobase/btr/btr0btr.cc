@@ -35,6 +35,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "btr0btr.h"
 
 #include <sys/types.h>
+#include <unordered_set>
 
 #ifndef UNIV_HOTBACKUP
 #include "btr0cur.h"
@@ -144,7 +145,7 @@ make them consecutive on disk if possible. From the other file segment
 we allocate pages for the non-leaf levels of the tree.
 */
 
-#ifdef UNIV_BTR_DEBUG
+#if defined(UNIV_BTR_DEBUG) || defined(XTRABACKUP)
 /** Checks a file segment header within a B-tree root page.
  @return true if valid */
 static bool btr_root_fseg_validate(
@@ -153,12 +154,22 @@ static bool btr_root_fseg_validate(
 {
   ulint offset = mach_read_from_2(seg_header + FSEG_HDR_OFFSET);
 
+#ifdef XTRABACKUP
+  /* In xtrabackup --check-tables we report corruption instead of crashing.
+     A root file-segment header that names a different tablespace, or whose
+     in-page offset is out of range, indicates a corrupted root page. */
+  if (mach_read_from_4(seg_header + FSEG_HDR_SPACE) != space ||
+      offset < FIL_PAGE_DATA || offset > UNIV_PAGE_SIZE - FIL_PAGE_DATA_END) {
+    return false;
+  }
+#else
   ut_a(mach_read_from_4(seg_header + FSEG_HDR_SPACE) == space);
   ut_a(offset >= FIL_PAGE_DATA);
   ut_a(offset <= UNIV_PAGE_SIZE - FIL_PAGE_DATA_END);
+#endif /* XTRABACKUP */
   return true;
 }
-#endif /* UNIV_BTR_DEBUG */
+#endif /* UNIV_BTR_DEBUG || XTRABACKUP */
 
 /** Gets the root node of a tree and x- or s-latches it.
  @return root page, x- or s-latched */
@@ -176,7 +187,10 @@ buf_block_t *btr_root_block_get(
       btr_block_get(page_id, page_size, mode, UT_LOCATION_HERE, index, mtr);
 
   btr_assert_not_corrupted(block, index);
-#ifdef UNIV_BTR_DEBUG
+  /* In xtrabackup --check-tables we report corruption instead of crashing:
+     the root file-segment headers are validated (and reported) in
+     btr_validate_index(), so do not abort here on a corrupt header. */
+#if defined(UNIV_BTR_DEBUG) && !defined(XTRABACKUP)
   if (!dict_index_is_ibuf(index)) {
     const page_t *root = buf_block_get_frame(block);
 
@@ -185,7 +199,7 @@ buf_block_t *btr_root_block_get(
     ut_a(btr_root_fseg_validate(FIL_PAGE_DATA + PAGE_BTR_SEG_TOP + root,
                                 space_id));
   }
-#endif /* UNIV_BTR_DEBUG */
+#endif /* UNIV_BTR_DEBUG && !XTRABACKUP */
 
   return (block);
 }
@@ -708,6 +722,21 @@ static ulint *btr_page_get_father_node_ptr_func(
                             UT_LOCATION_HERE, &heap);
 
   if (btr_node_ptr_get_child_page_no(node_ptr, offsets) != page_no) {
+#ifdef XTRABACKUP
+    /* In xtrabackup --check-tables we report corruption instead of crashing.
+       During validation (BTR_CONT_SEARCH_TREE) a father node pointer whose
+       child page number does not match the child page is B-tree corruption;
+       return nullptr so the validate caller fails the check gracefully, and
+       skip the page_rec_print() calls below which re-parse the records. */
+    if (latch_mode == BTR_CONT_SEARCH_TREE) {
+      ib::error(ER_IB_MSG_28)
+          << "Corruption of an index tree: table " << index->table->name
+          << " index " << index->name << ", father ptr page no "
+          << btr_node_ptr_get_child_page_no(node_ptr, offsets)
+          << ", child page no " << page_no;
+      return nullptr;
+    }
+#endif /* XTRABACKUP */
     rec_t *print_rec;
 
     ib::error(ER_IB_MSG_28)
@@ -4087,6 +4116,24 @@ static void btr_validate_report2(
   }
 }
 
+#ifdef XTRABACKUP
+/** Check that a page number read from page data refers to a page that
+actually exists within the tablespace. A corrupt FIL_PAGE_NEXT /
+FIL_PAGE_PREV (or node-pointer) field can hold an arbitrary value such as
+0xDEADBEEF; following it would make the buffer pool try to extend the
+tablespace to cover that page -- e.g. a multi-terabyte posix_fallocate that
+never completes and hangs --check-tables indefinitely. Used by the
+xtrabackup --check-tables validation path to report corruption and stop
+instead of chasing the bogus pointer.
+@param[in] space_id  tablespace id
+@param[in] page_no   page number read from page data (must not be FIL_NULL)
+@return true if page_no is within the current size of the tablespace */
+static bool btr_page_no_in_bounds(space_id_t space_id, page_no_t page_no) {
+  const page_no_t space_size = fil_space_get_size(space_id);
+  return space_size != 0 && page_no < space_size;
+}
+#endif /* XTRABACKUP */
+
 /** Validates index tree level.
 @param[in] index  index dictionary object.
 @param[in] trx    transaction or nullptr
@@ -4139,6 +4186,19 @@ static bool btr_validate_level(
   page = buf_block_get_frame(block);
   seg = page + PAGE_HEADER + PAGE_BTR_SEG_TOP;
 
+#ifdef XTRABACKUP
+  /* Check the root before the descent loop reads its level. */
+  if (!btr_page_level_is_sane(page)) {
+    btr_validate_report1(index, level, block);
+    ib::error() << "B-tree corruption: root page " << page_get_page_no(page)
+                << " has an out-of-range level " << btr_page_get_level(page)
+                << " in index " << index->name();
+    mtr_commit(&mtr);
+    mem_heap_free(heap);
+    return false;
+  }
+#endif /* XTRABACKUP */
+
 #ifdef UNIV_RTR_DEBUG
   if (dict_index_is_spatial(index)) {
     fprintf(stderr, "Root page no: %lu\n", (ulong)page_get_page_no(page));
@@ -4158,8 +4218,30 @@ static bool btr_validate_level(
     return (false);
   }
 
+#ifdef XTRABACKUP
+  /* Bound the descent. Each step must move strictly one level down, so a
+     well-formed descent takes at most BTR_MAX_NODE_LEVEL steps. A node pointer
+     whose child-page-number is corrupted to point sideways/upward (e.g. back to
+     the root) would otherwise loop here forever -- btr_page_level_is_sane()
+     only checks the level is in range, not that it decreases, and check-tables
+     runs with trx=nullptr so trx_is_interrupted() never fires. */
+  ulint descent_steps = 0;
+#endif /* XTRABACKUP */
   while (level != btr_page_get_level(page)) {
     const rec_t *node_ptr;
+
+#ifdef XTRABACKUP
+    if (++descent_steps > BTR_MAX_NODE_LEVEL) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: descent to level " << level
+                  << " of index " << index->name() << " exceeded "
+                  << BTR_MAX_NODE_LEVEL
+                  << " steps -- cyclic or non-decreasing node pointers";
+      mtr_commit(&mtr);
+      mem_heap_free(heap);
+      return false;
+    }
+#endif /* XTRABACKUP */
 
     if (fseg_page_is_free(seg, block->page.id.space(),
                           block->page.id.page_no())) {
@@ -4216,6 +4298,23 @@ static bool btr_validate_level(
     block = btr_node_ptr_get_child(node_ptr, index, offsets, &mtr);
     page = buf_block_get_frame(block);
 
+#ifdef XTRABACKUP
+    /* Check the freshly loaded child before the loop re-reads its level with
+       btr_page_get_level(). A partial write that set this page's PAGE_LEVEL
+       out of range would otherwise abort there, or have the descent treat the
+       page as an internal node and parse its records as node pointers. */
+    if (!btr_page_level_is_sane(page)) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: child page " << page_get_page_no(page)
+                  << " reached during descent has an"
+                     " out-of-range level "
+                  << btr_page_get_level(page) << " in index " << index->name();
+      mtr_commit(&mtr);
+      mem_heap_free(heap);
+      return false;
+    }
+#endif /* XTRABACKUP */
+
     /* For R-Tree, since record order might not be the same as
     linked index page in the lower level, we need to traverse
     backwards to get the first page rec in this level.
@@ -4249,9 +4348,33 @@ static bool btr_validate_level(
     seg -= PAGE_BTR_SEG_TOP - PAGE_BTR_SEG_LEAF;
   }
 
+#ifdef XTRABACKUP
+  /* Detect a cyclic FIL_PAGE_NEXT chain on this level. A page can appear only
+     once on a level, so revisiting one means the sibling links loop back.
+     Without this the scan never terminates: on a self-consistent cycle the
+     back-link and bounds checks pass, the key-order check reports but does not
+     stop, and check-tables runs with trx=nullptr so trx_is_interrupted() never
+     fires. Only the page number is stored, and only when a page becomes the
+     current page (once per left->right step) -- re-reads/re-latches of a page
+     during this iteration are never re-inserted, and the root re-descended for
+     other subtrees belongs to a different (per-level) call with its own set. */
+  std::unordered_set<page_no_t> seen_pages;
+#endif /* XTRABACKUP */
+
   do {
     ulint cur_page_no;
     mem_heap_empty(heap);
+#ifdef XTRABACKUP
+    if (!seen_pages.insert(block->page.id.page_no()).second) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: page " << block->page.id.page_no()
+                  << " revisited on level " << level << " of index "
+                  << index->name() << " -- FIL_PAGE_NEXT chain forms a cycle";
+      ret = false;
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+    }
+#endif /* XTRABACKUP */
     offsets = offsets2 = nullptr;
     if (!srv_read_only_mode) {
       if (lockout) {
@@ -4299,22 +4422,34 @@ static bool btr_validate_level(
 
       ib::warn(ER_IB_MSG_40) << "Page is marked as free";
       ret = false;
-
-    } else if (btr_page_get_index_id(page) != index->id) {
-      ib::error(ER_IB_MSG_41) << "Page index id " << btr_page_get_index_id(page)
-                              << " != data dictionary index id " << index->id;
-
-      ret = false;
+#ifdef XTRABACKUP
+      /* A free page in the index is corruption; don't traverse it further. */
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+#endif /* XTRABACKUP */
 
     } else if (!page_validate(page, index, true, blob_map)) {
+      /* page_validate() is the single per-page validator. Under XTRABACKUP
+         it also performs the page-type, index-id and record-chain checks, so
+         it never aborts on a corrupt page; on failure we stop traversing this
+         level because the father-pointer search and sibling record compares
+         below would otherwise parse a page already known to be corrupt. */
       btr_validate_report1(index, level, block);
       ret = false;
+#ifdef XTRABACKUP
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+#endif /* XTRABACKUP */
 
     } else if (level == 0 && !btr_index_page_validate(block, index)) {
       /* We are on level 0. Check that the records have the right
       number of fields, and field lengths are right. */
 
       ret = false;
+#ifdef XTRABACKUP
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+#endif /* XTRABACKUP */
     }
 
 #ifdef XTRABACKUP
@@ -4344,6 +4479,27 @@ static bool btr_validate_level(
 #endif /* UNIV_DEBUG */
 
 #ifdef XTRABACKUP
+    /* In xtrabackup --check-tables we report corruption instead of crashing
+       or hanging. A corrupt FIL_PAGE_NEXT/FIL_PAGE_PREV can hold an
+       arbitrary page number; fetching it below (right sibling, or the next
+       loop iteration) would make the buffer pool extend the tablespace to
+       cover that page -- e.g. a multi-terabyte posix_fallocate that never
+       returns. Verify both sibling links are within the tablespace before
+       following them, and stop this level's traversal if either is not. */
+    if ((right_page_no != FIL_NULL &&
+         !btr_page_no_in_bounds(index->space, right_page_no)) ||
+        (left_page_no != FIL_NULL &&
+         !btr_page_no_in_bounds(index->space, left_page_no))) {
+      btr_validate_report1(index, level, block);
+      ib::error() << "B-tree corruption: out-of-bounds sibling link on page "
+                  << cur_page_no << " (FIL_PAGE_PREV=" << left_page_no
+                  << ", FIL_PAGE_NEXT=" << right_page_no << ") in index "
+                  << index->name() << " of table " << index->table->name;
+      ret = false;
+      right_page_no = FIL_NULL;
+      goto node_ptr_fails;
+    }
+
     /* In xtrabackup --check-tables we report corruption instead of crashing.
        An empty non-root page indicates corruption (e.g. all-zero page from
        unflushed redo, or truncated tablespace). Stop traversal -- an
@@ -4392,7 +4548,16 @@ static bool btr_validate_level(
             stderr);
 
         ret = false;
-#ifdef UNIV_DEBUG
+#ifdef XTRABACKUP
+        /* In xtrabackup --check-tables we report corruption instead of
+           crashing. A broken FIL_PAGE_PREV back-link (the right sibling
+           does not point back to the current page) means the leaf chain is
+           inconsistent. Stop traversing this level: the remaining sibling
+           links are untrustworthy and following them risks chasing
+           arbitrary page numbers. */
+        right_page_no = FIL_NULL;
+        goto node_ptr_fails;
+#elif defined(UNIV_DEBUG)
         {
           bool skip_assert = false;
           DBUG_EXECUTE_IF("check_table_break_sibling_link",
@@ -4402,7 +4567,7 @@ static bool btr_validate_level(
             ut_ad(siblings_link_correct);
           }
         }
-#endif /* UNIV_DEBUG */
+#endif /* XTRABACKUP */
       }
 
       if (page_is_comp(right_page) != page_is_comp(page)) {
@@ -4413,6 +4578,27 @@ static bool btr_validate_level(
 
         goto node_ptr_fails;
       }
+
+#ifdef XTRABACKUP
+      /* The adjacent-key check below parses the first record of right_page,
+         but right_page is only run through page_validate() on the NEXT
+         iteration (when it becomes the current page). Validate it here first
+         so a corrupt right sibling -- wrong page type or a bad REC_STATUS in
+         its record chain -- is reported instead of aborting rec_get_offsets()
+         (rec.cc "default: ut_error") on this still-unvalidated page. */
+      if (!fil_page_index_page_check(right_page) ||
+          !rec_validate_page_chain(right_page)) {
+        btr_validate_report2(index, level, block, right_block);
+        ib::error() << "B-tree corruption: right sibling page "
+                    << page_get_page_no(right_page)
+                    << " is not a valid index page (bad type or record chain)"
+                       " in index "
+                    << index->name();
+        ret = false;
+        right_page_no = FIL_NULL;
+        goto node_ptr_fails;
+      }
+#endif /* XTRABACKUP */
 
       rec = page_rec_get_prev(page_get_supremum_rec(page));
       right_rec = page_rec_get_next(page_get_infimum_rec(right_page));
@@ -4483,6 +4669,22 @@ static bool btr_validate_level(
       offsets = btr_page_get_father_node_ptr_for_validate(
           offsets, heap, &node_cur, UT_LOCATION_HERE, &mtr);
 
+#ifdef XTRABACKUP
+      /* nullptr => the father node pointer's child page number did not match
+         (or the cursor was not on a user record): report corruption and stop
+         instead of dereferencing the missing offsets. */
+      if (offsets == nullptr) {
+        btr_validate_report1(index, level, block);
+        ib::error()
+            << "B-tree corruption: invalid father node pointer for page "
+            << block->page.id.page_no() << " in index " << index->name()
+            << " of table " << index->table->name;
+        ret = false;
+        right_page_no = FIL_NULL;
+        goto node_ptr_fails;
+      }
+#endif /* XTRABACKUP */
+
       father_page = btr_cur_get_page(&node_cur);
       node_ptr = btr_cur_get_rec(&node_cur);
 
@@ -4495,6 +4697,18 @@ static bool btr_validate_level(
 
       offsets = btr_page_get_father_node_ptr_for_validate(
           offsets, heap, &node_cur, UT_LOCATION_HERE, &mtr);
+
+#ifdef XTRABACKUP
+      if (offsets == nullptr) {
+        btr_validate_report1(index, level, block);
+        ib::error()
+            << "B-tree corruption: invalid father node pointer for page "
+            << block->page.id.page_no() << " in index " << index->name();
+        ret = false;
+        right_page_no = FIL_NULL;
+        goto node_ptr_fails;
+      }
+#endif /* XTRABACKUP */
 
       if (node_ptr != btr_cur_get_rec(&node_cur) ||
           btr_node_ptr_get_child_page_no(node_ptr, offsets) !=
@@ -4627,6 +4841,21 @@ static bool btr_validate_level(
 
         offsets = btr_page_get_father_node_ptr_for_validate(
             offsets, heap, &right_node_cur, UT_LOCATION_HERE, &mtr);
+
+#ifdef XTRABACKUP
+        /* nullptr => the right sibling's father node pointer did not match its
+           child page (e.g. a corrupt record link landed the search on the
+           wrong leaf): report corruption and stop instead of aborting. */
+        if (offsets == nullptr) {
+          btr_validate_report1(index, level, block);
+          ib::error() << "B-tree corruption: invalid father node pointer for"
+                         " right page "
+                      << right_page_no << " in index " << index->name();
+          ret = false;
+          right_page_no = FIL_NULL;
+          goto node_ptr_fails;
+        }
+#endif /* XTRABACKUP */
 
         if (right_node_ptr != page_get_supremum_rec(father_page)) {
           if (btr_cur_get_rec(&right_node_cur) != right_node_ptr) {
@@ -4771,8 +5000,12 @@ bool btr_validate_index(
 
   mtr_t mtr;
 
-#ifdef UNIV_DEBUG
-  /* Check the FSEG_NOT_FULL_N_USED field stored in the segment inode. */
+#if defined(UNIV_DEBUG) || defined(XTRABACKUP)
+  /* Check the FSEG_NOT_FULL_N_USED field stored in the segment inode.
+     Under xtrabackup --check-tables this block also validates the two root
+     file-segment headers so that a corrupt FSEG_HDR_PAGE_NO -- which would
+     otherwise abort in fseg_inode_get() (ut_a(inode)) -- is reported as
+     corruption and the index check fails cleanly. */
   {
     const space_id_t space_id = dict_index_get_space(index);
 
@@ -4789,17 +5022,40 @@ bool btr_validate_index(
 
     for (auto offset : {PAGE_BTR_SEG_LEAF, PAGE_BTR_SEG_TOP}) {
       const fseg_header_t *const seg_header = root + PAGE_HEADER + offset;
+#ifdef XTRABACKUP
+      /* Validate FSEG_HDR_SPACE / offset first: a header naming the wrong
+         tablespace would otherwise trip an assertion deeper in the inode
+         lookup. */
+      if (!btr_root_fseg_validate(seg_header, space_id)) {
+        ib::error() << "B-tree corruption: root page of index " << index->name()
+                    << " has a file-segment header that does not belong to"
+                       " this tablespace (bad FSEG_HDR_SPACE or offset)";
+        mtr_commit(&mtr);
+        fil_space_release(space);
+        return false;
+      }
+      if (!fseg_root_header_validate(seg_header, space_id, page_size, &mtr)) {
+        ib::error() << "B-tree corruption: root page of index " << index->name()
+                    << " has an invalid file-segment header"
+                       " (bad FSEG_HDR_PAGE_NO or segment inode)";
+        mtr_commit(&mtr);
+        fil_space_release(space);
+        return false;
+      }
+#endif /* XTRABACKUP */
+#ifdef UNIV_DEBUG
       fseg_inode_t *inode =
           fseg_inode_get(seg_header, space_id, page_size, &mtr);
       File_segment_inode fsi(space_id, page_size, inode, &mtr);
       ut_ad(fsi.verify_not_full_n_used());
+#endif /* UNIV_DEBUG */
     }
 
     mtr_commit(&mtr);
 
     fil_space_release(space);
   }
-#endif /* UNIV_DEBUG */
+#endif /* UNIV_DEBUG || XTRABACKUP */
 
   mtr_start(&mtr);
 
@@ -4813,6 +5069,21 @@ bool btr_validate_index(
 
   bool ok = true;
   page_t *root = btr_root_get(index, &mtr);
+
+#ifdef XTRABACKUP
+  /* Check the root level before btr_page_get_level() uses it below. A corrupt
+     root PAGE_LEVEL would otherwise make n huge and spin btr_validate_level()
+     up to 65536 times. This is above btr_validate_level(), so its own level
+     guards do not cover this read. */
+  if (!btr_page_level_is_sane(root)) {
+    ib::error() << "B-tree corruption: root page " << page_get_page_no(root)
+                << " of index " << index->name()
+                << " has an out-of-range level " << btr_page_get_level(root);
+    mtr_commit(&mtr);
+    return false;
+  }
+#endif /* XTRABACKUP */
+
   ulint n = btr_page_get_level(root);
 
   for (ulint i = 0; i <= n; ++i) {

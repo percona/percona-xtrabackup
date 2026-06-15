@@ -2263,6 +2263,41 @@ bool page_validate(const page_t *page, dict_index_t *index, bool check_min_rec,
     ib::error(ER_IB_MSG_897) << "'compact format' flag mismatch";
     goto func_exit2;
   }
+
+#ifdef XTRABACKUP
+  /* In xtrabackup --check-tables, page_validate() is the single per-page
+     validator (used by btr_validate_index() for both user and SDI indexes),
+     so group the cheap within-page identity/structure checks here and make
+     sure they run before the rec_get_offsets() loop below -- a record with a
+     corrupt REC_STATUS would otherwise abort there (rec.cc default: ut_error)
+     on debug *and* release builds. Report and return false instead. */
+  if (!fil_page_index_page_check(page)) {
+    ib::error() << "Page " << page_no << " has a non-index FIL_PAGE_TYPE ("
+                << fil_page_get_type(page) << ") in index " << index->name();
+    goto func_exit2;
+  }
+  if (btr_page_get_index_id(page) != index->id) {
+    ib::error(ER_IB_MSG_41) << "Page index id " << btr_page_get_index_id(page)
+                            << " != data dictionary index id " << index->id;
+    goto func_exit2;
+  }
+  /* Reject an out-of-range PAGE_LEVEL here so callers (e.g. the level scan in
+     btr_validate_level) can safely use btr_page_get_level() on a page whose
+     header was overwritten by a partial write. */
+  if (!btr_page_level_is_sane(page)) {
+    ib::error() << "Page " << page_no << " has an out-of-range B-tree level "
+                << btr_page_get_level(page) << " in index " << index->name();
+    goto func_exit2;
+  }
+  if (!rec_validate_page_chain(page)) {
+    ib::error() << "Page " << page_no
+                << " has an invalid record chain (bad record status or"
+                   " out-of-bounds link) in index "
+                << index->name();
+    goto func_exit2;
+  }
+#endif /* XTRABACKUP */
+
   if (page_is_comp(page)) {
     if (UNIV_UNLIKELY(!page_simple_validate_new(page))) {
       goto func_exit2;

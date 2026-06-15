@@ -92,10 +92,26 @@ static inline ulint btr_page_get_level(const page_t *page) {
 
   level = mach_read_from_2(page + PAGE_HEADER + PAGE_LEVEL);
 
+#ifndef XTRABACKUP
   ut_ad(level <= BTR_MAX_NODE_LEVEL);
+#else
+  /* xtrabackup --check-tables runs over a possibly-corrupt backup. A torn
+     page write can leave PAGE_LEVEL out of range; do not abort here -- the
+     validators (btr_page_level_is_sane) reject it and report corruption. */
+#endif /* XTRABACKUP */
 
   return (level);
 }
+
+#ifdef XTRABACKUP
+/** @return true if the page's recorded B-tree level is within the legal range.
+The xtrabackup --check-tables validators call this to reject a corrupt
+PAGE_LEVEL before it is used; btr_page_get_level() itself no longer asserts on
+the level under XTRABACKUP, so corruption is reported rather than aborting. */
+static inline bool btr_page_level_is_sane(const page_t *page) {
+  return btr_page_get_level(page) <= BTR_MAX_NODE_LEVEL;
+}
+#endif /* XTRABACKUP */
 
 /** Sets the node level field in an index page. */
 static inline void btr_page_set_level(

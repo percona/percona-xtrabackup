@@ -1701,5 +1701,78 @@ function resume_debug_sync_thread()
 
 }
 
+# ---------------------------------------------------------------------------
+# InnoDB page read/write/scan helpers. The logic lives in inc/ibd_tool.py
+# (C-API-shaped accessors: fil_page_get_type, btr_page_get_level,
+# rec_get_next_offs, ...); the shell functions below are thin wrappers so the
+# tests keep a stable, readable interface. Each forwards an optional exported
+# PAGE_SIZE override as the trailing argument (empty => read from the FSP
+# header). _ibd_tool resolves the script next to this file, so it works
+# regardless of the test's current directory. (ibd_tool.py also offers
+# flags/encryption/space-id(s) subcommands for standalone terminal use.)
+# ---------------------------------------------------------------------------
+_IBD_TOOL_PY="$(dirname "${BASH_SOURCE[0]}")/ibd_tool.py"
+_ibd_tool() { python3 "$_IBD_TOOL_PY" "$@"; }
+
+# Print the logical page size (bytes) of an InnoDB tablespace FILE.
+# usage: page_size=$(get_page_size <file>)
+get_page_size() { _ibd_tool "$1" page-size; }
+
+# Write VALUE as an N-byte big-endian integer into FILE at byte offset
+# (PAGE_NO * page_size + OFFSET), mirroring InnoDB's mach_write_to_N. Used by
+# tests to inject on-disk page corruption.
+# usage: mach_write_4 <file> <page_no> <in_page_offset> <value>
+mach_write_n() { _ibd_tool "$1" write "$2" "$3" "$4" "$5" "${PAGE_SIZE:-}"; }
+mach_write_2() { mach_write_n "$1" "$2" "$3" "$4" 2; }
+mach_write_4() { mach_write_n "$1" "$2" "$3" "$4" 4; }
+mach_write_8() { mach_write_n "$1" "$2" "$3" "$4" 8; }
+
+# Read an N-byte big-endian integer from FILE at (PAGE_NO * page_size + OFFSET),
+# the counterpart of mach_write_n; prints the unsigned decimal value.
+# usage: value=$(mach_read_4 <file> <page_no> <offset>)
+mach_read_n() { _ibd_tool "$1" read "$2" "$3" "$4" "${PAGE_SIZE:-}"; }
+mach_read_2() { mach_read_n "$1" "$2" "$3" 2; }
+mach_read_4() { mach_read_n "$1" "$2" "$3" 4; }
+
+# Print the page number of the first INDEX page at the given B-tree level in
+# FILE (level 0 == leaf). Prints nothing if none is found.
+# usage: page_no=$(find_index_page <file> <level>)
+find_index_page() { _ibd_tool "$1" find-index-page "${2:-0}" "${PAGE_SIZE:-}"; }
+
+# Print "ROOT OFF": the clustered-index root page number and the in-page byte
+# offset of the leftmost node pointer's child-page-number field. Prints
+# "ERR ..." when the clustered index is single-level (no node pointers).
+# usage: read ROOT OFF <<< "$(find_leftmost_node_ptr <file>)"
+find_leftmost_node_ptr() { _ibd_tool "$1" leftmost-node-ptr "${PAGE_SIZE:-}"; }
+
+# Print "LEAF NEXT": the leftmost clustered leaf (the level-0 page whose
+# FIL_PAGE_PREV is FIL_NULL) and the page its FIL_PAGE_NEXT points to (the
+# sentinel 4294967295 == FIL_NULL if it is the only leaf). Prints "NONE NONE"
+# if no leaf is found. The B-tree descent lands on this leaf first, so its
+# right sibling is parsed before being validated.
+# usage: read LEAF NEXT <<< "$(find_leftmost_leaf <file>)"
+find_leftmost_leaf() { _ibd_tool "$1" leftmost-leaf "${PAGE_SIZE:-}"; }
+
+# Print "MAXLEVEL L0 L1 L2": the deepest clustered-index level, and a
+# clustered-index page number at levels 0/1/2 (or NONE if absent).
+# usage: read MAXLEVEL L0 L1 L2 <<< "$(find_clustered_pages_by_level <file>)"
+find_clustered_pages_by_level() { _ibd_tool "$1" clustered-pages "${PAGE_SIZE:-}"; }
+
+# Print the in-page byte offset of the first user record's origin on a COMPACT
+# index page (infimum -> next link).
+# usage: origin=$(find_first_user_rec_origin <file> <page_no>)
+find_first_user_rec_origin() { _ibd_tool "$1" first-user-rec-origin "$2" "${PAGE_SIZE:-}"; }
+
+# Overwrite page bytes [START, END) of PAGE_NO in FILE with VALUE (one byte,
+# e.g. 0xFF) -- simulates a partial/torn page write over a run of bytes.
+# usage: fill_page_bytes <file> <page_no> <start> <end> <value>
+fill_page_bytes() { _ibd_tool "$1" fill "$2" "$3" "$4" "$5" "${PAGE_SIZE:-}"; }
+
+# Recompute and store the CRC32 page checksum for PAGE_NO in FILE, so a
+# corrupted page still passes checksum validation (mirrors InnoDB's on-write
+# checksum). Prints the new checksum as 0x........
+# usage: update_page_checksum <file> <page_no>
+update_page_checksum() { _ibd_tool "$1" update-checksum "$2" "${PAGE_SIZE:-}"; }
+
 # To avoid unbound variable error when no server have been started
 SRV_MYSQLD_IDS=

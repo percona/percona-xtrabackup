@@ -102,6 +102,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include "backup_copy.h"
 #include "backup_mysql.h"
+#include "buf0flu.h"
 #include "changed_page_tracking.h"
 #include "crc_glue.h"
 #include "ddl_tracker.h"
@@ -114,6 +115,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "read_filt.h"
 #include "redo_log.h"
 #include "space_map.h"
+#include "trx0purge.h"
 #include "utils.h"
 #include "write_filt.h"
 #include "wsrep.h"
@@ -6794,6 +6796,108 @@ Threads share a datafiles_iter and each grabs the next tablespace to check.
 On corruption, sets *ctxt->error to true but does NOT stop -- all threads
 run to completion so the operator gets a full damage report.
 @param[in]     ctxt          shared context used by all threads */
+/* PXB-3807: verify the per-page checksums of the system tablespace (ibdata*,
+which also holds the legacy rollback segments) and every undo tablespace during
+--check-tables.  The B-tree validation below (check_tables_thread_func) only
+visits fsp_is_ibd_tablespace() spaces, so without this pass the system and undo
+pages -- rollback segments, change buffer, undo logs, allocation/free pages --
+get no integrity check at all.
+
+Single-threaded and engine-native: each page is read with fil_io(), which maps
+the page number to the right ibdata file and decrypts/decompresses it from the
+space's encryption metadata, into a private buffer -- NOT into the buffer pool.
+Reading outside the buffer pool deliberately avoids buf_page_io_complete(),
+whose corrupt-page policy is to abort (or, under srv_force_recovery, silently
+ignore the corruption); instead we run each page through
+BlockReporter::is_corrupted() ourselves (the same checksum core innochecksum
+uses) and report gracefully. The caller flushes the buffer pool first
+(buf_flush_sync_all_buf_pools) so the on-disk image read here equals the
+recovered state.
+
+@return true if every page passed, false if any page is corrupt or unreadable.
+*/
+static bool xb_checksum_system_undo_spaces() {
+  /* Targets are the system tablespace (ibdata*, space 0) and every undo
+  tablespace. Collect their ids directly -- space 0 plus the global undo list
+  -- instead of scanning every fil space.  This runs at the top level of
+  --check-tables, where no other thread registers or drops undo spaces, so
+  reading undo::spaces without taking its latch is safe. */
+  std::vector<space_id_t> space_ids;
+  space_ids.push_back(TRX_SYS_SPACE);
+  for (size_t i = 0; i < undo::spaces->size(); ++i) {
+    space_ids.push_back(undo::spaces->at(i)->id());
+  }
+
+  /* One aligned page buffer, reused for every read (O_DIRECT needs alignment).
+  ut_unique_ptr frees it automatically when this function returns. */
+  ut_unique_ptr buf_holder = ut_make_unique_ptr_nokey(2 * UNIV_PAGE_SIZE);
+  byte *buf = static_cast<byte *>(ut_align(buf_holder.get(), UNIV_PAGE_SIZE));
+
+  bool ok = true;
+
+  for (const space_id_t space_id : space_ids) {
+    const page_size_t page_size(fil_space_get_flags(space_id));
+    const page_no_t n_pages = fil_space_get_size(space_id);
+    const bool is_system = fsp_is_system_tablespace(space_id);
+
+    xb::info() << "check-tables: verifying checksums of tablespace " << space_id
+               << " (" << n_pages << " pages).";
+
+    for (page_no_t page_no = 0; page_no < n_pages; ++page_no) {
+      /* Legacy doublewrite-buffer pages in the system tablespace carry
+      non-standard checksums; skip them (as innochecksum does). */
+      if (is_system && page_no >= FSP_EXTENT_SIZE &&
+          page_no < FSP_EXTENT_SIZE * 3) {
+        continue;
+      }
+
+      const page_id_t page_id(space_id, page_no);
+      const dberr_t err =
+          fil_io(IORequest(IORequest::READ), true, page_id, page_size, 0,
+                 page_size.physical(), buf, nullptr);
+      if (err != DB_SUCCESS) {
+        xb::error() << "check-tables: cannot read page " << space_id << ":"
+                    << page_no
+                    << " for checksum verification: " << ut_strerr(err) << ".";
+        ok = false;
+        continue;
+      }
+
+      BlockReporter reporter(false /* check_lsn */, buf, page_size,
+                             fsp_is_checksum_disabled(space_id));
+      bool corrupt = reporter.is_corrupted();
+      DBUG_EXECUTE_IF("check_system_inject_corruption",
+                      corrupt = (page_no > 0););
+      if (corrupt) {
+        xb::error() << "check-tables: checksum mismatch on page " << space_id
+                    << ":" << page_no << "; the tablespace is corrupted.";
+        ok = false;
+        /* A corrupt page's LSN field is unreliable; skip the LSN check. */
+        continue;
+      }
+
+      /* The checksum is valid. Unlike innochecksum -- which has no system LSN
+      to compare against -- we run inside the engine after recovery, so we know
+      the recovered system LSN. A page whose LSN is ahead of it carries changes
+      beyond the redo we applied (an incomplete/over-applied backup, the wrong
+      redo, or a corrupt LSN field), so report it and fail the check. */
+      lsn_t page_lsn = mach_read_from_8(buf + FIL_PAGE_LSN);
+      const lsn_t sys_lsn = log_get_lsn(*log_sys);
+      DBUG_EXECUTE_IF("check_system_inject_future_lsn",
+                      page_lsn = (page_no > 0) ? sys_lsn + 1 : page_lsn;);
+      if (page_lsn > sys_lsn) {
+        xb::error() << "check-tables: page " << space_id << ":" << page_no
+                    << " has LSN " << page_lsn
+                    << " ahead of the recovered system LSN " << sys_lsn
+                    << "; the backup is missing redo or the page is corrupt.";
+        ok = false;
+      }
+    }
+  }
+
+  return ok;
+}
+
 static void check_tables_thread_func(data_thread_ctxt_t *ctxt) {
   fil_node_t *node;
 
@@ -6804,6 +6908,20 @@ static void check_tables_thread_func(data_thread_ctxt_t *ctxt) {
     fil_space_t *space = node->space;
 
     if (!fsp_is_ibd_tablespace(space->id)) {
+      continue;
+    }
+
+    /* Validate the SDI index of this tablespace once, before reading it to
+       load the dictionary: a corrupt SDI would otherwise crash the SDI scan
+       (ib_sdi_get_keys -> ... -> rec_get_offsets). ib_sdi_validate() runs the
+       whole SDI B-tree through btr_validate_index() -> page_validate(), the
+       same crash-safe per-page validator used for user indexes. */
+    if (ib_sdi_validate(space->id, thd) != DB_SUCCESS) {
+      xb::error() << "SDI index of tablespace " << space->name
+                  << " is corrupted.";
+      mutex_enter(ctxt->count_mutex);
+      *(ctxt->error) = true;
+      mutex_exit(ctxt->count_mutex);
       continue;
     }
 
@@ -7215,6 +7333,26 @@ skip_check:
     uint ct_count;
     ib_mutex_t ct_count_mutex;
 
+    /* PXB-3807: redo recovery has finished, but some system/undo pages may
+    still be dirty in the buffer pool (post-recovery undo/trx-sys/purge init
+    re-dirty them). Flush once so the on-disk image read by the checksum scan
+    below equals the recovered state -- otherwise a raw read could see a stale
+    or torn page and report a false positive. Flushing pages does not advance
+    the redo checkpoint, so this is safe under --apply-log-only too. */
+    buf_flush_sync_all_buf_pools();
+
+    /* --check-tables only reads; redo has already been applied. Forbid the
+    Fil_shard::do_io() out-of-bounds auto-extend (PXB-1819) for the duration
+    of validation so a corrupt page pointer cannot grow a backup file. */
+    fil_check_tables_no_extend.store(true);
+
+    /* PXB-3807: verify the per-page checksums of the system tablespace
+    (ibdata*) and all undo tablespaces, which the B-tree validation below
+    skips entirely. */
+    if (!xb_checksum_system_undo_spaces()) {
+      check_failed = true;
+    }
+
     it = datafiles_iter_new(nullptr);
     if (it == NULL) {
       xb::error() << "datafiles_iter_new() failed.";
@@ -7251,6 +7389,12 @@ skip_check:
     mutex_free(&ct_count_mutex);
     ut::free(ct_threads);
     datafiles_iter_free(it);
+
+    /* Validation is done. Re-enable do_io() auto-extend for any later
+    phase (the multi-threaded FSP_SIZE reconciliation already ran before
+    check-tables, but shutdown/flush paths may still legitimately grow a
+    file). */
+    fil_check_tables_no_extend.store(false);
 
     if (check_failed) {
       xb::error() << "Table check failed. The backup may be corrupted.";
@@ -7347,6 +7491,19 @@ skip_check:
   return;
 
 error_cleanup:
+
+  /* Shut InnoDB down so a graceful failure exit (e.g. --check-tables reporting
+     corruption) does not leak the entire InnoDB startup footprint. Without
+     this, an ASAN/LeakSanitizer build reports ~6 MB still reachable (the trx
+     pools, buffer pool, fil system, dict, latch registry) and aborts.
+     innodb_end() -> srv_shutdown() performs the complete, balanced teardown
+     (including sync_check_close()/os_thread_close()), so nothing else is
+     needed here. Guarded by innodb_inited: srv_shutdown() assumes a fully
+     completed init, so a partial-startup failure (innodb_inited == 0) must be
+     left untouched -- we only free what was fully allocated. */
+  if (innodb_inited) {
+    innodb_end();
+  }
 
   xb_keyring_shutdown();
   destroy_internal_thd(thd);
