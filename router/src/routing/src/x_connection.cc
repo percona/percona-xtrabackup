@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2020, 2025, Oracle and/or its affiliates.
+  Copyright (c) 2020, 2026, Oracle and/or its affiliates.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License, version 2.0,
@@ -1472,6 +1472,7 @@ void MysqlRoutingXConnection::client_cap_set() {
 
   if (switch_to_tls) {
     bool continue_with_tls{false};
+
     switch (source_ssl_mode()) {
       case SslMode::kDisabled: {
         continue_with_tls = false;
@@ -1525,6 +1526,11 @@ void MysqlRoutingXConnection::client_cap_set() {
 
     discard_current_msg(src_channel, src_protocol);
     std::vector<uint8_t> out_buf;
+
+    // The client tries to activate TLS when it is already enabled.
+    if (continue_with_tls && src_channel.ssl()) {
+      continue_with_tls = false;
+    }
 
     if (!continue_with_tls) {
 #ifdef DEBUG_IO

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2025, Oracle and/or its affiliates.
+Copyright (c) 1995, 2026, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -1511,6 +1511,18 @@ bool fil_node_open_file(fil_node_t *file);
 @param[in] node file to close. */
 void fil_node_close_file(fil_node_t *node);
 
+/** When true, Fil_shard::do_io() must never extend a tablespace to satisfy a
+read whose page number falls outside the current file bounds. Set only for
+the duration of the xtrabackup --check-tables phase, which is strictly
+read-only: an out-of-bounds page number there comes from corrupt page data
+being validated (a bad sibling/child/segment pointer), not from a file that
+xtrabackup copied short and that legitimately needs extending during redo
+apply (see PXB-1819). Refusing to extend keeps --check-tables from modifying
+the backup and turns the bogus read into an error instead of a multi-terabyte
+file growth. Atomic: set/cleared by the main thread around the check-tables
+phase and read concurrently by the check-tables worker and IO threads. */
+extern std::atomic<bool> fil_check_tables_no_extend;
+
 #endif /* XTRABACKUP */
 /** Opens all log files and system tablespace data files.
 They stay open until the database server shutdown. This should be called
@@ -2187,18 +2199,6 @@ void fil_tablespace_open_init_for_recovery(bool recovery);
 @return true if the space ID is known. */
 [[nodiscard]] bool fil_tablespace_lookup_for_recovery(space_id_t space_id);
 
-/** Compare and update space name and dd path for partitioned table. Uniformly
-converts partition separators and names to lower case.
-@param[in]      space_id        tablespace ID
-@param[in]      fsp_flags       tablespace flags
-@param[in]      update_space    update space name
-@param[in,out]  space_name      tablespace name
-@param[in,out]  dd_path         file name with complete path
-@return true, if names are updated. */
-bool fil_update_partition_name(space_id_t space_id, uint32_t fsp_flags,
-                               bool update_space, std::string &space_name,
-                               std::string &dd_path);
-
 /** Add tablespace to the set of tablespaces to be updated in DD.
 @param[in]      dd_object_id    Server DD tablespace ID
 @param[in]      space_id        Innodb tablespace ID
@@ -2278,14 +2278,14 @@ dberr_t fil_open_for_reduced(const std::string &path);
 #endif /* XTRABACKUP */
 
 /** Replay a file rename operation for ddl replay.
-@param[in]      page_id         Space ID and first page number in the file
+@param[in]      space_id        Space ID
 @param[in]      old_name        old file name
 @param[in]      new_name        new file name
 @return whether the operation was successfully applied
 (the name did not exist, or new_name did not exist and
 name was successfully renamed to new_name)  */
-bool fil_op_replay_rename_for_ddl(const page_id_t &page_id,
-                                  const char *old_name, const char *new_name);
+bool fil_op_replay_rename_for_ddl(space_id_t space_id, const char *old_name,
+                                  const char *new_name);
 
 /** Free the Tablespace_files instance.
 @param[in]      read_only_mode  true if InnoDB is started in read only mode.

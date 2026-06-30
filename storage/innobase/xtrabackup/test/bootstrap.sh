@@ -113,11 +113,18 @@ main () {
 
     case "${TYPE}" in
         innodb9x)
-            url="https://dev.mysql.com/get/Downloads/MySQL-9.6"
-            fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
-	    # Strip '-<number>' where <number> is 1-100
+            # Strip '-<number>' (e.g. '9.7.0-1' -> '9.7.0') where <number> is 1-100
             clean_version="${VERSION%-[0-9][0-9]}"
             clean_version="${clean_version%-[0-9]}"
+
+            # Derive major.minor (e.g. '9.7.0' -> '9.7') so the same script
+            # works for any 9.x release. dev.mysql.com serves the current
+            # series under /Downloads/MySQL-<major>.<minor>/; older series
+            # get served from the archive URL below.
+            major_minor="${clean_version%.*}"
+
+            url="https://dev.mysql.com/get/Downloads/MySQL-${major_minor}"
+            fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
 
             tarball="mysql-${clean_version}-linux-glibc2.28-${arch}.tar.xz"
             ;;
@@ -134,7 +141,7 @@ main () {
         *) 
             echo "Err: Specified unsupported ${TYPE}."
             echo "Supported types are: innodb9x, xtradb9x."
-            echo "Example: $0 --type=xtradb9x --version=9.6.0-1"
+            echo "Example: $0 --type=xtradb9x --version=9.7.0-1"
             exit 1
             ;;
     esac
@@ -176,7 +183,7 @@ main () {
 
 TYPE="xtradb9x"
 PXB_TYPE="release"
-VERSION="9.6.0-1"
+VERSION="9.7.0-1"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main

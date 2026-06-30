@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+/* Copyright (c) 2000, 2026, Oracle and/or its affiliates.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License, version 2.0,
@@ -2420,8 +2420,19 @@ static bool read_client_connect_attrs(THD *thd, char **ptr,
   size_t length, length_length;
   char *ptr_save;
 
-  /* not enough bytes to hold the length */
+  /* Need one byte to determine the length-encoded field size. */
   if (*max_bytes_available < 1) return true;
+
+  uchar *pos = (uchar *)*ptr;
+  DBUG_EXECUTE_IF("connect_attrs_too_short_3", *pos = 252;
+                  *max_bytes_available = 2;);
+  DBUG_EXECUTE_IF("connect_attrs_too_short_4", *pos = 253;
+                  *max_bytes_available = 3;);
+  DBUG_EXECUTE_IF("connect_attrs_too_short_9", *pos = 254;
+                  *max_bytes_available = 8;);
+
+  const size_t required_length = (size_t)net_field_length_size(pos);
+  if (*max_bytes_available < required_length) return true;
 
   /* read the length */
   ptr_save = *ptr;
@@ -3812,7 +3823,6 @@ static bool check_password_lifetime(THD *thd, const ACL_USER *acl_user) {
     thd->variables.time_zone->gmt_sec_to_TIME(
         &cur_time, static_cast<my_time_t>(thd->query_start_in_secs()));
     password_change_by = acl_user->password_last_changed;
-    memset(&interval, 0, sizeof(interval));
 
     if (!acl_user->use_default_password_lifetime)
       interval.day = acl_user->password_lifetime;
@@ -4041,6 +4051,7 @@ int acl_authenticate(THD *thd, enum_server_command command) {
   int res = CR_OK;
   int ret = 1;
   MPVIO_EXT mpvio;
+  bool password_change_directive_from_plugin = false;
   LEX_CSTRING auth_plugin_name = default_auth_plugin_name;
   Thd_charset_adapter charset_adapter(thd);
 
@@ -4109,6 +4120,17 @@ int acl_authenticate(THD *thd, enum_server_command command) {
                          mpvio.acl_user->plugin.str));
     auth_plugin_name = mpvio.acl_user->plugin;
     res = do_auth_once(thd, auth_plugin_name, &mpvio);
+  }
+
+  if (res == CR_OK_FORCE_PASSWORD_CHANGE) {
+    password_change_directive_from_plugin = true;
+    /*
+      Set to CR_OK so that rest of the logic remains unchanged.
+      When it is time to set the password expired flat in
+      Security context, password_change_directive_from_plugin
+      will be used.
+    */
+    res = CR_OK;
   }
 
   if (res == CR_OK) {
@@ -4398,7 +4420,8 @@ int acl_authenticate(THD *thd, enum_server_command command) {
         proxied user password expires.
       */
       sctx->set_password_expired(mpvio.acl_user->password_expired ||
-                                 password_time_expired);
+                                 password_time_expired ||
+                                 password_change_directive_from_plugin);
     } else {
       sctx->skip_grants();
       /*

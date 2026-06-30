@@ -371,7 +371,6 @@ bool check_server_version(unsigned long version_number,
                           const char *innodb_version) {
   bool mysql51 = false;
   bool pxb24 = false;
-  bool mysql9x = false;
   std::string pxb_version;
   std::string server_version;
   DBUG_EXECUTE_IF("simulate_24_version", version_number = 50744;
@@ -382,8 +381,12 @@ bool check_server_version(unsigned long version_number,
                   version_string = "8.1.1";);
   DBUG_EXECUTE_IF("simulate_90_version", version_number = 90000;
                   version_string = "9.0.1";);
-  DBUG_EXECUTE_IF("simulate_higher_version", version_number = 90699;
+  DBUG_EXECUTE_IF("simulate_96_version", version_number = 90699;
                   version_string = "9.6.99";);
+  DBUG_EXECUTE_IF("simulate_98_version", version_number = 90800;
+                  version_string = "9.8.0";);
+  DBUG_EXECUTE_IF("simulate_higher_version", version_number = 90799;
+                  version_string = "9.7.99";);
   if (!xtrabackup::utils::get_major_minor_version(MYSQL_SERVER_VERSION,
                                                   pxb_version)) {
     xb::error() << "Failed to parse Percona Xtrabackup version: "
@@ -420,15 +423,17 @@ bool check_server_version(unsigned long version_number,
   pxb24 = pxb24 || (version_number > 50500 && version_number < 50800);
   pxb24 = pxb24 || ((version_number > 100000 && version_number < 100300) &&
                     server_flavor == FLAVOR_MARIADB);
-  // we will use xtrabckup 9.1 from server versions 9.1 to 9.6.
-  mysql9x = pxb_version == "9.6" &&
-            (version_number >= 90100 && version_number < 90700);
 
-  if (!mysql9x && pxb_version != server_version) {
+  /* Percona XtraBackup 9.7 only supports backing up 9.7.x servers
+  (i.e. 9.7.0 up to the highest 9.7.x release, currently expected to be no
+  higher than 9.7.99). Any other server version -- including 9.6.x and
+  9.8.x -- must use its matching PXB release. */
+  if (pxb_version != server_version) {
     xb::error() << "Unsupported server version: " << SQUOTE(version_string);
     xb::error()
-        << "This version of Percona XtraBackup supports backing up and "
-           "restoring MySQL and Percona Servers from versions 9.1 to 9.6.";
+        << "This version of Percona XtraBackup only supports backing up "
+           "and restoring MySQL and Percona Servers of version "
+        << pxb_version << ".x.";
     if (mysql51 && innodb_version == NULL) {
       xb::error()
           << "You can use Percona XtraBackup 2.0 for MySQL 5.1 with built-in "

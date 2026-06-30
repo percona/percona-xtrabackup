@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2008, 2025, Oracle and/or its affiliates.
+Copyright (c) 2008, 2026, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -677,6 +677,19 @@ and ids
 @return DB_SUCCESS if SDI keys retrieval is successful, else error */
 ib_err_t ib_sdi_get_keys(uint32_t tablespace_id, ib_sdi_vector_t *ib_sdi_vector,
                          ib_trx_t trx);
+
+#ifdef XTRABACKUP
+/** Validate the SDI index B-tree of a tablespace for xtrabackup
+--check-tables.  Opens the SDI table (building its in-memory dict_index_t with
+the real root page) and runs the whole SDI index through btr_validate_index()
+-> page_validate(), which is crash-safe under XTRABACKUP.  Intended to be
+called once per tablespace by the check-tables driver before reading the SDI.
+@param[in]      tablespace_id   tablespace id
+@param[in]      thd             session THD for the read transaction
+@return DB_SUCCESS if the SDI is valid (or absent), DB_CORRUPTION if the SDI
+index is corrupt, else another DB_* error */
+ib_err_t ib_sdi_validate(uint32_t tablespace_id, void *thd);
+#endif /* XTRABACKUP */
 
 /** Retrieve SDI from tablespace
 @param[in]      tablespace_id   tablespace id

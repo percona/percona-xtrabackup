@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2025, Oracle and/or its affiliates.
+Copyright (c) 1995, 2026, Oracle and/or its affiliates.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License, version 2.0, as published by the
@@ -2174,6 +2174,25 @@ fseg_inode_t *fseg_inode_get(const fseg_header_t *header, space_id_t space,
   ut_a(inode);
   return (inode);
 }
+
+#ifdef XTRABACKUP
+bool fseg_root_header_validate(const fseg_header_t *header, space_id_t space,
+                               const page_size_t &page_size, mtr_t *mtr) {
+  /* The segment inode must live on a page that actually exists in the
+  tablespace; a corrupt FSEG_HDR_PAGE_NO pointing past the end of the
+  file would otherwise make fut_get_ptr() try to extend the file. */
+  const page_no_t inode_page = mach_read_from_4(header + FSEG_HDR_PAGE_NO);
+  if (inode_page >= fil_space_get_size(space)) {
+    return false;
+  }
+
+  /* fseg_inode_try_get() returns nullptr (instead of asserting, as
+  fseg_inode_get() does) when the header does not reference a live
+  segment inode -- e.g. it points at an ordinary data page. */
+  buf_block_t *iblock = nullptr;
+  return fseg_inode_try_get(header, space, page_size, mtr, &iblock) != nullptr;
+}
+#endif /* XTRABACKUP */
 
 /** Gets the page number from the nth fragment page slot.
  @return page number, FIL_NULL if not in use */
