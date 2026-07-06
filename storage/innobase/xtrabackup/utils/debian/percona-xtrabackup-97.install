@@ -1,0 +1,16 @@
+/usr/bin
+/usr/lib/xtrabackup/plugin/*.so
+/usr/lib/libkmip.a
+/usr/lib/libkmippp.a
+/usr/lib/libkmipclient.a
+/usr/lib/libkmipcore.a
+/usr/include/kmip*.h
+/usr/share/man/man1/xbcrypt*
+/usr/share/man/man1/xtrabackup*
+/usr/share/man/man1/xbstream*
+/usr/lib/private/libprotobuf-lite.so.*
+/usr/lib/private/libprotobuf.so.*
+/usr/lib/private/icudt77l/unames.icu
+/usr/lib/private/icudt77l/brkitr/*
+/usr/lib/private/libabsl_*
+/usr/lib/private/libicu*
