@@ -169,10 +169,15 @@ get_sources(){
     #
     if [ -z "${XB_VERSION_EXTRA}" ]; then
         EXTRAVER="%{nil}"
-        RPM_EXTRAVER=${RPM_RELEASE}
-    else 
+        RPM_EXTRAVER=0
+    else
         EXTRAVER=${XB_VERSION_EXTRA}
-        RPM_EXTRAVER=${XB_VERSION_EXTRA#-}.${RPM_RELEASE}
+        EXTRA_STRIPPED="${XB_VERSION_EXTRA#-}"
+        if echo "$EXTRA_STRIPPED" | grep -qE '^[0-9]+$'; then
+            RPM_EXTRAVER=${EXTRA_STRIPPED}.${RPM_RELEASE}
+        else
+            RPM_EXTRAVER=${RPM_RELEASE}.${EXTRA_STRIPPED}
+        fi
     fi
     #
     sed -i "s:@@XB_VERSION_EXTRA@@:${EXTRAVER}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
@@ -275,7 +280,7 @@ install_deps() {
             PKGLIST+=" binutils-devel python3-pip python3-setuptools"
             PKGLIST+=" libcurl-devel cmake libaio-devel zlib-devel libev-devel bison make"
             PKGLIST+=" rpm-build libgcrypt-devel ncurses-devel readline-devel openssl-devel"
-            PKGLIST+=" vim-common rpmlint patchelf python3-wheel libudev-devel libtirpc-devel"
+            PKGLIST+=" vim-common patchelf python3-wheel libudev-devel libtirpc-devel"
             if [[ "${RHEL}" = "9" || "${RHEL}" = "2023" || "${RHEL}" = "10" ]]; then
                 PKGLIST+=" rsync procps-ng-devel python3-sphinx gcc gcc-c++ gcc-gfortran"
             else
@@ -366,26 +371,22 @@ install_deps() {
         PKGLIST+=" cmake debhelper libaio-dev libncurses-dev libtool libz-dev libsasl2-dev vim-common"
         PKGLIST+=" libgcrypt-dev libev-dev lsb-release libudev-dev pkg-config"
         PKGLIST+=" build-essential rsync libnuma1 socat libssl-dev patchelf libicu-dev"
-        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
+        if [ "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" -o "${OS_NAME}" == "resolute" ]; then
             PKGLIST+=" libproc2-dev"
         else
             PKGLIST+=" libprocps-dev"
         fi
-        if [ "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
+        if [ "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" -o "${OS_NAME}" == "resolute" ]; then
             wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
             dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
         fi
         if [ "${OS_NAME}" == "focal" ]; then
             PKGLIST+=" gcc-10 g++-10"
         fi
-        if [ "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
+        if [ "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" -o "${OS_NAME}" == "resolute" ]; then
             PKGLIST+=" libtirpc-dev"
         fi
-        if [ "${OS_NAME}" == "focal" -o "${OS_NAME}" == "bullseye" -o "${OS_NAME}" == "bookworm" -o "${OS_NAME}" == "jammy" -o "${OS_NAME}" == "noble" -o "${OS_NAME}" == "trixie" ]; then
-            PKGLIST+=" python3-sphinx python3-docutils"
-        else
-            PKGLIST+=" python-sphinx python-docutils"
-        fi
+        PKGLIST+=" python3-sphinx python3-docutils"
 
         until DEBIAN_FRONTEND=noninteractive apt-get -y install ${PKGLIST}; do
             sleep 1
@@ -474,13 +475,16 @@ build_srpm(){
     sed -i "/^%changelog/a * $(date "+%a") $(date "+%b") $(date "+%d") $(date "+%Y") Percona Development Team <info@percona.com> - ${VERSION}-${RELEASE}" percona-xtrabackup.spec
     #
     cd ${WORKDIR}/rpmbuild/SOURCES
-    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
+    CALLHOME_SHA="0e3a2ed40336c70727f9aad8402a8a820ebc8db0"
+    CALLHOME_SHA256="3497f6631e71799bed9dedb1d72350bf1f0565d93578955234ac30cf2fb6eba4"
+    wget -q "https://raw.githubusercontent.com/percona/telemetry-agent/${CALLHOME_SHA}/call-home.sh"
+    echo "${CALLHOME_SHA256}  call-home.sh" | sha256sum -c - || { echo "ERROR: call-home.sh checksum mismatch"; exit 1; }
     cd ${WORKDIR}/rpmbuild/SPECS
     line_number=$(grep -n SOURCE999 percona-xtrabackup.spec | awk -F ':' '{print $1}')
     cp ../SOURCES/call-home.sh ./
     awk -v n=$line_number 'NR <= n {print > "part1.txt"} NR > n {print > "part2.txt"}' percona-xtrabackup.spec
     head -n -1 part1.txt > temp && mv temp part1.txt
-    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> part1.txt
+    echo "cat <<'CALLHOME' > \$tfn" >> part1.txt
     cat call-home.sh >> part1.txt
     echo "CALLHOME" >> part1.txt
     cat part2.txt >> part1.txt
@@ -493,6 +497,12 @@ build_srpm(){
     enable_venv
 
     rpmbuild -bs --define "_topdir $WORKDIR/rpmbuild" --define "dist .generic" rpmbuild/SPECS/percona-xtrabackup.spec
+
+    # Verify RPMs were actually produced
+    if [ -z "$(find ${WORKDIR}/rpmbuild/SRPMS -name '*.rpm' 2>/dev/null)" ]; then
+        echo "ERROR: rpmbuild succeeded but no RPM files were generated!"
+        exit 1
+    fi
 
     mkdir -p ${WORKDIR}/srpm
     mkdir -p ${CURDIR}/srpm
@@ -554,6 +564,7 @@ build_rpm(){
         echo "ERROR: rpmbuild succeeded but no RPM files were generated!"
         exit 1
     fi
+
     mkdir -p ${WORKDIR}/rpm
     mkdir -p ${CURDIR}/rpm
     cp rpmbuild/RPMS/*/*.rpm ${WORKDIR}/rpm
@@ -582,13 +593,19 @@ build_source_deb(){
 
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
 
-    NEWTAR=${NAME}-96_${VERSION}.orig.tar.gz
+    if echo "$VERSION" | grep -qE '[a-zA-Z]'; then
+        DEB_VERSION="$(echo "$VERSION" | sed 's/-/~/g')"
+    else
+        DEB_VERSION="$VERSION"
+    fi
+
+    NEWTAR=${NAME}-97_${DEB_VERSION}.orig.tar.gz
     mv ${TARFILE} ${NEWTAR}
 
     tar xzf ${NEWTAR}
     cd percona-xtrabackup-$VERSION
     cp -av storage/innobase/xtrabackup/utils/debian .
-    dch -D unstable --force-distribution -v "${VERSION}-${DEB_RELEASE}" "Update to new upstream release Percona XtraBackup ${VERSION}"
+    dch -D unstable --force-distribution -v "${DEB_VERSION}-${DEB_RELEASE}" "Update to new upstream release Percona XtraBackup ${VERSION}"
     dpkg-buildpackage -S
 
     cd ${WORKDIR}
@@ -626,8 +643,16 @@ build_deb(){
 
 
     DSC=$(basename $(find . -name '*.dsc' | sort | tail -n 1))
-    DIRNAME=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $1"-"$2"-"$3"-"$4"-"$5}')
-    VERSION=$(echo $DSC | sed -e 's:_:-:g' | awk -F'-' '{print $4"-"$5}')
+    # Parse the Source and Version fields directly out of the .dsc control
+    # file instead of guessing from the filename by hyphen position: that
+    # breaks as soon as the upstream version contains a "~" (rc builds),
+    # since it shifts how many "-"-separated fields the name splits into.
+    SRC_NAME=$(awk -F': ' '/^Source:/{print $2; exit}' "$DSC")
+    DSC_VERSION=$(awk -F': ' '/^Version:/{print $2; exit}' "$DSC")
+    # Strip the debian revision (the part after the last "-") to get the
+    # plain upstream version, e.g. "9.7.1~rc1-1" -> "9.7.1~rc1".
+    VERSION=${DSC_VERSION%-*}
+    DIRNAME="${SRC_NAME}-${VERSION}"
     #
     echo "DEB_RELEASE=${DEB_RELEASE}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
     echo "DEBIAN_VERSION=${OS_NAME}" >> ${CURDIR}/percona-xtrabackup-8.0.properties
@@ -637,14 +662,20 @@ build_deb(){
     cd $DIRNAME
     dch -m -D "$OS_NAME" --force-distribution -v "$VERSION-$DEB_RELEASE.$OS_NAME" 'Update distribution'
     cd debian/
-    wget https://raw.githubusercontent.com/Percona-Lab/telemetry-agent/phase-0/call-home.sh
-    sed -i 's:exit 0::' percona-xtrabackup-96.postinst
-    echo "cat <<'CALLHOME' > /tmp/call-home.sh" >> percona-xtrabackup-96.postinst
-    cat call-home.sh >> percona-xtrabackup-96.postinst
-    echo "CALLHOME" >> percona-xtrabackup-96.postinst
-    echo "bash +x /tmp/call-home.sh -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-96.postinst
-    echo "rm -rf /tmp/call-home.sh" >> percona-xtrabackup-96.postinst
-    echo "exit 0" >> percona-xtrabackup-96.postinst
+    CALLHOME_SHA="0e3a2ed40336c70727f9aad8402a8a820ebc8db0"
+    CALLHOME_SHA256="3497f6631e71799bed9dedb1d72350bf1f0565d93578955234ac30cf2fb6eba4"
+    wget -q "https://raw.githubusercontent.com/percona/telemetry-agent/${CALLHOME_SHA}/call-home.sh"
+    echo "${CALLHOME_SHA256}  call-home.sh" | sha256sum -c - || { echo "ERROR: call-home.sh checksum mismatch"; exit 1; }
+    sed -i 's:exit 0::' percona-xtrabackup-97.postinst
+    echo "tfn=\$(/usr/bin/mktemp -p \$(/usr/bin/mktemp -d /tmp/XXXXXXXX) call-home.XXXXXX.sh)" >> percona-xtrabackup-97.postinst
+    echo "cat <<'CALLHOME' > \$tfn" >> percona-xtrabackup-97.postinst
+    cat call-home.sh >> percona-xtrabackup-97.postinst
+    echo "CALLHOME" >> percona-xtrabackup-97.postinst
+    echo "bash +x \$tfn -f \"PRODUCT_FAMILY_PXB\" -v \"${VERSION}-${DEB_RELEASE}\" -d \"PACKAGE\" &>/dev/null || :" >> percona-xtrabackup-97.postinst
+    echo "chgrp percona-telemetry /usr/local/percona/telemetry_uuid &>/dev/null || :" >> percona-xtrabackup-97.postinst
+    echo "chmod 664 /usr/local/percona/telemetry_uuid &>/dev/null || :" >> percona-xtrabackup-97.postinst
+    echo "rm -rf \$tfn" >> percona-xtrabackup-97.postinst
+    echo "exit 0" >> percona-xtrabackup-97.postinst
     rm -f call-home.sh
     cd ../
 
