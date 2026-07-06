@@ -104,8 +104,14 @@ export DEB_DUMMY="$DUMMY"
         cp -a storage/innobase/xtrabackup/utils/debian .
 
     # Update distribution
+        EXTRA_STRIPPED="${XB_VERSION_EXTRA#-}"
+        if echo "$EXTRA_STRIPPED" | grep -qE '^[0-9]+$' || [ -z "$EXTRA_STRIPPED" ]; then
+            DEB_VERSION="$XTRABACKUP_VERSION"
+        else
+            DEB_VERSION="$(echo "$XTRABACKUP_VERSION" | sed 's/-/~/g')"
+        fi
         dch -m -D "$DEBIAN_VERSION" --force-distribution \
-            -v "$XTRABACKUP_VERSION-$REVISION$PACKAGE_SUFFIX" 'Update distribution'
+            -v "$DEB_VERSION$PACKAGE_SUFFIX" 'Update distribution'
 
     #Do not build transitional packages if requested
         if test "x$NOTRANSITIONAL" = "xyes"
