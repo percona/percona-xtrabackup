@@ -38,6 +38,7 @@ namespace service_definition {
 DEFINE_BOOL_METHOD(Keyring_generator_service_impl::generate,
                    (const char *data_id, const char *auth_id,
                     const char *data_type, size_t data_size)) {
+  if (!g_keyring_operations) return true;
   return generate_template<Keyring_kmip_backend>(
       data_id, auth_id, data_type, data_size, *g_keyring_operations,
       *g_component_callbacks);
