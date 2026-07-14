@@ -10739,8 +10739,9 @@ byte *fil_tablespace_redo_extend(byte *ptr, const byte *end,
                                  bool parse_only) {
   ut_a(page_id.page_no() == 0);
 
-  /* We never recreate the system tablespace. */
-  ut_a(page_id.space() != TRX_SYS_SPACE);
+  /* Since MySQL 8.0.37 (Bug#36511673) the server redo-logs MLOG_FILE_EXTEND
+  records for the system tablespace as well, so page_id.space() may legitimately
+  be TRX_SYS_SPACE here. Do not assert against it. */
 
   ut_a(parsed_bytes != ULINT_UNDEFINED);
 
