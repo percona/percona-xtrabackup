@@ -118,6 +118,16 @@ rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/l*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/p*
 rm -rf $RPM_BUILD_ROOT/%{_mandir}/man1/z*
 
+%if 0%{?with_sbom}
+sh storage/innobase/xtrabackup/utils/sbom/check-components.sh --root .
+install -d -m 755 $RPM_BUILD_ROOT%{_datadir}/%{name}/sbom
+sh storage/innobase/xtrabackup/utils/sbom/gen-sbom.sh \
+  --pkg %{name} \
+  --version %{version}%{xb_version_extra} \
+  --root . \
+  --dest $RPM_BUILD_ROOT%{_datadir}/%{name}/sbom
+%endif
+
 %post
 cp %SOURCE999 /tmp/ 2>/dev/null ||
 bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
@@ -141,11 +151,16 @@ rm -rf $RPM_BUILD_ROOT
 %{_libdir}/xtrabackup/plugin/component_keyring_vault.so
 %{_libdir}/xtrabackup/plugin/component_keyring_file.so
 %{_libdir}/xtrabackup/plugin/component_keyring_kms.so
+%{_libdir}/xtrabackup/plugin/component_telemetry.so
 %{_includedir}/kmip.h
 %{_includedir}/kmippp.h
 /usr/lib/libkmip.a
 /usr/lib/libkmippp.a
 %{_libdir}/xtrabackup/plugin/component_keyring_kmip.so
+%if 0%{?with_sbom}
+%dir %{_datadir}/%{name}
+%{_datadir}/%{name}/sbom
+%endif
 %doc LICENSE
 %doc %{_mandir}/man1/*.1.gz
 

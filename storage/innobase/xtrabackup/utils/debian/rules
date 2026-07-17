@@ -20,6 +20,11 @@ builddirdebug = debug
 rpath='$$ORIGIN/../lib/private'
 originrpath='$$ORIGIN'
 
+DEB_SOURCE := $(shell dpkg-parsechangelog -S Source 2>/dev/null)
+DEB_VERSION := $(shell dpkg-parsechangelog -S Version 2>/dev/null)
+SBOM_DIR = debian/$(DEB_SOURCE)/usr/share/$(DEB_SOURCE)/sbom
+SBOM_UTILS = storage/innobase/xtrabackup/utils/sbom
+
 override_dh_auto_configure:
 
 ifeq "$(DEB_DUMMY)" ""
@@ -68,6 +73,17 @@ override_dh_install:
 	cp ./$(builddirdebug)/runtime_output_directory/xtrabackup debian/percona-xtrabackup-96/usr/bin/xtrabackup-debug
 	patchelf --debug --set-rpath $(originrpath) debian/percona-xtrabackup-96/usr/lib/private/libprotobuf-lite.so*
 	patchelf --debug --set-rpath $(rpath) debian/percona-xtrabackup-96/usr/bin/xtrabackup-debug
+ifneq (,$(filter pkg.pxb.sbom,$(DEB_BUILD_PROFILES)))
+	@test -n "$(DEB_SOURCE)" -a -n "$(DEB_VERSION)" || \
+		{ echo "SBOM: dpkg-parsechangelog produced no Source/Version" >&2; exit 1; }
+	@test -d debian/$(DEB_SOURCE) || \
+		{ echo "SBOM: debian/$(DEB_SOURCE) is not a binary package staging dir; \
+		point SBOM_DIR at the main package" >&2; exit 1; }
+	sh $(SBOM_UTILS)/check-components.sh --root .
+	mkdir -p $(SBOM_DIR)
+	sh $(SBOM_UTILS)/gen-sbom.sh --pkg $(DEB_SOURCE) --version $(DEB_VERSION) \
+		--root . --dest $(SBOM_DIR)
+endif
 	@echo "RULES.$@"
 
 override_dh_strip:

@@ -20,6 +20,7 @@ Usage: $0 [OPTIONS]
         --repo              Repo for build
         --rpm_release       RPM version( default = 1)
         --deb_release       DEB version( default = 1)
+        --sbom              If it is 1 SBOMs are generated and embedded( default = 0)
         --help) usage ;;
 Example $0 --builddir=/tmp/PXB --get_sources=1 --build_src_rpm=1 --build_rpm=1
 EOF
@@ -59,6 +60,7 @@ parse_arguments() {
             --repo=*) REPO="$val" ;;
             --rpm_release=*) RPM_RELEASE="$val" ;;
             --deb_release=*) DEB_RELEASE="$val" ;;
+            --sbom=*) SBOM="$val" ;;
             --help) usage ;;
             *)
               if test -n "$pick_args"
@@ -543,7 +545,12 @@ build_rpm(){
 
     enable_venv
 
-    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .${OS_NAME}" --rebuild rpmbuild/SRPMS/${SRCRPM}
+    SBOM_DEFINE=()
+    if [ ${SBOM} = 1 ]; then
+        SBOM_DEFINE=(--define "with_sbom 1")
+    fi
+
+    rpmbuild --define "_topdir ${WORKDIR}/rpmbuild" --define "dist .${OS_NAME}" "${SBOM_DEFINE[@]}" --rebuild rpmbuild/SRPMS/${SRCRPM}
     return_code=$?
     if [ $return_code != 0 ]; then
         exit $return_code
@@ -648,7 +655,12 @@ build_deb(){
     rm -f call-home.sh
     cd ../
 
-    dpkg-buildpackage -rfakeroot -uc -us -b
+    if [ ${SBOM} = 1 ]; then
+        DEB_BUILD_PROFILES="${DEB_BUILD_PROFILES:+${DEB_BUILD_PROFILES} }pkg.pxb.sbom" \
+            dpkg-buildpackage -rfakeroot -uc -us -b
+    else
+        dpkg-buildpackage -rfakeroot -uc -us -b
+    fi
 
     cd ${WORKDIR}
     mkdir -p $CURDIR/deb
@@ -686,6 +698,18 @@ build_tarball(){
     mkdir -p ${CURDIR}/tarball
     cp $WORKDIR/TARGET/*.tar.gz ${WORKDIR}/tarball/
     cp $WORKDIR/TARGET/*.tar.gz ${CURDIR}/tarball/
+
+    if [ ${SBOM} = 1 ]; then
+        mkdir -p ${WORKDIR}/sbom
+        mkdir -p ${CURDIR}/sbom
+        if [ -n "$(ls -A ${WORKDIR}/TARGET/sbom 2>/dev/null)" ]; then
+            cp ${WORKDIR}/TARGET/sbom/* ${WORKDIR}/sbom/
+            cp ${WORKDIR}/TARGET/sbom/* ${CURDIR}/sbom/
+        else
+            echo "ERROR: --sbom=1 but build-binary.sh produced no SBOMs"
+            exit 1
+        fi
+    fi
 }
 
 CURDIR=$(pwd)
@@ -708,7 +732,9 @@ RPM_RELEASE=1
 DEB_RELEASE=1
 REPO="https://github.com/percona/percona-xtrabackup.git"
 CMAKE_BIN="cmake"
+SBOM=0
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
+export SBOM
 
 check_workdir
 get_system
