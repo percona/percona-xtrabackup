@@ -1,0 +1,59 @@
+# Third-party component registry for Percona XtraBackup SBOM generation.
+#
+# Syft and comparable scanners detect none of these: they are vendored C/C++
+# source trees with no package manifest. This file is the authoritative
+# inventory. check-components.sh validates it against the source tree on every
+# build and fails on drift, so a dependency bump cannot silently desync it.
+#
+# Format (pipe-separated, leading/trailing space ignored, '#' starts a comment):
+#
+#   name | version | license | ships | linkage | path | notes
+#
+#   ships    yes        code is present in a shipped artifact
+#            no         present in the source tree but not built or not shipped
+#            uncertain  needs a decision; treated as an error by check-components.sh
+#                       unless listed in the KNOWN_UNCERTAIN allowlist
+#   linkage  shared-lib | static | header-only | data | source
+#   path     tree path used for drift validation; '-' if not applicable
+#   license  SPDX identifier or expression
+#
+# Only ships=yes rows are emitted into the SBOM.
+
+# --- shipped: bundled libraries installed as files ---------------------------
+protobuf         | 24.4         | BSD-3-Clause                | yes | shared-lib  | extra/protobuf/protobuf-24.4                 | -DWITH_PROTOBUF=bundled; ships /usr/lib/private/libprotobuf*
+abseil-cpp       | 20250814.1   | Apache-2.0                  | yes | shared-lib  | extra/abseil/abseil-cpp-20250814.1           | dep of bundled protobuf; ships /usr/lib/private/libabsl_*
+icu              | 77.1         | Unicode-DFS-2016            | yes | shared-lib  | extra/icu/icu-release-77-1                   | ships libicu* and icudt77l data; no LICENSE file in tree
+libkmip          | 5eeea918e7213f32df466be58cf9a68347ae2df2 | Apache-2.0 OR BSD-3-Clause | yes | static | extra/libkmip | git submodule; version is the pinned commit; ships libkmip.a/libkmippp.a + headers
+
+# --- shipped: bundled libraries linked into the binaries ---------------------
+zlib             | 1.3.2        | Zlib                        | yes | static      | extra/zlib/zlib-1.3.2                        | -DWITH_ZLIB=bundled; via mysys into all 4 binaries
+zstd             | 1.5.7        | BSD-3-Clause                | yes | static      | extra/zstd/zstd-1.5.7                        | -DWITH_ZSTD=bundled; library is BSD-3; COPYING GPL-2.0 covers CLI which is not built
+lz4              | 1.10.0       | BSD-2-Clause                | yes | static      | extra/lz4/lz4-1.10.0                         | only lib/ is compiled; programs/ GPL-2.0 not built
+xxhash           | 0.8.3        | BSD-2-Clause                | yes | static      | extra/xxhash/xxHash-0.8.3                    | via sql_main; no LICENSE file in tree
+xxhash-lz4       | 1.10.0       | BSD-2-Clause                | yes | static      | extra/lz4/lz4-1.10.0/lib/xxhash.c            | second, distinct xxHash copy compiled into xbstream
+libbacktrace     | 793921876c981 | BSD-3-Clause               | yes | static      | extra/libbacktrace/sha793921876c981          | via mysys; version is the pinned commit; no LICENSE file in tree
+
+# --- shipped: header-only, compiled into the binaries ------------------------
+boost            | 1.87.0       | BSL-1.0                     | yes | header-only | extra/boost/boost_1_87_0                     | DOWNLOAD_BOOST/WITH_BOOST are no-ops; boost.cmake always uses the bundled tree
+rapidjson        | unknown      | MIT                         | yes | header-only | extra/rapidjson                              | no version marker upstream in tree
+unordered_dense  | 4.4.0        | MIT                         | yes | header-only | extra/unordered_dense/unordered_dense-4.4.0  | via sql_main
+
+# --- shipped: vendored inside xtrabackup itself ------------------------------
+quicklz          | 1.5.0        | GPL-2.0-only                | yes | source      | storage/innobase/xtrabackup/src/quicklz      | version from QLZ_VERSION_* macros; dual GPL-1/2/3-or-commercial, GPL-2.0-only asserted to match PXB
+jsmn             | unknown      | MIT                         | yes | source      | storage/innobase/xtrabackup/src/jsmn         | no version marker upstream
+
+# --- not shipped -------------------------------------------------------------
+curl             | 8.14.1       | curl                        | no  | source      | extra/curl/curl-8.14.1                       | WITH_CURL forced to "system"; the SYSTEM libcurl is a runtime dep, this bundled tree is not built
+googletest       | 1.17.0       | BSD-3-Clause                | no  | source      | extra/googletest/googletest-1.17.0           | unit tests gated off when WITH_XTRABACKUP=ON
+gperftools       | 2.15         | BSD-3-Clause                | no  | source      | extra/gperftools/gperftools-2.15             | WITH_TCMALLOC defaults OFF
+libcbor          | 0.11.0       | MIT                         | no  | source      | extra/libcbor/libcbor-0.11.0                 | WITH_FIDO forced to "none"
+libfido2         | 1.15.0       | BSD-2-Clause                | no  | source      | extra/libfido2/libfido2-1.15.0               | WITH_FIDO forced to "none"
+libcno           | 208939f540957a35b337dacdd5c5e34d51821bd2 | MIT | no | source     | extra/libcno/libcno-208939f540957a35b337dacdd5c5e34d51821bd2 | built but only linked by mysql router; WITH_ROUTER OFF
+libedit          | 20240808-3.1 | BSD-3-Clause                | no  | source      | extra/libedit/libedit-20240808-3.1           | built but only consumed by client/, which is never added as a subdirectory
+tirpc            | 1.3.5        | BSD-3-Clause                | no  | source      | extra/tirpc/libtirpc-1.3.5                   | bundled path requires RHEL8/9 + non-system SSL; only consumer is group_replication
+doxygen-awesome  | 2.2.0        | MIT                         | no  | data        | extra/doxygen-awesome/2.2.0                  | documentation CSS only; no CMake reference
+
+# --- shipped: telemetry component (component_telemetry.so) -------------------
+opentelemetry-cpp   | 1.23.0    | Apache-2.0                  | yes | static      | extra/opentelemetry-cpp/opentelemetry-cpp-1.23.0     | linked into component_telemetry.so
+opentelemetry-proto | 1.7.0     | Apache-2.0                  | yes | static      | extra/opentelemetry-proto/opentelemetry-proto-1.7.0  | linked into component_telemetry.so
+json                | 3.12.0    | MIT                         | yes | header-only | extra/json/json-3.12.0                               | nlohmann json; header-only in opentelemetry-cpp
