@@ -234,14 +234,42 @@ mkdir "$INSTALLDIR"
         mkdir "$WORKDIR_ABS/$BASEINSTALLDIR/minimal"
         cp -r "$WORKDIR_ABS/$BASEINSTALLDIR/$PRODUCT_FULL" "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL-minimal"
 
+        SBOM_UTILS="${SOURCEDIR}/storage/innobase/xtrabackup/utils/sbom"
+        gen_tarball_sbom() {
+            local dest=$1
+            local label=$2
+            sh "${SBOM_UTILS}/gen-sbom.sh" \
+                --pkg "percona-xtrabackup" \
+                --version "$XTRABACKUP_VERSION" \
+                --root "$SOURCEDIR" \
+                --dest "${dest}/sbom" \
+                --scan-libs "${dest}/lib/private"
+            mkdir -p "${WORKDIR_ABS}/sbom"
+            for _sf in "${dest}"/sbom/*; do
+                [ -f "$_sf" ] || continue
+                cp "$_sf" "${WORKDIR_ABS}/sbom/${label}.$(basename "$_sf")"
+            done
+        }
+
+        if [ "${SBOM:-0}" = "1" ]; then
+            sh "${SBOM_UTILS}/check-components.sh" --root "$SOURCEDIR"
+        fi
+
         # NORMAL TARBALL
         cd "$INSTALLDIR"
         link
+        if [ "${SBOM:-0}" = "1" ]; then
+            gen_tarball_sbom "$INSTALLDIR" "$PRODUCT_FULL"
+        fi
 
         cd "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL-minimal"
         rm -rf percona-xtrabackup-8.0-test 2> /dev/null
         find . -type f -exec file '{}' \; | grep ': ELF ' | cut -d':' -f1 | xargs strip --strip-unneeded
         link
+        if [ "${SBOM:-0}" = "1" ]; then
+            gen_tarball_sbom "$WORKDIR_ABS/$BASEINSTALLDIR/minimal/$PRODUCT_FULL-minimal" \
+                             "${PRODUCT_FULL}-minimal"
+        fi
 
         cd "$WORKDIR"
         $TAR czf "percona-xtrabackup-$XTRABACKUP_VERSION-$(uname -s)-$(uname -m)$GLIBC_VER.tar.gz" \
