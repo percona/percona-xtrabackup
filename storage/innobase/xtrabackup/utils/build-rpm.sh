@@ -139,10 +139,15 @@ cp $SOURCEDIR/storage/innobase/xtrabackup/utils/percona-xtrabackup.spec SPECS/
 #
 if [ -z "${XB_VERSION_EXTRA:-}" ]; then
   EXTRAVER="%{nil}"
-  RPM_EXTRAVER=1
-else 
+  RPM_EXTRAVER=0
+else
   EXTRAVER=${XB_VERSION_EXTRA}
-  RPM_EXTRAVER=${XB_VERSION_EXTRA#-}.1
+  EXTRA_STRIPPED="${XB_VERSION_EXTRA#-}"
+  if echo "$EXTRA_STRIPPED" | grep -qE '^[0-9]+$'; then
+    RPM_EXTRAVER=${EXTRA_STRIPPED}.1
+  else
+    RPM_EXTRAVER=1.${EXTRA_STRIPPED}
+  fi
 fi
 #
 

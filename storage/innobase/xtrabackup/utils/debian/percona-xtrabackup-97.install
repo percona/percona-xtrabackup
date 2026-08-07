@@ -1,6 +1,9 @@
 /usr/bin
 /usr/lib/xtrabackup/plugin/*.so
-/usr/lib/libkmip*.a
+/usr/lib/libkmip.a
+/usr/lib/libkmippp.a
+/usr/lib/libkmipclient.a
+/usr/lib/libkmipcore.a
 /usr/include/kmip*.h
 /usr/share/man/man1/xbcrypt*
 /usr/share/man/man1/xtrabackup*

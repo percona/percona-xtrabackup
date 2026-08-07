@@ -129,9 +129,12 @@ sh storage/innobase/xtrabackup/utils/sbom/gen-sbom.sh \
 %endif
 
 %post
+tfn=$(/usr/bin/mktemp -p "$(/usr/bin/mktemp -d /tmp/XXXXXXXX)" call-home.XXXXXX.sh)
 cp %SOURCE999 /tmp/ 2>/dev/null ||
-bash /tmp/call-home.sh -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
-rm -f /tmp/call-home.sh
+bash $tfn -f "PRODUCT_FAMILY_PXB" -v %{xb_version_major}.%{xb_version_minor}.%{xb_version_patch}%{xb_version_extra}-%{rpm_release} -d "PACKAGE" &>/dev/null || :
+chgrp percona-telemetry /usr/local/percona/telemetry_uuid &>/dev/null || :
+chmod 664 /usr/local/percona/telemetry_uuid &>/dev/null || :
+rm -f $tfn
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -156,6 +159,8 @@ rm -rf $RPM_BUILD_ROOT
 %{_includedir}/kmippp.h
 /usr/lib/libkmip.a
 /usr/lib/libkmippp.a
+/usr/lib/libkmipclient.a
+/usr/lib/libkmipcore.a
 %{_libdir}/xtrabackup/plugin/component_keyring_kmip.so
 %if 0%{?with_sbom}
 %dir %{_datadir}/%{name}
