@@ -281,6 +281,15 @@ void range_get_next_page(xb_page_set *page_set) {
     }
     auto next_page = *page_set->current_page_it;
     if (next_page != current_page + 1) {
+      /* The next changed page is not adjacent to the current block. Step
+      back so that the iterator points to the last page of the current
+      contiguous block, as documented in the function comment. Leaving the
+      iterator on the next (non-adjacent) changed page makes the caller
+      extend the read batch up to that page, silently reading all the
+      unmodified pages in between. For large tablespaces with sparsely
+      distributed changed pages this degenerates into reading almost the
+      entire data file, defeating the purpose of page tracking. (PXB-3853) */
+      --page_set->current_page_it;
       break;
     }
   }
