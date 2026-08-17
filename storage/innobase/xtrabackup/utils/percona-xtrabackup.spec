@@ -35,7 +35,6 @@ Source999:      call-home.sh
 BuildRequires:  %{cmake_bin}, libaio-devel, libgcrypt-devel, ncurses-devel, readline-devel, zlib-devel, libev-devel openssl-devel
 BuildRequires:  libcurl-devel
 Conflicts:      percona-xtrabackup-21, percona-xtrabackup-22, percona-xtrabackup, percona-xtrabackup-24, percona-xtrabackup-80, percona-xtrabackup-81, percona-xtrabackup-82, percona-xtrabackup-84
-Conflicts:      percona-xtrabackup-pro-%{xb_version_major}%{xb_version_minor}
 Requires:       rsync, zstd
 Requires:       lz4
 Recommends:     perl(Digest::MD5)
