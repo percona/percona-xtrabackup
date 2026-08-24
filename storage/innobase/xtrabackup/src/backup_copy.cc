@@ -60,6 +60,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <set>
 #include <sstream>
 #include <string>
+#include <vector>
 #include "changed_page_tracking.h"
 #include "common.h"
 #include "fil_cur.h"
@@ -106,16 +107,39 @@ xb_regex_t preg_filepath;
 static std::set<std::string> skip_copy_back_list;
 
 class datadir_queue {
-  std::queue<datadir_entry_t> queue;
+  // Comparator sorting datadir entries by their size.
+  struct queued_datadir_entry_compare {
+    bool operator()(const datadir_entry_t &lhs,
+                    const datadir_entry_t &rhs) const {
+      // Empty directories are considered to be smaller than files.
+      if (lhs.is_empty_dir != rhs.is_empty_dir) {
+        return lhs.is_empty_dir;
+      }
+
+      auto lhs_size = lhs.file_size >= 0 ? lhs.file_size : -1;
+      auto rhs_size = rhs.file_size >= 0 ? rhs.file_size : -1;
+
+      if (lhs_size != rhs_size) {
+        return lhs_size < rhs_size;
+      }
+
+      // If files are same size, order them by path to keep sorting
+      // deterministic.
+      return lhs.path > rhs.path;
+    }
+  };
+
+  std::priority_queue<datadir_entry_t, std::vector<datadir_entry_t>,
+                      queued_datadir_entry_compare>
+      queue;
   mysql_mutex_t mutex;
   mysql_cond_t cond;
-  bool final;
+  bool final = false;
 
  public:
   datadir_queue() {
     mysql_mutex_init(0, &mutex, MY_MUTEX_INIT_FAST);
     mysql_cond_init(0, &cond);
-    final = false;
   }
   ~datadir_queue() {
     mysql_cond_destroy(&cond);
@@ -142,7 +166,7 @@ class datadir_queue {
       mysql_mutex_unlock(&mutex);
       return false;
     }
-    entry = queue.front();
+    entry = queue.top();
     queue.pop();
     mysql_mutex_unlock(&mutex);
     return true;
@@ -426,9 +450,14 @@ bool backup_file_printf(const char *filename, const char *fmt, ...) {
   return (result);
 }
 
+/************************************************************************
+Common body for parallel thread execution. Takes a pre-populated and
+completed datadir_queue and spawns N worker threads that each receive a
+datadir_thread_ctxt_t*. Waits for all threads to finish and returns
+true if every thread succeeded. */
 template <typename F>
-bool run_data_threads(const char *dir, const char *suffix, F func, uint n,
-                      const char *thread_description) {
+bool run_worker_threads(datadir_queue &queue, F func, uint n,
+                        const char *thread_description) {
   datadir_thread_ctxt_t *data_threads;
   uint i, count;
   ib_mutex_t count_mutex;
@@ -441,25 +470,14 @@ bool run_data_threads(const char *dir, const char *suffix, F func, uint n,
   mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &count_mutex);
   count = n;
 
-  datadir_queue queue;
-
   for (i = 0; i < n; i++) {
     data_threads[i].n_thread = i + 1;
     data_threads[i].count = &count;
     data_threads[i].count_mutex = &count_mutex;
     data_threads[i].queue = &queue;
+    data_threads[i].ret = true;
     os_thread_create(PFS_NOT_INSTRUMENTED, 0, func, &data_threads[i]).start();
   }
-
-  xb_process_datadir(
-      dir, suffix,
-      [&](const datadir_entry_t &entry, void *arg) mutable -> bool {
-        queue.push(entry);
-        return true;
-      },
-      nullptr);
-
-  queue.complete();
 
   /* Wait for threads to exit */
   while (1) {
@@ -484,7 +502,25 @@ bool run_data_threads(const char *dir, const char *suffix, F func, uint n,
 
   ut::free(data_threads);
 
-  return (ret);
+  return ret;
+}
+
+template <typename F>
+bool run_data_threads(const char *dir, const char *suffix, F func, uint n,
+                      const char *thread_description) {
+  datadir_queue queue;
+
+  xb_process_datadir(
+      dir, suffix,
+      [&](const datadir_entry_t &entry, void *arg) mutable -> bool {
+        queue.push(entry);
+        return true;
+      },
+      nullptr);
+
+  queue.complete();
+
+  return run_worker_threads(queue, func, n, thread_description);
 }
 
 // Explicit instantiation for function pointer type:
@@ -591,9 +627,15 @@ bool copy_file(ds_ctxt_t *datasink, const char *src_file_path,
   action = xb_get_copy_action();
   if (pos >= 0) {
     xb::info() << action << " " << src_file_path << " to " << dstfile->path
-               << " up to position " << pos;
+               << " up to position " << pos << ", size "
+               << cursor.statinfo.st_size << " ("
+               << xtrabackup::utils::human_readable(cursor.statinfo.st_size)
+               << ")";
   } else {
-    xb::info() << action << " " << src_file_path << " to " << dstfile->path;
+    xb::info() << action << " " << src_file_path << " to " << dstfile->path
+               << ", size " << cursor.statinfo.st_size << " ("
+               << xtrabackup::utils::human_readable(cursor.statinfo.st_size)
+               << ")";
   }
 
   /* The main copy loop */
@@ -1158,21 +1200,23 @@ void Myrocks_datadir::scan_dir(const std::string &dir,
           return;
         }
         char buf[FN_REFLEN];
+        struct stat statinfo;
         fn_format(buf, name, path, "", MY_UNPACK_FILENAME | MY_SAFE_PATH);
+        ssize_t fsize = (stat(buf, &statinfo) == 0) ? statinfo.st_size : -1;
         if (ends_with(name, ".log")) {
           if (scan_type == SCAN_ALL || scan_type == SCAN_WAL) {
             result.push_back(datadir_entry_t(
                 "", buf, dest_wal_dir != nullptr ? dest_wal_dir : dest_data_dir,
-                name, false));
+                name, false, fsize));
           }
         } else if (ends_with(name, ".sst")) {
           if (scan_type == SCAN_ALL || scan_type == SCAN_DATA) {
             result.push_back(
-                datadir_entry_t("", buf, dest_data_dir, name, false));
+                datadir_entry_t("", buf, dest_data_dir, name, false, fsize));
           }
         } else if (scan_type == SCAN_ALL || scan_type == SCAN_META) {
           result.push_back(
-              datadir_entry_t("", buf, dest_data_dir, name, false));
+              datadir_entry_t("", buf, dest_data_dir, name, false, fsize));
         }
       },
       false);
@@ -1303,63 +1347,96 @@ Myrocks_checkpoint::file_list Myrocks_checkpoint::data_files() const {
   return Myrocks_datadir(checkpoint_dir).data_files();
 }
 
-static void par_copy_or_move_rocksdb_files(
-    const Myrocks_datadir::const_iterator &start,
-    const Myrocks_datadir::const_iterator &end, size_t thread_n, ds_ctxt_t *ds,
-    bool *result) {
-  for (auto it = start; it != end; it++) {
-    if (ends_with(it->path.c_str(), ".qp") ||
-        ends_with(it->path.c_str(), ".lz4") ||
-        ends_with(it->path.c_str(), ".zst") ||
-        ends_with(it->path.c_str(), ".xbcrypt")) {
-      continue;
-    }
-    if (xtrabackup_copy_back) {
-      if (!copy_file(ds, it->path.c_str(), it->rel_path.c_str(), thread_n,
-                     FILE_PURPOSE_OTHER, it->file_size)) {
-        *result = false;
-      }
-    } else {
-      if (!move_file(ds, it->path.c_str(), it->rel_path.c_str(), ds->root,
-                     thread_n, FILE_PURPOSE_OTHER)) {
-        *result = false;
-      }
-    }
-    if (!*result) {
-      break;
-    }
+/************************************************************************
+Run parallel threads over a RocksDB file list using work-stealing from a
+priority queue (largest files first).  Each worker pops one entry at a time
+and invokes the per-entry callback. */
+using rocksdb_entry_func_t =
+    std::function<bool(const datadir_entry_t &entry, uint thread_n)>;
+
+static bool run_rocksdb_threads(Myrocks_datadir::file_list &files,
+                                rocksdb_entry_func_t func, uint n) {
+  if (files.empty()) return true;
+
+  datadir_queue queue;
+  for (const auto &entry : files) {
+    queue.push(entry);
   }
+  queue.complete();
+
+  auto worker = [&func](datadir_thread_ctxt_t *ctx) {
+    datadir_entry_t entry;
+    bool ret = true;
+    THD *thd = nullptr;
+
+    if (my_thread_init()) {
+      ret = false;
+      goto cleanup;
+    }
+    thd = create_thd(false, false, true, 0, 0);
+
+    while (ctx->queue->pop(entry)) {
+      if (!func(entry, ctx->n_thread)) {
+        ret = false;
+        break;
+      }
+    }
+
+  cleanup:
+    destroy_thd(thd);
+    my_thread_end();
+    mutex_enter(ctx->count_mutex);
+    --(*ctx->count);
+    mutex_exit(ctx->count_mutex);
+    ctx->ret = ret;
+  };
+
+  return run_worker_threads(queue, worker, n, "rocksdb copy");
 }
 
-static void backup_rocksdb_files(const Myrocks_datadir::const_iterator &start,
-                                 const Myrocks_datadir::const_iterator &end,
-                                 size_t thread_n, bool *result) {
-  for (auto it = start; it != end; it++) {
-    if (!copy_file(ds_uncompressed_data, it->path.c_str(), it->rel_path.c_str(),
-                   thread_n, FILE_PURPOSE_OTHER, it->file_size)) {
-      *result = false;
-    }
-    if (!*result) {
-      break;
-    }
-  }
+/************************************************************************
+Copy or move RocksDB files in parallel (largest first), skipping compressed
+or encrypted files that will be handled by the decompress/decrypt pass. */
+static bool copy_or_move_rocksdb_files(Myrocks_datadir::file_list &files,
+                                       ds_ctxt_t *ds, uint n) {
+  return run_rocksdb_threads(
+      files,
+      [ds](const datadir_entry_t &entry, uint thread_n) -> bool {
+        if (ends_with(entry.path.c_str(), ".qp") ||
+            ends_with(entry.path.c_str(), ".lz4") ||
+            ends_with(entry.path.c_str(), ".zst") ||
+            ends_with(entry.path.c_str(), ".xbcrypt")) {
+          return true;
+        }
+        if (xtrabackup_copy_back) {
+          return copy_file(ds, entry.path.c_str(), entry.rel_path.c_str(),
+                           thread_n, FILE_PURPOSE_OTHER, entry.file_size);
+        } else {
+          return move_file(ds, entry.path.c_str(), entry.rel_path.c_str(),
+                           ds->root, thread_n, FILE_PURPOSE_OTHER);
+        }
+      },
+      n);
+}
+
+/************************************************************************
+Backup RocksDB files in parallel (largest first). */
+static bool backup_rocksdb_files(Myrocks_datadir::file_list &files, uint n) {
+  return run_rocksdb_threads(
+      files,
+      [](const datadir_entry_t &entry, uint thread_n) {
+        return copy_file(ds_uncompressed_data, entry.path.c_str(),
+                         entry.rel_path.c_str(), thread_n, FILE_PURPOSE_OTHER,
+                         entry.file_size);
+      },
+      n);
 }
 
 static bool backup_rocksdb_wal(const Myrocks_checkpoint &checkpoint,
                                const log_status_t &log_status) {
-  bool result = true;
+  auto live_wal_files = checkpoint.wal_files(log_status);
 
-  using std::placeholders::_1;
-  using std::placeholders::_2;
-  using std::placeholders::_3;
-
-  std::function<void(const Myrocks_datadir::const_iterator &,
-                     const Myrocks_datadir::const_iterator &, size_t)>
-      copy = std::bind(&backup_rocksdb_files, _1, _2, _3, &result);
-
-  const auto live_wal_files = checkpoint.wal_files(log_status);
-
-  par_for(PFS_NOT_INSTRUMENTED, live_wal_files, xtrabackup_parallel, copy);
+  bool result = backup_rocksdb_files(live_wal_files, xtrabackup_parallel);
 
   if (!result) {
     xb::error() << "failed to backup rocksdb WAL files.";
@@ -1369,16 +1446,6 @@ static bool backup_rocksdb_wal(const Myrocks_checkpoint &checkpoint,
 }
 
 static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
-  bool result = true;
-
-  using std::placeholders::_1;
-  using std::placeholders::_2;
-  using std::placeholders::_3;
-
-  std::function<void(const Myrocks_datadir::const_iterator &,
-                     const Myrocks_datadir::const_iterator &, size_t)>
-      copy = std::bind(&backup_rocksdb_files, _1, _2, _3, &result);
-
   auto checkpoint_files =
       final ? context.myrocks_checkpoint.checkpoint_files(log_status)
             : context.myrocks_checkpoint.data_files();
@@ -1395,7 +1462,7 @@ static bool backup_rocksdb_checkpoint(Backup_context &context, bool final) {
     context.rocksdb_files.insert(f.file_name);
   }
 
-  par_for(PFS_NOT_INSTRUMENTED, checkpoint_files, xtrabackup_parallel, copy);
+  bool result = backup_rocksdb_files(checkpoint_files, xtrabackup_parallel);
 
   if (!result) {
     xb::error() << "failed to backup rocksdb datadir.";
@@ -1996,16 +2063,10 @@ bool copy_incremental_over_full() {
       }
     }
 
-    using std::placeholders::_1;
-    using std::placeholders::_2;
-    using std::placeholders::_3;
-    bool result = true;
-    std::function<void(const Myrocks_datadir::const_iterator &,
-                       const Myrocks_datadir::const_iterator &, size_t)>
-        copy = std::bind(&par_copy_or_move_rocksdb_files, _1, _2, _3, ds_data,
-                         &result);
-
-    par_for(PFS_NOT_INSTRUMENTED, rocksdb.files(), xtrabackup_parallel, copy);
+    auto rdb_files = rocksdb.files();
+    if (!copy_or_move_rocksdb_files(rdb_files, ds_data, xtrabackup_parallel)) {
+      ret = false;
+    }
   }
 
 cleanup:
@@ -2507,22 +2568,18 @@ bool copy_back(int argc, char **argv) {
 
     ds_data = ds_create(rocksdb_datadir.c_str(), DS_TYPE_LOCAL);
 
-    using std::placeholders::_1;
-    using std::placeholders::_2;
-    using std::placeholders::_3;
-    std::function<void(const Myrocks_datadir::const_iterator &,
-                       const Myrocks_datadir::const_iterator &, size_t)>
-        copy = std::bind(&par_copy_or_move_rocksdb_files, _1, _2, _3, ds_data,
-                         &ret);
-
     if (rocksdb_wal_dir.empty()) {
-      par_for(PFS_NOT_INSTRUMENTED, rocksdb.files("", ""), xtrabackup_parallel,
-              copy);
+      auto files = rocksdb.files("", "");
+      if (!copy_or_move_rocksdb_files(files, ds_data, xtrabackup_parallel)) {
+        ret = false;
+      }
     } else {
-      par_for(PFS_NOT_INSTRUMENTED, rocksdb.data_files(""), xtrabackup_parallel,
-              copy);
-      par_for(PFS_NOT_INSTRUMENTED, rocksdb.meta_files(""), xtrabackup_parallel,
-              copy);
+      auto files = rocksdb.data_files("");
+      auto meta = rocksdb.meta_files("");
+      files.insert(files.end(), meta.begin(), meta.end());
+      if (!copy_or_move_rocksdb_files(files, ds_data, xtrabackup_parallel)) {
+        ret = false;
+      }
     }
 
     if (!ret) goto cleanup;
@@ -2542,16 +2599,11 @@ bool copy_back(int argc, char **argv) {
 
       ds_data = ds_create(rocksdb_wal_dir.c_str(), DS_TYPE_LOCAL);
 
-      using std::placeholders::_1;
-      using std::placeholders::_2;
-      using std::placeholders::_3;
-      std::function<void(const Myrocks_datadir::const_iterator &,
-                         const Myrocks_datadir::const_iterator &, size_t)>
-          copy = std::bind(&par_copy_or_move_rocksdb_files, _1, _2, _3, ds_data,
-                           &ret);
-
-      par_for(PFS_NOT_INSTRUMENTED, rocksdb.wal_files(""), xtrabackup_parallel,
-              copy);
+      auto wal_files = rocksdb.wal_files("");
+      if (!copy_or_move_rocksdb_files(wal_files, ds_data,
+                                      xtrabackup_parallel)) {
+        ret = false;
+      }
 
       if (!ret) goto cleanup;
 
