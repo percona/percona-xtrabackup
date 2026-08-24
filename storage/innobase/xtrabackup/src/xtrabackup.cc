@@ -84,9 +84,11 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sql/current_thd.h>
 #include <sql/srv_session.h>
 #include <table_cache.h>
+#include <algorithm>
 #include <list>
 #include <set>
 #include <sstream>
+#include <string_view>
 #include "sql/signal_handler.h"
 
 #include <api0api.h>
@@ -603,6 +605,32 @@ datafiles_iter_t *datafiles_iter_new(
     }
     return (DB_SUCCESS);
   });
+
+  // Order tablespaces largest first so parallel consumers reduce the long
+  // tail of work caused by late-discovered big files. File name is used as a
+  // deterministic tie-breaker for equal-size files.
+  std::sort(it->nodes.begin(), it->nodes.end(),
+            [](const fil_node_t *lhs, const fil_node_t *rhs) {
+              auto file_size = [](const fil_node_t *node) -> uint64_t {
+                if (!node || !node->space) {
+                  return 0;
+                }
+                const page_size_t ps(node->space->flags);
+                return static_cast<uint64_t>(node->size) * ps.physical();
+              };
+
+              auto file_name = [](const fil_node_t *node) -> std::string_view {
+                return node && node->name ? node->name : "";
+              };
+
+              const auto lhs_size = file_size(lhs);
+              const auto rhs_size = file_size(rhs);
+              if (lhs_size != rhs_size) {
+                return lhs_size > rhs_size;
+              }
+
+              return file_name(lhs) < file_name(rhs);
+            });
 
   it->i = it->nodes.begin();
 
@@ -3301,11 +3329,16 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
   action = xb_get_copy_action();
 
   if (xtrabackup_stream) {
-    xb::info() << "space_id: " << node->space->id << ", " << action
-               << node_path;
+    xb::info() << "space_id: " << node->space->id << ", " << action << node_path
+               << ", size " << cursor.statinfo.st_size << " ("
+               << xtrabackup::utils::human_readable(cursor.statinfo.st_size)
+               << ")";
   } else {
     xb::info() << "space_id: " << node->space->id << ", " << action << " "
-               << node_path << " to " << dstfile->path;
+               << node_path << " to " << dstfile->path << ", size "
+               << cursor.statinfo.st_size << " ("
+               << xtrabackup::utils::human_readable(cursor.statinfo.st_size)
+               << ")";
   }
 
   /* The main copy loop */
@@ -5766,7 +5799,8 @@ void process_datadir_l2cbk(const char *datadir, const char *dbname,
       (strlen(name) > suffix_len &&
        strcmp(name + strlen(name) - suffix_len, suffix) == 0)) {
     check_datadir_enctry_access(name, &statinfo);
-    func(datadir_entry_t(datadir, path, dbname, name, false), data);
+    func(datadir_entry_t(datadir, path, dbname, name, false, statinfo.st_size),
+         data);
   }
 }
 
@@ -5812,7 +5846,8 @@ void process_datadir_l1cbk(const char *datadir, const char *path,
       (strlen(name) > suffix_len &&
        strcmp(name + strlen(name) - suffix_len, suffix) == 0)) {
     check_datadir_enctry_access(name, &statinfo);
-    func(datadir_entry_t(datadir, path, "", name, false), data);
+    func(datadir_entry_t(datadir, path, "", name, false, statinfo.st_size),
+         data);
   }
 }
 

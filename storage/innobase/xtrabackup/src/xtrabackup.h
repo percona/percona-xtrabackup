@@ -336,11 +336,10 @@ struct datadir_entry_t {
   std::string db_name;
   std::string file_name;
   std::string rel_path;
-  bool is_empty_dir;
-  ssize_t file_size;
+  bool is_empty_dir = false;
+  ssize_t file_size = -1;
 
-  datadir_entry_t()
-      : datadir(), path(), db_name(), file_name(), rel_path(), is_empty_dir() {}
+  datadir_entry_t() = default;
 
   datadir_entry_t(const datadir_entry_t &) = default;
 
