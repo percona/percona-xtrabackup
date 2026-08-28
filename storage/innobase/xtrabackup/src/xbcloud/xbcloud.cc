@@ -1605,6 +1605,13 @@ int main(int argc, char **argv) {
     reinterpret_cast<Azure_object_store *>(object_store.get())
         ->set_extra_http_headers(extra_http_headers);
   }
+
+  backup_name = object_store->normalize_name(backup_name);
+  if (backup_name.empty()) {
+    msg_ts("%s: Backup name is empty after normalization.\n", my_progname);
+    return EXIT_FAILURE;
+  }
+
   /* validation */
   if (opt_threads > 1 && opt_fifo_dir == nullptr && opt_mode != MODE_DELETE) {
     msg_ts(
