@@ -197,8 +197,6 @@ void Azure_signer::sign_request(const std::string &container,
 
   std::string decoded_access_key = base64_decode(access_key);
 
-  trim(decoded_access_key);
-
   auto signature =
       base64_encode(hmac_sha256(decoded_access_key, string_to_sign));
 
