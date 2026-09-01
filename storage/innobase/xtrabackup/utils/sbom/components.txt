@@ -53,3 +53,7 @@ libedit          | 20240808-3.1 | BSD-3-Clause                | no  | source    
 tirpc            | 1.3.5        | BSD-3-Clause                | no  | source      | extra/tirpc/libtirpc-1.3.5                   | bundled path requires RHEL8/9 + non-system SSL; only consumer is group_replication
 doxygen-awesome  | 2.2.0        | MIT                         | no  | data        | extra/doxygen-awesome/2.2.0                  | documentation CSS only; no CMake reference
 
+# --- shipped: telemetry component (component_telemetry.so) -------------------
+opentelemetry-cpp   | 1.23.0    | Apache-2.0                  | yes | static      | extra/opentelemetry-cpp/opentelemetry-cpp-1.23.0     | linked into component_telemetry.so
+opentelemetry-proto | 1.7.0     | Apache-2.0                  | yes | static      | extra/opentelemetry-proto/opentelemetry-proto-1.7.0  | linked into component_telemetry.so
+json                | 3.12.0    | MIT                         | yes | header-only | extra/json/json-3.12.0                               | nlohmann json; header-only in opentelemetry-cpp
