@@ -51,6 +51,7 @@ SET(TESTS
   ut0mem
   ut0new
   ut0rnd
+  xb_page_group
 )
 
 ADD_COMPILE_FLAGS(
