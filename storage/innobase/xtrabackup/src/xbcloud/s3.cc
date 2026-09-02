@@ -431,7 +431,7 @@ bool S3_client::create_bucket(const std::string &name) {
   return true;
 }
 
-bool S3_client::probe_api_version_and_lookup(const std::string &bucket) {
+bool S3_client::probe_api_version_and_lookup(const std::string &bucket, const std::string &backup) {
   for (auto lookup : {LOOKUP_DNS, LOOKUP_PATH}) {
     if (bucket_lookup != LOOKUP_AUTO && bucket_lookup != lookup) {
       continue;
@@ -455,7 +455,7 @@ bool S3_client::probe_api_version_and_lookup(const std::string &bucket) {
       api_version = version;
 
       bool exists;
-      if (bucket_exists(bucket.c_str(), exists)) {
+      if (object_exists(bucket.c_str(), backup.c_str(), exists)) {
         msg_ts("%s: Successfully connected.\n", my_progname);
         return true;
       }
@@ -479,6 +479,29 @@ bool S3_client::bucket_exists(const std::string &name, bool &exists) {
   Http_request req(Http_request::HEAD, protocol, hostname(name),
                    bucketname(name) + "/");
   signer->sign_request(hostname(name), name, req, time(0));
+
+  Http_response resp;
+  if (!http_client->make_request(req, resp)) {
+    return false;
+  }
+
+  if (resp.ok()) {
+    exists = true;
+    return true;
+  }
+
+  if (resp.http_code() == 404) {
+    exists = false;
+    return true;
+  }
+
+  return false;
+}
+
+bool S3_client::object_exists(const std::string &bucket, const std::string &name, bool &exists) {
+  Http_request req(Http_request::HEAD, protocol, hostname(bucket),
+                   bucketname(bucket) + "/" + name);
+  signer->sign_request(hostname(bucket), bucket, req, time(0));
 
   Http_response resp;
   if (!http_client->make_request(req, resp)) {

@@ -929,21 +929,11 @@ end:
 
 bool xbcloud_put(Object_store *store, const std::string &container,
                  const std::string &backup_name) {
-  bool exists;
   std::atomic<bool> has_errors{false};
   Http_buffer buf_md5 = Http_buffer();
   std::string last_file_prefix = backup_name + "/xtrabackup_tablespaces";
   auto last_file_size = last_file_prefix.size();
   bool file_found = false;
-  if (!store->container_exists(container, exists)) {
-    return false;
-  }
-
-  if (!exists) {
-    if (!store->create_container(container)) {
-      return false;
-    }
-  }
 
   std::vector<std::string> object_list;
   if (!store->list_objects_in_directory(container, backup_name, object_list)) {
@@ -1521,7 +1511,7 @@ int main(int argc, char **argv) {
     container_name = opt_s3_bucket;
 
     if (!reinterpret_cast<S3_object_store *>(object_store.get())
-             ->probe_api_version_and_lookup(container_name)) {
+             ->probe_api_version_and_lookup(container_name, backup_name)) {
       return EXIT_FAILURE;
     }
     if (ec2_instance->get_is_ec2_instance_with_profile()) {
@@ -1558,7 +1548,7 @@ int main(int argc, char **argv) {
     container_name = opt_google_bucket;
 
     if (!reinterpret_cast<S3_object_store *>(object_store.get())
-             ->probe_api_version_and_lookup(container_name)) {
+             ->probe_api_version_and_lookup(container_name, backup_name)) {
       return EXIT_FAILURE;
     }
   } else if (opt_storage == AZURE) {
