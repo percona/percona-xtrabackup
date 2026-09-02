@@ -71,6 +71,15 @@ class Object_store {
                                            const std::string &directory,
                                            std::vector<std::string> &files,
                                            std::vector<std::string> &dirs);
+  /**
+   * Normalize a backup name according to storage-specific rules.
+   *
+   * Default implementation returns the name unchanged.
+   *
+   * @param name Backup name to normalize.
+   * @return Normalized name.
+   */
+  virtual std::string normalize_name(const std::string &name) { return name; }
   virtual ~Object_store() {}
 };
 

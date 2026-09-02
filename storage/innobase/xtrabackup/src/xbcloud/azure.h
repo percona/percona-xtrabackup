@@ -22,6 +22,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #define __XBCLOUD_AZURE_H__
 
 #include <iostream>
+#include <optional>
 #include "object_store.h"
 #include "xbcloud/http.h"
 #include "xbcloud/util.h"
@@ -92,6 +93,8 @@ class Azure_client {
   Http_request::protocol_t protocol;
   ulong max_retries;
   ulong max_backoff;
+
+  std::optional<bool> hns_enabled;
 
   static void upload_callback(Azure_client *client, std::string container,
                               std::string name, Http_request *req,
@@ -170,6 +173,8 @@ class Azure_client {
                                    const std::string &prefix,
                                    std::vector<std::string> &files,
                                    std::vector<std::string> &dirs);
+
+  bool is_hns_enabled();
 
   ulong get_max_retries() { return max_retries; }
 
@@ -265,6 +270,20 @@ class Azure_object_store : public Object_store {
       std::vector<std::string> &dirs) override {
     return azure_client.list_objects_files_and_dirs(container, directory + "/",
                                                     files, dirs);
+  }
+  // Strip leading slashes for HNS-enabled accounts.
+  // Azure HNS silently normalizes blob paths by removing leading slashes,
+  // so "/backup/chunk.00000" is stored as "backup/chunk.00000".  Without
+  // this, xbcloud's expected prefix no longer matches what the API returns.
+  // Example: "/db/mybackup" -> "db/mybackup"
+  // Flat accounts are unaffected — the name is returned as-is.
+  std::string normalize_name(const std::string &name) override {
+    if (azure_client.is_hns_enabled()) {
+      std::string result = name;
+      ltrim_slashes(result);
+      return result;
+    }
+    return name;
   }
 };
 }  // namespace xbcloud
