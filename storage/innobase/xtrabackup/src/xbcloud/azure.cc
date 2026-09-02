@@ -197,8 +197,6 @@ void Azure_signer::sign_request(const std::string &container,
 
   std::string decoded_access_key = base64_decode(access_key);
 
-  trim(decoded_access_key);
-
   auto signature =
       base64_encode(hmac_sha256(decoded_access_key, string_to_sign));
 
@@ -376,6 +374,32 @@ bool Azure_client::container_exists(const std::string &name, bool &exists) {
   }
 
   return false;
+}
+
+bool Azure_client::is_hns_enabled() {
+  if (hns_enabled.has_value()) {
+    return hns_enabled.value();
+  }
+
+  Http_request req(Http_request::GET, protocol, host, "/");
+  req.add_param("restype", "account");
+  req.add_param("comp", "properties");
+  signer->sign_request("", "", req, time(0));
+
+  Http_response resp;
+  if (!http_client->make_request(req, resp)) {
+    hns_enabled = false;
+    return false;
+  }
+
+  if (!resp.ok()) {
+    hns_enabled = false;
+    return false;
+  }
+
+  auto it = resp.headers().find("x-ms-is-hns-enabled");
+  hns_enabled = it != resp.headers().end() && it->second == "true";
+  return hns_enabled.value();
 }
 
 bool Azure_client::upload_object(const std::string &container,
