@@ -65,6 +65,11 @@ static inline void rtrim_slashes(std::string &s) {
           s.end());
 }
 
+static inline void ltrim_slashes(std::string &s) {
+  s.erase(s.begin(),
+          std::find_if(s.begin(), s.end(), [](int ch) { return ch != '/'; }));
+}
+
 static inline void to_lower(std::string &s) {
   s.resize(s.length());
   std::transform(s.begin(), s.end(), s.begin(), ::tolower);
