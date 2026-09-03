@@ -29,5 +29,5 @@ kill -SIGCONT $xb_pid
 
 run_cmd_expect_failure wait $job_pid
 
-grep -q "handle_fatal_signal" $OUTFILE || \
+grep -qE "#[0-9]+ 0x[0-9a-f]+ .+ at " $OUTFILE || \
   die "Could not find a resolved stacktrace in the log"
