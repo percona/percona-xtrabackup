@@ -51,8 +51,18 @@ class Object_store {
   virtual bool async_delete_object(const std::string &container,
                                    const std::string &object, Event_handler *h,
                                    std::function<void(bool)> f = {}) = 0;
+  /**
+   * Delete a single object.
+   *
+   * @param container    Container/bucket name.
+   * @param name         Object name.
+   * @param best_effort  When true, an object we cannot delete because it is
+   *                     not there, or because we have no permission on it,
+   *                     is a success and is not logged.
+   * @return true on success, false on error.
+   */
   virtual bool delete_object(const std::string &container,
-                             const std::string &name) = 0;
+                             const std::string &name, bool best_effort) = 0;
   virtual Http_buffer download_object(const std::string &container,
                                       const std::string &name,
                                       bool &success) = 0;
