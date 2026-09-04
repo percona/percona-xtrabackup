@@ -63,6 +63,7 @@ SET(TESTS
   ut0object_cache
   ut0rbt
   ut0rnd
+  xb_page_group
 )
 
 # Treat warnings as errors on MSVC for InnoDB's unittests

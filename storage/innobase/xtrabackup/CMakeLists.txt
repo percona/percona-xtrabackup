@@ -44,3 +44,25 @@ ENDIF()
 
 ADD_CUSTOM_TARGET(link_test_dir ALL
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/test" "${CMAKE_CURRENT_BINARY_DIR}/test")
+
+# PXB-3862: the server's unittest tree is disabled in XtraBackup builds
+# (top-level gates on "WITH_UNIT_TESTS AND NOT WITH_XTRABACKUP"), so build
+# the page-grouping / storage-probe unit tests here, self-contained
+# against the bundled googletest. The tested code is header-only
+# (xb_page_group.h, xb_io_probe.h), so no server libraries are needed.
+IF(WITH_UNIT_TESTS)
+  FILE(GLOB XB_GTEST_ROOT
+    ${CMAKE_SOURCE_DIR}/extra/googletest/googletest-release-*/googletest)
+  ADD_EXECUTABLE(xb_page_group-t
+    ${CMAKE_SOURCE_DIR}/unittest/gunit/innodb/xb_page_group-t.cc
+    ${XB_GTEST_ROOT}/src/gtest-all.cc
+    ${XB_GTEST_ROOT}/src/gtest_main.cc)
+  TARGET_INCLUDE_DIRECTORIES(xb_page_group-t PRIVATE
+    ${CMAKE_SOURCE_DIR} ${XB_GTEST_ROOT}/include ${XB_GTEST_ROOT})
+  SET_TARGET_PROPERTIES(xb_page_group-t PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime_output_directory)
+  TARGET_COMPILE_OPTIONS(xb_page_group-t PRIVATE -Wno-undef)
+  FIND_PACKAGE(Threads REQUIRED)
+  TARGET_LINK_LIBRARIES(xb_page_group-t Threads::Threads)
+  ADD_TEST(NAME xb_page_group COMMAND xb_page_group-t)
+ENDIF()
