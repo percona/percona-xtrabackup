@@ -223,7 +223,7 @@ void Azure_client::set_endpoint(const std::string &ep, bool development_storage,
 }
 
 bool Azure_client::delete_object(const std::string &container,
-                                 const std::string &name) {
+                                 const std::string &name, bool best_effort) {
   Http_request req(Http_request::DELETE, protocol, host,
                    "/" + container + "/" + name);
   signer->sign_request(container, name, req, time(0));
@@ -234,6 +234,11 @@ bool Azure_client::delete_object(const std::string &container,
   }
 
   if (resp.ok()) {
+    return true;
+  }
+
+  /* Object is not there (BlobNotFound), or we have no permission on it. */
+  if (best_effort && (resp.http_code() == 404 || resp.http_code() == 403)) {
     return true;
   }
 

@@ -166,7 +166,8 @@ class Swift_client {
     split_url(url, protocol, host, path);
   }
 
-  bool delete_object(const std::string &container, const std::string &name);
+  bool delete_object(const std::string &container, const std::string &name,
+                     bool best_effort);
 
   Http_buffer download_object(const std::string &container,
                               const std::string &name, bool &success);
@@ -258,8 +259,9 @@ class Swift_object_store : public Object_store {
                                             });
   }
   virtual bool delete_object(const std::string &container,
-                             const std::string &name) override {
-    return swift_client.delete_object(container, name);
+                             const std::string &name,
+                             bool best_effort) override {
+    return swift_client.delete_object(container, name, best_effort);
   }
   virtual Http_buffer download_object(const std::string &container,
                                       const std::string &name,

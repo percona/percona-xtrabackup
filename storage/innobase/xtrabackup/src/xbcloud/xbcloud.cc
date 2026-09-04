@@ -1120,7 +1120,7 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
     std::sort(dirs.begin(), dirs.end(), std::greater<std::string>());
     for (const auto &d : dirs) {
       msg_ts("%s: Deleting directory %s.\n", my_progname, d.c_str());
-      if (!store->delete_object(container, d)) {
+      if (!store->delete_object(container, d, false)) {
         msg_ts("%s: Delete failed. Cannot delete directory %s.\n", my_progname,
                d.c_str());
         return false;
@@ -1129,9 +1129,26 @@ bool xbcloud_delete(Object_store *store, const std::string &container,
 
     // Delete the root directory of the backup
     msg_ts("%s: Deleting directory %s.\n", my_progname, backup_name.c_str());
-    if (!store->delete_object(container, backup_name)) {
+    if (!store->delete_object(container, backup_name, false)) {
       msg_ts("%s: Warning: Failed to delete root directory %s.\n", my_progname,
              backup_name.c_str());
+    }
+  }
+
+  /* put --md5 uploads the checksum file as <backup_name>.md5, next to the
+  backup directory and not inside it, so the listing above never returns it.
+  Delete it here.
+
+  We do not know whether this backup was taken with --md5, so the delete is
+  unconditional and best_effort: a .md5 file that is not there, or that we
+  are not allowed to delete, leaves us behaving as we did before.
+
+  Partial deletes keep the backup, so they keep its .md5 file too. */
+  if (partial_file_list.empty()) {
+    const std::string md5_object = backup_name + ".md5";
+    if (!store->delete_object(container, md5_object, true)) {
+      msg_ts("%s: Warning: Failed to delete %s.\n", my_progname,
+             md5_object.c_str());
     }
   }
 
