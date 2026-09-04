@@ -122,6 +122,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include "write_filt.h"
 #include "wsrep.h"
 #include "xb0xb.h"
+#include "xb_io_probe.h"
 #include "xb_regex.h"
 #include "xbcrypt_common.h"
 #include "xbstream.h"
@@ -459,6 +460,17 @@ static ulonglong global_max_value;
 bool opt_galera_info = false;
 bool opt_slave_info = false;
 bool opt_page_tracking = false;
+/* --page-tracking-merge-gap: "auto" (default) chooses the gap per table
+from the changed-page distribution; a number pins it for all tables. */
+bool opt_page_tracking_merge_gap_auto = true;
+ulong opt_page_tracking_merge_gap = 0;
+static char *opt_page_tracking_merge_gap_str = nullptr;
+/* Read request cost for merge-gap=auto: what one read request costs in
+bytes of sequential transfer, i.e. the most bytes worth reading across
+one gap to save one request. Set once, single-threaded, before the
+copy threads start (see xb_probe_read_request_cost()); read-only
+after. */
+uint64_t xb_read_request_cost = pagetracking::READ_REQUEST_COST_FALLBACK_BYTES;
 bool opt_no_lock = false;
 bool opt_safe_slave_backup = false;
 bool opt_rsync = false;
@@ -782,6 +794,7 @@ enum options_xtrabackup {
   OPT_MOVE_BACK,
   OPT_GALERA_INFO,
   OPT_PAGE_TRACKING,
+  OPT_PAGE_TRACKING_MERGE_GAP,
   OPT_SLAVE_INFO,
   OPT_NO_LOCK,
   OPT_LOCK_DDL,
@@ -1110,6 +1123,19 @@ struct my_option xb_client_options[] = {
      "since the last backup.",
      (uchar *)&opt_page_tracking, (uchar *)&opt_page_tracking, 0, GET_BOOL,
      NO_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"page-tracking-merge-gap", OPT_PAGE_TRACKING_MERGE_GAP,
+     "with --page-tracking, the maximum gap of unchanged pages, between "
+     "two changed pages, across which the reads are merged into one "
+     "continuous read. Merging avoids many small individual reads when "
+     "changed pages are scattered; the gap pages are read but never "
+     "written to the backup, so this affects read volume only, not backup "
+     "size. The default \"auto\" sizes the gap to the backup storage; a "
+     "number (in innodb_page_size pages) sets the largest merged gap for "
+     "all tables; 0 disables merging.",
+     (uchar *)&opt_page_tracking_merge_gap_str,
+     (uchar *)&opt_page_tracking_merge_gap_str, 0, GET_STR, REQUIRED_ARG, 0, 0,
+     0, 0, 0, 0},
 
     {"no-lock", OPT_NO_LOCK,
      "Use this option to disable lock-ddl and table lock "
@@ -1974,6 +2000,25 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
 
       ADD_PRINT_PARAM_OPT(opt_mysql_tmpdir);
       break;
+
+    case OPT_PAGE_TRACKING_MERGE_GAP: {
+      if (strcasecmp(argument, "auto") == 0) {
+        opt_page_tracking_merge_gap_auto = true;
+        break;
+      }
+      char *endp = nullptr;
+      errno = 0;
+      ulonglong val = strtoull(argument, &endp, 10);
+      if (endp == argument || *endp != '\0' || errno == ERANGE || val > 65536) {
+        xb::error() << "invalid --page-tracking-merge-gap value "
+                    << SQUOTE(argument)
+                    << ". Expected \"auto\" or a page count 0..65536";
+        return 1;
+      }
+      opt_page_tracking_merge_gap_auto = false;
+      opt_page_tracking_merge_gap = static_cast<ulong>(val);
+      break;
+    }
 
     case OPT_INNODB_DATA_HOME_DIR:
 
@@ -4287,6 +4332,78 @@ static void cleanup_mysql_environment() {
   mysql_mutex_destroy(&LOCK_replica_list);
 }
 
+/** With --page-tracking-merge-gap=auto, measure the storage once to set
+the read request cost (see xb_io_probe.h). Probes the
+largest changed data file of at least PROBE_MIN_FILE_BYTES - the most
+representative of the reads the cost will govern. Must run
+single-threaded, before the data copy threads start: xb_read_request_cost
+is written once here and only read afterwards. Iterates all tablespaces
+unfiltered (datafiles_iter_new(nullptr)): the changed-page map is the
+only filter that matters for picking a probe candidate, and the
+dd-validation pass would log its orphan warnings a second time. Every
+candidate is an InnoDB tablespace by construction: the iterator walks
+the InnoDB fil system only (files of other engines, MyRocks included,
+never appear in it) and the changed-page map is keyed by InnoDB space
+id. */
+static void xb_probe_read_request_cost() {
+  if (!opt_page_tracking_merge_gap_auto || changed_page_tracking == nullptr ||
+      changed_page_tracking->empty()) {
+    return;
+  }
+
+  char probe_path[FN_REFLEN] = "";
+  uint64_t probe_size = 0;
+
+  datafiles_iter_t *it = datafiles_iter_new(nullptr);
+  if (it == nullptr) {
+    return;
+  }
+  while (fil_node_t *node = datafiles_iter_next(it)) {
+    if (changed_page_tracking->count(node->space->id) == 0) {
+      continue;
+    }
+    /* node->size is in pages of the space's physical page size, set when
+    the node was opened during tablespace discovery; no syscall needed.
+    probe_storage() re-checks the real size after open, so a stale value
+    can only lead to the fallback cost, never to a wrong measurement.
+    (The iterator is sorted largest-first since PXB-3502; this running
+    max does not depend on that, or any, iteration order.) */
+    const page_size_t node_page_size(node->space->flags);
+    const uint64_t node_bytes =
+        uint64_t{node->size} * node_page_size.physical();
+    if (node_bytes > probe_size) {
+      probe_size = node_bytes;
+      snprintf(probe_path, sizeof(probe_path), "%s", node->name);
+    }
+  }
+  datafiles_iter_free(it);
+
+  if (probe_size < pagetracking::PROBE_MIN_FILE_BYTES) {
+    return; /* nothing measurable; the fallback cost stays */
+  }
+
+  const bool use_o_direct =
+      srv_unix_file_flush_method == SRV_UNIX_O_DIRECT ||
+      srv_unix_file_flush_method == SRV_UNIX_O_DIRECT_NO_FSYNC;
+
+  const auto probe = pagetracking::probe_storage(probe_path, use_o_direct);
+  if (!probe.has_value()) {
+    return;
+  }
+
+  xb_read_request_cost = pagetracking::read_request_cost_bytes(
+      probe->rtt_us, probe->bw_bytes_per_sec);
+
+  xb::info() << "pagetracking: calibrated storage (" << probe_path
+             << "): request round trip " << probe->rtt_us
+             << " us, sequential read "
+             << xtrabackup::utils::human_readable(probe->bw_bytes_per_sec)
+             << "/s -> one read request costs ~"
+             << xtrabackup::utils::human_readable(xb_read_request_cost)
+             << " of sequential transfer; gaps cheaper than this are "
+                "combined";
+}
+
 void xtrabackup_backup_func(void) {
   MY_STAT stat_info;
   uint i;
@@ -4536,6 +4653,8 @@ void xtrabackup_backup_func(void) {
     xb::info() << "Starting " << xtrabackup_parallel
                << " threads for parallel data files transfer";
   }
+
+  xb_probe_read_request_cost();
 
   auto it = datafiles_iter_new(xb_dd_spaces);
   if (it == NULL) {
