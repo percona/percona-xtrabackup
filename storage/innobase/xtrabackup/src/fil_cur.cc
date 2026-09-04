@@ -430,7 +430,7 @@ void xb_fil_cur_close(
     xb_fil_cur_t *cursor) /*!< in/out: source file cursor */
 {
   if (cursor->read_filter) {
-    cursor->read_filter->deinit(&cursor->read_filter_ctxt);
+    cursor->read_filter->deinit(cursor);
   }
 
   ut::free(cursor->scratch);
