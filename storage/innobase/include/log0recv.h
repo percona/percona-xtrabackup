@@ -796,8 +796,17 @@ bool recv_sys_resize_buf();
 hash table to wait merging to file pages. */
 void recv_parse_log_recs();
 
-std::tuple<bool, recv_sys_t::Encryption_Key *> recv_find_encryption_key(
-    space_id_t space_id);
+/** Find the encryption key for a tablespace discovered during redo scanning.
+The key/iv material is copied into the caller-provided buffers while holding
+recv_sys->mutex, so the result stays valid even if the redo scan thread
+concurrently appends to recv_sys->keys and reallocates the vector.
+@param[in]   space_id  tablespace ID to look up
+@param[out]  key       buffer of Encryption::KEY_LEN bytes for the key
+@param[out]  iv        buffer of Encryption::KEY_LEN bytes for the iv
+@param[out]  lsn       LSN of the redo encryption entry
+@return true if a key entry was found */
+bool recv_find_encryption_key(space_id_t space_id, byte *key, byte *iv,
+                              lsn_t *lsn);
 
 #include "log0recv.ic"
 

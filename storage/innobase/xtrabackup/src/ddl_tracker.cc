@@ -43,8 +43,71 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include "xtrabackup.h"  // datafiles_iter_t
 
 static const int REN_FILE_VERSION = 1;
+static const char *REN_TMP_SUFFIX = ".temp";
+static const char *REN_TMP_SCHEMA_PREFIX = "xbt";
+
+struct pending_ren_file_t {
+  space_id_t space_id{};
+  bool rename_tablespace{false};
+  std::string ren_path;
+  std::string temp_space_name;
+  std::string temp_path;
+  std::string dest_space_name;
+  std::string temp_delta_path;
+  std::string dest_delta_path;
+  std::string temp_meta_path;
+  std::string dest_meta_path;
+};
+
+static std::vector<pending_ren_file_t> pending_ren_files;
+static std::string pending_ren_schema_name;
 
 extern bool xb_read_delta_metadata(const char *filepath, xb_delta_info_t *info);
+
+static bool schema_name_exists(const std::string &schema_name) {
+  bool exists = false;
+
+  Fil_space_iterator::for_each_space([&](fil_space_t *space) {
+    if (space == nullptr || space->name == nullptr) {
+      return DB_SUCCESS;
+    }
+
+    const std::string_view space_name(space->name);
+    const std::string_view schema_prefix(schema_name);
+
+    if (space_name.size() > schema_prefix.size() &&
+        space_name.compare(0, schema_prefix.size(), schema_prefix) == 0 &&
+        space_name[schema_prefix.size()] == '/') {
+      exists = true;
+    }
+
+    return DB_SUCCESS;
+  });
+
+  return exists;
+}
+
+static std::string get_temp_schema_name() {
+  if (!pending_ren_schema_name.empty()) {
+    return pending_ren_schema_name;
+  }
+
+  for (uint32_t suffix = 0;; ++suffix) {
+    std::string candidate_schema(REN_TMP_SCHEMA_PREFIX);
+    if (suffix != 0) {
+      candidate_schema.append(std::to_string(suffix));
+    }
+
+    if (!schema_name_exists(candidate_schema)) {
+      pending_ren_schema_name = candidate_schema;
+      return pending_ren_schema_name;
+    }
+  }
+}
+
+static std::string make_temp_space_name(space_id_t space_id) {
+  return get_temp_schema_name() + "/s" + std::to_string(space_id);
+}
 
 void ddl_tracker_t::backup_file_op(uint32_t space_id, mlog_id_t type,
                                    const byte *buf, ulint len,
@@ -258,6 +321,11 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
 bool ddl_tracker_t::is_tablespace_dropped(const space_id_t space_id) {
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   return (drops.find(space_id) != drops.end());
+}
+
+bool ddl_tracker_t::is_recopy_renamed(const space_id_t space_id) {
+  std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
+  return (recopy_renamed_spaces.find(space_id) != recopy_renamed_spaces.end());
 }
 
 void ddl_tracker_t::add_rename_ibd_scan(const space_id_t &space_id,
@@ -595,6 +663,11 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
         backup_file_printf(
             convert_file_name(table, old_table_name, flags, EXT_DEL).c_str(),
             "%s", "");
+        /* The old-name base file is deleted via the .del above and the new
+        name is reconstructed from the .new file during prepare. A sparse
+        incremental delta would leave hole pages for such a table, so mark it
+        to force a full (write-through) recopy. */
+        recopy_renamed_spaces.insert(table);
       }
       string table_name = tables_copied_no_lock[table].first;
       new_tables[table] = table_name;
@@ -620,10 +693,11 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     /* Remove from missing */
     missing_after_discovery.erase(space_id);
 
-    /* Remove from new tables and skip drop*/
+    /* Remove from new tables. Recopy can temporarily promote an already
+    copied tablespace into new_tables, but a captured DROP must still leave
+    a .del marker. */
     if (new_tables.find(space_id) != new_tables.end()) {
       new_tables.erase(space_id);
-      continue;
     }
 
     /* Table not in the backup, nothing to drop, skip drop*/
@@ -759,6 +833,27 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   // Add new undo files to be recopied
   for (auto &elem : new_undo_files) {
     new_tables[elem.second] = elem.first;
+  }
+
+  /* Every .crpt marker must be paired with either a DROP (.del) or a
+  successful recopy (.new). Otherwise prepare_handle_corrupt_files() would
+  silently delete the .ibd in the backup with no replacement, producing a
+  successful-looking backup that has actually lost the table. This must be
+  checked here, before the early-return below: when there is no other DDL,
+  new_tables is empty and the recopy loop is skipped, but the .crpt marker
+  still ends up on disk and must not be allowed to silently destroy data. */
+  for (const auto &cor : corrupted_tablespaces) {
+    space_id_t sid = cor.first;
+    const std::string &name = cor.second.first;
+    const bool dropped = drops.find(sid) != drops.end();
+    const bool recopied = new_tables.find(sid) != new_tables.end();
+    if (!dropped && !recopied) {
+      xb::error() << "DDL tracking : corrupted tablespace " << name
+                  << " (space_id=" << sid
+                  << ") is neither dropped nor recopied; aborting backup to"
+                     " avoid silent data loss.";
+      return DB_ERROR;
+    }
   }
 
   if (new_tables.empty()) {
@@ -986,7 +1081,23 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
     }
   });
 
+  // CREATE DATABASE during the backup does not produce MLOG_FILE_* records,
+  // so the destination schema directory may not exist yet in the backup dir.
+  // fil_rename_tablespace() -> os_file_rename() will not create parent dirs,
+  // so make sure the destination schema dir exists before any rename happens.
+  if (dest_path != nullptr &&
+      os_file_create_subdirs_if_needed(dest_path) != DB_SUCCESS) {
+    xb::error() << "prepare_handle_ren_files: cannot create parent directory "
+                << "for " << dest_path;
+    return false;
+  }
+
   fil_space_t *fil_space = fil_space_get(source_space_id);
+
+  pending_ren_file_t pending_ren;
+  pending_ren.space_id = source_space_id;
+  pending_ren.ren_path = ren_path;
+  pending_ren.dest_space_name = dest_space_name;
 
   if (fil_space != nullptr) {
     char *source_path = nullptr, *source_space_name = nullptr;
@@ -1008,25 +1119,34 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
       return false;
     }
 
-    // space_id.ren is already with the desired name. Nothing to do.
-    if (source_path != nullptr && dest_path != nullptr &&
-        strcmp(source_path, dest_path) == 0) {
+    const bool source_equals_dest =
+        source_path != nullptr && dest_path != nullptr &&
+        strcmp(source_path, dest_path) == 0;
+
+    // The .ibd may already have the desired name, but for incremental backups
+    // we still need to move the corresponding .delta/.meta files.
+    if (source_equals_dest) {
       xb::info() << "prepare_handle_ren_files: ren_file: " << ren_path
                  << " already has desired file name: " << dest_path
                  << " source path is: " << source_path;
-      return true;
     }
 
-    ut_ad(!os_file_exists(dest_path));
+    if (!source_equals_dest) {
+      pending_ren.rename_tablespace = true;
+      pending_ren.temp_space_name = make_temp_space_name(source_space_id);
+      pending_ren.temp_path = std::string(source_path) + REN_TMP_SUFFIX;
 
-    xb::info() << "prepare_handle_ren_files: renaming " << fil_space->name
-               << " to " << dest_space_name;
+      xb::info() << "prepare_handle_ren_files: staging " << fil_space->name
+                 << " to temporary path " << pending_ren.temp_path;
 
-    if (!fil_rename_tablespace(fil_space->id, source_path,
-                               dest_space_name.c_str(), NULL)) {
-      xb::error() << "prepare_handle_ren_files: Cannot rename "
-                  << fil_space->name << " to " << dest_space_name;
-      return false;
+      if (!fil_rename_tablespace(fil_space->id, source_path,
+                                 pending_ren.temp_space_name.c_str(),
+                                 pending_ren.temp_path.c_str())) {
+        xb::error() << "prepare_handle_ren_files: Cannot rename "
+                    << fil_space->name << " to temporary path "
+                    << pending_ren.temp_path;
+        return false;
+      }
     }
   } else {
     // In case source file doesn't exist we check if destination file is already
@@ -1056,15 +1176,17 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
       truncate_suffix(EXT_META, delta_file);
       delta_file.append(EXT_DELTA);
 
-      std::string to_delta(to_path + EXT_DELTA);
+      pending_ren.temp_delta_path = delta_file + REN_TMP_SUFFIX;
+      pending_ren.dest_delta_path = to_path + EXT_DELTA;
       xb::info() << "Renaming incremental delta file from: " << delta_file
-                 << " to: " << to_delta;
-      rename_force(delta_file, to_delta);
+                 << " to temporary path: " << pending_ren.temp_delta_path;
+      rename_force(delta_file, pending_ren.temp_delta_path);
 
-      std::string to_meta(to_path + EXT_META);
+      pending_ren.temp_meta_path = meta_file + REN_TMP_SUFFIX;
+      pending_ren.dest_meta_path = to_path + EXT_META;
       xb::info() << "Renaming incremental meta file from: " << meta_file
-                 << " to: " << to_meta;
-      rename_force(meta_file, to_meta);
+                 << " to temporary path: " << pending_ren.temp_meta_path;
+      rename_force(meta_file, pending_ren.temp_meta_path);
     } else if (fil_space == nullptr) {
       // This means the tablespace is neither found in the fullbackup dir
       // nor in the inc backup directory as .meta and .delta
@@ -1078,8 +1200,48 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
     }
   }
 
-  // delete the .ren file, we don't need it anymore
-  os_file_delete(0, ren_path.c_str());
+  pending_ren_files.push_back(std::move(pending_ren));
+  return true;
+}
+
+bool prepare_finalize_ren_files() {
+  for (const auto &pending_ren : pending_ren_files) {
+    if (pending_ren.rename_tablespace) {
+      xb::info() << "prepare_finalize_ren_files: renaming "
+                 << pending_ren.temp_path << " to "
+                 << pending_ren.dest_space_name;
+
+      if (!fil_rename_tablespace(pending_ren.space_id,
+                                 pending_ren.temp_path.c_str(),
+                                 pending_ren.dest_space_name.c_str(), NULL)) {
+        xb::error() << "prepare_finalize_ren_files: Cannot rename "
+                    << pending_ren.temp_path << " to "
+                    << pending_ren.dest_space_name;
+        pending_ren_files.clear();
+        pending_ren_schema_name.clear();
+        return false;
+      }
+    }
+
+    if (!pending_ren.temp_delta_path.empty()) {
+      xb::info() << "prepare_finalize_ren_files: renaming incremental delta "
+                 << pending_ren.temp_delta_path << " to "
+                 << pending_ren.dest_delta_path;
+      rename_force(pending_ren.temp_delta_path, pending_ren.dest_delta_path);
+    }
+
+    if (!pending_ren.temp_meta_path.empty()) {
+      xb::info() << "prepare_finalize_ren_files: renaming incremental meta "
+                 << pending_ren.temp_meta_path << " to "
+                 << pending_ren.dest_meta_path;
+      rename_force(pending_ren.temp_meta_path, pending_ren.dest_meta_path);
+    }
+
+    os_file_delete(0, pending_ren.ren_path.c_str());
+  }
+
+  pending_ren_files.clear();
+  pending_ren_schema_name.clear();
   return true;
 }
 

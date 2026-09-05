@@ -2758,27 +2758,62 @@ static bool xtrabackup_read_info(char *filename) {
   } else if (xb_server_version < 80029) {
     cfg_version = IB_EXPORT_CFG_VERSION_V6;
   }
-  /* skip start_time, end_time, lock_time, binlog_pos, innodb_from_lsn,
-   * innodb_to_lsn, partial, incremental, format, compressed, encrypt */
-  for (int i = 0; i < 12; i++) {
-    char c;
-    do {
-      c = fgetc(fp);
-    } while (c != '\n');
-  }
-
-  char lock[8];
-  if (fscanf(fp, "lock_ddl_type = %7s\n", lock) != 1) {
-    xb::warn() << "lock_ddl_type parameter not found, defaulting to 'ON'";
-    opt_lock_ddl = LOCK_DDL_ON;
-  } else {
-    /* used to process the metadata files (.ren .del .new) created by backup
-     * when --lock-ddl=REDUCED  */
-    opt_lock_ddl = ddl_lock_type_from_str(string(lock));
+  /* Find lock_ddl_type in xtrabackup_info. If not found, default to 'ON'. */
+  {
+    char line[512];
+    char lock[8];
+    bool lock_ddl_found = false;
+    while (fgets(line, sizeof(line), fp) != nullptr) {
+      if (sscanf(line, "lock_ddl_type = %7s", lock) == 1) {
+        lock_ddl_found = true;
+        break;
+      }
+    }
+    if (!lock_ddl_found) {
+      xb::warn() << "lock_ddl_type parameter not found, defaulting to 'ON'";
+      opt_lock_ddl = LOCK_DDL_ON;
+    } else {
+      /* used to process the metadata files (.ren .del .new) created by backup
+       * when --lock-ddl=REDUCED  */
+      opt_lock_ddl = ddl_lock_type_from_str(string(lock));
+    }
   }
 end:
   fclose(fp);
   return (r);
+}
+
+static bool xtrabackup_read_lock_ddl_type(const char *filename,
+                                          lock_ddl_type_t *lock_ddl_type) {
+  FILE *fp;
+  char line[512];
+  char lock[8];
+  bool lock_ddl_found = false;
+
+  fp = fopen(filename, "r");
+  if (!fp) {
+    xb::error() << "cannot open " << filename;
+    return (false);
+  }
+
+  while (fgets(line, sizeof(line), fp) != nullptr) {
+    if (sscanf(line, "lock_ddl_type = %7s", lock) == 1) {
+      lock_ddl_found = true;
+      break;
+    }
+  }
+
+  fclose(fp);
+
+  if (!lock_ddl_found) {
+    xb::warn() << "lock_ddl_type parameter not found in " << filename
+               << ", defaulting to 'ON'";
+    *lock_ddl_type = LOCK_DDL_ON;
+  } else {
+    *lock_ddl_type = ddl_lock_type_from_str(string(lock));
+  }
+
+  return (true);
 }
 
 /* ================= common ================= */
@@ -3357,6 +3392,16 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
     goto error;
   }
 
+  /* A tablespace that is both recopied and renamed during the backup has its
+  old-name base file deleted (.del) and its new name reconstructed from the
+  recopied .new.delta during prepare. A sparse incremental delta would leave
+  hole pages on the freshly-created file, so force the delta to include every
+  page for such tablespaces. */
+  if (write_filter == &wf_incremental && ddl_tracker != nullptr &&
+      ddl_tracker->is_recopy_renamed(node->space->id)) {
+    write_filt_ctxt.wf_incremental_ctxt.full_copy = true;
+  }
+
   /* do not compress encrypted tablespaces */
   if (cursor.is_encrypted) {
     dstfile =
@@ -3395,7 +3440,8 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
 
   if (res == XB_FIL_CUR_ERROR ||
       (res == XB_FIL_CUR_CORRUPTED &&
-       (ddl_tracker == nullptr || opt_lock_ddl != LOCK_DDL_REDUCED))) {
+       (ddl_tracker == nullptr || opt_lock_ddl != LOCK_DDL_REDUCED ||
+        is_server_locked()))) {
     goto error;
   }
 
@@ -7129,6 +7175,7 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
   fil_space_t *space;
   IORequest write_request(IORequest::WRITE);
   read_metadata();
+  const lock_ddl_type_t target_lock_ddl = opt_lock_ddl;
 
   /* prepare version check */
   if (!check_server_version(xb_server_version, mysql_server_version_str,
@@ -7167,6 +7214,25 @@ skip_check:
 
   if (xtrabackup_incremental) {
     backup_redo_log_flushed_lsn = incremental_flushed_lsn;
+  }
+
+  if (xtrabackup_incremental_dir) {
+    char xtrabackup_info_path[FN_REFLEN];
+
+    sprintf(xtrabackup_info_path, "%s/%s", xtrabackup_incremental_dir,
+            XTRABACKUP_INFO);
+    if (!xtrabackup_read_lock_ddl_type(xtrabackup_info_path, &opt_lock_ddl)) {
+      xb::error() << "Failed to parse lock_ddl_type from "
+                  << SQUOTE(xtrabackup_info_path);
+      exit(EXIT_FAILURE);
+    }
+
+    if (opt_lock_ddl != target_lock_ddl) {
+      xb::info() << "Using incremental backup lock_ddl_type "
+                 << ddl_lock_type_to_str(opt_lock_ddl)
+                 << " for DDL metadata processing; target lock_ddl_type is "
+                 << ddl_lock_type_to_str(target_lock_ddl);
+    }
   }
 
   init_mysql_environment();
@@ -7287,6 +7353,11 @@ skip_check:
     if (!xb_process_datadir(
             xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".",
             EXT_REN.c_str(), prepare_handle_ren_files, NULL)) {
+      xb_data_files_close();
+      goto error_cleanup;
+    }
+
+    if (!prepare_finalize_ren_files()) {
       xb_data_files_close();
       goto error_cleanup;
     }
