@@ -86,6 +86,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sql/srv_session.h>
 #include <table_cache.h>
 #include <algorithm>
+#include <array>
 #include <list>
 #include <set>
 #include <sstream>
@@ -7678,6 +7679,45 @@ static void append_defaults_group(const char *group,
   ut_a(appended);
 }
 
+/** An option that was renamed. Both spellings drive the same variable, so
+they are one option under two names. */
+struct renamed_option {
+  std::string_view old_name;
+  std::string_view new_name;
+};
+
+/** Every option rename lives here, old name first. Adding a rename means
+adding a row, nothing else. Entries are string literals, so data() is safe to
+hand to check_if_param_set(). */
+static const std::array<renamed_option, 0> renamed_options = {};
+
+/** Warn once for every deprecated option name that was used, and reject an
+old name passed together with its new one. They name the same knob, so a
+command line carrying both is operator confusion rather than intent: picking
+one silently would hide the mistake.
+@return false if the caller should stop. */
+static bool check_renamed_options() {
+  for (const auto &renamed : renamed_options) {
+    const bool old_set = check_if_param_set(renamed.old_name.data());
+    const bool new_set = check_if_param_set(renamed.new_name.data());
+
+    if (old_set && new_set) {
+      xb::error() << "--" << renamed.old_name << " and --" << renamed.new_name
+                  << " are the same option; pass only one.";
+      return (false);
+    }
+
+    if (old_set) {
+      xb::warn() << "--" << renamed.old_name
+                 << " is deprecated and will be removed in a future release. "
+                    "Please use --"
+                 << renamed.new_name << " instead.";
+    }
+  }
+
+  return (true);
+}
+
 bool xb_init() {
   const char *mixed_options[4] = {NULL, NULL, NULL, NULL};
   int n_mixed_options;
@@ -7733,6 +7773,10 @@ bool xb_init() {
   if (n_mixed_options > 1) {
     xb::error() << mixed_options[0] << " and " << mixed_options[1]
                 << " are mutually exclusive";
+    return (false);
+  }
+
+  if (!check_renamed_options()) {
     return (false);
   }
 
