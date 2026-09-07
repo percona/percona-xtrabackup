@@ -32,11 +32,20 @@ jobs:
     - uses: actions/checkout@v3
       with:
         fetch-depth: '32'
-    - name: Install clang-format-11
-      run: sudo apt-get install -y clang-format-11
+    - name: Install the clang-format version .clang-format asks for
+      run: |
+        REQUIRED=$(sed -n 's/^# We currently use clang-format version \([0-9][0-9]*\)\..*/\1/p' .clang-format | head -1)
+        if [ -z "${REQUIRED}" ]; then
+          echo "Could not read the required clang-format version from .clang-format"
+          exit 1
+        fi
+        echo "Required clang-format version: ${REQUIRED}"
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends "clang-format-${REQUIRED}"
+        echo "CLANG_FORMAT_VERSION=${REQUIRED}" >> "${GITHUB_ENV}"
     - name: Run clang-format
       run: |
-        git diff -U0 --no-color HEAD^1 *.c *.cc *.cpp *.h *.hpp *.i *.ic *.ih | clang-format-diff-11 -style=file -p1 >_GIT_DIFF
+        git diff -U0 --no-color HEAD^1 *.c *.cc *.cpp *.h *.hpp *.i *.ic *.ih | "clang-format-diff-${CLANG_FORMAT_VERSION}" -style=file -p1 >_GIT_DIFF
         if [ ! -s _GIT_DIFF ]; then
           echo The last git commit is clang-formatted;
         else
