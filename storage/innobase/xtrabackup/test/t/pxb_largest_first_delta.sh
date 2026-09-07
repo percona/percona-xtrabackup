@@ -71,8 +71,8 @@ cat $delta_sizes >&2
 # Test: Prepare with --parallel=1 applies largest .delta first
 ###############################################################################
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc \
   --target-dir=$topdir/full --parallel=1
 
 # Extract the "Applying" lines from the log (only those referencing test/ deltas)

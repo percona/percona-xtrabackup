@@ -15,8 +15,8 @@ xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/backu
 
 cp -a $topdir/backup $topdir/backup1
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup1
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup1
 
 xtrabackup --prepare --incremental-dir=$topdir/inc --target-dir=$topdir/backup
 

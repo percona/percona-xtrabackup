@@ -70,7 +70,7 @@ rm -rf $MYSQLD_DATADIR/*
 rm -rf $undo_directory/*
 rm -rf $undo_directory_ext/*
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc
 
 xtrabackup --copy-back --target-dir=$topdir/backup

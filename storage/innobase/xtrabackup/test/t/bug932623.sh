@@ -42,10 +42,10 @@ xtrabackup --backup --incremental-basedir=$topdir/full --target-dir=$topdir/inc
 
 vlog "Preparing backup"
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 vlog "Log applied to full backup"
 
-xtrabackup --prepare --apply-log-only \
+xtrabackup --prepare --apply-redo-only \
     --incremental-dir=$topdir/inc --target-dir=$topdir/full
 vlog "Delta applied to full backup"
 

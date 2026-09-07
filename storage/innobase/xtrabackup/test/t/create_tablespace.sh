@@ -95,7 +95,7 @@ kill -SIGCONT $xb_pid
 
 run_cmd wait $job_pid
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 
 xtrabackup --prepare --target-dir=$topdir/full --incremental-dir=$topdir/inc
 

@@ -24,7 +24,7 @@ done &
 
 xtrabackup --backup --incremental-basedir=$topdir/backup --target-dir=$topdir/inc
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc
 
 stop_server

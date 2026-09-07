@@ -17,6 +17,6 @@ xtrabackup --backup --compress --target-dir=$topdir/inc --incremental-basedir=$t
 xtrabackup --decompress --target-dir=$topdir/backup
 xtrabackup --decompress --target-dir=$topdir/inc
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup --incremental-dir=$topdir/inc
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup --incremental-dir=$topdir/inc
 xtrabackup --prepare --target-dir=$topdir/backup

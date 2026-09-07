@@ -59,14 +59,14 @@ xtrabackup --backup --incremental-basedir=$topdir/inc1 \
 	   --target-dir=$topdir/inc2 \
 	   $keyring_args
 
-${XB_BIN} --prepare --apply-log-only --target-dir=$topdir/backup \
+${XB_BIN} --prepare --apply-redo-only --target-dir=$topdir/backup \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
-${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+${XB_BIN} --prepare --apply-redo-only --incremental-dir=$topdir/inc1 \
 	  --target-dir=$topdir/backup \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
-${XB_BIN} --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
+${XB_BIN} --prepare --apply-redo-only --incremental-dir=$topdir/inc2 \
 	  --target-dir=$topdir/backup \
 	  --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 

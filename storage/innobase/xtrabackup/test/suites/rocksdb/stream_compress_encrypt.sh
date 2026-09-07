@@ -32,7 +32,7 @@ FULL_PREPARE_CMD="mkdir $topdir/backup &&
      --encrypt-key=$pass < $topdir/backup.xbstream &&
   xtrabackup
     --prepare
-    --apply-log-only
+    --apply-redo-only
     --target-dir=$topdir/backup"
 
 INC_PREPARE_CMD="mkdir $topdir/inc &&

@@ -49,7 +49,7 @@ run_cmd wait $job_pid
 
 
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_base
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_base
 xtrabackup --prepare --target-dir=$topdir/backup_base --incremental-dir=$topdir/backup_inc
 record_db_state test
 stop_server

@@ -62,12 +62,12 @@ xtrabackup --parallel=4 --backup --target-dir=$topdir/backup22
 stop_server
 
 # prepare
-xtrabackup --parallel=4 --prepare --apply-log-only --target-dir=$topdir/backup
-xtrabackup --parallel=4 --prepare --apply-log-only --target-dir=$topdir/backup \
+xtrabackup --parallel=4 --prepare --apply-redo-only --target-dir=$topdir/backup
+xtrabackup --parallel=4 --prepare --apply-redo-only --target-dir=$topdir/backup \
            --incremental-dir=$topdir/inc1
-xtrabackup --parallel=4 --prepare --apply-log-only --target-dir=$topdir/backup \
+xtrabackup --parallel=4 --prepare --apply-redo-only --target-dir=$topdir/backup \
            --incremental-dir=$topdir/inc2
-xtrabackup --parallel=4 --prepare --apply-log-only --target-dir=$topdir/backup \
+xtrabackup --parallel=4 --prepare --apply-redo-only --target-dir=$topdir/backup \
            --incremental-dir=$topdir/inc3
 xtrabackup --prepare --target-dir=$topdir/backup
 

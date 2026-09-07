@@ -115,7 +115,7 @@ xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/full
 record_db_state sakila
 stop_server
 rm -r $mysql_datadir
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 xtrabackup --prepare --target-dir=$topdir/full --incremental-dir=$topdir/inc
 xtrabackup --copy-back --target-dir=$topdir/full
 start_server

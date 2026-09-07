@@ -40,14 +40,14 @@ run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
 	${full_backup_name} | \
     xbstream -xv -C $topdir/downloaded_full --parallel=4
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/downloaded_full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/downloaded_full
 
 run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
         --parallel=4 \
         ${inc_backup_name} | \
     xbstream -xv -C $topdir/downloaded_inc
 
-xtrabackup --prepare --apply-log-only \
+xtrabackup --prepare --apply-redo-only \
 	   --target-dir=$topdir/downloaded_full \
 	   --incremental-dir=$topdir/downloaded_inc
 

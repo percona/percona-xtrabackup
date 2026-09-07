@@ -33,10 +33,10 @@ xtrabackup --backup \
 vlog "Incremental backup created in directory $inc_backup_dir"
 
 vlog "Preparing backup"
-xtrabackup --prepare --apply-log-only --target-dir=$full_backup_dir
+xtrabackup --prepare --apply-redo-only --target-dir=$full_backup_dir
 vlog "Log applied to full backup"
 
-xtrabackup --prepare --apply-log-only --incremental-dir=$inc_backup_dir \
+xtrabackup --prepare --apply-redo-only --incremental-dir=$inc_backup_dir \
     --target-dir=$full_backup_dir
 vlog "Delta applied to full backup"
 

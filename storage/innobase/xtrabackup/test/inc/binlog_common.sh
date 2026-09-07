@@ -16,7 +16,7 @@ function backup() {
   mysql -e "INSERT INTO t (a) VALUES (1), (2), (3)" test
 
   xtrabackup --backup --target-dir=$topdir/backup
-  xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+  xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 
   mysql -e "INSERT INTO t (a) VALUES (1), (2), (3)" test
 

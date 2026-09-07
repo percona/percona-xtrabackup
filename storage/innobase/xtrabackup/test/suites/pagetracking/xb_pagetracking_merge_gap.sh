@@ -281,7 +281,7 @@ done
 vlog "restore the 50% auto incremental and verify content"
 stop_server
 rm -rf $mysql_datadir
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full_50
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full_50
 xtrabackup --prepare --target-dir=$topdir/full_50 \
     --incremental-dir=$topdir/inc_50_auto
 xtrabackup --copy-back --target-dir=$topdir/full_50 --datadir=$mysql_datadir

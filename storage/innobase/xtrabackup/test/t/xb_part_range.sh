@@ -75,10 +75,10 @@ vlog "Incremental backup done"
 vlog "Preparing backup"
 
 # Prepare backup
-xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --apply-log-only \
+xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --apply-redo-only \
     --target-dir=$topdir/backup/full
 vlog "Log applied to backup"
-xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --apply-log-only \
+xtrabackup --no-defaults --datadir=$mysql_datadir --prepare --apply-redo-only \
     --target-dir=$topdir/backup/full --incremental-dir=$topdir/backup/delta
 vlog "Delta applied to backup"
 xtrabackup --no-defaults --datadir=$mysql_datadir --prepare \
