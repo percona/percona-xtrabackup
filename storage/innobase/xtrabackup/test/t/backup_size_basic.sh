@@ -174,10 +174,10 @@ assert_target_strict "$topdir/backup6inc2" "$bs6inc2" "scen6 (inc2)"
 
 # Restore the chain end-to-end.
 record_db_state test
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup6full
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/backup6inc1 \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup6full
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/backup6inc1 \
     --target-dir=$topdir/backup6full
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/backup6inc2 \
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/backup6inc2 \
     --target-dir=$topdir/backup6full
 xtrabackup --prepare --target-dir=$topdir/backup6full
 stop_server

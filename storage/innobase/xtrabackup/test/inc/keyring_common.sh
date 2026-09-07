@@ -94,12 +94,12 @@ EOF
 
   kill -SIGKILL $uncommitted_id
 
-  xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup \
+  xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup \
        $prepare_options
-  xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+  xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc1 \
        --target-dir=$topdir/backup $prepare_options
 
-  xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
+  xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc2 \
        --target-dir=$topdir/backup $prepare_options
 
   xtrabackup --prepare --export --target-dir=$topdir/backup \

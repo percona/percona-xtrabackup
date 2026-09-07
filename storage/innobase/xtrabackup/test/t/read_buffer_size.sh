@@ -18,7 +18,7 @@ function restore_from()
     if [ "$#" -ne 0 ]
     then
         vlog "Preparing $backup_path as base of incremental backup"
-        extra="--apply-log-only "
+        extra="--apply-redo-only "
     else
         vlog "Preparing $backup_path"
     fi
@@ -34,7 +34,7 @@ function restore_from()
             vlog "Last incremental $incremental_dir"
             extra=
         else
-            extra='--apply-log-only'
+            extra='--apply-redo-only'
         fi
         vlog "Preparing $incremental_dir as incremental"
         run_cmd xtrabackup --prepare $extra\

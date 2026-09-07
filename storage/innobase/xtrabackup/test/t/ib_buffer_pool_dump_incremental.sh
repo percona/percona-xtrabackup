@@ -36,9 +36,9 @@ else
 fi
 
 # prepare
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/incremental \
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/incremental \
     --target-dir=$topdir/backup
 
 xtrabackup --prepare --target-dir=$topdir/backup

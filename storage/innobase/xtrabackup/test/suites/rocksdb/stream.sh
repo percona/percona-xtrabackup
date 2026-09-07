@@ -22,7 +22,7 @@ FULL_PREPARE_CMD="mkdir $topdir/backup &&
   xbstream -C $topdir/backup -x --parallel=10 < $topdir/backup.xbstream &&
   xtrabackup
     --prepare
-    --apply-log-only
+    --apply-redo-only
     --target-dir=$topdir/backup"
 
 INC_PREPARE_CMD="mkdir $topdir/inc &&

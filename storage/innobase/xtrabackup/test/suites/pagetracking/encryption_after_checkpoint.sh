@@ -42,7 +42,7 @@ vlog "restore"
 stop_server
 rm -r $mysql_datadir
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup --transition-key=123
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup --transition-key=123
 
 xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc --transition-key=123
 

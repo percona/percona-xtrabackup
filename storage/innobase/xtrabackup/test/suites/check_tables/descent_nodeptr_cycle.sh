@@ -30,7 +30,7 @@ SELECT n, CONCAT('p', n) FROM seq;
 EOF
 
 xtrabackup --backup --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 IBD=$topdir/backup/test/t1.ibd
 
 PAGE_SIZE=$(get_page_size "$IBD")

@@ -34,9 +34,9 @@ download_fifo_xbcloud ${topdir}/stream "--parallel=10 --fifo-streams=3 ${inc_bac
 download_fifo_xbcloud ${topdir}/stream "--parallel=10 --fifo-streams=3 ${inc2_backup_name}" "-x -C ${topdir}/inc2 --fifo-streams=3"
 stop_server
 vlog "Test 1 - Preparing full backup"
-xtrabackup --prepare --apply-log-only --target-dir=${topdir}/full
+xtrabackup --prepare --apply-redo-only --target-dir=${topdir}/full
 vlog "Test 1 - Preparing inc1 backup"
-xtrabackup --prepare --apply-log-only --target-dir=${topdir}/full --incremental-dir=${topdir}/inc1
+xtrabackup --prepare --apply-redo-only --target-dir=${topdir}/full --incremental-dir=${topdir}/inc1
 vlog "Test 1 - Preparing inc2 backup"
 xtrabackup --prepare --target-dir=${topdir}/full --incremental-dir=${topdir}/inc2
 rm -rf ${mysql_datadir}

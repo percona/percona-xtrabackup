@@ -37,7 +37,7 @@ if ! [ -d $topdir/inc/.rocksdb ] ; then
     die "Rocksdb haven't been backed up"
 fi
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc
 
 rm -rf $mysql_datadir $rocks_datadir

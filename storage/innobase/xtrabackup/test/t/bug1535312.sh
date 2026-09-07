@@ -37,7 +37,7 @@ xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/full
 
 record_db_state test
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 
 xtrabackup --prepare --target-dir=$topdir/full --incremental-dir=$topdir/inc
 

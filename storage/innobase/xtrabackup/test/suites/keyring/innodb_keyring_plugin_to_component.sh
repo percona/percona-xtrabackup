@@ -47,7 +47,7 @@ record_db_state test
 stop_server
 
 prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${keyring_file_plugin}"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full ${prepare_options}
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full ${prepare_options}
 xtrabackup --prepare --incremental-dir=$topdir/inc1 \
      --target-dir=$topdir/full ${prepare_options}
 rm -rf $mysql_datadir
@@ -106,12 +106,12 @@ stop_server
 
 
 prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${keyring_file_plugin}"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full ${prepare_options}
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full ${prepare_options}
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc1 \
      --target-dir=$topdir/full ${prepare_options}
 
 prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --component-keyring-config=${keyring_component_cnf} --keyring-file-data=${keyring_file_component}"
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc2 \
     --target-dir=$topdir/full ${prepare_options}
 xtrabackup --prepare --incremental-dir=$topdir/inc3 \
    --target-dir=$topdir/full ${prepare_options}

@@ -28,7 +28,7 @@ FULL_PREPARE_CMD="xtrabackup
     --target-dir=$topdir/backup &&
   xtrabackup
     --prepare
-    --apply-log-only
+    --apply-redo-only
     --target-dir=$topdir/backup"
 
 INC_PREPARE_CMD="xtrabackup

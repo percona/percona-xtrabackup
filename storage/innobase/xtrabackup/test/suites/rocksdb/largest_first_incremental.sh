@@ -85,8 +85,8 @@ cat $sst_sizes >&2
 # Test: Prepare with --parallel=1 copies RocksDB files largest-first
 ###############################################################################
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc \
   --target-dir=$topdir/full --parallel=1
 
 # During incremental prepare, copy_incremental_over_full() moves RocksDB files

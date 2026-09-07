@@ -38,9 +38,9 @@ record_db_state test
 
 stop_server
 vlog "Test 2 - Preparing full backup"
-xtrabackup --prepare --apply-log-only --target-dir=${topdir}/full
+xtrabackup --prepare --apply-redo-only --target-dir=${topdir}/full
 vlog "Test 2 - Preparing inc1 backup"
-xtrabackup --prepare --apply-log-only --target-dir=${topdir}/full --incremental-dir=${topdir}/inc1
+xtrabackup --prepare --apply-redo-only --target-dir=${topdir}/full --incremental-dir=${topdir}/inc1
 vlog "Test 2 - Preparing inc2 backup"
 xtrabackup --prepare --target-dir=${topdir}/full --incremental-dir=${topdir}/inc2
 rm -rf ${mysql_datadir}

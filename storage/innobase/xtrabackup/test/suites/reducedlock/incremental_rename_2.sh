@@ -34,7 +34,7 @@ vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_base
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_base
 xtrabackup --prepare --target-dir=$topdir/backup_base --incremental-dir=$topdir/backup_inc
 
 # Ensure two things. t1.ibd shouldn't be present

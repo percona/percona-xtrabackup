@@ -180,14 +180,14 @@ record_db_state test
 # Restoring backup
 vlog "Preparing backup"
 xtrabackup --datadir=$mysql_datadir --prepare \
-    --apply-log-only \
+    --apply-redo-only \
     --target-dir=$full_backup_dir \
     --xtrabackup-plugin-dir=$plugin_dir \
     $keyring_args
 vlog "Log applied to full backup"
 
 xtrabackup --datadir=$mysql_datadir --prepare \
-    --apply-log-only \
+    --apply-redo-only \
     --target-dir=$full_backup_dir \
     --incremental-dir=$inc_backup_dir \
     --xtrabackup-plugin-dir=$plugin_dir \

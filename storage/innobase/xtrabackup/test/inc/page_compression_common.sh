@@ -106,7 +106,7 @@ function decompress() {
 }
 
 function restore_and_verify() {
-    xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup \
+    xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup \
                --transition-key=123
 
     if [ $working_compression = "yes" ] ; then

@@ -113,6 +113,6 @@ mysql -e "CREATE TABLE t3 (a INT) ENGINE=MyISAM" test
 mysql -e "CREATE TABLE t4 (a INT) ENGINE=InnoDB" test
 
 xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/full
-xtrabackup --prepare --target-dir=$topdir/full --apply-log-only
+xtrabackup --prepare --target-dir=$topdir/full --apply-redo-only
 xtrabackup --prepare --target-dir=$topdir/full --incremental-dir=$topdir/inc
 compare_files_inc $topdir/full $mysql_datadir

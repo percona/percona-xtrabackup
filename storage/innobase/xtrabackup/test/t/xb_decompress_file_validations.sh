@@ -59,7 +59,7 @@ run_cmd xtrabackup --backup --target-dir=$topdir/inc1 --incremental-basedir=$top
 
 run_cmd xtrabackup --target-dir=$topdir/backup --encrypt-key=percona_xtrabackup_is_awesome___ --decrypt=AES256 --decompress --parallel=4
 run_cmd xtrabackup --target-dir=$topdir/inc1 --encrypt-key=percona_xtrabackup_is_awesome___ --decrypt=AES256 --decompress --parallel=4
-run_cmd xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+run_cmd xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 run_cmd xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc1
 
 # Restore

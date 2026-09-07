@@ -93,7 +93,7 @@ function run_test() {
   record_db_state test
   stop_server
 
-  xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_enc_general_tablespace_external --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+  xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_enc_general_tablespace_external --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
   xtrabackup --prepare --target-dir=$topdir/backup_enc_general_tablespace_external --incremental-dir=$topdir/backup_inc_external --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
   rm -rf $mysql_datadir/*

@@ -59,10 +59,10 @@ stop_server
 
 # apply log shoulnd't fail
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc \
 	   --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc1 \
 	   --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup
 

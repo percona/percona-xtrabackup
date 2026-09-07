@@ -30,7 +30,7 @@ vlog "Backup created in directory $backup_dir"
 if has_backup_locks
 then
     vlog "Preparing the backup to create xtrabackup_galera_info"
-    xtrabackup --prepare --apply-log-only --target-dir=$backup_dir
+    xtrabackup --prepare --apply-redo-only --target-dir=$backup_dir
 
     # bug 1643803: incremental backups do not include xtrabackup_binlog_info and xtrabackup_galera_info
     test -f $backup_dir/xtrabackup_galera_info ||

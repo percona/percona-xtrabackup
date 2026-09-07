@@ -1,6 +1,6 @@
 ############################################################################
 # PXB-170: xtrabackup should not allow to apply incremental backup on
-#          top of the backup prepared without --apply-log-only
+#          top of the backup prepared without --apply-redo-only
 ############################################################################
 
 . inc/common.sh
@@ -23,10 +23,10 @@ xtrabackup --backup --incremental-basedir=$topdir/inc1 \
 		--target-dir=$topdir/inc2
 
 # prepare
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 grep log-applied $topdir/backup/xtrabackup_checkpoints
 
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc1 \
 		--target-dir=$topdir/backup
 grep log-applied $topdir/backup/xtrabackup_checkpoints
 
