@@ -81,18 +81,18 @@ vlog "Making incremental backup"
 
 # Incremental backup
 xtrabackup --datadir=$mysql_datadir --page-tracking --backup \
---target-dir=$topdir/delta --incremental-basedir=$topdir/full \
+--target-dir=$topdir/delta --backup-incremental-base=$topdir/full \
 
 vlog "Incremental backup done"
 vlog "Preparing backup"
 
 # Prepare backup
 xtrabackup --datadir=$mysql_datadir --prepare \
---apply-log-only --target-dir=$topdir/full
+--apply-redo-only --target-dir=$topdir/full
 vlog "Log applied to backup"
 xtrabackup --datadir=$mysql_datadir --prepare \
---apply-log-only --target-dir=$topdir/full \
---incremental-dir=$topdir/delta
+--apply-redo-only --target-dir=$topdir/full \
+--prepare-incremental-from-dir=$topdir/delta
 vlog "Delta applied to backup"
 xtrabackup --datadir=$mysql_datadir --prepare \
 --target-dir=$topdir/full

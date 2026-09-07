@@ -53,7 +53,7 @@ xtrabackup --backup --target-dir=$topdir/backup
 #
 vlog "=== Control: clean system/undo checksum pass ==="
 cp -r $topdir/backup $topdir/backup_ok
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_ok
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_ok
 xtrabackup --prepare --check-tables --target-dir=$topdir/backup_ok 2>&1 \
   | tee $topdir/ok.log
 grep -q "verifying checksums of tablespace" $topdir/ok.log || \
@@ -67,7 +67,7 @@ vlog "Control passed"
 #
 vlog "=== Negative: corrupt undo tablespace ==="
 cp -r $topdir/backup $topdir/backup_undo
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_undo
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_undo
 UNDO=$(ls $topdir/backup_undo/undo_* 2>/dev/null | head -1)
 [ -n "$UNDO" ] || die "could not find an undo tablespace in the backup"
 corrupt_last_page "$UNDO"
@@ -87,7 +87,7 @@ vlog "Negative(undo) passed"
 #
 vlog "=== Negative: corrupt system tablespace (ibdata1) ==="
 cp -r $topdir/backup $topdir/backup_sys
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_sys
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_sys
 corrupt_last_page "$topdir/backup_sys/ibdata1"
 
 run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --check-tables \
@@ -109,7 +109,7 @@ vlog "Negative(ibdata) passed"
 #
 vlog "=== Negative: corrupt ibdata1 startup-range page (TRX_SYS, page 5) ==="
 cp -r $topdir/backup $topdir/backup_hot
-# Do NOT --apply-log-only first: we want recovery to read the corrupt page.
+# Do NOT --apply-redo-only first: we want recovery to read the corrupt page.
 mach_write_8 "$topdir/backup_hot/ibdata1" 5 200 0xDEADBEEFDEADBEEF
 run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --check-tables \
   --target-dir=$topdir/backup_hot 2>&1 | tee $topdir/hot.log

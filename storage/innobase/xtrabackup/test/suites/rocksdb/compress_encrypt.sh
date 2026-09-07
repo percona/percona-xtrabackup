@@ -22,7 +22,7 @@ FULL_BACKUP_CMD="xtrabackup
 INC_BACKUP_CMD="xtrabackup
     --backup
     --target-dir=$topdir/inc
-    --incremental-basedir=$topdir/backup
+    --backup-incremental-base=$topdir/backup
     --parallel=4
     --compress
     --compress-threads=4
@@ -38,7 +38,7 @@ FULL_PREPARE_CMD="xtrabackup
     --target-dir=$topdir/backup &&
   xtrabackup
     --prepare
-    --apply-log-only
+    --apply-redo-only
     --target-dir=$topdir/backup"
 
 INC_PREPARE_CMD="xtrabackup
@@ -50,7 +50,7 @@ INC_PREPARE_CMD="xtrabackup
   xtrabackup
     --prepare
     --target-dir=$topdir/backup
-    --incremental-dir=$topdir/inc
+    --prepare-incremental-from-dir=$topdir/inc
     --parallel=4"
 
 CLEANUP_CMD="rm -rf $mysql_datadir"

@@ -86,6 +86,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <sql/srv_session.h>
 #include <table_cache.h>
 #include <algorithm>
+#include <array>
 #include <list>
 #include <set>
 #include <sstream>
@@ -693,6 +694,7 @@ enum options_xtrabackup {
   OPT_XTRA_PREPARE,
   OPT_XTRA_EXPORT,
   OPT_XTRA_APPLY_LOG_ONLY,
+  OPT_XTRA_APPLY_REDO_ONLY,
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_USE_MEMORY,
   OPT_XTRA_USE_FREE_MEMORY_PCT,
@@ -701,8 +703,10 @@ enum options_xtrabackup {
   OPT_XTRA_LOG_COPY_INTERVAL,
   OPT_XTRA_INCREMENTAL,
   OPT_XTRA_INCREMENTAL_BASEDIR,
+  OPT_XTRA_BACKUP_INCREMENTAL_BASE,
   OPT_XTRA_EXTRA_LSNDIR,
   OPT_XTRA_INCREMENTAL_DIR,
+  OPT_XTRA_PREPARE_INCREMENTAL_FROM_DIR,
   OPT_XTRA_ARCHIVED_TO_LSN,
   OPT_XTRA_TABLES,
   OPT_XTRA_TABLES_FILE,
@@ -887,13 +891,19 @@ struct my_option xb_client_options[] = {
      NO_ARG, 0, 0, 0, 0, 0, 0},
     {"check-tables", OPT_XTRA_CHECK_TABLES,
      "Validate all InnoDB B-tree indexes during --prepare. "
-     "Runs after redo apply (including --apply-log-only). "
+     "Runs after redo apply (including --apply-redo-only). "
      "Read-only: does not modify any InnoDB data.",
      (G_PTR *)&xtrabackup_check_tables, (G_PTR *)&xtrabackup_check_tables, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"apply-redo-only", OPT_XTRA_APPLY_REDO_ONLY,
+     "During --prepare, apply the redo log but skip undo, so that the LSN "
+     "does not progress past the applied redo. Use this on a base backup "
+     "that further incremental backups will be applied to.",
+     (G_PTR *)&xtrabackup_apply_log_only, (G_PTR *)&xtrabackup_apply_log_only,
+     0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"apply-log-only", OPT_XTRA_APPLY_LOG_ONLY,
-     "stop recovery process not to progress LSN after applying log when "
-     "prepare.",
+     "(deprecated) Synonym for --apply-redo-only. Will be removed in "
+     "a future release; use --apply-redo-only instead.",
      (G_PTR *)&xtrabackup_apply_log_only, (G_PTR *)&xtrabackup_apply_log_only,
      0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"print-param", OPT_XTRA_PRINT_PARAM,
@@ -942,9 +952,15 @@ struct my_option xb_client_options[] = {
      "careful!",
      (G_PTR *)&xtrabackup_incremental, (G_PTR *)&xtrabackup_incremental, 0,
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"backup-incremental-base", OPT_XTRA_BACKUP_INCREMENTAL_BASE,
+     "(for --backup): copy only .ibd pages newer than the backup at the "
+     "specified location.",
+     (G_PTR *)&xtrabackup_incremental_basedir,
+     (G_PTR *)&xtrabackup_incremental_basedir, 0, GET_STR, REQUIRED_ARG, 0, 0,
+     0, 0, 0, 0},
     {"incremental-basedir", OPT_XTRA_INCREMENTAL_BASEDIR,
-     "(for --backup): copy only .ibd pages newer than backup at specified "
-     "directory.",
+     "(deprecated) Synonym for --backup-incremental-base. Will be removed in "
+     "a future release; use --backup-incremental-base instead.",
      (G_PTR *)&xtrabackup_incremental_basedir,
      (G_PTR *)&xtrabackup_incremental_basedir, 0, GET_STR, REQUIRED_ARG, 0, 0,
      0, 0, 0, 0},
@@ -954,9 +970,15 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_redo_log_arch_dir,
      (G_PTR *)&xtrabackup_redo_log_arch_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
      0, 0, 0},
-    {"incremental-dir", OPT_XTRA_INCREMENTAL_DIR,
+    {"prepare-incremental-from-dir", OPT_XTRA_PREPARE_INCREMENTAL_FROM_DIR,
      "(for --prepare): apply .delta files and logfile in the specified "
      "directory.",
+     (G_PTR *)&xtrabackup_incremental_dir, (G_PTR *)&xtrabackup_incremental_dir,
+     0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"incremental-dir", OPT_XTRA_INCREMENTAL_DIR,
+     "(deprecated) Synonym for --prepare-incremental-from-dir. Will be "
+     "removed in a future release; use --prepare-incremental-from-dir "
+     "instead.",
      (G_PTR *)&xtrabackup_incremental_dir, (G_PTR *)&xtrabackup_incremental_dir,
      0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"to-archived-lsn", OPT_XTRA_ARCHIVED_TO_LSN,
@@ -7091,7 +7113,7 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
     metadata_type = METADATA_FULL_BACKUP;
   } else if (!strcmp(metadata_type_str, "log-applied")) {
     xb::info() << "This target seems to be already prepared with "
-                  "--apply-log-only.";
+                  "--apply-redo-only.";
     metadata_type = METADATA_LOG_APPLIED;
     goto skip_check;
   } else if (!strcmp(metadata_type_str, "full-prepared")) {
@@ -7104,7 +7126,7 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
 
   if (xtrabackup_incremental) {
     xb::error() << "applying incremental backup needs target prepared "
-                   "with --apply-log-only.";
+                   "with --apply-redo-only.";
     exit(EXIT_FAILURE);
   }
 skip_check:
@@ -7445,7 +7467,7 @@ skip_check:
     re-dirty them). Flush once so the on-disk image read by the checksum scan
     below equals the recovered state -- otherwise a raw read could see a stale
     or torn page and report a false positive. Flushing pages does not advance
-    the redo checkpoint, so this is safe under --apply-log-only too. */
+    the redo checkpoint, so this is safe under --apply-redo-only too. */
     buf_flush_sync_all_buf_pools();
 
     /* --check-tables only reads; redo has already been applied. Forbid the
@@ -7678,6 +7700,49 @@ static void append_defaults_group(const char *group,
   ut_a(appended);
 }
 
+/** An option that was renamed. Both spellings drive the same variable, so
+they are one option under two names. */
+struct renamed_option {
+  std::string_view old_name;
+  std::string_view new_name;
+};
+
+/** Every option rename lives here, old name first. Adding a rename means
+adding a row, nothing else. Entries are string literals, so data() is safe to
+hand to check_if_param_set(). */
+static const std::array<renamed_option, 3> renamed_options = {{
+    {"apply-log-only", "apply-redo-only"},
+    {"incremental-basedir", "backup-incremental-base"},
+    {"incremental-dir", "prepare-incremental-from-dir"},
+}};
+
+/** Warn once for every deprecated option name that was used, and reject an
+old name passed together with its new one. They name the same knob, so a
+command line carrying both is operator confusion rather than intent: picking
+one silently would hide the mistake.
+@return false if the caller should stop. */
+static bool check_renamed_options() {
+  for (const auto &renamed : renamed_options) {
+    const bool old_set = check_if_param_set(renamed.old_name.data());
+    const bool new_set = check_if_param_set(renamed.new_name.data());
+
+    if (old_set && new_set) {
+      xb::error() << "--" << renamed.old_name << " and --" << renamed.new_name
+                  << " are the same option; pass only one.";
+      return (false);
+    }
+
+    if (old_set) {
+      xb::warn() << "--" << renamed.old_name
+                 << " is deprecated and will be removed in a future release. "
+                    "Please use --"
+                 << renamed.new_name << " instead.";
+    }
+  }
+
+  return (true);
+}
+
 bool xb_init() {
   const char *mixed_options[4] = {NULL, NULL, NULL, NULL};
   int n_mixed_options;
@@ -7733,6 +7798,10 @@ bool xb_init() {
   if (n_mixed_options > 1) {
     xb::error() << mixed_options[0] << " and " << mixed_options[1]
                 << " are mutually exclusive";
+    return (false);
+  }
+
+  if (!check_renamed_options()) {
     return (false);
   }
 
@@ -8518,7 +8587,7 @@ int main(int argc, char **argv) {
     read_metadata();
     if (strcmp(metadata_type_str, "full-prepared") != 0) {
       xb::error() << "The target is not fully prepared. Please prepare it "
-                     "without option --apply-log-only";
+                     "without option --apply-redo-only";
       exit(EXIT_FAILURE);
     }
 

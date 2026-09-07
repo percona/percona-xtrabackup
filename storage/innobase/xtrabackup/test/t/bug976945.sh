@@ -19,7 +19,7 @@ full_backup_dir=${MYSQLD_VARDIR}/full_backup
 xtrabackup --backup --target-dir=$full_backup_dir
 
 vlog "Preparing backup"
-xtrabackup --prepare --apply-log-only --target-dir=$full_backup_dir
+xtrabackup --prepare --apply-redo-only --target-dir=$full_backup_dir
 vlog "Log applied to full backup"
 
 # Destroying mysql data

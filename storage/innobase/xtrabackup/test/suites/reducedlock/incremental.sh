@@ -19,7 +19,7 @@ xtrabackup --backup --target-dir=$topdir/backup_base --lock-ddl=REDUCED
 $MYSQL $MYSQL_ARGS -Ns -e "INSERT INTO test.original_table VALUES (2);" test
 innodb_wait_for_flush_all
 
-xtrabackup --backup --target-dir=$topdir/backup_inc --incremental-basedir=$topdir/backup_base \
+xtrabackup --backup --target-dir=$topdir/backup_inc --backup-incremental-base=$topdir/backup_base \
   --debug-sync="xtrabackup_load_tablespaces_pause" --lock-ddl=REDUCED \
   2> >( tee $topdir/backup_with_new_table.log)&
 
@@ -49,8 +49,8 @@ run_cmd wait $job_pid
 
 
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_base
-xtrabackup --prepare --target-dir=$topdir/backup_base --incremental-dir=$topdir/backup_inc
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_base
+xtrabackup --prepare --target-dir=$topdir/backup_base --prepare-incremental-from-dir=$topdir/backup_inc
 record_db_state test
 stop_server
 rm -rf $mysql_datadir/*

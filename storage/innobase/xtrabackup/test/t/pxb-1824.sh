@@ -46,9 +46,9 @@ while true ; do
 done >/dev/null 2>/dev/null &
 
 xtrabackup --backup --target-dir=$topdir/backup --parallel=8
-xtrabackup --backup --incremental-basedir=$topdir/backup \
+xtrabackup --backup --backup-incremental-base=$topdir/backup \
 	   --target-dir=$topdir/inc --parallel=8
-xtrabackup --backup --incremental-basedir=$topdir/inc \
+xtrabackup --backup --backup-incremental-base=$topdir/inc \
 	   --target-dir=$topdir/inc1 --parallel=8
 
 if ! grep -q flushed_lsn $topdir/backup/xtrabackup_checkpoints ; then
@@ -59,10 +59,10 @@ stop_server
 
 # apply log shoulnd't fail
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc \
 	   --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc1 \
 	   --target-dir=$topdir/backup
 xtrabackup --prepare --target-dir=$topdir/backup
 
