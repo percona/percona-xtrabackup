@@ -3,7 +3,7 @@ name: Pre-commit Checks
 on:
   push:
     branches:
-      - trunk
+      - 9.7
       - release-*
   pull_request:
 
@@ -17,8 +17,8 @@ jobs:
         fetch-depth: '32'
     - name: Run BiDi Scan
       run: |
-        git fetch origin trunk
-        CHANGED_FILES=$(git diff --name-only --relative --diff-filter AMR origin/trunk -- . | tr '\n' ' ')
+        git fetch origin 9.7
+        CHANGED_FILES=$(git diff --name-only --relative --diff-filter AMR origin/9.7 -- . | tr '\n' ' ')
 
         if [ -z "${CHANGED_FILES}" ]; then
             echo --- No changed files
@@ -32,11 +32,32 @@ jobs:
     - uses: actions/checkout@v3
       with:
         fetch-depth: '32'
-    - name: Install clang-format-11
-      run: sudo apt-get install -y clang-format-11
+    - name: Install the clang-format version .clang-format asks for
+      run: |
+        REQUIRED=$(sed -n 's/^# We currently use clang-format version \([0-9][0-9]*\)\..*/\1/p' .clang-format | head -1)
+        if [ -z "${REQUIRED}" ]; then
+          echo "Could not read the required clang-format version from .clang-format"
+          exit 1
+        fi
+        echo "Required clang-format version: ${REQUIRED}"
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends "clang-format-${REQUIRED}"
+
+        # Guard against the tool and the config drifting apart again. The
+        # package name carries the version, but check what the binary really
+        # reports rather than trusting the name.
+        INSTALLED=$("clang-format-${REQUIRED}" --version | sed -n 's/.*clang-format version \([0-9][0-9]*\)\..*/\1/p')
+        if [ "${INSTALLED}" != "${REQUIRED}" ]; then
+          echo "clang-format version mismatch"
+          echo "  .clang-format asks for: ${REQUIRED}"
+          echo "  installed binary is:    ${INSTALLED:-unknown}"
+          exit 1
+        fi
+        echo "Using clang-format ${INSTALLED}, matching .clang-format"
+        echo "CLANG_FORMAT_VERSION=${REQUIRED}" >> "${GITHUB_ENV}"
     - name: Run clang-format
       run: |
-        git diff -U0 --no-color HEAD^1 *.c *.cc *.cpp *.h *.hpp *.i *.ic *.ih | clang-format-diff-11 -style=file -p1 >_GIT_DIFF
+        git diff -U0 --no-color HEAD^1 *.c *.cc *.cpp *.h *.hpp *.i *.ic *.ih | "clang-format-diff-${CLANG_FORMAT_VERSION}" -style=file -p1 >_GIT_DIFF
         if [ ! -s _GIT_DIFF ]; then
           echo The last git commit is clang-formatted;
         else
