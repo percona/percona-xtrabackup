@@ -11,16 +11,16 @@ xtrabackup --backup --target-dir=$topdir/backup
 
 mysql -e "INSERT INTO t1 (a) VALUES (10), (20), (30)" test
 
-xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/backup
+xtrabackup --backup --target-dir=$topdir/inc --backup-incremental-base=$topdir/backup
 
 cp -a $topdir/backup $topdir/backup1
 
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup1
 
-xtrabackup --prepare --incremental-dir=$topdir/inc --target-dir=$topdir/backup
+xtrabackup --prepare --prepare-incremental-from-dir=$topdir/inc --target-dir=$topdir/backup
 
-run_cmd_expect_failure ${XB_BIN} ${XB_ARGS} --prepare --incremental-dir=$topdir/inc \
+run_cmd_expect_failure ${XB_BIN} ${XB_ARGS} --prepare --prepare-incremental-from-dir=$topdir/inc \
 		       --target-dir=$topdir/backup1
 
 grep -q "xtrabackup_logfile was already used to '--prepare'" $OUTFILE || die "error message not found!"

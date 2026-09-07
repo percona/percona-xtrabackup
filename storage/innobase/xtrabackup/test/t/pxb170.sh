@@ -14,24 +14,24 @@ xtrabackup --backup --target-dir=$topdir/backup
 
 # incremental backup
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t values (11), (12), (13)" test
-xtrabackup --backup --incremental-basedir=$topdir/backup \
+xtrabackup --backup --backup-incremental-base=$topdir/backup \
 		--target-dir=$topdir/inc1
 
 # incremental backup
 run_cmd ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t values (21), (22), (23)" test
-xtrabackup --backup --incremental-basedir=$topdir/inc1 \
+xtrabackup --backup --backup-incremental-base=$topdir/inc1 \
 		--target-dir=$topdir/inc2
 
 # prepare
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 grep log-applied $topdir/backup/xtrabackup_checkpoints
 
-xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc1 \
 		--target-dir=$topdir/backup
 grep log-applied $topdir/backup/xtrabackup_checkpoints
 
-xtrabackup --prepare --incremental-dir=$topdir/inc2 --target-dir=$topdir/backup
+xtrabackup --prepare --prepare-incremental-from-dir=$topdir/inc2 --target-dir=$topdir/backup
 grep full-prepared $topdir/backup/xtrabackup_checkpoints
 
 run_cmd_expect_failure ${XB_BIN} ${XB_ARGS} --prepare \
-		--incremental-dir=$topdir/inc2 --target-dir=$topdir/backup
+		--prepare-incremental-from-dir=$topdir/inc2 --target-dir=$topdir/backup

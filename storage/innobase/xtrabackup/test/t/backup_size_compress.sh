@@ -144,7 +144,7 @@ done | mysql test
 
 mkdir -p $topdir/lsn4inc1
 xtrabackup --backup --compress=lz4 \
-    --incremental-basedir=$topdir/lsn4full \
+    --backup-incremental-base=$topdir/lsn4full \
     --target-dir=$topdir/backup4inc1 --extra-lsndir=$topdir/lsn4inc1
 
 bs4inc1=$(get_field "$topdir/lsn4inc1/xtrabackup_info" backup_size)

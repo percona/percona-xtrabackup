@@ -20,7 +20,7 @@ xtrabackup --backup --target-dir=$topdir/full
 
 vlog "Creating incremental backup"
 
-xtrabackup --backup --incremental-basedir=$topdir/full --target-dir=$topdir/inc
+xtrabackup --backup --backup-incremental-base=$topdir/full --target-dir=$topdir/inc
 
 # remove space_id = something line from .meta file
 sed -ie '/space_id/ d' $topdir/inc/test/t1.ibd.meta
@@ -30,7 +30,7 @@ vlog "Preparing backup"
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 vlog "Log applied to full backup"
 
-xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc \
     --target-dir=$topdir/full
 vlog "Delta applied to full backup"
 

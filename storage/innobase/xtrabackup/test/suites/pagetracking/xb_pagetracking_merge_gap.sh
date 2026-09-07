@@ -122,7 +122,7 @@ take_and_verify() {
   [ "$setting" != "auto" ] && gap_arg="--page-tracking-merge-gap=$setting"
 
   xtrabackup --backup --page-tracking $gap_arg \
-      --incremental-basedir=$topdir/full_$label --target-dir=$tgt \
+      --backup-incremental-base=$topdir/full_$label --target-dir=$tgt \
       2>&1 | tee $tgt.log
 
   local changed ranges groups batches
@@ -283,7 +283,7 @@ stop_server
 rm -rf $mysql_datadir
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full_50
 xtrabackup --prepare --target-dir=$topdir/full_50 \
-    --incremental-dir=$topdir/inc_50_auto
+    --prepare-incremental-from-dir=$topdir/inc_50_auto
 xtrabackup --copy-back --target-dir=$topdir/full_50 --datadir=$mysql_datadir
 start_server
 verify_db_state test

@@ -703,8 +703,10 @@ enum options_xtrabackup {
   OPT_XTRA_LOG_COPY_INTERVAL,
   OPT_XTRA_INCREMENTAL,
   OPT_XTRA_INCREMENTAL_BASEDIR,
+  OPT_XTRA_BACKUP_INCREMENTAL_BASE,
   OPT_XTRA_EXTRA_LSNDIR,
   OPT_XTRA_INCREMENTAL_DIR,
+  OPT_XTRA_PREPARE_INCREMENTAL_FROM_DIR,
   OPT_XTRA_ARCHIVED_TO_LSN,
   OPT_XTRA_TABLES,
   OPT_XTRA_TABLES_FILE,
@@ -950,9 +952,15 @@ struct my_option xb_client_options[] = {
      "careful!",
      (G_PTR *)&xtrabackup_incremental, (G_PTR *)&xtrabackup_incremental, 0,
      GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"backup-incremental-base", OPT_XTRA_BACKUP_INCREMENTAL_BASE,
+     "(for --backup): copy only .ibd pages newer than the backup at the "
+     "specified location.",
+     (G_PTR *)&xtrabackup_incremental_basedir,
+     (G_PTR *)&xtrabackup_incremental_basedir, 0, GET_STR, REQUIRED_ARG, 0, 0,
+     0, 0, 0, 0},
     {"incremental-basedir", OPT_XTRA_INCREMENTAL_BASEDIR,
-     "(for --backup): copy only .ibd pages newer than backup at specified "
-     "directory.",
+     "(deprecated) Synonym for --backup-incremental-base. Will be removed in "
+     "a future release; use --backup-incremental-base instead.",
      (G_PTR *)&xtrabackup_incremental_basedir,
      (G_PTR *)&xtrabackup_incremental_basedir, 0, GET_STR, REQUIRED_ARG, 0, 0,
      0, 0, 0, 0},
@@ -962,9 +970,15 @@ struct my_option xb_client_options[] = {
      (G_PTR *)&xtrabackup_redo_log_arch_dir,
      (G_PTR *)&xtrabackup_redo_log_arch_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0,
      0, 0, 0},
-    {"incremental-dir", OPT_XTRA_INCREMENTAL_DIR,
+    {"prepare-incremental-from-dir", OPT_XTRA_PREPARE_INCREMENTAL_FROM_DIR,
      "(for --prepare): apply .delta files and logfile in the specified "
      "directory.",
+     (G_PTR *)&xtrabackup_incremental_dir, (G_PTR *)&xtrabackup_incremental_dir,
+     0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"incremental-dir", OPT_XTRA_INCREMENTAL_DIR,
+     "(deprecated) Synonym for --prepare-incremental-from-dir. Will be "
+     "removed in a future release; use --prepare-incremental-from-dir "
+     "instead.",
      (G_PTR *)&xtrabackup_incremental_dir, (G_PTR *)&xtrabackup_incremental_dir,
      0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
     {"to-archived-lsn", OPT_XTRA_ARCHIVED_TO_LSN,
@@ -7696,8 +7710,10 @@ struct renamed_option {
 /** Every option rename lives here, old name first. Adding a rename means
 adding a row, nothing else. Entries are string literals, so data() is safe to
 hand to check_if_param_set(). */
-static const std::array<renamed_option, 1> renamed_options = {{
+static const std::array<renamed_option, 3> renamed_options = {{
     {"apply-log-only", "apply-redo-only"},
+    {"incremental-basedir", "backup-incremental-base"},
+    {"incremental-dir", "prepare-incremental-from-dir"},
 }};
 
 /** Warn once for every deprecated option name that was used, and reject an

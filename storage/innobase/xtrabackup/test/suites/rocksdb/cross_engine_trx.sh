@@ -51,11 +51,11 @@ done | mysql test &
 # backup
 xtrabackup --parallel=4 --backup --target-dir=$topdir/backup
 xtrabackup --parallel=4 --backup --target-dir=$topdir/inc1 \
-           --incremental-basedir=$topdir/backup
+           --backup-incremental-base=$topdir/backup
 xtrabackup --parallel=4 --backup --target-dir=$topdir/inc2 \
-           --incremental-basedir=$topdir/inc1
+           --backup-incremental-base=$topdir/inc1
 xtrabackup --parallel=4 --backup --target-dir=$topdir/inc3 \
-           --incremental-basedir=$topdir/inc2
+           --backup-incremental-base=$topdir/inc2
 
 xtrabackup --parallel=4 --backup --target-dir=$topdir/backup22
 
@@ -64,11 +64,11 @@ stop_server
 # prepare
 xtrabackup --parallel=4 --prepare --apply-redo-only --target-dir=$topdir/backup
 xtrabackup --parallel=4 --prepare --apply-redo-only --target-dir=$topdir/backup \
-           --incremental-dir=$topdir/inc1
+           --prepare-incremental-from-dir=$topdir/inc1
 xtrabackup --parallel=4 --prepare --apply-redo-only --target-dir=$topdir/backup \
-           --incremental-dir=$topdir/inc2
+           --prepare-incremental-from-dir=$topdir/inc2
 xtrabackup --parallel=4 --prepare --apply-redo-only --target-dir=$topdir/backup \
-           --incremental-dir=$topdir/inc3
+           --prepare-incremental-from-dir=$topdir/inc3
 xtrabackup --prepare --target-dir=$topdir/backup
 
 # # clenup and restore

@@ -44,7 +44,7 @@ vlog "Making incremental backup"
 
 # Incremental backup
 xtrabackup --datadir=$mysql_datadir --backup \
-    --target-dir=$DELTA_DIR --incremental-basedir=$FULL_DIR \
+    --target-dir=$DELTA_DIR --backup-incremental-base=$FULL_DIR \
     $mysqld_additional_args
 
 vlog "Incremental backup done"
@@ -56,7 +56,7 @@ xtrabackup --datadir=$mysql_datadir --prepare --apply-redo-only \
 vlog "Log applied to backup"
 
 xtrabackup --datadir=$mysql_datadir --prepare --apply-redo-only \
-    --target-dir=$FULL_DIR --incremental-dir=$DELTA_DIR \
+    --target-dir=$FULL_DIR --prepare-incremental-from-dir=$DELTA_DIR \
     $mysqld_additional_args
 vlog "Delta applied to backup"
 

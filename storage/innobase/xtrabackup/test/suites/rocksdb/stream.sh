@@ -14,7 +14,7 @@ FULL_BACKUP_CMD="xtrabackup
 
 INC_BACKUP_CMD="xtrabackup
     --backup
-    --incremental-basedir=$topdir/backuplsn
+    --backup-incremental-base=$topdir/backuplsn
     --parallel=10
     --stream=xbstream >$topdir/inc.xbstream"
 
@@ -30,7 +30,7 @@ INC_PREPARE_CMD="mkdir $topdir/inc &&
   xtrabackup
     --prepare
     --target-dir=$topdir/backup
-    --incremental-dir=$topdir/inc
+    --prepare-incremental-from-dir=$topdir/inc
     --parallel=10"
 
 CLEANUP_CMD="rm -rf $mysql_datadir"

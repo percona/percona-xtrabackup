@@ -122,7 +122,7 @@ start_server --innodb_buffer_pool-size=1G --innodb_redo_log_capacity=2G
 
 # Do an incremental parallel backup
 xtrabackup --backup --parallel=$num_threads \
-    --incremental-basedir=$topdir/full_backup --target-dir=$topdir/inc_backup
+    --backup-incremental-base=$topdir/full_backup --target-dir=$topdir/inc_backup
 
 stop_server
 # Remove datadir
@@ -130,7 +130,7 @@ rm -r $mysql_datadir
 
 vlog "Applying log"
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full_backup --parallel=$num_threads
-xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc_backup --parallel=$num_threads \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc_backup --parallel=$num_threads \
     --target-dir=$topdir/full_backup 2> $topdir/inc.log
 
 check_pattern_numbers() {

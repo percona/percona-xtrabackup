@@ -38,7 +38,7 @@ function restore_from()
         fi
         vlog "Preparing $incremental_dir as incremental"
         run_cmd xtrabackup --prepare $extra\
-           --target-dir=$backup_path --incremental-dir=$incremental_dir
+           --target-dir=$backup_path --prepare-incremental-from-dir=$incremental_dir
     done
 
     run_cmd xtrabackup --copy-back --target-dir=$backup_path
@@ -72,7 +72,7 @@ function test_backup_with_custom_read_buffer()
 
     vlog "Incremental backup  : $buffer_size buffer size"
     xtrabackup --backup \
-        --incremental-basedir=$backup_dest_base \
+        --backup-incremental-base=$backup_dest_base \
         --target-dir=$backup_dest_inc
 
     vlog "Restoring incremental : $buffer_size buffer size"

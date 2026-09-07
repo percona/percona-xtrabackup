@@ -23,7 +23,7 @@ xtrabackup --backup --stream=xbstream --extra-lsndir=$full_backup_dir \
 
 vlog "take incremental backup"
 
-xtrabackup --backup --incremental-basedir=$full_backup_dir \
+xtrabackup --backup --backup-incremental-base=$full_backup_dir \
 	   --stream=xbstream --target-dir=inc_backup_dir \
 	   --parallel=4 | \
     run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf put \
@@ -49,7 +49,7 @@ run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
 
 xtrabackup --prepare --apply-redo-only \
 	   --target-dir=$topdir/downloaded_full \
-	   --incremental-dir=$topdir/downloaded_inc
+	   --prepare-incremental-from-dir=$topdir/downloaded_inc
 
 xtrabackup --prepare --target-dir=$topdir/downloaded_full
 

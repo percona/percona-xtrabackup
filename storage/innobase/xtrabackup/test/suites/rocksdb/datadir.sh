@@ -31,14 +31,14 @@ mysql -e "INSERT INTO t (a) VALUES (4), (5), (6)" test
 
 old_checksum=$(checksum_table_columns test t a)
 
-xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/backup
+xtrabackup --backup --target-dir=$topdir/inc --backup-incremental-base=$topdir/backup
 
 if ! [ -d $topdir/inc/.rocksdb ] ; then
     die "Rocksdb haven't been backed up"
 fi
 
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
-xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc
+xtrabackup --prepare --target-dir=$topdir/backup --prepare-incremental-from-dir=$topdir/inc
 
 rm -rf $mysql_datadir $rocks_datadir
 

@@ -61,7 +61,7 @@ xtrabackup --backup --target-dir=$topdir/backup
 mysql -e "CREATE UNDO TABLESPACE undo3 ADD DATAFILE '$undo_directory_ext/undo3.ibu'"
 mysql -e "CREATE UNDO TABLESPACE undo4 ADD DATAFILE 'undo4.ibu'"
 
-xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/backup
+xtrabackup --backup --target-dir=$topdir/inc --backup-incremental-base=$topdir/backup
 
 kill -SIGKILL $job_master
 stop_server
@@ -71,7 +71,7 @@ rm -rf $undo_directory/*
 rm -rf $undo_directory_ext/*
 
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
-xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc
+xtrabackup --prepare --target-dir=$topdir/backup --prepare-incremental-from-dir=$topdir/inc
 
 xtrabackup --copy-back --target-dir=$topdir/backup
 

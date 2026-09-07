@@ -97,7 +97,7 @@ for i in $(seq 101 200); do
 done
 
 vlog "Incremental backup 1"
-xtrabackup --backup --incremental-basedir=$topdir/full \
+xtrabackup --backup --backup-incremental-base=$topdir/full \
            --target-dir=$topdir/inc1 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/backup_inc1.log >&2)
@@ -126,7 +126,7 @@ for i in $(seq 201 300); do
 done
 
 vlog "Incremental backup 2"
-xtrabackup --backup --incremental-basedir=$topdir/inc1 \
+xtrabackup --backup --backup-incremental-base=$topdir/inc1 \
            --target-dir=$topdir/inc2 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/backup_inc2.log >&2)
@@ -145,7 +145,7 @@ grep -q "All table checks passed" $topdir/prepare_full.log || \
 
 vlog "Prepare inc1 with --apply-redo-only --check-tables (should run check)"
 xtrabackup --prepare --apply-redo-only --check-tables \
-           --incremental-dir=$topdir/inc1 --target-dir=$topdir/full \
+           --prepare-incremental-from-dir=$topdir/inc1 --target-dir=$topdir/full \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2>&1 | tee $topdir/prepare_inc1.log
 grep log-applied $topdir/full/xtrabackup_checkpoints
@@ -156,7 +156,7 @@ grep -q "All table checks passed" $topdir/prepare_inc1.log || \
 
 vlog "Prepare inc2 with --check-tables (final prepare, should run check)"
 xtrabackup --prepare --check-tables \
-           --incremental-dir=$topdir/inc2 --target-dir=$topdir/full \
+           --prepare-incremental-from-dir=$topdir/inc2 --target-dir=$topdir/full \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2>&1 | tee $topdir/prepare_inc2.log
 grep full-prepared $topdir/full/xtrabackup_checkpoints

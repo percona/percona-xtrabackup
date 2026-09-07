@@ -30,7 +30,7 @@ vlog "### case #2 check redo log is disabled before incremental backup ###"
 run_cmd xtrabackup --backup --target-dir=$topdir/full
 mysql -e "alter instance disable innodb redo_log"
 run_cmd_expect_failure xtrabackup --backup --target-dir=$topdir/inc \
-	--incremental-basedir=$topdir/full 2>&1 \
+	--backup-incremental-base=$topdir/full 2>&1 \
 	| tee $topdir/inc.log
 grep "Redo logging is disabled, cannot take consistent backup" $topdir/inc.log || die "missing error message"
 rm -r $topdir/full
@@ -65,7 +65,7 @@ mysql -e "alter instance enable innodb redo_log"
 vlog "### case #4 check redo log is disabled during incremental backup ###"
 run_cmd xtrabackup --backup --target-dir=$topdir/full
 run_cmd_expect_failure xtrabackup --backup --lock-ddl=OFF --target-dir=$topdir/inc \
-	--incremental-basedir=$topdir/full \
+	--backup-incremental-base=$topdir/full \
 	--debug-sync="data_copy_thread_func" 2>&1 \
 	| tee $topdir/inc.log &
 job_pid=$!
@@ -111,12 +111,12 @@ xtrabackup --backup --target-dir=$topdir/full
 mysql -e "alter instance disable innodb redo_log"
 load_sakila
 mysql -e "alter instance enable innodb redo_log"
-xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/full
+xtrabackup --backup --target-dir=$topdir/inc --backup-incremental-base=$topdir/full
 record_db_state sakila
 stop_server
 rm -r $mysql_datadir
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
-xtrabackup --prepare --target-dir=$topdir/full --incremental-dir=$topdir/inc
+xtrabackup --prepare --target-dir=$topdir/full --prepare-incremental-from-dir=$topdir/inc
 xtrabackup --copy-back --target-dir=$topdir/full
 start_server
 verify_db_state sakila
