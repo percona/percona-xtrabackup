@@ -127,7 +127,8 @@ class Azure_client {
   void set_endpoint(const std::string &ep, bool development_storage,
                     const std::string &storage_account);
 
-  bool delete_object(const std::string &container, const std::string &name);
+  bool delete_object(const std::string &container, const std::string &name,
+                     bool best_effort);
 
   bool create_container(const std::string &name);
 
@@ -256,8 +257,9 @@ class Azure_object_store : public Object_store {
                                             });
   }
   virtual bool delete_object(const std::string &container,
-                             const std::string &name) override {
-    return azure_client.delete_object(container, name);
+                             const std::string &name,
+                             bool best_effort) override {
+    return azure_client.delete_object(container, name, best_effort);
   }
   virtual Http_buffer download_object(const std::string &container,
                                       const std::string &name,

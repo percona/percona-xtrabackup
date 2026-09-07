@@ -229,7 +229,8 @@ class S3_client {
 
   bool probe_api_version_and_lookup(const std::string &bucket);
 
-  bool delete_object(const std::string &bucket, const std::string &name);
+  bool delete_object(const std::string &bucket, const std::string &name,
+                     bool best_effort);
 
   bool create_bucket(const std::string &name);
 
@@ -355,8 +356,9 @@ class S3_object_store : public Object_store {
                                          });
   }
   virtual bool delete_object(const std::string &container,
-                             const std::string &name) override {
-    return s3_client.delete_object(container, name);
+                             const std::string &name,
+                             bool best_effort) override {
+    return s3_client.delete_object(container, name, best_effort);
   }
   virtual Http_buffer download_object(const std::string &container,
                                       const std::string &name,
