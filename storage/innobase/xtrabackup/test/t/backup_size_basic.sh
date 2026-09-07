@@ -151,7 +151,7 @@ for i in $(seq 1 100) ; do
 done | mysql test
 
 mkdir -p $topdir/lsn6inc1
-xtrabackup --backup --incremental-basedir=$topdir/backup6full \
+xtrabackup --backup --backup-incremental-base=$topdir/backup6full \
     --target-dir=$topdir/backup6inc1 --extra-lsndir=$topdir/lsn6inc1
 
 bs6inc1=$(get_field "$topdir/lsn6inc1/xtrabackup_info" backup_size)
@@ -166,7 +166,7 @@ for i in $(seq 1 50) ; do
 done | mysql test
 
 mkdir -p $topdir/lsn6inc2
-xtrabackup --backup --incremental-basedir=$topdir/backup6inc1 \
+xtrabackup --backup --backup-incremental-base=$topdir/backup6inc1 \
     --target-dir=$topdir/backup6inc2 --extra-lsndir=$topdir/lsn6inc2
 
 bs6inc2=$(get_field "$topdir/lsn6inc2/xtrabackup_info" backup_size)
@@ -174,10 +174,10 @@ assert_target_strict "$topdir/backup6inc2" "$bs6inc2" "scen6 (inc2)"
 
 # Restore the chain end-to-end.
 record_db_state test
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup6full
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/backup6inc1 \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup6full
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/backup6inc1 \
     --target-dir=$topdir/backup6full
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/backup6inc2 \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/backup6inc2 \
     --target-dir=$topdir/backup6full
 xtrabackup --prepare --target-dir=$topdir/backup6full
 stop_server

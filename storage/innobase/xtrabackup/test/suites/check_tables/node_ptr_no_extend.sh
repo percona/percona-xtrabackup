@@ -38,7 +38,7 @@ EOF
 
 vlog "Full backup + apply-log-only prepare"
 xtrabackup --backup --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 
 IBD=$topdir/backup/test/test_users.ibd
 

@@ -49,7 +49,7 @@ vlog "take incremental backup"
 
 
 
-(xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/full --stream \
+(xtrabackup --backup --target-dir=$topdir/inc --backup-incremental-base=$topdir/full --stream \
   --debug-sync="ddl_tracker_before_lock_ddl" --lock-ddl=REDUCED \
 | run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf put \
             --parallel=4 \
@@ -82,7 +82,7 @@ run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
 	${full_backup_name} | \
     xbstream -xv -C $topdir/downloaded_full --parallel=4
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/downloaded_full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/downloaded_full
 
 run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
         --parallel=4 \
@@ -91,7 +91,7 @@ run_cmd xbcloud --defaults-file=$topdir/xbcloud.cnf get \
 
 xtrabackup --prepare \
 	   --target-dir=$topdir/downloaded_full \
-	   --incremental-dir=$topdir/downloaded_inc
+	   --prepare-incremental-from-dir=$topdir/downloaded_inc
 
 stop_server
 rm -rf $MYSQLD_DATADIR/*

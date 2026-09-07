@@ -16,4 +16,4 @@ xtrabackup --backup --compress --target-dir=$topdir/full
 
 # Test that incremental backups work without uncompressing the full one
 xtrabackup --backup --compress \
-    --incremental-basedir=$topdir/full --target-dir=$topdir/incremental
+    --backup-incremental-base=$topdir/full --target-dir=$topdir/incremental
