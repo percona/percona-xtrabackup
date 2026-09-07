@@ -293,7 +293,7 @@ void S3_signerV2::sign_request(const std::string &hostname,
 }
 
 bool S3_client::delete_object(const std::string &bucket,
-                              const std::string &name) {
+                              const std::string &name, bool best_effort) {
   Http_request req(Http_request::DELETE, protocol, hostname(bucket),
                    bucketname(bucket) + "/" + name);
   signer->sign_request(hostname(bucket), bucket, req, time(0));
@@ -304,6 +304,12 @@ bool S3_client::delete_object(const std::string &bucket,
   }
 
   if (resp.ok()) {
+    return true;
+  }
+
+  /* Object is not there (S3 answers 204 for this, some S3-compatible
+  services 404), or we have no permission on it. Neither is our problem. */
+  if (best_effort && (resp.http_code() == 404 || resp.http_code() == 403)) {
     return true;
   }
 
