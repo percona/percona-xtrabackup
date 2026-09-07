@@ -7736,14 +7736,53 @@ bool xb_init() {
     return (false);
   }
 
-  if (xtrabackup_backup) {
+  /* Options the runtime stopped acting on long ago. They stay in the option
+  table for the 8.4/9.7 window so existing scripts keep parsing, but operators
+  keep pasting them in expecting an effect, so say plainly that there is none.
+  Scheduled for removal from the option table in a future release. */
+  {
+    static const struct {
+      const char *name;
+      const char *reason;
+    } dead_options[] = {
+        {"log",
+         "It is accepted only for MySQL client option compatibility and is "
+         "never read."},
+        {"innodb",
+         "It is accepted only for MySQL client option compatibility and is "
+         "never read."},
+        {"create-ib-logfile", "It does not create ib_logfile* files."},
+        {"rebuild_threads",
+         "It only ever applied to --rebuild-indexes, which was removed."},
 #ifdef HAVE_VERSION_CHECK
-    if (opt_noversioncheck) {
-      xb::warn()
-          << "version check is removed and --no-version-check is deprecated.";
-    }
+        {"no-version-check",
+         "The version check it disabled was itself removed."},
 #endif
+    };
 
+    for (const auto &dead : dead_options) {
+      if (check_if_param_set(dead.name)) {
+        xb::warn() << "--" << dead.name << " is deprecated and has no effect. "
+                   << dead.reason << " It will be removed in a future release.";
+      }
+    }
+  }
+
+  /* --rsync is deprecated but NOT dead: it still routes the non-InnoDB copy
+  through rsync (see backup_files() in backup_copy.cc), so this is a "going
+  away" notice rather than a "does nothing" one. The code and the rsync
+  binary dependency stay for now; only the option is deprecated. */
+  if (check_if_param_set("rsync")) {
+    xb::warn()
+        << "--rsync is deprecated and unsupported, and will be removed "
+           "in a future release. All it did was shorten the FLUSH TABLES "
+           "WITH READ LOCK window while non-InnoDB files were copied, "
+           "which no longer matters now that backup locks and "
+           "--lock-ddl=REDUCED let DDL and DML proceed during the "
+           "backup.";
+  }
+
+  if (xtrabackup_backup) {
     if ((mysql_connection = xb_mysql_connect()) == NULL) {
       return (false);
     }
