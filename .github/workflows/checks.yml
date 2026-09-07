@@ -42,6 +42,18 @@ jobs:
         echo "Required clang-format version: ${REQUIRED}"
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends "clang-format-${REQUIRED}"
+
+        # Guard against the tool and the config drifting apart again. The
+        # package name carries the version, but check what the binary really
+        # reports rather than trusting the name.
+        INSTALLED=$("clang-format-${REQUIRED}" --version | sed -n 's/.*clang-format version \([0-9][0-9]*\)\..*/\1/p')
+        if [ "${INSTALLED}" != "${REQUIRED}" ]; then
+          echo "clang-format version mismatch"
+          echo "  .clang-format asks for: ${REQUIRED}"
+          echo "  installed binary is:    ${INSTALLED:-unknown}"
+          exit 1
+        fi
+        echo "Using clang-format ${INSTALLED}, matching .clang-format"
         echo "CLANG_FORMAT_VERSION=${REQUIRED}" >> "${GITHUB_ENV}"
     - name: Run clang-format
       run: |
