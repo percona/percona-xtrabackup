@@ -457,7 +457,7 @@ bool Redo_Log_Parser::parse_log(const byte *buf, size_t len, lsn_t start_lsn) {
 
     recv_parse_log_recs();
     /* update parsed lsn after we have completed parsing */
-    last_parsed_lsn.store(scanned_lsn);
+    last_parsed_lsn.store(recv_sys->recovered_lsn);
 
     if (recv_sys->recovered_offset > recv_sys->buf_len / 4) {
       /* Move parsing buffer data to the buffer start */
@@ -1116,11 +1116,12 @@ void Redo_Log_Data_Manager::track_archived_log(lsn_t start_lsn, const byte *buf,
 }
 
 bool Redo_Log_Data_Manager::has_parsed_lsn(lsn_t lsn) const {
-  /* check if we have parsed up to desired lsn, or if we have not parsed
-   * anything (no redo) or are in the middle of last block */
-  return (parser.get_last_parsed_lsn() >= lsn ||
-          parser.get_last_parsed_lsn() == 0 ||
-          lsn - parser.get_last_parsed_lsn() < OS_FILE_LOG_BLOCK_SIZE);
+  /* Check if we have parsed up to desired lsn. */
+  return (parser.get_last_parsed_lsn() >= lsn);
+}
+
+void Redo_Log_Data_Manager::set_parse_tail_up_to_lsn(lsn_t lsn) {
+  parse_tail_up_to_lsn.store(lsn);
 }
 
 bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
@@ -1159,20 +1160,56 @@ bool Redo_Log_Data_Manager::copy_once(bool is_last, bool *finished) {
     }
   }
 
-  auto len = reader.read_logfile(is_last, finished);
+  auto write_len = reader.read_logfile(is_last, finished);
   error = reader.is_error();
 
-  if (len <= 0) {
-    return (len == 0);
-  }
-
-  track_archived_log(start_lsn, reader.get_buffer(), len);
-
-  if (!parser.parse_log(reader.get_buffer(), len, start_lsn)) {
+  if (write_len < 0) {
     return (false);
   }
 
-  if (!writer.write_buffer(reader.get_buffer(), len)) {
+  auto parse_len = static_cast<size_t>(write_len);
+  const auto parse_tail_lsn = parse_tail_up_to_lsn.load();
+
+  if (parse_tail_lsn != 0 && !is_last) {
+    const auto write_end_lsn = start_lsn + parse_len;
+
+    if (parse_tail_lsn > write_end_lsn) {
+      /* During DDL catchup, parser may need to inspect the target tail
+      block even though the writer must still skip it in normal copy mode. */
+      const auto target_block_end =
+          ut_uint64_align_up(parse_tail_lsn, OS_FILE_LOG_BLOCK_SIZE);
+      const auto scanned_block_end =
+          ut_uint64_align_up(reader.get_scanned_lsn(), OS_FILE_LOG_BLOCK_SIZE);
+
+      /* Only parse the target block after scan has validated it. */
+      if (parse_tail_lsn <= scanned_block_end) {
+        const auto parse_end_lsn = target_block_end < scanned_block_end
+                                       ? target_block_end
+                                       : scanned_block_end;
+
+        if (parse_end_lsn > write_end_lsn) {
+          parse_len = parse_end_lsn - start_lsn;
+        }
+      }
+    }
+  }
+
+  if (parse_len == 0) {
+    return (true);
+  }
+
+  if (write_len > 0) {
+    track_archived_log(start_lsn, reader.get_buffer(),
+                       static_cast<size_t>(write_len));
+  }
+
+  if (!parser.parse_log(reader.get_buffer(), parse_len, start_lsn)) {
+    return (false);
+  }
+
+  if (write_len > 0 &&
+      !writer.write_buffer(reader.get_buffer(),
+                           static_cast<size_t>(write_len))) {
     return (false);
   }
   scanned_lsn = reader.get_scanned_lsn();

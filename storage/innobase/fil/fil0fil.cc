@@ -11285,6 +11285,11 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
   to pupulate space encryption info once it is loaded. */
   DBUG_EXECUTE_IF("dont_update_key_found_during_REDO_scan", return ptr;);
 
+  /* recv_sys->keys is read by other threads (e.g. recv_find_encryption_key)
+  under recv_sys->mutex. Hold the mutex while mutating the vector so that a
+  reallocation triggered by push_back() cannot race with those readers. */
+  mutex_enter(&recv_sys->mutex);
+
   if (recv_sys->keys == nullptr) {
     recv_sys->keys =
         ut::new_withkey<recv_sys_t::Encryption_Keys>(UT_NEW_THIS_FILE_PSI_KEY);
@@ -11315,6 +11320,8 @@ const byte *fil_tablespace_redo_encryption(const byte *ptr, const byte *end,
     new_key.lsn = lsn;
     recv_sys->keys->push_back(new_key);
   }
+
+  mutex_exit(&recv_sys->mutex);
 
   if (space != nullptr) {
     Encryption::set_or_generate(Encryption::AES, key, iv,

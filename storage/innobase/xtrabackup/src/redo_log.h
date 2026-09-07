@@ -324,6 +324,9 @@ class Redo_Log_Data_Manager {
   /** whether we have parsed up to LSN */
   bool has_parsed_lsn(lsn_t lsn) const;
 
+  /** Set parse-only tail target for DDL catchup. */
+  void set_parse_tail_up_to_lsn(lsn_t lsn);
+
   ~Redo_Log_Data_Manager();
 
  private:
@@ -345,6 +348,9 @@ class Redo_Log_Data_Manager {
 
   /** lsn to stop copying at. */
   std::atomic<lsn_t> stop_lsn;
+
+  /** target LSN for parse-only tail catchup. */
+  std::atomic<lsn_t> parse_tail_up_to_lsn{0};
 
   /** checkpoint lsn at the end of the backup. */
   lsn_t last_checkpoint_lsn;
