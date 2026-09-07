@@ -97,7 +97,7 @@ for i in $(seq 101 200); do
 done
 
 vlog "Incremental backup 1"
-xtrabackup --backup --incremental-basedir=$topdir/full \
+xtrabackup --backup --backup-incremental-base=$topdir/full \
            --target-dir=$topdir/inc1 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/backup_inc1.log >&2)
@@ -126,37 +126,37 @@ for i in $(seq 201 300); do
 done
 
 vlog "Incremental backup 2"
-xtrabackup --backup --incremental-basedir=$topdir/inc1 \
+xtrabackup --backup --backup-incremental-base=$topdir/inc1 \
            --target-dir=$topdir/inc2 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/backup_inc2.log >&2)
 
 record_db_state test
 
-vlog "Prepare full with --apply-log-only --check-tables (should run check)"
-xtrabackup --prepare --apply-log-only --check-tables --target-dir=$topdir/full \
+vlog "Prepare full with --apply-redo-only --check-tables (should run check)"
+xtrabackup --prepare --apply-redo-only --check-tables --target-dir=$topdir/full \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2>&1 | tee $topdir/prepare_full.log
 grep log-applied $topdir/full/xtrabackup_checkpoints
 grep -q "Starting table checks" $topdir/prepare_full.log || \
-  die "check-tables should run during --apply-log-only prepare"
+  die "check-tables should run during --apply-redo-only prepare"
 grep -q "All table checks passed" $topdir/prepare_full.log || \
-  die "Table checks did not pass during --apply-log-only prepare"
+  die "Table checks did not pass during --apply-redo-only prepare"
 
-vlog "Prepare inc1 with --apply-log-only --check-tables (should run check)"
-xtrabackup --prepare --apply-log-only --check-tables \
-           --incremental-dir=$topdir/inc1 --target-dir=$topdir/full \
+vlog "Prepare inc1 with --apply-redo-only --check-tables (should run check)"
+xtrabackup --prepare --apply-redo-only --check-tables \
+           --prepare-incremental-from-dir=$topdir/inc1 --target-dir=$topdir/full \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2>&1 | tee $topdir/prepare_inc1.log
 grep log-applied $topdir/full/xtrabackup_checkpoints
 grep -q "Starting table checks" $topdir/prepare_inc1.log || \
-  die "check-tables should run during incremental --apply-log-only prepare"
+  die "check-tables should run during incremental --apply-redo-only prepare"
 grep -q "All table checks passed" $topdir/prepare_inc1.log || \
-  die "Table checks did not pass during incremental --apply-log-only prepare"
+  die "Table checks did not pass during incremental --apply-redo-only prepare"
 
 vlog "Prepare inc2 with --check-tables (final prepare, should run check)"
 xtrabackup --prepare --check-tables \
-           --incremental-dir=$topdir/inc2 --target-dir=$topdir/full \
+           --prepare-incremental-from-dir=$topdir/inc2 --target-dir=$topdir/full \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2>&1 | tee $topdir/prepare_inc2.log
 grep full-prepared $topdir/full/xtrabackup_checkpoints
@@ -230,8 +230,8 @@ xtrabackup --backup --target-dir=$topdir/backup2 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/backup2.log >&2)
 
-vlog "Prepare with --apply-log-only first"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup2 \
+vlog "Prepare with --apply-redo-only first"
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup2 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/prepare_s2_alog.log >&2)
 
@@ -270,8 +270,8 @@ xtrabackup --backup --target-dir=$topdir/backup3 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/backup3.log >&2)
 
-vlog "Prepare with --apply-log-only first"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup3 \
+vlog "Prepare with --apply-redo-only first"
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup3 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/prepare_s3_alog.log >&2)
 
@@ -303,8 +303,8 @@ xtrabackup --backup --target-dir=$topdir/backup4 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/backup4.log >&2)
 
-vlog "Prepare with --apply-log-only first"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup4 \
+vlog "Prepare with --apply-redo-only first"
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup4 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/prepare_s4_alog.log >&2)
 
@@ -350,8 +350,8 @@ xtrabackup --backup --target-dir=$topdir/backup5 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/backup5.log >&2)
 
-vlog "Prepare with --apply-log-only first"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup5 \
+vlog "Prepare with --apply-redo-only first"
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup5 \
            --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args} \
            2> >(tee $topdir/prepare_s5_alog.log >&2)
 

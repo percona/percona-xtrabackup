@@ -54,18 +54,18 @@ function test_bug_1028949()
 
   # Incremental backup
   xtrabackup --datadir=$mysql_datadir --backup \
-      --target-dir=$DELTA_DIR --incremental-basedir=$FULL_DIR
+      --target-dir=$DELTA_DIR --backup-incremental-base=$FULL_DIR
 
   vlog "Incremental backup done"
   vlog "Preparing backup"
 
   # Prepare backup
-  xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
+  xtrabackup --datadir=$mysql_datadir --prepare --apply-redo-only \
       --target-dir=$FULL_DIR
   vlog "Log applied to backup"
 
-  xtrabackup --datadir=$mysql_datadir --prepare --apply-log-only \
-      --target-dir=$FULL_DIR --incremental-dir=$DELTA_DIR
+  xtrabackup --datadir=$mysql_datadir --prepare --apply-redo-only \
+      --target-dir=$FULL_DIR --prepare-incremental-from-dir=$DELTA_DIR
   vlog "Delta applied to backup"
 
   xtrabackup --datadir=$mysql_datadir --prepare --target-dir=$FULL_DIR
