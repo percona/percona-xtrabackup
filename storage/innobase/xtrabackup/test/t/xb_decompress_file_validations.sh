@@ -55,12 +55,12 @@ vlog "case#3 backup with compress&encryption and without modified file name"
 wait $insert_pid
 record_db_state test
 
-run_cmd xtrabackup --backup --target-dir=$topdir/inc1 --incremental-basedir=$topdir/backup --compress=zstd --encrypt=AES256 --encrypt-key=percona_xtrabackup_is_awesome___
+run_cmd xtrabackup --backup --target-dir=$topdir/inc1 --backup-incremental-base=$topdir/backup --compress=zstd --encrypt=AES256 --encrypt-key=percona_xtrabackup_is_awesome___
 
 run_cmd xtrabackup --target-dir=$topdir/backup --encrypt-key=percona_xtrabackup_is_awesome___ --decrypt=AES256 --decompress --parallel=4
 run_cmd xtrabackup --target-dir=$topdir/inc1 --encrypt-key=percona_xtrabackup_is_awesome___ --decrypt=AES256 --decompress --parallel=4
 run_cmd xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
-run_cmd xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc1
+run_cmd xtrabackup --prepare --target-dir=$topdir/backup --prepare-incremental-from-dir=$topdir/inc1
 
 # Restore
 stop_server

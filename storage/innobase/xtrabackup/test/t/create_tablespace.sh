@@ -46,7 +46,7 @@ INSERT INTO test.t2_3 VALUES (1100), (1200), (1300);
 EOF
 
 xtrabackup --backup --target-dir=$topdir/inc \
-	   --incremental-basedir=$topdir/full --lock-ddl=OFF \
+	   --backup-incremental-base=$topdir/full --lock-ddl=OFF \
 	   --debug-sync="data_copy_thread_func" &
 
 job_pid=$!
@@ -97,7 +97,7 @@ run_cmd wait $job_pid
 
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 
-xtrabackup --prepare --target-dir=$topdir/full --incremental-dir=$topdir/inc
+xtrabackup --prepare --target-dir=$topdir/full --prepare-incremental-from-dir=$topdir/inc
 
 record_db_state test
 

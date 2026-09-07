@@ -72,7 +72,7 @@ EOF
   # wait for InnoDB to flush all dirty pages
   innodb_wait_for_flush_all
 
-  xtrabackup --backup --incremental-basedir=$topdir/backup \
+  xtrabackup --backup --backup-incremental-base=$topdir/backup \
        --target-dir=$topdir/inc1 $backup_options
 
   run_cmd $MYSQL $MYSQL_ARGS test <<EOF
@@ -89,17 +89,17 @@ EOF
 
   sleep 3
 
-  xtrabackup --backup --incremental-basedir=$topdir/inc1 \
+  xtrabackup --backup --backup-incremental-base=$topdir/inc1 \
        --target-dir=$topdir/inc2 $backup_options
 
   kill -SIGKILL $uncommitted_id
 
   xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup \
        $prepare_options
-  xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc1 \
+  xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc1 \
        --target-dir=$topdir/backup $prepare_options
 
-  xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/inc2 \
+  xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc2 \
        --target-dir=$topdir/backup $prepare_options
 
   xtrabackup --prepare --export --target-dir=$topdir/backup \

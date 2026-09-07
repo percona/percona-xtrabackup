@@ -120,7 +120,7 @@ incremental_sample`
  
   # Incremental backup
   xtrabackup --datadir=$mysql_datadir --backup $ib_inc_extra_args  \
-      --target-dir=$topdir/delta --incremental-basedir=$topdir/full \
+      --target-dir=$topdir/delta --backup-incremental-base=$topdir/full \
       $suspend_arg &
 
   xb_pid=$!
@@ -144,7 +144,7 @@ incremental_sample`
   vlog "Log applied to backup"
   xtrabackup --datadir=$mysql_datadir --prepare \
       --apply-redo-only --target-dir=$topdir/full \
-      --incremental-dir=$topdir/delta
+      --prepare-incremental-from-dir=$topdir/delta
   vlog "Delta applied to backup"
   xtrabackup --datadir=$mysql_datadir --prepare \
       --target-dir=$topdir/full

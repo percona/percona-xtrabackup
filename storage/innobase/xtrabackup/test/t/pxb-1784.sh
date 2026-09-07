@@ -22,10 +22,10 @@ while true ; do
     mysql -e "ALTER UNDO TABLESPACE undo2 SET ACTIVE"
 done &
 
-xtrabackup --backup --incremental-basedir=$topdir/backup --target-dir=$topdir/inc
+xtrabackup --backup --backup-incremental-base=$topdir/backup --target-dir=$topdir/inc
 
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
-xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc
+xtrabackup --prepare --target-dir=$topdir/backup --prepare-incremental-from-dir=$topdir/inc
 
 stop_server
 

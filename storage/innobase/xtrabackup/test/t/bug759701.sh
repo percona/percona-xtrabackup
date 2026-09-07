@@ -29,14 +29,14 @@ vlog "Making incremental backup"
 # Incremental backup
 inc_backup_dir=$topdir/incremental_backup
 xtrabackup --backup \
-    --incremental-basedir=$full_backup_dir --target-dir=$inc_backup_dir
+    --backup-incremental-base=$full_backup_dir --target-dir=$inc_backup_dir
 vlog "Incremental backup created in directory $inc_backup_dir"
 
 vlog "Preparing backup"
 xtrabackup --prepare --apply-redo-only --target-dir=$full_backup_dir
 vlog "Log applied to full backup"
 
-xtrabackup --prepare --apply-redo-only --incremental-dir=$inc_backup_dir \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$inc_backup_dir \
     --target-dir=$full_backup_dir
 vlog "Delta applied to full backup"
 

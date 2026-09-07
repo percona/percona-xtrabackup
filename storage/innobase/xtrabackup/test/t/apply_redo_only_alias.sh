@@ -15,7 +15,7 @@ xtrabackup --backup --target-dir=$topdir/full
 
 mysql -e "INSERT INTO t1 (a) VALUES (10), (20), (30)" test
 
-xtrabackup --backup --incremental-basedir=$topdir/full \
+xtrabackup --backup --backup-incremental-base=$topdir/full \
 	   --target-dir=$topdir/inc
 
 record_db_state test
@@ -33,7 +33,7 @@ grep -q "backup_type = log-applied" $topdir/full/xtrabackup_checkpoints \
 	|| die "--apply-redo-only did not stop after redo apply"
 
 # The old spelling keeps working, on the same backup, and warns once.
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc \
+xtrabackup --prepare --apply-log-only --prepare-incremental-from-dir=$topdir/inc \
 	   --target-dir=$topdir/full
 
 grep -q "apply-log-only is deprecated and will be removed in a future release" \

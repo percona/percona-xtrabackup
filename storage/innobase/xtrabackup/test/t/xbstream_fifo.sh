@@ -30,19 +30,19 @@ wait ${insert_pid}
 run_insert &
 insert_pid=$!
 vlog "Test 2 - Taking inc1 backup"
-take_backup_fifo_xbstream ${topdir}/stream "--parallel=4 --fifo-streams=3 --incremental-basedir=${topdir}/full" "-x -C ${topdir}/inc1 --fifo-streams=3"
+take_backup_fifo_xbstream ${topdir}/stream "--parallel=4 --fifo-streams=3 --backup-incremental-base=${topdir}/full" "-x -C ${topdir}/inc1 --fifo-streams=3"
 wait ${insert_pid}
 vlog "Test 2 - Taking inc2 backup"
-take_backup_fifo_xbstream ${topdir}/stream "--parallel=2 --fifo-streams=3 --incremental-basedir=${topdir}/inc1" "-x -C ${topdir}/inc2 --fifo-streams=3 --parallel=6"
+take_backup_fifo_xbstream ${topdir}/stream "--parallel=2 --fifo-streams=3 --backup-incremental-base=${topdir}/inc1" "-x -C ${topdir}/inc2 --fifo-streams=3 --parallel=6"
 record_db_state test
 
 stop_server
 vlog "Test 2 - Preparing full backup"
 xtrabackup --prepare --apply-redo-only --target-dir=${topdir}/full
 vlog "Test 2 - Preparing inc1 backup"
-xtrabackup --prepare --apply-redo-only --target-dir=${topdir}/full --incremental-dir=${topdir}/inc1
+xtrabackup --prepare --apply-redo-only --target-dir=${topdir}/full --prepare-incremental-from-dir=${topdir}/inc1
 vlog "Test 2 - Preparing inc2 backup"
-xtrabackup --prepare --target-dir=${topdir}/full --incremental-dir=${topdir}/inc2
+xtrabackup --prepare --target-dir=${topdir}/full --prepare-incremental-from-dir=${topdir}/inc2
 rm -rf ${mysql_datadir}
 vlog "Test 2 - Runninc copy-back"
 xtrabackup --copy-back --target-dir=${topdir}/full

@@ -21,7 +21,7 @@ backup_dir1=$topdir/backup1
 
 xtrabackup --backup --galera-info --target-dir=$backup_dir
 
-xtrabackup --backup --galera-info --target-dir=$backup_dir1  --incremental-basedir=$backup_dir
+xtrabackup --backup --galera-info --target-dir=$backup_dir1  --backup-incremental-base=$backup_dir
 
 vlog "Backup created in directory $backup_dir"
 
@@ -36,7 +36,7 @@ then
     test -f $backup_dir/xtrabackup_galera_info ||
       die "xtrabackup_galera_info was not created"
 
-    xtrabackup --prepare --target-dir=$backup_dir --incremental-dir=$backup_dir1
+    xtrabackup --prepare --target-dir=$backup_dir --prepare-incremental-from-dir=$backup_dir1
 fi
 
 test -f $backup_dir/xtrabackup_galera_info ||

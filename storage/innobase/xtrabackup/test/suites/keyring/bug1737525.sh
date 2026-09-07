@@ -154,7 +154,7 @@ vlog "Making incremental backup"
 inc_backup_dir=$topdir/incremental_backup
 xtrabackup --datadir=$mysql_datadir --backup \
     --target-dir=$inc_backup_dir \
-    --incremental-basedir=$full_backup_dir \
+    --backup-incremental-base=$full_backup_dir \
     $keyring_args
 
 vlog "Incremental backup created in directory $inc_backup_dir"
@@ -170,7 +170,7 @@ vlog "Making incremental backup"
 inc_backup_dir2=$topdir/incremental_backup2
 xtrabackup --datadir=$mysql_datadir --backup \
     --target-dir=$inc_backup_dir2 \
-    --incremental-basedir=$inc_backup_dir \
+    --backup-incremental-base=$inc_backup_dir \
     $keyring_args
 
 vlog "Incremental backup 2 created in directory $inc_backup_dir2"
@@ -189,14 +189,14 @@ vlog "Log applied to full backup"
 xtrabackup --datadir=$mysql_datadir --prepare \
     --apply-redo-only \
     --target-dir=$full_backup_dir \
-    --incremental-dir=$inc_backup_dir \
+    --prepare-incremental-from-dir=$inc_backup_dir \
     --xtrabackup-plugin-dir=$plugin_dir \
     $keyring_args
 vlog "Delta applied to full backup"
 
 xtrabackup --datadir=$mysql_datadir --prepare \
     --target-dir=$full_backup_dir \
-    --incremental-dir=$inc_backup_dir2 \
+    --prepare-incremental-from-dir=$inc_backup_dir2 \
     --xtrabackup-plugin-dir=$plugin_dir \
     $keyring_args
 vlog "Delta2 applied to full backup"

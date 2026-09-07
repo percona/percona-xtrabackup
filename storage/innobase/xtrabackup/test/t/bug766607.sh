@@ -20,14 +20,14 @@ EOF
 force_checkpoint
 
 vlog "Making incremental backup"
-xtrabackup --backup --incremental-basedir=$topdir/backup/full --target-dir=$topdir/backup/delta
+xtrabackup --backup --backup-incremental-base=$topdir/backup/full --target-dir=$topdir/backup/delta
 
 vlog "Preparing full backup"
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup/full
 
 # The following would fail before the bugfix
 vlog "Applying incremental delta"
-xtrabackup --prepare --apply-redo-only --incremental-dir=$topdir/backup/delta --target-dir=$topdir/backup/full
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/backup/delta --target-dir=$topdir/backup/full
 
 vlog "Preparing full backup"
 xtrabackup --prepare --target-dir=$topdir/backup/full

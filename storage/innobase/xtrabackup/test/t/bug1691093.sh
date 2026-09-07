@@ -11,7 +11,7 @@ vlog "Incremental backup"
 
 xtrabackup --backup \
     --target-dir=$topdir/backup/delta \
-    --incremental-basedir=$topdir/backup/full
+    --backup-incremental-base=$topdir/backup/full
 
 vlog "Prepare full"
 
@@ -22,7 +22,7 @@ xtrabackup --prepare --apply-redo-only \
 vlog "Prepare incremental"
 xtrabackup --prepare --apply-redo-only \
     --throttle=40 \
-    --target-dir=$topdir/backup/full --incremental-dir=$topdir/backup/delta \
+    --target-dir=$topdir/backup/full --prepare-incremental-from-dir=$topdir/backup/delta \
     2>&1 | tee $topdir/pxb.log
 
 run_cmd grep '.*--throttle' $topdir/pxb.log
