@@ -693,6 +693,7 @@ enum options_xtrabackup {
   OPT_XTRA_PREPARE,
   OPT_XTRA_EXPORT,
   OPT_XTRA_APPLY_LOG_ONLY,
+  OPT_XTRA_APPLY_REDO_ONLY,
   OPT_XTRA_PRINT_PARAM,
   OPT_XTRA_USE_MEMORY,
   OPT_XTRA_USE_FREE_MEMORY_PCT,
@@ -887,13 +888,19 @@ struct my_option xb_client_options[] = {
      NO_ARG, 0, 0, 0, 0, 0, 0},
     {"check-tables", OPT_XTRA_CHECK_TABLES,
      "Validate all InnoDB B-tree indexes during --prepare. "
-     "Runs after redo apply (including --apply-log-only). "
+     "Runs after redo apply (including --apply-redo-only). "
      "Read-only: does not modify any InnoDB data.",
      (G_PTR *)&xtrabackup_check_tables, (G_PTR *)&xtrabackup_check_tables, 0,
      GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
+    {"apply-redo-only", OPT_XTRA_APPLY_REDO_ONLY,
+     "During --prepare, apply the redo log but skip undo, so that the LSN "
+     "does not progress past the applied redo. Use this on a base backup "
+     "that further incremental backups will be applied to.",
+     (G_PTR *)&xtrabackup_apply_log_only, (G_PTR *)&xtrabackup_apply_log_only,
+     0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"apply-log-only", OPT_XTRA_APPLY_LOG_ONLY,
-     "stop recovery process not to progress LSN after applying log when "
-     "prepare.",
+     "(deprecated) Synonym for --apply-redo-only. Will be removed in "
+     "a future release; use --apply-redo-only instead.",
      (G_PTR *)&xtrabackup_apply_log_only, (G_PTR *)&xtrabackup_apply_log_only,
      0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {"print-param", OPT_XTRA_PRINT_PARAM,
@@ -7091,7 +7098,7 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
     metadata_type = METADATA_FULL_BACKUP;
   } else if (!strcmp(metadata_type_str, "log-applied")) {
     xb::info() << "This target seems to be already prepared with "
-                  "--apply-log-only.";
+                  "--apply-redo-only.";
     metadata_type = METADATA_LOG_APPLIED;
     goto skip_check;
   } else if (!strcmp(metadata_type_str, "full-prepared")) {
@@ -7104,7 +7111,7 @@ static void xtrabackup_prepare_func(int argc, char **argv) {
 
   if (xtrabackup_incremental) {
     xb::error() << "applying incremental backup needs target prepared "
-                   "with --apply-log-only.";
+                   "with --apply-redo-only.";
     exit(EXIT_FAILURE);
   }
 skip_check:
@@ -7445,7 +7452,7 @@ skip_check:
     re-dirty them). Flush once so the on-disk image read by the checksum scan
     below equals the recovered state -- otherwise a raw read could see a stale
     or torn page and report a false positive. Flushing pages does not advance
-    the redo checkpoint, so this is safe under --apply-log-only too. */
+    the redo checkpoint, so this is safe under --apply-redo-only too. */
     buf_flush_sync_all_buf_pools();
 
     /* --check-tables only reads; redo has already been applied. Forbid the
@@ -7734,6 +7741,25 @@ bool xb_init() {
     xb::error() << mixed_options[0] << " and " << mixed_options[1]
                 << " are mutually exclusive";
     return (false);
+  }
+
+  /* --apply-log-only was renamed --apply-redo-only. Both spellings drive
+  xtrabackup_apply_log_only, so a command line carrying both is always
+  operator confusion rather than intent - reject it instead of picking one. */
+  {
+    const bool redo_only_set = check_if_param_set("apply-redo-only");
+    const bool log_only_set = check_if_param_set("apply-log-only");
+
+    if (redo_only_set && log_only_set) {
+      xb::error() << "--apply-log-only and --apply-redo-only are the same "
+                     "option; pass only one.";
+      return (false);
+    }
+
+    if (log_only_set) {
+      xb::warn() << "--apply-log-only is deprecated and will be removed in "
+                    "a future release. Please use --apply-redo-only instead.";
+    }
   }
 
   if (xtrabackup_backup) {
@@ -8518,7 +8544,7 @@ int main(int argc, char **argv) {
     read_metadata();
     if (strcmp(metadata_type_str, "full-prepared") != 0) {
       xb::error() << "The target is not fully prepared. Please prepare it "
-                     "without option --apply-log-only";
+                     "without option --apply-redo-only";
       exit(EXIT_FAILURE);
     }
 
