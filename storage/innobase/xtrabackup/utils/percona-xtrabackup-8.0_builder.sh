@@ -365,9 +365,12 @@ install_deps() {
             fi
         fi
     else
+        export OS_NAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+        if [ "${OS_NAME}" == "bullseye" ]; then
+           echo 'Acquire::Check-Valid-Until "false";' | tee /etc/apt/apt.conf.d/99no-check-valid-until
+        fi
         apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get -y install lsb-release gnupg git wget curl
-        export OS_NAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
         wget https://repo.percona.com/apt/percona-release_latest.$(lsb_release -sc)_all.deb && dpkg -i percona-release_latest.$(lsb_release -sc)_all.deb
         percona-release enable tools testing
         apt-get update
