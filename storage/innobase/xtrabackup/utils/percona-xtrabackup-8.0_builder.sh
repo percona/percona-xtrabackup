@@ -367,7 +367,12 @@ install_deps() {
     else
         export OS_NAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
         if [ "${OS_NAME}" == "bullseye" ]; then
-           echo 'Acquire::Check-Valid-Until "false";' | tee /etc/apt/apt.conf.d/99no-check-valid-until
+           sed -i -E '/bullseye(-security|-updates)?[[:space:]]/d' /etc/apt/sources.list
+cat <<'EOF' | sudo tee -a /etc/apt/sources.list
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260830T000000Z/ bullseye main
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260830T000000Z/ bullseye-updates main
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260830T000000Z/ bullseye-security main
+EOF
         fi
         apt-get update
         DEBIAN_FRONTEND=noninteractive apt-get -y install lsb-release gnupg git wget curl
