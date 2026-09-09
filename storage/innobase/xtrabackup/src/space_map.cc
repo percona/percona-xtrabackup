@@ -24,6 +24,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include <my_systime.h>
 
+#include <dict0dict.h>
 #include <fil0fil.h>
 #include <srv0srv.h>
 
@@ -63,32 +64,29 @@ std::string xb_tablespace_backup_file_path(const std::string &file_name) {
 
 Tablespace_map &Tablespace_map::instance() { return (static_tablespace_map); }
 
-/** Scan I_S.FILES for extended tablespaces.
+/** Scan I_S for extended tablespaces.
 @param[in]  connection MySQL connection object */
 void Tablespace_map::scan(MYSQL *connection) {
-  /* combine General and single tablespace */
+  /* Reading INNODB_TABLESPACES would open every .ibd */
   const char *query =
-      "SELECT T2.PATH, "
-      "       T2.NAME, "
-      "       T1.SPACE_TYPE "
-      "FROM   INFORMATION_SCHEMA.INNODB_TABLESPACES T1 "
-      "       JOIN INFORMATION_SCHEMA.INNODB_TABLESPACES_BRIEF T2 USING "
-      "(SPACE) "
-      "WHERE  T1.SPACE_TYPE = 'Single' && T1.ROW_FORMAT != 'Undo'"
-      "UNION "
-      "SELECT T2.PATH, "
-      "       SUBSTRING_INDEX(SUBSTRING_INDEX(T2.PATH, '/', -1), '.', 1) NAME, "
-      "       T1.SPACE_TYPE "
-      "FROM   INFORMATION_SCHEMA .INNODB_TABLESPACES T1 "
-      "       JOIN INFORMATION_SCHEMA .INNODB_TABLESPACES_BRIEF T2 USING "
-      "(SPACE) "
-      "WHERE  T1.SPACE_TYPE = 'General' && T1.ROW_FORMAT != 'Undo'";
+      "SELECT PATH, "
+      "       IF(SPACE_TYPE='General', "
+      "          SUBSTRING_INDEX(SUBSTRING_INDEX(PATH, '/', -1), '.', 1), "
+      "          NAME "
+      "       ) AS NAME, "
+      "       SPACE "
+      "FROM INFORMATION_SCHEMA.INNODB_TABLESPACES_BRIEF "
+      "WHERE SPACE_TYPE IN ('General', 'Single')";
   MYSQL_RES *mysql_result;
   MYSQL_ROW row;
 
   mysql_result = xb_mysql_query(connection, query, true);
 
   while ((row = mysql_fetch_row(mysql_result)) != nullptr) {
+    space_id_t space_id = static_cast<space_id_t>(strtoul(row[2], nullptr, 10));
+    /* BRIEF reports undo as SPACE_TYPE='Single'; drop undo and other
+       reserved/internal spaces here by space-id. */
+    if (dict_sys_t::is_reserved(space_id)) continue;
     const tablespace_t tablespace(row[0], row[1], TABLESPACE);
     add(tablespace);
   }
