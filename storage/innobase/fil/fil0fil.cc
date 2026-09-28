@@ -10738,10 +10738,6 @@ byte *fil_tablespace_redo_extend(byte *ptr, const byte *end,
                                  const page_id_t &page_id, ulint parsed_bytes,
                                  bool parse_only) {
   ut_a(page_id.page_no() == 0);
-
-  /* We never recreate the system tablespace. */
-  ut_a(page_id.space() != TRX_SYS_SPACE);
-
   ut_a(parsed_bytes != ULINT_UNDEFINED);
 
   /* Check for valid offset and size values */
