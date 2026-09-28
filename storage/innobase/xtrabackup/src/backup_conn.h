@@ -32,18 +32,20 @@ namespace xb {
 
 /** The server a connection is made to. */
 enum class Destination {
-  MAIN /** the server being backed up */
+  MAIN,   /** the server being backed up */
+  HISTORY /** the server holding PERCONA_SCHEMA.xtrabackup_history */
 };
 
 /** What a connection is for. It is named at the end of the line a connection
 announces itself with, so that the several connections a backup opens can be
 told apart in the log. */
 enum class Purpose {
-  BACKUP,       /** the main connection the backup runs on */
-  MDL_LOCK,     /** holds the MDL of --lock-ddl-per-table */
-  QUERY_KILLER, /** kills queries older than --kill-long-queries-timeout */
-  REDO_ARCHIVE, /** drives innodb_redo_log_archive_* */
-  REDO_CONSUMER /** registers the redo log consumer */
+  BACKUP,        /** the main connection the backup runs on */
+  MDL_LOCK,      /** holds the MDL of --lock-ddl-per-table */
+  QUERY_KILLER,  /** kills queries older than --kill-long-queries-timeout */
+  REDO_ARCHIVE,  /** drives innodb_redo_log_archive_* */
+  REDO_CONSUMER, /** registers the redo log consumer */
+  HISTORY_RECORD /** reads and writes PERCONA_SCHEMA.xtrabackup_history */
 };
 
 /** The TLS settings of a destination.
@@ -130,16 +132,21 @@ class Connection {
   std::optional<std::list<std::string>> m_granted_privileges{};
 };
 
-/** Whether the user described this destination, that is, whether any of the
-options that describe it was named.
+/** Reject the option combinations that cannot be served. Called before
+anything is copied.
+@return true if the options are usable */
+bool validate_connection_options();
+
+/** Whether the user described this destination. MAIN always; HISTORY only
+when at least one of the --history-* options was named.
 @param[in]	destination	server to ask about
 @return true if it was described */
 bool is_configured(Destination destination);
 
 /** Open a connection. The caller owns it and decides how long to keep it.
 
-Which server it goes to follows from what it is for, so a call site cannot
-pair a purpose with a server that has no business serving it.
+Which server it goes to follows from what it is for, so a purpose belonging
+to the backup cannot be asked of the history server by mistake.
 @param[in]	purpose		what the connection is for
 @param[in,out]	connection	connection to open, which must not be
 open already
@@ -157,6 +164,9 @@ void close_connections();
 
 /** The connection the backup runs on. */
 xb::Connection &main_conn();
+
+/** The connection the backup history record is read and written over. */
+xb::Connection &history_conn();
 
 /** A server variable to read and the place to put its value. */
 struct mysql_variable {

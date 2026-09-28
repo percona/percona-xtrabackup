@@ -110,11 +110,20 @@ grep_in_history_table "-p$password_string --encrypt=AES256 --encrypt-key=r______
 vlog "check for --password and encryption string in history table"
 grep_in_history_table "--password=$password_string --encrypt=AES256 --encrypt-key=r______$password_string"
 
+### --history-password reaches the same scrubbing as --password. With no
+### --history-user given the history connection authenticates as -u pxb, so
+### the value has to be the password of that account.
+vlog "check for --history-password in history table"
+grep_in_history_table "--password=$password_string --history-password=$password_string"
+
 vlog "check for $password_string with -p option in data directory"
 grep_in_datadir_ps "-p$password_string"
 
 vlog "check for $password_string with --password option in data directory"
 grep_in_datadir_ps "--password=$password_string"
+
+vlog "check for $password_string with --history-password option in data directory"
+grep_in_datadir_ps "--password=$password_string --history --history-password=$password_string"
 
 vlog "check for encryption string in data directory"
 grep_in_datadir_ps "--password=$password_string --encrypt=AES256 --encrypt-key=r______$password_string"

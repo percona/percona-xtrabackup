@@ -201,6 +201,8 @@ char *get_xtrabackup_info(MYSQL *connection);
 
 bool write_xtrabackup_info(MYSQL *connection);
 
+void write_history_record(MYSQL *connection, MYSQL *history);
+
 bool write_backup_config_file();
 
 bool lock_tables_for_backup(MYSQL *connection, int timeout, int retry_count);

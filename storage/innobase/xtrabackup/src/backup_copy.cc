@@ -1692,8 +1692,17 @@ bool backup_finish(Backup_context &context) {
     return (false);
   }
 
+  /* The backup is finished. Both the xtrabackup_info file and the history
+  record carry the time it finished, so it is read here rather than by
+  whichever of the two happens to be written first. */
+  history_end_time = time(NULL);
+
   if (!write_xtrabackup_info(main_conn())) {
     return (false);
+  }
+
+  if (opt_history != nullptr) {
+    write_history_record(main_conn(), history_conn());
   }
 
   report_backup_size();

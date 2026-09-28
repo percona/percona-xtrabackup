@@ -607,7 +607,7 @@ static bool select_incremental_lsn_from_history(lsn_t *incremental_lsn) {
   char buf[100];
 
   if (opt_incremental_history_name) {
-    mysql_real_escape_string(main_conn(), buf, opt_incremental_history_name,
+    mysql_real_escape_string(history_conn(), buf, opt_incremental_history_name,
                              strlen(opt_incremental_history_name));
     snprintf(query, sizeof(query),
              "SELECT innodb_to_lsn "
@@ -619,7 +619,7 @@ static bool select_incremental_lsn_from_history(lsn_t *incremental_lsn) {
   }
 
   if (opt_incremental_history_uuid) {
-    mysql_real_escape_string(main_conn(), buf, opt_incremental_history_uuid,
+    mysql_real_escape_string(history_conn(), buf, opt_incremental_history_uuid,
                              strlen(opt_incremental_history_uuid));
     snprintf(query, sizeof(query),
              "SELECT innodb_to_lsn "
@@ -630,7 +630,7 @@ static bool select_incremental_lsn_from_history(lsn_t *incremental_lsn) {
              buf);
   }
 
-  mysql_result = xb_mysql_query(main_conn(), query, true);
+  mysql_result = xb_mysql_query(history_conn(), query, true);
 
   ut_ad(mysql_num_fields(mysql_result) == 1);
   if (!(row = mysql_fetch_row(mysql_result))) {
@@ -1757,16 +1757,17 @@ char *get_xtrabackup_info(MYSQL *connection) {
 }
 
 /*********************************************************************/ /**
- Writes xtrabackup_info file and if backup_history is enable creates
- PERCONA_SCHEMA.xtrabackup_history and writes a new history record to the
- table containing all the history info particular to the just completed
- backup. */
-bool write_xtrabackup_info(MYSQL *connection) {
+ Creates PERCONA_SCHEMA.xtrabackup_history if it is not there yet and inserts
+ the record describing the backup that has just completed. Everything the
+ record says about the server that was backed up has already been read from
+ it, so this talks to the history server alone.
+ @param[in]	history_conn		the server the record is stored on
+ @param[in]	uuid		uuid of the backup
+ @param[in]	server_version	version of the server that was backed up */
+static void insert_history_record(MYSQL *history_conn, const char *uuid,
+                                  const char *server_version) {
   MYSQL_STMT *stmt;
   MYSQL_BIND bind[19];
-  const char *uuid = NULL;
-  char *server_version = NULL;
-  char *xtrabackup_info_data = NULL;
   int idx;
   bool null = true;
 
@@ -1782,23 +1783,10 @@ bool write_xtrabackup_info(MYSQL *connection) {
 
   ut_ad((uint)xtrabackup_stream_fmt < array_elements(xb_stream_format_name));
   const char *stream_format_name = xb_stream_format_name[xtrabackup_stream_fmt];
-  history_end_time = time(NULL);
 
-  xtrabackup_info_data = get_xtrabackup_info(connection);
-  if (!backup_file_printf(XTRABACKUP_INFO, "%s", xtrabackup_info_data)) {
-    goto cleanup;
-  }
-
-  if (!opt_history) {
-    goto cleanup;
-  }
-
-  uuid = get_backup_uuid(connection);
-  server_version = read_mysql_one_value(connection, "SELECT VERSION()");
-
-  xb_mysql_query(connection, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA",
+  xb_mysql_query(history_conn, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA",
                  false);
-  xb_mysql_query(connection,
+  xb_mysql_query(history_conn,
                  "CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history("
                  "uuid VARCHAR(40) NOT NULL PRIMARY KEY,"
                  "name VARCHAR(255) DEFAULT NULL,"
@@ -1823,14 +1811,28 @@ bool write_xtrabackup_info(MYSQL *connection) {
                  false);
 
   /* Upgrade from previous versions */
-  xb_mysql_query(connection,
+  xb_mysql_query(history_conn,
                  "ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN "
                  "binlog_pos TEXT DEFAULT NULL",
                  false);
 
-  stmt = mysql_stmt_init(connection);
+  /* A record that cannot be written is reported, but it does not fail the
+  backup: the backup itself has been taken successfully by this point. What it
+  must not do is go missing without a word, which is what used to happen. */
+  stmt = mysql_stmt_init(history_conn);
+  if (stmt == nullptr) {
+    xb::warn() << "failed to allocate the statement writing the backup "
+                  "history record: "
+               << mysql_error(history_conn);
+    goto cleanup;
+  }
 
-  mysql_stmt_prepare(stmt, ins_query, strlen(ins_query));
+  if (mysql_stmt_prepare(stmt, ins_query, strlen(ins_query))) {
+    xb::warn() << "failed to prepare the backup history record: "
+               << mysql_stmt_error(stmt);
+    mysql_stmt_close(stmt);
+    goto cleanup;
+  }
 
   memset(bind, 0, sizeof(bind));
   idx = 0;
@@ -1876,7 +1878,7 @@ bool write_xtrabackup_info(MYSQL *connection) {
 
   /* server_version */
   bind[idx].buffer_type = MYSQL_TYPE_STRING;
-  bind[idx].buffer = server_version;
+  bind[idx].buffer = (char *)server_version;
   bind[idx].buffer_length = strlen(server_version);
   ++idx;
 
@@ -1962,17 +1964,51 @@ bool write_xtrabackup_info(MYSQL *connection) {
 
   ut_ad(idx == 19);
 
-  mysql_stmt_bind_named_param(stmt, bind, sizeof(bind)/sizeof(bind[0]), nullptr);
+  if (mysql_stmt_bind_named_param(stmt, bind, sizeof(bind) / sizeof(bind[0]),
+                                  nullptr)) {
+    xb::warn() << "failed to bind the backup history record: "
+               << mysql_stmt_error(stmt);
+  } else if (mysql_stmt_execute(stmt)) {
+    xb::warn() << "failed to write the backup history record: "
+               << mysql_stmt_error(stmt);
+  }
 
-  mysql_stmt_execute(stmt);
   mysql_stmt_close(stmt);
 
 cleanup:
+  return;
+}
+
+/*********************************************************************/ /**
+ Writes the xtrabackup_info file.
+ @param[in]	connection	the server that was backed up
+ @return true if the file was written */
+bool write_xtrabackup_info(MYSQL *connection) {
+  char *xtrabackup_info_data = get_xtrabackup_info(connection);
+  const bool written =
+      backup_file_printf(XTRABACKUP_INFO, "%s", xtrabackup_info_data);
 
   free(xtrabackup_info_data);
-  free(server_version);
 
-  return (true);
+  return (written);
+}
+
+/*********************************************************************/ /**
+ Records the backup in PERCONA_SCHEMA.xtrabackup_history.
+
+ The record describes the server that was backed up and is stored on the
+ server that keeps the history, which are the same server unless a history
+ destination was described. This is the one place that needs both of them, and
+ only to carry two values from the first to the second.
+ @param[in]	connection	the server that was backed up
+ @param[in]	history		the server the record is stored on */
+void write_history_record(MYSQL *connection, MYSQL *history) {
+  const char *uuid = get_backup_uuid(connection);
+  char *server_version = read_mysql_one_value(connection, "SELECT VERSION()");
+
+  insert_history_record(history, uuid, server_version);
+
+  free(server_version);
 }
 
 bool write_backup_config_file() {
@@ -2029,6 +2065,14 @@ static char *make_argv(char *buf, size_t len, int argc, char **argv) {
     }
     if (strncmp(*argv, "-p", strlen("-p")) == 0) {
       arg = "-p=...";
+    }
+    if (strncmp(*argv, "--history-password", strlen("--history-password")) ==
+        0) {
+      arg = "--history-password=...";
+    }
+    if (strncmp(*argv, "--history_password", strlen("--history_password")) ==
+        0) {
+      arg = "--history_password=...";
     }
     if (strncmp(*argv, "--encrypt-key", strlen("--encrypt-key")) == 0) {
       arg = "--encrypt-key=...";
