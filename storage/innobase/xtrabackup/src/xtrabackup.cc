@@ -2932,7 +2932,7 @@ bool xb_write_delta_metadata(const char *filename,
 }
 
 static bool xtrabackup_write_info(const char *filepath) {
-  char *xtrabackup_info_data = get_xtrabackup_info(mysql_connection);
+  char *xtrabackup_info_data = get_xtrabackup_info(main_conn());
   if (!xtrabackup_info_data) {
     return false;
   }
@@ -4186,7 +4186,7 @@ static void xb_tables_compatibility_check() {
       "  'performance_schema', 'information_schema', "
       "  'mysql');";
 
-  MYSQL_RES *result = xb_mysql_query(mysql_connection, query, true, true);
+  MYSQL_RES *result = xb_mysql_query(main_conn(), query, true, true);
   MYSQL_ROW row;
   if (!result) {
     return;
@@ -4267,7 +4267,7 @@ void xtrabackup_backup_func(void) {
   init_mysql_environment();
 
   if (opt_dump_innodb_buffer_pool) {
-    dump_innodb_buffer_pool(mysql_connection);
+    dump_innodb_buffer_pool(main_conn());
   }
 
 #ifdef USE_POSIX_FADVISE
@@ -4294,7 +4294,7 @@ void xtrabackup_backup_func(void) {
   srv_backup_mode = true;
 
   if (opt_lock_ddl == LOCK_DDL_ON) {
-    xb_dd_spaces = xb::backup::build_space_id_set(mysql_connection);
+    xb_dd_spaces = xb::backup::build_space_id_set(main_conn());
     ut_ad(xb_dd_spaces->size());
   } else if (opt_lock_ddl == LOCK_DDL_REDUCED) {
     ddl_tracker = new ddl_tracker_t;
@@ -4370,13 +4370,13 @@ void xtrabackup_backup_func(void) {
   }
 
   if (have_keyring_component &&
-      !xtrabackup::components::keyring_init_online(mysql_connection)) {
+      !xtrabackup::components::keyring_init_online(main_conn())) {
     xb::error() << "failed to init keyring component";
     exit(EXIT_FAILURE);
   }
 
   if (!xtrabackup::components::keyring_component_initialized &&
-      !xb_keyring_init_for_backup(mysql_connection)) {
+      !xb_keyring_init_for_backup(main_conn())) {
     xb::error() << "failed to init keyring plugin";
     exit(EXIT_FAILURE);
   }
@@ -4465,7 +4465,7 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
-  Tablespace_map::instance().scan(mysql_connection);
+  Tablespace_map::instance().scan(main_conn());
 
   /* Populate fil_system with tablespaces to copy */
   dberr_t err = xb_load_tablespaces();
@@ -4478,7 +4478,7 @@ void xtrabackup_backup_func(void) {
 
   lsn_t page_tracking_start_lsn = 0;
   if (opt_page_tracking &&
-      pagetracking::start(mysql_connection, &page_tracking_start_lsn)) {
+      pagetracking::start(main_conn(), &page_tracking_start_lsn)) {
     xb::info() << "pagetracking is started on the server with LSN "
                << page_tracking_start_lsn;
   }
@@ -4486,8 +4486,8 @@ void xtrabackup_backup_func(void) {
   if (xtrabackup_incremental) {
     incremental_start_checkpoint_lsn = redo_mgr.get_start_checkpoint_lsn();
     if (!xtrabackup_incremental_force_scan && opt_page_tracking) {
-      changed_page_tracking = pagetracking::init(
-          redo_mgr.get_start_checkpoint_lsn(), mysql_connection);
+      changed_page_tracking =
+          pagetracking::init(redo_mgr.get_start_checkpoint_lsn(), main_conn());
     }
 
     if (changed_page_tracking) {
@@ -7633,16 +7633,16 @@ bool xb_init() {
     }
 #endif
 
-    if ((mysql_connection = xb_mysql_connect()) == NULL) {
+    if (!xb::open_connections()) {
       return (false);
     }
 
-    if (!get_mysql_vars(mysql_connection)) {
+    if (!get_mysql_vars(main_conn())) {
       return (false);
     }
 
     if (opt_page_tracking &&
-        !pagetracking::is_component_installed(mysql_connection)) {
+        !pagetracking::is_component_installed(main_conn())) {
       xb::error() << "pagetracking: Please install mysqlbackup "
                   << "component.(INSTALL COMPONENT "
                   << "\"file://component_mysqlbackup\") to "
@@ -7663,17 +7663,17 @@ bool xb_init() {
 
     /* stop slave before taking backup up locks if lock-ddl=ON*/
     if (!opt_no_lock && opt_lock_ddl == LOCK_DDL_ON && opt_safe_slave_backup) {
-      if (!wait_for_safe_slave(mysql_connection)) {
+      if (!wait_for_safe_slave(main_conn())) {
         return (false);
       }
     }
 
     if (opt_lock_ddl == LOCK_DDL_ON &&
-        !lock_tables_for_backup(mysql_connection, opt_lock_ddl_timeout, 0)) {
+        !lock_tables_for_backup(main_conn(), opt_lock_ddl_timeout, 0)) {
       return (false);
     }
 
-    parse_show_engine_innodb_status(mysql_connection);
+    parse_show_engine_innodb_status(main_conn());
   }
 
   return (true);
@@ -7772,19 +7772,14 @@ static int check_privilege(
  command-line arguments and prints missing privileges.
  May terminate application with EXIT_FAILURE exit code.*/
 static void check_all_privileges() {
-  if (!mysql_connection) {
+  if (!main_conn()) {
     /* Not connected, no queries is going to be executed. */
     return;
   }
 
   /* Fetch effective privileges. */
-  std::list<std::string> granted_privileges;
-  MYSQL_ROW row = 0;
-  MYSQL_RES *result = xb_mysql_query(mysql_connection, "SHOW GRANTS", true);
-  while ((row = mysql_fetch_row(result))) {
-    granted_privileges.push_back(*row);
-  }
-  mysql_free_result(result);
+  const std::list<std::string> &granted_privileges =
+      main_conn().granted_privileges();
 
   int check_result = PRIVILEGE_OK;
   bool reload_checked = false;
@@ -7806,11 +7801,11 @@ static void check_all_privileges() {
   /* SHOW FULL PROCESSLIST */
   check_result |= check_privilege(granted_privileges, "PROCESS", "*", "*");
 
-  if (xb_mysql_numrows(mysql_connection,
-                       "SHOW DATABASES LIKE 'PERCONA_SCHEMA';", false) == 0) {
+  if (xb_mysql_numrows(main_conn(), "SHOW DATABASES LIKE 'PERCONA_SCHEMA';",
+                       false) == 0) {
     /* CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA */
     check_result |= check_privilege(granted_privileges, "CREATE", "*", "*");
-  } else if (xb_mysql_numrows(mysql_connection,
+  } else if (xb_mysql_numrows(main_conn(),
                               "SHOW TABLES IN PERCONA_SCHEMA "
                               "LIKE 'xtrabackup_history';",
                               false) == 0) {

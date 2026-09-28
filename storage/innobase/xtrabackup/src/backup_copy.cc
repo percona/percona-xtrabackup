@@ -1069,7 +1069,7 @@ bool backup_files(const char *from, bool prep_mode, Backup_context &context) {
       and potentially wait for it to complete
       is only executed before FTWRL - prep_mode */
       if (prep_mode && opt_dump_innodb_buffer_pool) {
-        check_dump_innodb_buffer_pool(mysql_connection);
+        check_dump_innodb_buffer_pool(main_conn());
       }
       fprintf(rsync_tmpfile, "%s\n", buffer_pool_filename);
       rsync_list.insert(buffer_pool_filename);
@@ -1409,7 +1409,7 @@ bool backup_start(Backup_context &context) {
   if (!opt_no_lock) {
     /* STOP SLAVE if lock-ddl=OFF */
     if (opt_lock_ddl != LOCK_DDL_ON && opt_safe_slave_backup) {
-      if (!wait_for_safe_slave(mysql_connection)) {
+      if (!wait_for_safe_slave(main_conn())) {
         return (false);
       }
     }
@@ -1427,7 +1427,7 @@ bool backup_start(Backup_context &context) {
         context.ts_key_dumper->dump_from_spaces(true);
       }
 
-      if (!lock_tables_for_backup(mysql_connection, opt_backup_lock_timeout,
+      if (!lock_tables_for_backup(main_conn(), opt_backup_lock_timeout,
                                   opt_backup_lock_retry_count)) {
         return (false);
       }
@@ -1446,10 +1446,10 @@ bool backup_start(Backup_context &context) {
        */
       if (have_flush_engine_logs) {
         xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...";
-        xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS",
+        xb_mysql_query(main_conn(), "FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS",
                        false);
       }
-      log_status_get(mysql_connection, true);
+      log_status_get(main_conn(), true);
       xb::info() << "DDL tracking :  log_status current checkpoint lsn is "
                  << log_status.lsn_checkpoint << " and current lsn is "
                  << log_status.lsn;
@@ -1461,7 +1461,7 @@ bool backup_start(Backup_context &context) {
 
     history_lock_time = time(NULL);
 
-    if (!lock_tables_maybe(mysql_connection, opt_backup_lock_timeout,
+    if (!lock_tables_maybe(main_conn(), opt_backup_lock_timeout,
                            opt_backup_lock_retry_count)) {
       return (false);
     }
@@ -1475,7 +1475,7 @@ bool backup_start(Backup_context &context) {
   --no-lock option is used because --no-lock option requires that no DDL or
   DML to non-transaction tables can occur. */
   if (opt_no_lock && opt_safe_slave_backup) {
-    if (!wait_for_safe_slave(mysql_connection)) {
+    if (!wait_for_safe_slave(main_conn())) {
       return (false);
     }
   }
@@ -1484,7 +1484,7 @@ bool backup_start(Backup_context &context) {
     int elapsed_time = 0, n = 0;
     do {
       using namespace std::chrono;
-      context.myrocks_checkpoint.create(mysql_connection, false);
+      context.myrocks_checkpoint.create(main_conn(), false);
       auto start_time =
           duration_cast<seconds>(system_clock::now().time_since_epoch())
               .count();
@@ -1507,7 +1507,7 @@ bool backup_start(Backup_context &context) {
   }
 
   if (have_rocksdb) {
-    context.myrocks_checkpoint.create(mysql_connection, true);
+    context.myrocks_checkpoint.create(main_conn(), true);
   }
 
   if (ddl_tracker != nullptr) {
@@ -1530,10 +1530,9 @@ bool backup_start(Backup_context &context) {
   }
 
   xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG BINARY LOGS";
-  xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG BINARY LOGS",
-                 false);
+  xb_mysql_query(main_conn(), "FLUSH NO_WRITE_TO_BINLOG BINARY LOGS", false);
 
-  log_status_get(mysql_connection, false);
+  log_status_get(main_conn(), false);
 
   /* Wait until we have checkpoint LSN greater than the page tracking start LSN.
   Page tracking start LSN is system LSN (lets say 105) and Backup End LSN is
@@ -1545,7 +1544,7 @@ bool backup_start(Backup_context &context) {
 
   if (opt_page_tracking) {
     auto page_tracking_start_lsn =
-        pagetracking::get_pagetracking_start_lsn(mysql_connection);
+        pagetracking::get_pagetracking_start_lsn(main_conn());
     debug_sync_point("xtrabackup_after_wait_page_tracking");
     while (true) {
       DBUG_EXECUTE_IF("page_tracking_checkpoint_behind",
@@ -1563,14 +1562,14 @@ bool backup_start(Backup_context &context) {
                    << " to reach to page tracking start lsn "
                    << page_tracking_start_lsn;
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        log_status_get(mysql_connection, false);
+        log_status_get(main_conn(), false);
       }
     }
   }
 
   debug_sync_point("xtrabackup_after_query_log_status");
 
-  if (!write_current_binlog_file(mysql_connection)) {
+  if (!write_current_binlog_file(main_conn())) {
     return (false);
   }
 
@@ -1582,17 +1581,16 @@ bool backup_start(Backup_context &context) {
   }
 
   if (opt_slave_info) {
-    if (!write_slave_info(mysql_connection)) {
+    if (!write_slave_info(main_conn())) {
       return (false);
     }
   }
 
-  write_binlog_info(mysql_connection);
+  write_binlog_info(main_conn());
 
   if (have_flush_engine_logs) {
     xb::info() << "Executing FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS...";
-    xb_mysql_query(mysql_connection, "FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS",
-                   false);
+    xb_mysql_query(main_conn(), "FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS", false);
   }
 
   return (true);
@@ -1647,7 +1645,7 @@ static void report_backup_size() {
 bool backup_finish(Backup_context &context) {
   /* release all locks */
   if (!opt_no_lock) {
-    unlock_all(mysql_connection);
+    unlock_all(main_conn());
     history_lock_time = time(NULL) - history_lock_time;
   } else {
     history_lock_time = 0;
@@ -1655,13 +1653,13 @@ bool backup_finish(Backup_context &context) {
 
   if (opt_safe_slave_backup && sql_thread_started) {
     xb::info() << "Starting slave SQL thread";
-    xb_mysql_query(mysql_connection, "START REPLICA SQL_THREAD", false);
+    xb_mysql_query(main_conn(), "START REPLICA SQL_THREAD", false);
   }
 
   /* Copy buffer pool dump or LRU dump */
   if (!opt_rsync) {
     if (opt_dump_innodb_buffer_pool) {
-      check_dump_innodb_buffer_pool(mysql_connection);
+      check_dump_innodb_buffer_pool(main_conn());
     }
     if (buffer_pool_filename && file_exists(buffer_pool_filename)) {
       const char *dst_name;
@@ -1694,7 +1692,7 @@ bool backup_finish(Backup_context &context) {
     return (false);
   }
 
-  if (!write_xtrabackup_info(mysql_connection)) {
+  if (!write_xtrabackup_info(main_conn())) {
     return (false);
   }
 

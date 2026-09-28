@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <unordered_set>
 #include <vector>
 
+#include "backup_conn.h"
 #include "redo_log.h"
 #include "xtrabackup.h"
 
@@ -72,11 +73,6 @@ struct log_status_t {
     channels.clear();
     rocksdb_wal_files.clear();
   }
-};
-
-struct mysql_variable {
-  const char *name;
-  char **value;
 };
 
 #define ROCKSDB_SUBDIR ".rocksdb"
@@ -174,9 +170,6 @@ extern std::string mysql_slave_position;
 extern std::string mysql_binlog_position;
 extern char *buffer_pool_filename;
 
-/** connection to mysql server */
-extern MYSQL *mysql_connection;
-
 void capture_tool_command(int argc, char **argv);
 
 bool select_history();
@@ -186,21 +179,6 @@ void backup_cleanup();
 bool get_mysql_vars(MYSQL *connection);
 
 bool detect_mysql_capabilities_for_backup();
-
-MYSQL *xb_mysql_connect();
-
-MYSQL_RES *xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
-                          bool die_on_error = true);
-
-my_ulonglong xb_mysql_numrows(MYSQL *connection, const char *query,
-                              bool die_on_error);
-
-char *read_mysql_one_value(MYSQL *connection, const char *query);
-
-void read_mysql_variables(MYSQL *connection, const char *query,
-                          mysql_variable *vars, bool vertical_result);
-
-void free_mysql_variables(mysql_variable *vars);
 
 void unlock_all(MYSQL *connection);
 
