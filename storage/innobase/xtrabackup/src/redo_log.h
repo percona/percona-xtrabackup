@@ -29,6 +29,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <unordered_map>
 #include <vector>
 
+#include "backup_conn.h"
 #include "datasink.h"
 #include "redo_log_consumer.h"
 
@@ -380,7 +381,7 @@ class Redo_Log_Data_Manager {
   Redo_Log_Consumer redo_log_consumer;
 
   /** MySQL connection to register redo log consumer */
-  MYSQL *redo_log_consumer_cnx = nullptr;
+  xb::Connection redo_log_consumer_cnx;
 
   enum {
     ARCHIVED_LOG_NONE,

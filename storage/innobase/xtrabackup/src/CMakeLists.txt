@@ -69,6 +69,7 @@ INCLUDE_DIRECTORIES(
 
 MY_ADD_COMPILE_DEFINITIONS(
   xtrabackup.cc
+  backup_conn.cc
   backup_mysql.cc
   file_utils.cc
   xb_dict.cc
@@ -98,6 +99,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbcrypt_common.cc
   xbcrypt_write.cc
   xbstream_write.cc
+  backup_conn.cc
   backup_mysql.cc
   xb_dict.cc
   backup_copy.cc

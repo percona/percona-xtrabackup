@@ -533,6 +533,17 @@ uint opt_backup_lock_timeout = 0;
 uint opt_backup_lock_retry_count = 0;
 
 const char *opt_history = NULL;
+char *opt_history_user = NULL;
+char *opt_history_password = NULL;
+char *opt_history_host = NULL;
+uint opt_history_port = 0;
+char *opt_history_socket = NULL;
+uint opt_history_ssl_mode = SSL_MODE_PREFERRED;
+char *opt_history_ssl_ca = NULL;
+char *opt_history_ssl_capath = NULL;
+char *opt_history_ssl_cert = NULL;
+char *opt_history_ssl_key = NULL;
+
 bool opt_decrypt = false;
 uint opt_read_buffer_size = 0;
 
@@ -825,6 +836,16 @@ enum options_xtrabackup {
   OPT_LOCK_WAIT_QUERY_TYPE,
   OPT_KILL_LONG_QUERY_TYPE,
   OPT_HISTORY,
+  OPT_HISTORY_HOST,
+  OPT_HISTORY_PORT,
+  OPT_HISTORY_USER,
+  OPT_HISTORY_PASSWORD,
+  OPT_HISTORY_SOCKET,
+  OPT_HISTORY_SSL_MODE,
+  OPT_HISTORY_SSL_CA,
+  OPT_HISTORY_SSL_CAPATH,
+  OPT_HISTORY_SSL_CERT,
+  OPT_HISTORY_SSL_KEY,
   OPT_KILL_LONG_QUERIES_TIMEOUT,
   OPT_LOCK_WAIT_TIMEOUT,
   OPT_LOCK_WAIT_THRESHOLD,
@@ -1386,6 +1407,80 @@ struct my_option xb_client_options[] = {
      "series name may be specified that will be placed with the history "
      "record for the current backup being taken.",
      NULL, NULL, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-host", OPT_HISTORY_HOST,
+     "This option specifies the host of the server that holds the backup "
+     "history table, for when the record cannot be written to the server "
+     "being backed up, such as a read only replica. It accepts a string "
+     "argument and defaults to the value of --host. Naming it drops the "
+     "socket of the server being backed up, which does not describe another "
+     "host.",
+     (uchar *)&opt_history_host, (uchar *)&opt_history_host, 0, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-port", OPT_HISTORY_PORT,
+     "This option specifies the port to use when connecting to the server "
+     "that holds the backup history table with TCP/IP. It accepts a numeric "
+     "argument and defaults to the value of --port.",
+     &opt_history_port, &opt_history_port, 0, GET_UINT, REQUIRED_ARG, 0, 0,
+     65535, 0, 0, 0},
+
+    {"history-socket", OPT_HISTORY_SOCKET,
+     "This option specifies the UNIX domain socket of the server that holds "
+     "the backup history table. It accepts a string argument and defaults to "
+     "the value of --socket when no history host is named.",
+     (uchar *)&opt_history_socket, (uchar *)&opt_history_socket, 0, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-user", OPT_HISTORY_USER,
+     "This option specifies the MySQL username used when connecting to the "
+     "server that holds the backup history table. It accepts a string "
+     "argument and defaults to the value of --user. Naming it means the "
+     "password is taken from --history-password alone, because --password "
+     "belongs to the backup account.",
+     (uchar *)&opt_history_user, (uchar *)&opt_history_user, 0, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-password", OPT_HISTORY_PASSWORD,
+     "This option specifies the password to use when connecting to the "
+     "server that holds the backup history table. It accepts a string "
+     "argument and defaults to the value of --password, unless "
+     "--history-user is named, in which case no password is inherited.",
+     0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-ssl-mode", OPT_HISTORY_SSL_MODE,
+     "This option specifies the security state of the connection to the "
+     "server that holds the backup history table. It accepts the same values "
+     "as --ssl-mode. Naming --history-ssl-ca or --history-ssl-capath raises "
+     "it to VERIFY_CA unless it is set here.",
+     0, 0, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-ssl-ca", OPT_HISTORY_SSL_CA,
+     "This option specifies the CA file in PEM format used to verify the "
+     "certificate of the server that holds the backup history table.",
+     (uchar *)&opt_history_ssl_ca, (uchar *)&opt_history_ssl_ca, 0, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-ssl-capath", OPT_HISTORY_SSL_CAPATH,
+     "This option specifies the directory of CA certificates used to verify "
+     "the certificate of the server that holds the backup history table.",
+     (uchar *)&opt_history_ssl_capath, (uchar *)&opt_history_ssl_capath, 0,
+     GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-ssl-cert", OPT_HISTORY_SSL_CERT,
+     "This option specifies the X509 certificate in PEM format presented to "
+     "the server that holds the backup history table.",
+     (uchar *)&opt_history_ssl_cert, (uchar *)&opt_history_ssl_cert, 0, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"history-ssl-key", OPT_HISTORY_SSL_KEY,
+     "This option specifies the X509 key in PEM format belonging to "
+     "--history-ssl-cert. Naming any of the --history-ssl-* options means all "
+     "five of them are taken from --history-ssl-* and none is inherited from "
+     "--ssl-*, so that trust material belonging to one server is never paired "
+     "with credentials belonging to another.",
+     (uchar *)&opt_history_ssl_key, (uchar *)&opt_history_ssl_key, 0, GET_STR,
+     REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
     {"kill-long-queries-timeout", OPT_KILL_LONG_QUERIES_TIMEOUT,
      "This option specifies the number of seconds innobackupex waits "
@@ -1964,8 +2059,8 @@ bool check_if_param_set(const char *param) {
 }
 
 bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
-  static const char *hide_value[] = {"password", "encrypt-key",
-                                     "transition-key"};
+  static const char *hide_value[] = {"password", "history-password",
+                                     "encrypt-key", "transition-key"};
 
   param_str << "--" << opt->name;
   if (argument) {
@@ -2152,6 +2247,17 @@ bool xb_get_one_option(int optid, const struct my_option *opt, char *argument) {
       } else {
         opt_history = "";
       }
+      break;
+    case OPT_HISTORY_PASSWORD:
+      if (argument == disabled_my_option)
+        argument = (char *)""; /* Don't require password */
+      if (argument) {
+        hide_option(argument, &opt_history_password);
+      }
+      break;
+    case OPT_HISTORY_SSL_MODE:
+      opt_history_ssl_mode =
+          find_type_or_exit(argument, &ssl_mode_typelib, opt->name);
       break;
     case OPT_LOCK_DDL:
       if (argument == NULL || strcasecmp(argument, "on") == 0 ||
@@ -2987,7 +3093,7 @@ bool xb_write_delta_metadata(const char *filename,
 }
 
 static bool xtrabackup_write_info(const char *filepath) {
-  char *xtrabackup_info_data = get_xtrabackup_info(mysql_connection);
+  char *xtrabackup_info_data = get_xtrabackup_info(main_conn());
   if (!xtrabackup_info_data) {
     return false;
   }
@@ -4247,7 +4353,7 @@ static void xb_tables_compatibility_check() {
       "  'performance_schema', 'information_schema', "
       "  'mysql');";
 
-  MYSQL_RES *result = xb_mysql_query(mysql_connection, query, true, true);
+  MYSQL_RES *result = xb_mysql_query(main_conn(), query, true, true);
   MYSQL_ROW row;
   if (!result) {
     return;
@@ -4400,7 +4506,7 @@ void xtrabackup_backup_func(void) {
   init_mysql_environment();
 
   if (opt_dump_innodb_buffer_pool) {
-    dump_innodb_buffer_pool(mysql_connection);
+    dump_innodb_buffer_pool(main_conn());
   }
 
 #ifdef USE_POSIX_FADVISE
@@ -4427,7 +4533,7 @@ void xtrabackup_backup_func(void) {
   srv_backup_mode = true;
 
   if (opt_lock_ddl == LOCK_DDL_ON) {
-    xb_dd_spaces = xb::backup::build_space_id_set(mysql_connection);
+    xb_dd_spaces = xb::backup::build_space_id_set(main_conn());
     ut_ad(xb_dd_spaces->size());
   } else if (opt_lock_ddl == LOCK_DDL_REDUCED) {
     ddl_tracker = new ddl_tracker_t;
@@ -4503,13 +4609,13 @@ void xtrabackup_backup_func(void) {
   }
 
   if (have_keyring_component &&
-      !xtrabackup::components::keyring_init_online(mysql_connection)) {
+      !xtrabackup::components::keyring_init_online(main_conn())) {
     xb::error() << "failed to init keyring component";
     exit(EXIT_FAILURE);
   }
 
   if (!xtrabackup::components::keyring_component_initialized &&
-      !xb_keyring_init_for_backup(mysql_connection)) {
+      !xb_keyring_init_for_backup(main_conn())) {
     xb::error() << "failed to init keyring plugin";
     exit(EXIT_FAILURE);
   }
@@ -4595,7 +4701,7 @@ void xtrabackup_backup_func(void) {
     exit(EXIT_FAILURE);
   }
 
-  Tablespace_map::instance().scan(mysql_connection);
+  Tablespace_map::instance().scan(main_conn());
 
   /* Populate fil_system with tablespaces to copy */
   dberr_t err = xb_load_tablespaces();
@@ -4608,7 +4714,7 @@ void xtrabackup_backup_func(void) {
 
   lsn_t page_tracking_start_lsn = 0;
   if (opt_page_tracking &&
-      pagetracking::start(mysql_connection, &page_tracking_start_lsn)) {
+      pagetracking::start(main_conn(), &page_tracking_start_lsn)) {
     xb::info() << "pagetracking is started on the server with LSN "
                << page_tracking_start_lsn;
   }
@@ -4616,8 +4722,8 @@ void xtrabackup_backup_func(void) {
   if (xtrabackup_incremental) {
     incremental_start_checkpoint_lsn = redo_mgr.get_start_checkpoint_lsn();
     if (!xtrabackup_incremental_force_scan && opt_page_tracking) {
-      changed_page_tracking = pagetracking::init(
-          redo_mgr.get_start_checkpoint_lsn(), mysql_connection);
+      changed_page_tracking =
+          pagetracking::init(redo_mgr.get_start_checkpoint_lsn(), main_conn());
     }
 
     if (changed_page_tracking) {
@@ -7744,16 +7850,16 @@ bool xb_init() {
     }
 #endif
 
-    if ((mysql_connection = xb_mysql_connect()) == NULL) {
+    if (!xb::open_connections()) {
       return (false);
     }
 
-    if (!get_mysql_vars(mysql_connection)) {
+    if (!get_mysql_vars(main_conn())) {
       return (false);
     }
 
     if (opt_page_tracking &&
-        !pagetracking::is_component_installed(mysql_connection)) {
+        !pagetracking::is_component_installed(main_conn())) {
       xb::error() << "pagetracking: Please install mysqlbackup "
                   << "component.(INSTALL COMPONENT "
                   << "\"file://component_mysqlbackup\") to "
@@ -7774,17 +7880,17 @@ bool xb_init() {
 
     /* stop slave before taking backup up locks if lock-ddl=ON*/
     if (!opt_no_lock && opt_lock_ddl == LOCK_DDL_ON && opt_safe_slave_backup) {
-      if (!wait_for_safe_slave(mysql_connection)) {
+      if (!wait_for_safe_slave(main_conn())) {
         return (false);
       }
     }
 
     if (opt_lock_ddl == LOCK_DDL_ON &&
-        !lock_tables_for_backup(mysql_connection, opt_lock_ddl_timeout, 0)) {
+        !lock_tables_for_backup(main_conn(), opt_lock_ddl_timeout, 0)) {
       return (false);
     }
 
-    parse_show_engine_innodb_status(mysql_connection);
+    parse_show_engine_innodb_status(main_conn());
   }
 
   return (true);
@@ -7883,19 +7989,23 @@ static int check_privilege(
  command-line arguments and prints missing privileges.
  May terminate application with EXIT_FAILURE exit code.*/
 static void check_all_privileges() {
-  if (!mysql_connection) {
+  if (!main_conn()) {
     /* Not connected, no queries is going to be executed. */
     return;
   }
 
   /* Fetch effective privileges. */
-  std::list<std::string> granted_privileges;
-  MYSQL_ROW row = 0;
-  MYSQL_RES *result = xb_mysql_query(mysql_connection, "SHOW GRANTS", true);
-  while ((row = mysql_fetch_row(result))) {
-    granted_privileges.push_back(*row);
-  }
-  mysql_free_result(result);
+  const std::list<std::string> &granted_privileges =
+      main_conn().granted_privileges();
+
+  /* The history table may live on a server of its own, reached as a different
+  account, so anything touching it is checked against the grants effective
+  there. With no history destination described both accessors are the same
+  connection, so this is the same list and SHOW GRANTS runs once. */
+  const std::list<std::string> &history_privileges =
+      history_conn().granted_privileges();
+  const bool separate_history_server =
+      xb::is_configured(xb::Destination::HISTORY);
 
   int check_result = PRIVILEGE_OK;
   bool reload_checked = false;
@@ -7917,17 +8027,32 @@ static void check_all_privileges() {
   /* SHOW FULL PROCESSLIST */
   check_result |= check_privilege(granted_privileges, "PROCESS", "*", "*");
 
-  if (xb_mysql_numrows(mysql_connection,
-                       "SHOW DATABASES LIKE 'PERCONA_SCHEMA';", false) == 0) {
+  if (xb_mysql_numrows(history_conn(), "SHOW DATABASES LIKE 'PERCONA_SCHEMA';",
+                       false) == 0) {
     /* CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA */
-    check_result |= check_privilege(granted_privileges, "CREATE", "*", "*");
-  } else if (xb_mysql_numrows(mysql_connection,
+    check_result |= check_privilege(history_privileges, "CREATE", "*", "*");
+  } else if ((opt_history != nullptr && separate_history_server) ||
+             xb_mysql_numrows(history_conn(),
                               "SHOW TABLES IN PERCONA_SCHEMA "
                               "LIKE 'xtrabackup_history';",
                               false) == 0) {
-    /* CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history */
+    /* CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history. Either the
+    table is missing and has to be created, or --history issues the statement
+    on every run and the server checks the privilege before it checks
+    existence. The second reason is only acted on for a history server of its
+    own, so that a --check-privileges run that used to pass keeps passing. */
     check_result |=
-        check_privilege(granted_privileges, "CREATE", "PERCONA_SCHEMA", "*");
+        check_privilege(history_privileges, "CREATE", "PERCONA_SCHEMA", "*");
+  }
+
+  if (opt_history != nullptr && separate_history_server) {
+    /* ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN ... */
+    check_result |= check_privilege(history_privileges, "ALTER",
+                                    "PERCONA_SCHEMA", "xtrabackup_history");
+
+    /* INSERT INTO PERCONA_SCHEMA.xtrabackup_history */
+    check_result |= check_privilege(history_privileges, "INSERT",
+                                    "PERCONA_SCHEMA", "xtrabackup_history");
   }
 
   /* FLUSH NO_WRITE_TO_BINLOG ENGINE LOGS */
@@ -7955,7 +8080,7 @@ static void check_all_privileges() {
 
   /* SELECT innodb_to_lsn FROM PERCONA_SCHEMA.xtrabackup_history ... */
   if (opt_incremental_history_name || opt_incremental_history_uuid) {
-    check_result |= check_privilege(granted_privileges, "SELECT",
+    check_result |= check_privilege(history_privileges, "SELECT",
                                     "PERCONA_SCHEMA", "xtrabackup_history");
   }
 
@@ -8326,6 +8451,10 @@ int main(int argc, char **argv) {
   if (opt_page_tracking && opt_lock_ddl == LOCK_DDL_REDUCED) {
     xb::error() << "--page-tracking and --lock-ddl=REDUCED cannot be enabled"
                 << " together.";
+    exit(EXIT_FAILURE);
+  }
+
+  if (!xb::validate_connection_options()) {
     exit(EXIT_FAILURE);
   }
 
