@@ -52,7 +52,6 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 #include <srv0srv.h>
 #include <string.h>
 #include <fstream>
-#include <limits>
 #include "backup_copy.h"
 #include "common.h"
 #include "components/mysqlbackup/backup_comp_constants.h"
@@ -130,8 +129,6 @@ time_t history_lock_time;
 /* Stream type name, to be used with xtrabackup_stream_fmt */
 const char *xb_stream_format_name[] = {"file", "xbstream"};
 
-MYSQL *mysql_connection;
-
 /* Whether LOCK TABLES FOR BACKUP / FLUSH TABLES WITH READ LOCK has been issued
 during backup */
 static bool tables_locked = false;
@@ -154,182 +151,6 @@ static xtrabackup::utils::time ftwrl_start_time =
     xtrabackup::utils::INVALID_TIME;
 static xtrabackup::utils::time ftwrl_end_time = xtrabackup::utils::INVALID_TIME;
 #endif /* XTRABACKUP */
-
-MYSQL *xb_mysql_connect() {
-  MYSQL *connection = mysql_init(NULL);
-  char mysql_port_str[std::numeric_limits<int>::digits10 + 3];
-
-  sprintf(mysql_port_str, "%d", opt_port);
-
-  if (connection == NULL) {
-    xb::error() << "Failed to init MySQL struct: " << mysql_error(connection);
-    return (NULL);
-  }
-
-  xb::info() << "Connecting to MySQL server host: "
-             << (opt_host ? opt_host : "localhost")
-             << ", user: " << (opt_user ? opt_user : "not set")
-             << ", password: " << (opt_password ? "set" : "not set")
-             << ", port: " << (opt_port != 0 ? mysql_port_str : "not set")
-             << ", socket: " << (opt_socket ? opt_socket : "not set");
-
-  set_client_ssl_options(connection);
-
-  if (!mysql_real_connect(connection, opt_host ? opt_host : "localhost",
-                          opt_user, opt_password, "" /*database*/, opt_port,
-                          opt_socket, 0)) {
-    xb::error() << "Failed to connect to MySQL server: "
-                << mysql_error(connection);
-    mysql_close(connection);
-    return (NULL);
-  }
-
-  xb_mysql_query(connection, "SET SESSION wait_timeout=2147483", false, true);
-
-  if (xb_mysql_numrows(connection,
-                       "SHOW GLOBAL VARIABLES LIKE 'wsrep_sync_wait'",
-                       false) > 0) {
-    xb_mysql_query(connection, "SET SESSION wsrep_sync_wait=0", false, true);
-  }
-
-  if (xb_mysql_numrows(
-          connection,
-          "SELECT * FROM performance_schema.replication_group_members",
-          false) > 0) {
-    xb_mysql_query(connection,
-                   "SET SESSION group_replication_consistency=EVENTUAL", false,
-                   true);
-  }
-
-  xb_mysql_query(connection, "SET SESSION autocommit=1", false, true);
-
-  xb_mysql_query(connection, "SET NAMES utf8", false, true);
-
-  return (connection);
-}
-
-/*********************************************************************/ /**
- Execute mysql query. */
-MYSQL_RES *xb_mysql_query(MYSQL *connection, const char *query, bool use_result,
-                          bool die_on_error) {
-  MYSQL_RES *mysql_result = NULL;
-
-  if (mysql_query(connection, query)) {
-    xb::error() << "failed to execute query " << SQUOTE(query) << " : "
-                << mysql_errno(connection) << " ("
-                << mysql_errno_to_sqlstate(mysql_errno(connection)) << ") "
-                << mysql_error(connection);
-    if (die_on_error) {
-      exit(EXIT_FAILURE);
-    }
-    return (NULL);
-  }
-
-  /* store result set on client if there is a result */
-  if (mysql_field_count(connection) > 0) {
-    if ((mysql_result = mysql_store_result(connection)) == NULL) {
-      xb::error() << "failed to fetch query result " << query << " : "
-                  << mysql_error(connection);
-      if (die_on_error) {
-        exit(EXIT_FAILURE);
-      }
-    }
-
-    if (!use_result) {
-      mysql_free_result(mysql_result);
-    }
-  }
-
-  return mysql_result;
-}
-
-my_ulonglong xb_mysql_numrows(MYSQL *connection, const char *query,
-                              bool die_on_error) {
-  my_ulonglong rows_count = 0;
-  MYSQL_RES *result = xb_mysql_query(connection, query, true, die_on_error);
-  if (result) {
-    rows_count = mysql_num_rows(result);
-    mysql_free_result(result);
-  }
-  return rows_count;
-}
-
-/*********************************************************************/ /**
- Read mysql_variable from MYSQL_RES, return number of rows consumed. */
-static int read_mysql_variables_from_result(MYSQL_RES *mysql_result,
-                                            mysql_variable *vars,
-                                            bool vertical_result) {
-  MYSQL_ROW row;
-  mysql_variable *var;
-  ut_ad(!vertical_result || mysql_num_fields(mysql_result) == 2);
-  int rows_read = 0;
-
-  if (vertical_result) {
-    while ((row = mysql_fetch_row(mysql_result))) {
-      ++rows_read;
-      char *name = row[0];
-      char *value = row[1];
-      for (var = vars; var->name; var++) {
-        if (strcasecmp(var->name, name) == 0 && value != NULL) {
-          *(var->value) = strdup(value);
-        }
-      }
-    }
-  } else {
-    MYSQL_FIELD *field;
-
-    if ((row = mysql_fetch_row(mysql_result)) != NULL) {
-      mysql_field_seek(mysql_result, 0);
-      ++rows_read;
-      int i = 0;
-      while ((field = mysql_fetch_field(mysql_result)) != NULL) {
-        char *name = field->name;
-        char *value = row[i];
-        for (var = vars; var->name; var++) {
-          if (strcasecmp(var->name, name) == 0 && value != NULL) {
-            *(var->value) = strdup(value);
-          }
-        }
-        ++i;
-      }
-    }
-  }
-  return rows_read;
-}
-
-void read_mysql_variables(MYSQL *connection, const char *query,
-                          mysql_variable *vars, bool vertical_result) {
-  MYSQL_RES *mysql_result = xb_mysql_query(connection, query, true);
-  read_mysql_variables_from_result(mysql_result, vars, vertical_result);
-  mysql_free_result(mysql_result);
-}
-
-void free_mysql_variables(mysql_variable *vars) {
-  mysql_variable *var;
-
-  for (var = vars; var->name; var++) {
-    free(*(var->value));
-    *var->value = NULL;
-  }
-}
-
-char *read_mysql_one_value(MYSQL *connection, const char *query) {
-  MYSQL_RES *mysql_result;
-  MYSQL_ROW row;
-  char *result = NULL;
-
-  mysql_result = xb_mysql_query(connection, query, true);
-
-  ut_ad(mysql_num_fields(mysql_result) == 1);
-
-  if ((row = mysql_fetch_row(mysql_result))) {
-    result = strdup(row[0]);
-  }
-
-  mysql_free_result(mysql_result);
-
-  return (result);
-}
 
 /* UUID of the backup, gives same value until explicitly reset.
 Returned value should NOT be free()-d. */
@@ -707,8 +528,7 @@ bool get_mysql_vars(MYSQL *connection) {
 
     mysql_variable vars[] = {{"Engine", &engine}, {nullptr, nullptr}};
 
-    MYSQL_RES *res =
-        xb_mysql_query(mysql_connection, "SHOW ENGINES", true, true);
+    MYSQL_RES *res = xb_mysql_query(main_conn(), "SHOW ENGINES", true, true);
 
     while (read_mysql_variables_from_result(res, vars, false)) {
       if (strcasecmp(engine, "ROCKSDB") == 0) {
@@ -752,7 +572,7 @@ bool detect_mysql_capabilities_for_backup() {
   }
 
   char *count_str =
-      read_mysql_one_value(mysql_connection,
+      read_mysql_one_value(main_conn(),
                            "SELECT COUNT(*) FROM information_schema.tables "
                            "WHERE engine = 'MyISAM' OR engine = 'RocksDB'");
   unsigned long long count = strtoull(count_str, nullptr, 10);
@@ -765,7 +585,7 @@ bool detect_mysql_capabilities_for_backup() {
     mysql_variable status[] = {{"Auto_Position", &auto_position}, {NULL, NULL}};
 
     MYSQL_RES *res =
-        xb_mysql_query(mysql_connection, "SHOW REPLICA STATUS", true, true);
+        xb_mysql_query(main_conn(), "SHOW REPLICA STATUS", true, true);
 
     slave_auto_position = true;
 
@@ -787,8 +607,7 @@ static bool select_incremental_lsn_from_history(lsn_t *incremental_lsn) {
   char buf[100];
 
   if (opt_incremental_history_name) {
-    mysql_real_escape_string(mysql_connection, buf,
-                             opt_incremental_history_name,
+    mysql_real_escape_string(history_conn(), buf, opt_incremental_history_name,
                              strlen(opt_incremental_history_name));
     snprintf(query, sizeof(query),
              "SELECT innodb_to_lsn "
@@ -800,8 +619,7 @@ static bool select_incremental_lsn_from_history(lsn_t *incremental_lsn) {
   }
 
   if (opt_incremental_history_uuid) {
-    mysql_real_escape_string(mysql_connection, buf,
-                             opt_incremental_history_uuid,
+    mysql_real_escape_string(history_conn(), buf, opt_incremental_history_uuid,
                              strlen(opt_incremental_history_uuid));
     snprintf(query, sizeof(query),
              "SELECT innodb_to_lsn "
@@ -812,7 +630,7 @@ static bool select_incremental_lsn_from_history(lsn_t *incremental_lsn) {
              buf);
   }
 
-  mysql_result = xb_mysql_query(mysql_connection, query, true);
+  mysql_result = xb_mysql_query(history_conn(), query, true);
 
   ut_ad(mysql_num_fields(mysql_result) == 1);
   if (!(row = mysql_fetch_row(mysql_result))) {
@@ -981,7 +799,7 @@ static bool wait_for_no_updates(MYSQL *connection, uint timeout,
 }
 
 static void kill_query_thread() {
-  MYSQL *mysql;
+  xb::Connection mysql;
   time_t start_time;
 
   start_time = time(NULL);
@@ -998,7 +816,7 @@ static void kill_query_thread() {
     }
   }
 
-  if ((mysql = xb_mysql_connect()) == NULL) {
+  if (!xb::connect(xb::Purpose::QUERY_KILLER, mysql)) {
     xb::error() << "kill query thread failed";
     goto stop_thread;
   }
@@ -1011,7 +829,9 @@ static void kill_query_thread() {
     }
   }
 
-  mysql_close(mysql);
+  /* Closed here rather than left to the destructor, which would run after
+  my_thread_end() has released the thread's mysys state. */
+  mysql.close();
 
 stop_thread:
   my_thread_end();
@@ -1937,16 +1757,17 @@ char *get_xtrabackup_info(MYSQL *connection) {
 }
 
 /*********************************************************************/ /**
- Writes xtrabackup_info file and if backup_history is enable creates
- PERCONA_SCHEMA.xtrabackup_history and writes a new history record to the
- table containing all the history info particular to the just completed
- backup. */
-bool write_xtrabackup_info(MYSQL *connection) {
+ Creates PERCONA_SCHEMA.xtrabackup_history if it is not there yet and inserts
+ the record describing the backup that has just completed. Everything the
+ record says about the server that was backed up has already been read from
+ it, so this talks to the history server alone.
+ @param[in]	history_conn		the server the record is stored on
+ @param[in]	uuid		uuid of the backup
+ @param[in]	server_version	version of the server that was backed up */
+static void insert_history_record(MYSQL *history_conn, const char *uuid,
+                                  const char *server_version) {
   MYSQL_STMT *stmt;
   MYSQL_BIND bind[19];
-  const char *uuid = NULL;
-  char *server_version = NULL;
-  char *xtrabackup_info_data = NULL;
   int idx;
   bool null = true;
 
@@ -1962,23 +1783,10 @@ bool write_xtrabackup_info(MYSQL *connection) {
 
   ut_ad((uint)xtrabackup_stream_fmt < array_elements(xb_stream_format_name));
   const char *stream_format_name = xb_stream_format_name[xtrabackup_stream_fmt];
-  history_end_time = time(NULL);
 
-  xtrabackup_info_data = get_xtrabackup_info(connection);
-  if (!backup_file_printf(XTRABACKUP_INFO, "%s", xtrabackup_info_data)) {
-    goto cleanup;
-  }
-
-  if (!opt_history) {
-    goto cleanup;
-  }
-
-  uuid = get_backup_uuid(connection);
-  server_version = read_mysql_one_value(connection, "SELECT VERSION()");
-
-  xb_mysql_query(connection, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA",
+  xb_mysql_query(history_conn, "CREATE DATABASE IF NOT EXISTS PERCONA_SCHEMA",
                  false);
-  xb_mysql_query(connection,
+  xb_mysql_query(history_conn,
                  "CREATE TABLE IF NOT EXISTS PERCONA_SCHEMA.xtrabackup_history("
                  "uuid VARCHAR(40) NOT NULL PRIMARY KEY,"
                  "name VARCHAR(255) DEFAULT NULL,"
@@ -2003,14 +1811,28 @@ bool write_xtrabackup_info(MYSQL *connection) {
                  false);
 
   /* Upgrade from previous versions */
-  xb_mysql_query(connection,
+  xb_mysql_query(history_conn,
                  "ALTER TABLE PERCONA_SCHEMA.xtrabackup_history MODIFY COLUMN "
                  "binlog_pos TEXT DEFAULT NULL",
                  false);
 
-  stmt = mysql_stmt_init(connection);
+  /* A record that cannot be written is reported, but it does not fail the
+  backup: the backup itself has been taken successfully by this point. What it
+  must not do is go missing without a word, which is what used to happen. */
+  stmt = mysql_stmt_init(history_conn);
+  if (stmt == nullptr) {
+    xb::warn() << "failed to allocate the statement writing the backup "
+                  "history record: "
+               << mysql_error(history_conn);
+    goto cleanup;
+  }
 
-  mysql_stmt_prepare(stmt, ins_query, strlen(ins_query));
+  if (mysql_stmt_prepare(stmt, ins_query, strlen(ins_query))) {
+    xb::warn() << "failed to prepare the backup history record: "
+               << mysql_stmt_error(stmt);
+    mysql_stmt_close(stmt);
+    goto cleanup;
+  }
 
   memset(bind, 0, sizeof(bind));
   idx = 0;
@@ -2056,7 +1878,7 @@ bool write_xtrabackup_info(MYSQL *connection) {
 
   /* server_version */
   bind[idx].buffer_type = MYSQL_TYPE_STRING;
-  bind[idx].buffer = server_version;
+  bind[idx].buffer = (char *)server_version;
   bind[idx].buffer_length = strlen(server_version);
   ++idx;
 
@@ -2142,17 +1964,51 @@ bool write_xtrabackup_info(MYSQL *connection) {
 
   ut_ad(idx == 19);
 
-  mysql_stmt_bind_named_param(stmt, bind, sizeof(bind)/sizeof(bind[0]), nullptr);
+  if (mysql_stmt_bind_named_param(stmt, bind, sizeof(bind) / sizeof(bind[0]),
+                                  nullptr)) {
+    xb::warn() << "failed to bind the backup history record: "
+               << mysql_stmt_error(stmt);
+  } else if (mysql_stmt_execute(stmt)) {
+    xb::warn() << "failed to write the backup history record: "
+               << mysql_stmt_error(stmt);
+  }
 
-  mysql_stmt_execute(stmt);
   mysql_stmt_close(stmt);
 
 cleanup:
+  return;
+}
+
+/*********************************************************************/ /**
+ Writes the xtrabackup_info file.
+ @param[in]	connection	the server that was backed up
+ @return true if the file was written */
+bool write_xtrabackup_info(MYSQL *connection) {
+  char *xtrabackup_info_data = get_xtrabackup_info(connection);
+  const bool written =
+      backup_file_printf(XTRABACKUP_INFO, "%s", xtrabackup_info_data);
 
   free(xtrabackup_info_data);
-  free(server_version);
 
-  return (true);
+  return (written);
+}
+
+/*********************************************************************/ /**
+ Records the backup in PERCONA_SCHEMA.xtrabackup_history.
+
+ The record describes the server that was backed up and is stored on the
+ server that keeps the history, which are the same server unless a history
+ destination was described. This is the one place that needs both of them, and
+ only to carry two values from the first to the second.
+ @param[in]	connection	the server that was backed up
+ @param[in]	history		the server the record is stored on */
+void write_history_record(MYSQL *connection, MYSQL *history) {
+  const char *uuid = get_backup_uuid(connection);
+  char *server_version = read_mysql_one_value(connection, "SELECT VERSION()");
+
+  insert_history_record(history, uuid, server_version);
+
+  free(server_version);
 }
 
 bool write_backup_config_file() {
@@ -2210,6 +2066,14 @@ static char *make_argv(char *buf, size_t len, int argc, char **argv) {
     if (strncmp(*argv, "-p", strlen("-p")) == 0) {
       arg = "-p=...";
     }
+    if (strncmp(*argv, "--history-password", strlen("--history-password")) ==
+        0) {
+      arg = "--history-password=...";
+    }
+    if (strncmp(*argv, "--history_password", strlen("--history_password")) ==
+        0) {
+      arg = "--history_password=...";
+    }
     if (strncmp(*argv, "--encrypt-key", strlen("--encrypt-key")) == 0) {
       arg = "--encrypt-key=...";
     }
@@ -2255,17 +2119,15 @@ void backup_cleanup() {
   free(backup_uuid);
   backup_uuid = NULL;
 
-  if (mysql_connection) {
-    mysql_close(mysql_connection);
-  }
+  xb::close_connections();
 }
 
-static MYSQL *mdl_con = NULL;
+static xb::Connection mdl_con;
 void mdl_lock_tables() {
   xb::info() << "Initializing MDL on all current tables.";
   MYSQL_RES *mysql_result = NULL;
   MYSQL_ROW row;
-  mdl_con = xb_mysql_connect();
+  xb::connect(xb::Purpose::MDL_LOCK, mdl_con);
   if (mdl_con != NULL) {
     xb_mysql_query(mdl_con, "BEGIN", false, true);
     mysql_result = xb_mysql_query(mdl_con,
@@ -2312,7 +2174,7 @@ void mdl_unlock_all() {
   xb::info() << "Unlocking MDL for all tables";
   if (mdl_con != NULL) {
     xb_mysql_query(mdl_con, "COMMIT", false, true);
-    mysql_close(mdl_con);
+    mdl_con.close();
   }
 }
 bool is_fts_index(const std::string &table_name) {
@@ -2418,11 +2280,11 @@ void dump_innodb_buffer_pool(MYSQL *connection) {
              "SET GLOBAL innodb_buffer_pool_dump_pct = %u",
              opt_dump_innodb_buffer_pool_pct);
     xb::info() << "Executing " << change_bp_dump_pct_query;
-    xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
+    xb_mysql_query(main_conn(), change_bp_dump_pct_query, false);
   }
 
   xb::info() << "Executing SET GLOBAL innodb_buffer_pool_dump_now=ON...";
-  xb_mysql_query(mysql_connection, "SET GLOBAL innodb_buffer_pool_dump_now=ON;",
+  xb_mysql_query(main_conn(), "SET GLOBAL innodb_buffer_pool_dump_now=ON;",
                  false);
 }
 
@@ -2470,7 +2332,7 @@ void check_dump_innodb_buffer_pool(MYSQL *connection) {
     snprintf(change_bp_dump_pct_query, sizeof(change_bp_dump_pct_query),
              "SET GLOBAL innodb_buffer_pool_dump_pct = %u",
              original_innodb_buffer_pool_dump_pct);
-    xb_mysql_query(mysql_connection, change_bp_dump_pct_query, false);
+    xb_mysql_query(main_conn(), change_bp_dump_pct_query, false);
   }
 }
 

@@ -233,6 +233,17 @@ extern uint opt_backup_lock_timeout;
 extern uint opt_backup_lock_retry_count;
 
 extern const char *opt_history;
+extern char *opt_history_user;
+extern char *opt_history_password;
+extern char *opt_history_host;
+extern uint opt_history_port;
+extern char *opt_history_socket;
+extern uint opt_history_ssl_mode;
+extern char *opt_history_ssl_ca;
+extern char *opt_history_ssl_capath;
+extern char *opt_history_ssl_cert;
+extern char *opt_history_ssl_key;
+
 extern bool opt_decrypt;
 
 extern uint opt_read_buffer_size;
