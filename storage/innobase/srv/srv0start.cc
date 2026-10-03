@@ -357,7 +357,11 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
   offset = fsp_header_get_encryption_offset(space_page_size);
   ut_ad(offset);
 
-  auto [found, recv_key] = recv_find_encryption_key(space->id);
+  byte recv_key[Encryption::KEY_LEN];
+  byte recv_iv[Encryption::KEY_LEN];
+  lsn_t recv_key_lsn = 0;
+  bool found = recv_find_encryption_key(space->id, recv_key, recv_iv,
+                                        &recv_key_lsn);
 
   bool is_enc = Encryption::is_encrypted_with_v3(first_page + offset);
   lsn_t page_lsn = mach_read_from_8(first_page + FIL_PAGE_LSN);
@@ -390,11 +394,11 @@ static dberr_t srv_undo_tablespace_read_encryption(pfs_os_file_t fh,
 
   bool encryption_success = false;
 
-  if (found && recv_key->lsn >= page_lsn) {
+  if (found && recv_key_lsn >= page_lsn) {
     // Condition 1: Use key from redo if available and appropriate
     encryption_success = (use_dumped_tablespace_keys && !srv_backup_mode)
                              ? load_key_from_dump()
-                             : set_encryption(recv_key->ptr, recv_key->iv);
+                             : set_encryption(recv_key, recv_iv);
   } else if (is_enc) {
     // Condition 2: Page is encrypted
     encryption_success = (use_dumped_tablespace_keys && !srv_backup_mode)
