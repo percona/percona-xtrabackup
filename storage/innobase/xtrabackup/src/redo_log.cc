@@ -43,7 +43,7 @@ extern ds_ctxt_t *ds_redo;
 constexpr size_t HEADER_BLOCK_SIZE = 4096;
 static bool archive_first_block_zero = false;
 std::atomic<bool> Redo_Log_Reader::m_error;
-IF_DEBUG(bool force_reopen = false;);
+IF_DEBUG(bool force_reopen = false;)
 
 Redo_Log_Reader::Redo_Log_Reader() {
   log_hdr_buf.alloc_withkey(UT_NEW_THIS_FILE_PSI_KEY,
