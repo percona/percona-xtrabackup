@@ -323,6 +323,36 @@ void Event_handler::ev_queue_callback(EV_P_ ev_async *ev, int revents) {
   h->process_queue();
 }
 
+void Event_handler::ev_retry_callback(EV_P_ struct ev_timer *timer,
+                                      int events) {
+  Retry_timer *retry = reinterpret_cast<Retry_timer *>(timer->data);
+  Event_handler *h = retry->h;
+
+  TRACE("%s retry %p events %d\n", __PRETTY_FUNCTION__, timer, events);
+
+  ev_timer_stop(h->loop, timer);
+  h->n_queued--;
+  retry->fn();
+  delete retry;
+  /* The async watcher may already be stopped by stop(), so pick up the
+  request queued by fn here. */
+  h->process_queue();
+}
+
+void Event_handler::schedule_retry(ulong delay_ms, std::function<void()> fn) {
+  Retry_timer *retry = new Retry_timer();
+  retry->h = this;
+  retry->fn = std::move(fn);
+  ev_timer_init(&retry->timer, Event_handler::ev_retry_callback,
+                delay_ms / 1000., 0.);
+  retry->timer.data = retry;
+  /* Keep the slot of the failed request, so that while it backs off no new
+  request takes its place. */
+  n_queued++;
+  ev_now_update(loop);
+  ev_timer_start(loop, &retry->timer);
+}
+
 void Event_handler::process_queue() {
   std::lock_guard<std::mutex> guard(queue_mutex);
 
@@ -632,16 +662,20 @@ void Http_client::callback(CLIENT *client, std::string container,
     ulong delay = get_exponential_backoff(count, client->get_max_backoff());
     msg_ts("%s: Sleeping for %lu ms before retrying %s [%lu]\n", my_progname,
            delay, name.c_str(), count);
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay));
-    resp->reset_body();
-    client->signer->sign_request(client->hostname(container), container, *req,
-                                 time(0));
-    http_client->make_async_request(
-        *req, *resp, h,
-        std::bind(&Http_client::callback<CLIENT, CALLBACK>, this, client,
-                  container, name, req, resp, http_client, h, callback,
-                  std::placeholders::_1, std::placeholders::_2, count + 1),
-        true);
+    /* This runs on the event loop thread. Sleeping here would stall every
+    other request, so the wait is a timer on the loop. */
+    h->schedule_retry(delay, [this, client, container, name, req, resp,
+                              http_client, h, callback, count]() mutable {
+      resp->reset_body();
+      client->signer->sign_request(client->hostname(container), container, *req,
+                                   time(0));
+      http_client->make_async_request(
+          *req, *resp, h,
+          std::bind(&Http_client::callback<CLIENT, CALLBACK>, this, client,
+                    container, name, req, resp, http_client, h, callback,
+                    std::placeholders::_1, std::placeholders::_2, count + 1),
+          true);
+    });
     return;
   } else if (retry_error && count > client->get_max_retries())
     msg_ts("%s: No more retries for %s\n", my_progname, name.c_str());
