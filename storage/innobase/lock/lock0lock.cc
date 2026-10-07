@@ -749,7 +749,7 @@ static void lock_rec_bitmap_reset(lock_t *lock) /*!< in: record lock */
 
   ut_ad((lock_rec_get_n_bits(lock) % 8) == 0);
 
-  memset(&lock[1], 0, n_bytes);
+  memset(reinterpret_cast<byte *>(&lock[1]), 0, n_bytes);
 }
 
 /** Copies a record lock to heap.
@@ -1205,17 +1205,9 @@ lock_t *RecLock::lock_alloc(trx_t *trx, dict_index_t *index, ulint mode,
 
   /* Predicate lock always on INFIMUM (0) */
 
-  if (is_predicate_lock(mode)) {
-    rec_lock.n_bits = 8;
-
-    memset(&lock[1], 0x0, 1);
-
-  } else {
-    ut_ad(8 * size < UINT32_MAX);
-    rec_lock.n_bits = static_cast<uint32_t>(8 * size);
-
-    memset(&lock[1], 0x0, size);
-  }
+  ut_ad(size < UINT32_MAX / 8);
+  rec_lock.n_bits = is_predicate_lock(mode) ? 8 : 8 * size;
+  lock_rec_bitmap_reset(lock);
 
   rec_lock.page_id = rec_id.get_page_id();
 
