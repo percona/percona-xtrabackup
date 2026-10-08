@@ -700,6 +700,14 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
       new_tables.erase(space_id);
     }
 
+    /* The recopy loop already emitted the old-name .del marker for a
+    tablespace that was both recopied and renamed. Emitting it again here adds
+    a duplicate path to xbstream archives, which makes extraction fail. */
+    if (recopy_renamed_spaces.find(space_id) !=
+        recopy_renamed_spaces.end()) {
+      continue;
+    }
+
     /* Table not in the backup, nothing to drop, skip drop*/
     if (tables_copied_no_lock.find(space_id) == tables_copied_no_lock.end()) {
       continue;
