@@ -294,6 +294,12 @@ class Event_handler {
 
   std::queue<Http_connection *> queue;
 
+  struct Retry_timer {
+    struct ev_timer timer;
+    Event_handler *h;
+    std::function<void()> fn;
+  };
+
   static void mcode_or_die(CURLMcode code);
 
   void remove_socket(Curl_socket_info *socket_info);
@@ -318,6 +324,8 @@ class Event_handler {
 
   static void ev_queue_callback(EV_P_ ev_async *ev, int revents);
 
+  static void ev_retry_callback(EV_P_ struct ev_timer *timer, int events);
+
   void main_loop();
 
   void process_queue();
@@ -332,6 +340,11 @@ class Event_handler {
   std::thread run();
 
   void add_connection(Http_connection *conn, bool nowait = false);
+
+  /* Run fn on the event loop after delay_ms without blocking the loop, so
+  that other requests keep going and their backoffs overlap. Must be called
+  from the event loop thread. The request slot stays taken until fn runs. */
+  void schedule_retry(ulong delay_ms, std::function<void()> fn);
 
   void stop();
 };
