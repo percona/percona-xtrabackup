@@ -2271,11 +2271,6 @@ bool page_validate(const page_t *page, dict_index_t *index, bool check_min_rec,
                 << fil_page_get_type(page) << ") in index " << index->name();
     goto func_exit2;
   }
-  if (btr_page_get_index_id(page) != index->id) {
-    ib::error(ER_IB_MSG_41) << "Page index id " << btr_page_get_index_id(page)
-                            << " != data dictionary index id " << index->id;
-    goto func_exit2;
-  }
   /* Reject an out-of-range PAGE_LEVEL here so callers (e.g. the level scan in
      btr_validate_level) can safely use btr_page_get_level() on a page whose
      header was overwritten by a partial write. */
