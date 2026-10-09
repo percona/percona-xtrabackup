@@ -1580,13 +1580,20 @@ bool backup_start(Backup_context &context) {
   if (ddl_tracker != nullptr) {
     std::this_thread::sleep_for(
         std::chrono::milliseconds(context.redo_mgr->get_copy_interval()));
-    while (context.redo_mgr->get_scanned_lsn() < log_status.lsn &&
+    context.redo_mgr->set_parse_tail_up_to_lsn(log_status.lsn);
+    while (!context.redo_mgr->is_error() &&
            !context.redo_mgr->has_parsed_lsn(log_status.lsn)) {
       xb::info() << "Waiting for redo thread to catchup to LSN "
                  << log_status.lsn << " (currently parsing at "
                  << context.redo_mgr->get_parsed_lsn() << ")";
       std::this_thread::sleep_for(
           std::chrono::milliseconds(context.redo_mgr->get_copy_interval()));
+    }
+    context.redo_mgr->set_parse_tail_up_to_lsn(0);
+    if (context.redo_mgr->is_error()) {
+      xb::error() << "Redo thread failed while waiting to parse up to LSN "
+                  << log_status.lsn;
+      return false;
     }
     dberr_t err = ddl_tracker->handle_ddl_operations();
     if (err != DB_SUCCESS) {
