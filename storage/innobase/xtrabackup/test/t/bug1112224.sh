@@ -24,18 +24,18 @@ EOF
 
 vlog "Creating incremental backup"
 
-xtrabackup --backup --incremental-basedir=$topdir/full --target-dir=$topdir/inc
+xtrabackup --backup --backup-incremental-base=$topdir/full --target-dir=$topdir/inc
 
 # remove space_id = something line from .meta file
 sed -ie '/space_id/ d' $topdir/inc/test/t12.ibd.meta
 vlog "Preparing backup"
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 vlog "Log applied to full backup"
 
 # Command should fail and print error message
-run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --apply-log-only \
-    --incremental-dir=$topdir/inc --target-dir=$topdir/full
+run_cmd_expect_failure $XB_BIN $XB_ARGS --prepare --apply-redo-only \
+    --prepare-incremental-from-dir=$topdir/inc --target-dir=$topdir/full
 if ! grep -q "Cannot handle DDL operation" $OUTFILE
 then
 	die "Error message not found!"

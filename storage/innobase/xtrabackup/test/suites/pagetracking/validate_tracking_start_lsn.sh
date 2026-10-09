@@ -58,7 +58,7 @@ EOF
 
 vlog "case#2 checkpoint is stopped and still incremental should complete "
 
-xtrabackup --backup --target-dir=$topdir/inc  --incremental-basedir=$topdir/backup  --page-tracking --debug_sync="xtrabackup_after_wait_page_tracking" 2>&1 | tee $topdir/pxb_inc.log &
+xtrabackup --backup --target-dir=$topdir/inc  --backup-incremental-base=$topdir/backup  --page-tracking --debug_sync="xtrabackup_after_wait_page_tracking" 2>&1 | tee $topdir/pxb_inc.log &
 job_pid=$!
 
 pid_file=$topdir/inc/xtrabackup_debug_sync

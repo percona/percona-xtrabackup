@@ -40,14 +40,14 @@ run_cmd $MYSQL $MYSQL_ARGS test -e \
   "BEGIN; UPDATE t1 SET b = REPEAT('w', 200); ROLLBACK;"
 
 vlog "Incremental backup"
-xtrabackup --backup --incremental-basedir=$topdir/full \
+xtrabackup --backup --backup-incremental-base=$topdir/full \
   --target-dir=$topdir/inc1
 
 vlog "Prepare full (apply-log-only)"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 
 vlog "Merge incremental + --check-tables (delta pages just written, redo applied)"
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc1 \
   --check-tables --target-dir=$topdir/full 2>&1 | tee $topdir/merge.log
 grep -q "verifying checksums of tablespace" $topdir/merge.log || \
   die "checksum pass did not run during incremental merge"

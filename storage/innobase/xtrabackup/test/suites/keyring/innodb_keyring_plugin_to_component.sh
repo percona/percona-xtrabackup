@@ -41,14 +41,14 @@ job_id=$!
 sleep 2
 kill -USR1 $job_id
 wait $job_id
-xtrabackup --backup --incremental-basedir=$topdir/full \
+xtrabackup --backup --backup-incremental-base=$topdir/full \
      --target-dir=$topdir/inc1
 record_db_state test
 stop_server
 
 prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${keyring_file_plugin}"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full ${prepare_options}
-xtrabackup --prepare --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full ${prepare_options}
+xtrabackup --prepare --prepare-incremental-from-dir=$topdir/inc1 \
      --target-dir=$topdir/full ${prepare_options}
 rm -rf $mysql_datadir
 xtrabackup --copy-back --target-dir=$topdir/full
@@ -67,7 +67,7 @@ job_id=$!
 sleep 2
 xtrabackup --backup --target-dir=$topdir/full
 sleep 2
-xtrabackup --backup --incremental-basedir=$topdir/full \
+xtrabackup --backup --backup-incremental-base=$topdir/full \
      --target-dir=$topdir/inc1
 kill -USR1 $job_id
 wait $job_id
@@ -94,26 +94,26 @@ start_server
 run_insert &
 job_id=$!
 sleep 2
-xtrabackup --backup --incremental-basedir=$topdir/inc1 \
+xtrabackup --backup --backup-incremental-base=$topdir/inc1 \
      --target-dir=$topdir/inc2
 sleep 2
 kill -USR1 $job_id
 wait $job_id
-xtrabackup --backup --incremental-basedir=$topdir/inc2 \
+xtrabackup --backup --backup-incremental-base=$topdir/inc2 \
      --target-dir=$topdir/inc3
 record_db_state test
 stop_server
 
 
 prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --keyring-file-data=${keyring_file_plugin}"
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full ${prepare_options}
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full ${prepare_options}
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc1 \
      --target-dir=$topdir/full ${prepare_options}
 
 prepare_options="--xtrabackup-plugin-dir=${plugin_dir} --component-keyring-config=${keyring_component_cnf} --keyring-file-data=${keyring_file_component}"
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc2 \
     --target-dir=$topdir/full ${prepare_options}
-xtrabackup --prepare --incremental-dir=$topdir/inc3 \
+xtrabackup --prepare --prepare-incremental-from-dir=$topdir/inc3 \
    --target-dir=$topdir/full ${prepare_options}
 rm -rf $mysql_datadir
 xtrabackup --copy-back --target-dir=$topdir/full
