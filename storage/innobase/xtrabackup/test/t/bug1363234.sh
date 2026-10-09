@@ -18,13 +18,13 @@ load_sakila
 # backup
 xtrabackup --backup --target-dir=$topdir/backup
 xtrabackup --backup \
-    --incremental-basedir=$topdir/backup --target-dir=$topdir/inc1
+    --backup-incremental-base=$topdir/backup --target-dir=$topdir/inc1
 xtrabackup --backup \
-    --incremental-basedir=$topdir/inc1 --target-dir=$topdir/inc2
+    --backup-incremental-base=$topdir/inc1 --target-dir=$topdir/inc2
 
 # prepare (last one would fail)
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc1 \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc1 \
     --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc2 \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc2 \
     --target-dir=$topdir/backup

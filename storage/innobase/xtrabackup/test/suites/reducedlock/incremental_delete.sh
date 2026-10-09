@@ -16,7 +16,7 @@ innodb_wait_for_flush_all
 
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE t2(a INT)" test
 
-xtrabackup --backup --target-dir=$topdir/backup_inc --incremental-basedir=$topdir/backup_base \
+xtrabackup --backup --target-dir=$topdir/backup_inc --backup-incremental-base=$topdir/backup_base \
   --debug-sync="ddl_tracker_before_lock_ddl" --lock-ddl=REDUCED \
   2> >( tee $topdir/backup_inc.log)&
 
@@ -34,8 +34,8 @@ vlog "Resuming xtrabackup"
 kill -SIGCONT $xb_pid
 run_cmd wait $job_pid
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_base
-xtrabackup --prepare --target-dir=$topdir/backup_base --incremental-dir=$topdir/backup_inc
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_base
+xtrabackup --prepare --target-dir=$topdir/backup_base --prepare-incremental-from-dir=$topdir/backup_inc
 
 # Ensure that t2.ibd shouldn't be present
 FILE=$topdir/backup_base/test/t2.ibd

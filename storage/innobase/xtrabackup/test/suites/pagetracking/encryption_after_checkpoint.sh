@@ -34,7 +34,7 @@ ALTER TABLE t3 ENCRYPTION 'N';
 EOF
 
 vlog "take incremental backup"
-xtrabackup --backup --target-dir=$topdir/inc --page-tracking --incremental-basedir=$topdir/backup --transition-key=123
+xtrabackup --backup --target-dir=$topdir/inc --page-tracking --backup-incremental-base=$topdir/backup --transition-key=123
 
 record_db_state test
 
@@ -42,9 +42,9 @@ vlog "restore"
 stop_server
 rm -r $mysql_datadir
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup --transition-key=123
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup --transition-key=123
 
-xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/inc --transition-key=123
+xtrabackup --prepare --target-dir=$topdir/backup --prepare-incremental-from-dir=$topdir/inc --transition-key=123
 
 vlog "copy back"
 xtrabackup --copy-back --target-dir=$topdir/backup --transition-key=123 \

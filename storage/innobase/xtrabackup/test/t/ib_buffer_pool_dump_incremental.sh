@@ -25,7 +25,7 @@ xtrabackup --backup --target-dir=$topdir/backup
 ${MYSQL} ${MYSQL_ARGS} -e "SET GLOBAL innodb_buffer_pool_dump_now=ON;"
 
 # incremental backup
-xtrabackup --backup --incremental-basedir=$topdir/backup \
+xtrabackup --backup --backup-incremental-base=$topdir/backup \
     --target-dir=$topdir/incremental
 
 if [ -f $topdir/incremental/pool/dump ] ; then
@@ -36,9 +36,9 @@ else
 fi
 
 # prepare
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/incremental \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/incremental \
     --target-dir=$topdir/backup
 
 xtrabackup --prepare --target-dir=$topdir/backup

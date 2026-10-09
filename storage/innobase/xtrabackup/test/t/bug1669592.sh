@@ -1,5 +1,5 @@
 #
-# Bug 1669592: xtrabackup --prepare --incremental-dir=... --target-dir=...
+# Bug 1669592: xtrabackup --prepare --prepare-incremental-from-dir=... --target-dir=...
 #              creates redo logs in wrong directory
 #
 
@@ -16,10 +16,10 @@ xtrabackup --backup --target-dir=$topdir/backup
 
 ${MYSQL} ${MYSQL_ARGS} -e "INSERT INTO t1 VALUES (2)" test
 
-xtrabackup --backup --target-dir=$topdir/backup-inc --incremental-basedir=$topdir/backup
+xtrabackup --backup --target-dir=$topdir/backup-inc --backup-incremental-base=$topdir/backup
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
-xtrabackup --prepare --incremental-dir=$topdir/backup-inc --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
+xtrabackup --prepare --prepare-incremental-from-dir=$topdir/backup-inc --target-dir=$topdir/backup
 
 test -d $topdir/backup/#innodb_redo || die "redo directory are not found in full backup directory"
 

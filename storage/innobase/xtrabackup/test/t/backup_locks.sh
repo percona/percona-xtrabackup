@@ -32,7 +32,7 @@ Com_flush	3
 EOF
 
 xtrabackup --backup \
-           --incremental-basedir=$topdir/full_backup \
+           --backup-incremental-base=$topdir/full_backup \
            --target-dir=$topdir/inc_backup
 
 $MYSQL $MYSQL_ARGS -Ns -e \
