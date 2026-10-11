@@ -10306,9 +10306,16 @@ Dirs_in_datadir Dirs_in_datadir::make() {
   }
 
   Dir_Walker::walk(datadir, false, [&](const std::string &path) {
+#ifdef XTRABACKUP
+    auto [exists, file_type] = Dir_Walker::is_directory(path);
+    if (!exists || file_type != OS_FILE_TYPE_DIR) {
+      return;
+    }
+#else
     if (!Dir_Walker::is_directory(path)) {
       return;
     }
+#endif /* XTRABACKUP */
 
     const auto schema_dir = fil_real_dir_for_lookup(path);
 
