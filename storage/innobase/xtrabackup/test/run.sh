@@ -7,7 +7,6 @@ shopt -s extglob
 set +e
 
 . inc/common.sh
-. subunit.sh
 
 trap cleanup_on_exit EXIT
 trap terminate SIGHUP SIGINT SIGQUIT SIGTERM
@@ -16,6 +15,8 @@ result=0
 
 # Default test timeout in seconds
 TEST_TIMEOUT=1800
+# Largest test output put in a JUnit failure, in bytes
+FAILURE_OUTPUT_MAX=1048576
 
 # Magic exit code to indicate a skipped test
 export SKIPPED_EXIT_CODE=200
@@ -187,9 +188,74 @@ function terminate()
 ########################################################################
 # Display the test run summary and exit
 ########################################################################
+#############################################################################
+# Print stdin as XML element text: drop invalid UTF-8 and the characters
+# XML 1.0 does not allow, then escape &, < and >.
+#############################################################################
+function junit_escape()
+{
+    iconv -c -f UTF-8 -t UTF-8 |
+        LC_ALL=C tr -d '\000-\010\013\014\016-\037' |
+        LC_ALL=C sed -e 's/\xef\xbf[\xbe\xbf]//g' \
+            -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+#############################################################################
+# Add the JUnit <testcase> of test $1 that ran $2 seconds with result $3:
+# pass, skip or fail. For fail, stdin is the failure text.
+#############################################################################
+function junit_testcase()
+{
+    local classname=${1%.sh}
+    local head="<testcase classname=\"$classname\" name=\"sh\" time=\"$2.000\""
+
+    case $3 in
+        pass)
+            echo "$head/>"
+            ;;
+        skip)
+            printf '%s>\n<skipped/>\n</testcase>\n' "$head"
+            ;;
+        fail)
+            echo "$head>"
+            echo -n "<failure>"
+            junit_escape
+            echo "</failure>"
+            echo "</testcase>"
+            ;;
+    esac >> "$JUNIT_CASES"
+}
+
+#############################################################################
+# Print the output of a failed test for its JUnit failure: the last
+# FAILURE_OUTPUT_MAX bytes, with a note when the output is longer. The full
+# output stays in results/.
+#############################################################################
+function failure_output()
+{
+    local outfile=$1
+    local size=`stat -c %s $outfile`
+
+    if [ $size -gt $FAILURE_OUTPUT_MAX ]
+    then
+        echo "Output truncated to its last $FAILURE_OUTPUT_MAX of $size bytes," \
+             "the full output is in results/`basename $outfile`"
+        echo
+    fi
+    tail -c $FAILURE_OUTPUT_MAX $outfile
+}
+
 function print_status_and_exit()
 {
     local test_time=$((`now` - TEST_START_TIME))
+
+    {
+        echo "<testsuite errors=\"0\" failures=\"$FAILED_COUNT\" name=\"\"" \
+             "tests=\"$TOTAL_COUNT\" time=\"$TOTAL_TIME.000\">"
+        cat "$JUNIT_CASES" 2>/dev/null
+        echo "</testsuite>"
+    } > $JUNIT_OUT
+
     cat <<EOF
 ==============================================================================
 Spent $TOTAL_TIME of $test_time seconds executing testcases
@@ -663,16 +729,12 @@ function reap_worker()
 
     ((TOTAL_TIME+=test_time))
 
-    # Have to call subunit_start_test here, as currently tests cannot be
-    # interleaved in the subunit output
-    subunit_start_test $tpath "${worker_stime_txt[$worker]}" >> $SUBUNIT_OUT
-
     if [ $rc -eq 0 ]
     then
         echo "[passed]    $test_time"
 
         SUCCESSFUL_COUNT=$((SUCCESSFUL_COUNT + 1))
-        subunit_pass_test $tpath >> $SUBUNIT_OUT
+        junit_testcase $tpath $test_time pass
 
         cleanup_worker $worker
     elif [ $rc -eq $SKIPPED_EXIT_CODE ]
@@ -685,17 +747,15 @@ function reap_worker()
 
         echo "[skipped]   $sreason"
 
-        subunit_skip_test $tpath >> $SUBUNIT_OUT
+        junit_testcase $tpath $test_time skip
 
         cleanup_worker $worker
     else
         echo "[failed]    $test_time"
 
-        (
-            (echo "Something went wrong running $tpath. Exited with $rc";
-                echo; echo; cat ${worker_outfiles[$worker]}
-            ) | subunit_fail_test $tpath
-        ) >> $SUBUNIT_OUT
+        (echo "Something went wrong running $tpath. Exited with $rc";
+            echo; echo; failure_output ${worker_outfiles[$worker]}
+        ) | junit_testcase $tpath $test_time fail
 
        FAILED_COUNT=$((FAILED_COUNT + 1))
        FAILED_TESTS="$FAILED_TESTS $tname"
@@ -744,15 +804,9 @@ function check_timeout_for_worker()
         printf "%-40s w%d\t" $tname $worker
         echo "[failed]    Timed out after $TEST_TIMEOUT seconds."
 
-        (
-            # Have to call subunit_start_test here, as currently tests cannot be
-            # interleaved in the subunit output
-            subunit_start_test $tpath "${worker_stime_txt[$worker]}"
-
-            (echo "Timeout exceeded running $tpath.";
-                echo; echo; cat ${worker_outfiles[$worker]}
-            ) | subunit_fail_test $tpath
-        ) >> $SUBUNIT_OUT
+        (echo "Timeout exceeded running $tpath.";
+            echo; echo; failure_output ${worker_outfiles[$worker]}
+        ) | junit_testcase $tpath $((`now` - worker_stime[$worker])) fail
 
         FAILED_COUNT=$((FAILED_COUNT + 1))
         FAILED_TESTS="$FAILED_TESTS $tname"
@@ -856,7 +910,7 @@ NOFSUITES=0
 XTRACE_OPTION=""
 force=""
 KEEP_VAR=""
-SUBUNIT_OUT=test_results.subunit
+JUNIT_OUT=junit.xml
 NWORKERS=
 DEBUG_WORKER=""
 MYSQL_DEBUG_MODE=off
@@ -951,8 +1005,10 @@ mkdir results
 cleanup_all_workers >>$OUTFILE 2>&1
 
 echo "Using $TEST_VAR_ROOT as test root"
-rm -rf $TEST_VAR_ROOT test_results.subunit
+rm -rf $TEST_VAR_ROOT $JUNIT_OUT
 mkdir -p $TEST_VAR_ROOT
+# <testcase> elements of junit.xml, added as tests finish
+JUNIT_CASES=$TEST_VAR_ROOT/junit.cases
 
 echo "Detecting server version..." | tee -a $OUTFILE
 
@@ -1085,8 +1141,6 @@ do
 
    worker_pids[$worker]=$!
    worker_stime[$worker]="`now`"
-   # Used in subunit reports
-   worker_stime_txt[$worker]="`date -u '+%Y-%m-%d %H:%M:%S'`"
 done
 
 # Wait for in-progress workers to finish
