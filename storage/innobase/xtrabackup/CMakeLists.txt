@@ -35,7 +35,7 @@ IF(INSTALL_MYSQLTESTDIR)
     PATTERN "var" EXCLUDE
     PATTERN "results" EXCLUDE
     PATTERN "kewpie" EXCLUDE
-    PATTERN "test_results.subunit" EXCLUDE
+    PATTERN "junit.xml" EXCLUDE
     PATTERN "CPack" EXCLUDE
     PATTERN "CMake*" EXCLUDE
     PATTERN "Makefile" EXCLUDE
