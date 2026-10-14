@@ -141,7 +141,7 @@ main () {
         *) 
             echo "Err: Specified unsupported ${TYPE}."
             echo "Supported types are: innodb9x, xtradb9x."
-            echo "Example: $0 --type=xtradb9x --version=9.7.0-1"
+            echo "Example: $0 --type=xtradb9x --version=9.7.2-2"
             exit 1
             ;;
     esac
@@ -183,7 +183,7 @@ main () {
 
 TYPE="xtradb9x"
 PXB_TYPE="release"
-VERSION="9.7.0-1"
+VERSION="9.7.2-2"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main
