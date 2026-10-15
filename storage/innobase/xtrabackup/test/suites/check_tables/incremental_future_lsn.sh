@@ -43,7 +43,7 @@ vlog "Incremental backup"
 xtrabackup --backup --backup-incremental-base=$topdir/full \
   --target-dir=$topdir/inc1
 
-vlog "Prepare full (apply-log-only)"
+vlog "Prepare full (apply-redo-only)"
 xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 
 vlog "Merge incremental + --check-tables (delta pages just written, redo applied)"
