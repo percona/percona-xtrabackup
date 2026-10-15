@@ -28,7 +28,10 @@
 # The client authentication plug-in is part of the community build.
 
 # Skip it if disabled.
-IF(NOT WITH_AUTHENTICATION_CLIENT_PLUGINS)
+# xtrabackup loads this plugin to authenticate with an OpenID Connect ID token
+# (--authentication-openid-connect-client-id-token-file), so it is always
+# built and shipped with xtrabackup.
+IF(NOT WITH_AUTHENTICATION_CLIENT_PLUGINS AND NOT WITH_XTRABACKUP)
   MESSAGE(STATUS "Skipping the OpenID Connect authentication client plugin.")
   RETURN()
 ENDIF()
