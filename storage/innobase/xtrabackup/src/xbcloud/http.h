@@ -294,6 +294,17 @@ class Event_handler {
 
   std::queue<Http_connection *> queue;
 
+  /** A pending retry: a one shot timer on the event loop and the work to run
+  when it fires. */
+  struct Retry_timer {
+    /** Timer that fires when the backoff is over. */
+    struct ev_timer timer;
+    /** Event handler whose loop runs the timer. */
+    Event_handler *event_handler;
+    /** Work to run when the timer fires. */
+    std::function<void()> callback;
+  };
+
   static void mcode_or_die(CURLMcode code);
 
   void remove_socket(Curl_socket_info *socket_info);
@@ -318,6 +329,13 @@ class Event_handler {
 
   static void ev_queue_callback(EV_P_ ev_async *ev, int revents);
 
+  /** Called by libev when a retry timer fires. Runs the retry, frees its
+  Retry_timer and starts queued requests that now have a free slot.
+  @param[in] loop    event loop (declared by the EV_P_ macro)
+  @param[in] timer   timer of the Retry_timer that fired
+  @param[in] events  libev event mask */
+  static void ev_retry_callback(EV_P_ struct ev_timer *timer, int events);
+
   void main_loop();
 
   void process_queue();
@@ -332,6 +350,16 @@ class Event_handler {
   std::thread run();
 
   void add_connection(Http_connection *conn, bool nowait = false);
+
+  /** Run callback on the event loop after delay_ms without blocking the loop,
+  so that other requests keep going and their backoffs overlap. Must be called
+  from the event loop thread. The request slot stays taken until callback
+  runs.
+  @param[in] delay_ms  how long to wait before running callback, in
+                       milliseconds
+  @param[in] callback  work to run on the event loop thread when the delay is
+                       over */
+  void schedule_retry(ulong delay_ms, std::function<void()> callback);
 
   void stop();
 };
