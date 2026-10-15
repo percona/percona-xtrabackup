@@ -106,6 +106,7 @@ Place, Suite 330, Boston, MA 02111-1307 USA
 
 #include "backup_copy.h"
 #include "backup_mysql.h"
+#include "backup_oidc.h"
 #include "buf0flu.h"
 #include "changed_page_tracking.h"
 #include "crc_glue.h"
@@ -356,6 +357,7 @@ char *opt_transition_key = NULL;
 char *opt_xtra_plugin_dir = NULL;
 char *server_plugin_dir = NULL;
 char *opt_xtra_plugin_load = NULL;
+char *opt_oidc_id_token_file = nullptr;
 char *opt_keyring_file_data = nullptr;
 char *opt_component_keyring_config = nullptr;
 char *opt_component_keyring_file_config = nullptr;
@@ -859,6 +861,7 @@ enum options_xtrabackup {
   OPT_GENERATE_TRANSITION_KEY,
   OPT_XTRA_PLUGIN_DIR,
   OPT_XTRA_PLUGIN_LOAD,
+  OPT_OIDC_ID_TOKEN_FILE,
   OPT_GENERATE_NEW_MASTER_KEY,
   OPT_REGISTER_REDO_LOG_CONSUMER,
 
@@ -1341,6 +1344,17 @@ struct my_option xb_client_options[] = {
      "when connecting to the database. It accepts a string argument.  "
      "See mysql --help for details.",
      0, 0, 0, GET_STR, OPT_ARG, 0, 0, 0, 0, 0, 0},
+
+    {"authentication-openid-connect-client-id-token-file",
+     OPT_OIDC_ID_TOKEN_FILE,
+     "This option specifies the file holding the OpenID Connect ID token used "
+     "to authenticate to the server, for an account IDENTIFIED WITH "
+     "auth_openid_connect. It accepts a path. The token is the credential, so "
+     "the option cannot be combined with --password. The "
+     "authentication_openid_connect_client plugin is loaded from "
+     "--xtrabackup-plugin-dir.",
+     (uchar *)&opt_oidc_id_token_file, (uchar *)&opt_oidc_id_token_file, 0,
+     GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
     {"socket", 'S',
      "This option specifies the socket to use when "
@@ -8357,10 +8371,6 @@ static void handle_options(int argc, char **argv, int *argc_client,
     }
   }
 
-  if (tty_password) {
-    opt_password = get_tty_password(NullS);
-  }
-
   if (tty_transition_key) {
     opt_transition_key = get_tty_password("Enter transition key: ");
   }
@@ -8454,8 +8464,15 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-  if (!xb::validate_connection_options()) {
+  if (!xb::oidc::check_options(tty_password) ||
+      !xb::validate_connection_options()) {
     exit(EXIT_FAILURE);
+  }
+
+  /* Asked for only now, so that options that conflict with a password fail
+  before the user types one. */
+  if (tty_password) {
+    opt_password = get_tty_password(NullS);
   }
 
   /* Expand target-dir, incremental-basedir, etc. */
@@ -8487,6 +8504,8 @@ int main(int argc, char **argv) {
     unpack_dirname(xtrabackup_real_extra_lsndir, xtrabackup_real_extra_lsndir);
     xtrabackup_extra_lsndir = xtrabackup_real_extra_lsndir;
   }
+
+  xb::oidc::resolve_path(cwd);
 
   /* get default temporary directory */
   if (!opt_mysql_tmpdir || !opt_mysql_tmpdir[0]) {
