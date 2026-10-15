@@ -27,18 +27,18 @@ function restore_from()
 
     while [ "$#" -ne 0 ]
     do
-        incremental_dir=$1
+        inc_dir=$1
         shift 1
         if [ "$#" -eq 0 ]
         then
-            vlog "Last incremental $incremental_dir"
+            vlog "Last incremental $inc_dir"
             extra=
         else
             extra='--apply-redo-only'
         fi
-        vlog "Preparing $incremental_dir as incremental"
+        vlog "Preparing $inc_dir as incremental"
         run_cmd xtrabackup --prepare $extra\
-           --target-dir=$backup_path --prepare-incremental-from-dir=$incremental_dir
+           --target-dir=$backup_path --prepare-incremental-from-dir=$inc_dir
     done
 
     run_cmd xtrabackup --copy-back --target-dir=$backup_path
