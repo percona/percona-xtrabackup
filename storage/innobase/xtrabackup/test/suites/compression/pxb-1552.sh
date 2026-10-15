@@ -12,11 +12,11 @@ xtrabackup --backup --compress --target-dir=$topdir/backup
 
 mysql -e "DELETE FROM payment LIMIT 100" sakila
 
-xtrabackup --backup --compress --target-dir=$topdir/inc --incremental-basedir=$topdir/backup
+xtrabackup --backup --compress --target-dir=$topdir/inc --backup-incremental-base=$topdir/backup
 
 xtrabackup --decompress --target-dir=$topdir/backup
 xtrabackup --decompress --target-dir=$topdir/inc
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup --incremental-dir=$topdir/inc
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup --prepare-incremental-from-dir=$topdir/inc
 xtrabackup --prepare --target-dir=$topdir/backup
