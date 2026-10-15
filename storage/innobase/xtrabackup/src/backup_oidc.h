@@ -44,9 +44,10 @@ file: a non-empty --password, or -p that would ask for one.
 @return true if the options are usable */
 bool check_options(bool password_prompt);
 
-/** Expand ~ in the token file path and make a relative one absolute: the
-plugin opens the file in every handshake, and the backup changes into the
-datadir before it opens its later connections.
+/** Expand a leading ~/ in the token file path and make a relative one
+absolute, and change nothing else in it: the plugin opens the file in every
+handshake, and the backup changes into the datadir before it opens its later
+connections.
 @param[in]	cwd	the directory xtrabackup was started in */
 void resolve_path(const char *cwd);
 

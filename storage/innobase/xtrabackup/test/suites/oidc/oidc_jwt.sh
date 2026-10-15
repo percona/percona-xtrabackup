@@ -143,6 +143,39 @@ HOME="$(dirname "${TOKEN}")" \
     --authentication-openid-connect-client-id-token-file="~/$(basename "${TOKEN}")"
 rm -rf "${topdir}/backup_home"
 
+vlog "Case 1f: the rest of the token file path is used as given"
+# Each path below names a valid token. Where the path could be rewritten,
+# an expired token sits at the place a rewrite would lead to, so a rewritten
+# path fails the backup.
+oidc_sign_id_token "${topdir}/expired_decoy" "${OIDC_SUB}" -60
+# Longer than FN_REFLEN.
+long_dir="${topdir}/long"
+while [ ${#long_dir} -lt 700 ]; do
+    long_dir="${long_dir}/dddddddddddddddddddddddddddddddddddddddd"
+done
+mkdir -p "${long_dir}"
+cp "${TOKEN}" "${long_dir}/id_token"
+# A directory named ~ is not the home directory.
+mkdir -p "${topdir}/tilde/~" "${topdir}/home"
+cp "${TOKEN}" "${topdir}/tilde/~/id_token"
+cp "${topdir}/expired_decoy" "${topdir}/home/id_token"
+# dir/../ is resolved by the file system, through a symbolic link.
+mkdir -p "${topdir}/links/real/sub"
+ln -s "${topdir}/links/real/sub" "${topdir}/links/lnk"
+cp "${TOKEN}" "${topdir}/links/real/id_token"
+cp "${topdir}/expired_decoy" "${topdir}/links/id_token"
+for path in "${long_dir}/id_token" "${topdir}/tilde/~/id_token" \
+            "${topdir}/links/lnk/../id_token"; do
+    rm -rf "${topdir}/backup_path"
+    HOME="${topdir}/home" \
+        xtrabackup --backup --target-dir="${topdir}/backup_path" ${OIDC_ARGS} \
+        --authentication-openid-connect-client-id-token-file="${path}"
+    grep -qF "Using OpenID Connect ID token file '${path}'" ${OUTFILE} || \
+        die "the token file path was changed: ${path}"
+done
+rm -rf "${topdir}/backup_path" "${topdir}/long" "${topdir}/tilde" \
+    "${topdir}/home" "${topdir}/links"
+
 vlog "Case 2: backup over TCP with TLS"
 rm -rf "${topdir}/backup_tls"
 xtrabackup --backup --target-dir="${topdir}/backup_tls" ${OIDC_ARGS} \

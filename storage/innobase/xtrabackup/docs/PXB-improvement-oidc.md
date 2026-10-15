@@ -37,7 +37,8 @@ provider requires), and refreshing a token during a long backup.
 `--authentication-openid-connect-client-id-token-file=PATH`: the file
 that holds the ID token. Same name as the `mysql` client option. A
 relative path is taken from the directory xtrabackup is started in, and
-`~` is expanded, as for `--target-dir`. An empty value is an error.
+a leading `~/` is expanded to the home directory. The rest of the path is
+used as given. An empty value is an error.
 
 | Option | Interaction |
 |---|---|

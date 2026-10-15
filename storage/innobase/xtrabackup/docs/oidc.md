@@ -17,12 +17,15 @@ the rest of xtrabackup calls it from five places.
    asks for one. `main()` asks for the `-p` password only after these
    checks, so the conflict is reported before the prompt.
    `--skip-password` names no password and is accepted.
-3. `main()` calls `xb::oidc::resolve_path(cwd)`, which expands `~` and
-   makes a relative path absolute, from the directory xtrabackup was
-   started in (`my_load_path()` and `unpack_filename()`, as for
-   `--target-dir`): the plugin opens the file in every handshake, and the
-   backup changes into the datadir before it opens its later
-   connections.
+3. `main()` calls `xb::oidc::resolve_path(cwd)`, which expands a
+   leading `~/` and makes a relative path absolute, from the directory
+   xtrabackup was started in: the plugin opens the file in every
+   handshake, and the backup changes into the datadir before it opens its
+   later connections. It only adds the prefix and leaves the rest of the
+   path as given. `my_load_path()` and `unpack_filename()`, used for
+   `--target-dir`, are not used here: they cut a path at `FN_REFLEN`,
+   collapse `dir/../` as text (wrong when `dir` is a symbolic link) and
+   replace everything before a `/~/` with the home directory.
 4. `resolve()` (`src/backup_conn.cc`) puts the file in
    `Dsn::id_token_file`. The history destination drops it when
    `--history-user` or `--history-password` is named, as it does for the

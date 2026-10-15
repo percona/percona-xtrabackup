@@ -24,6 +24,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <mysql/client_plugin.h>
 #include <sql_plugin.h>
 
+#include <string>
+
 #include "backup_oidc.h"
 #include "common.h"
 #include "xtrabackup.h"
@@ -42,7 +44,7 @@ reads it. */
 std::mutex oidc_mutex;
 
 /** The token file path after resolve_path(). */
-char oidc_resolved_path[FN_REFLEN];
+std::string oidc_resolved_path;
 
 }  // namespace
 
@@ -74,9 +76,21 @@ void resolve_path(const char *cwd) {
   if (opt_oidc_id_token_file == nullptr) {
     return;
   }
-  my_load_path(oidc_resolved_path, opt_oidc_id_token_file, cwd);
-  unpack_filename(oidc_resolved_path, oidc_resolved_path);
-  opt_oidc_id_token_file = oidc_resolved_path;
+
+  /* Only the prefix is added: the rest of the path is passed as given, so
+  that the plugin opens the file the user named, at any length. */
+  const char *path = opt_oidc_id_token_file;
+  if (path[0] == FN_HOMELIB && path[1] == FN_LIBCHAR) {
+    if (home_dir == nullptr) {
+      return;
+    }
+    oidc_resolved_path = std::string(home_dir) + (path + 1);
+  } else if (!test_if_hard_path(path)) {
+    oidc_resolved_path = std::string(cwd) + path;
+  } else {
+    return;
+  }
+  opt_oidc_id_token_file = oidc_resolved_path.data();
 }
 
 bool load_plugin() {
