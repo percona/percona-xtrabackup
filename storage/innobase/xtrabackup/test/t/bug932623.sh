@@ -38,15 +38,15 @@ EOF
 
 vlog "Creating incremental backup"
 
-xtrabackup --backup --incremental-basedir=$topdir/full --target-dir=$topdir/inc
+xtrabackup --backup --backup-incremental-base=$topdir/full --target-dir=$topdir/inc
 
 vlog "Preparing backup"
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 vlog "Log applied to full backup"
 
-xtrabackup --prepare --apply-log-only \
-    --incremental-dir=$topdir/inc --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only \
+    --prepare-incremental-from-dir=$topdir/inc --target-dir=$topdir/full
 vlog "Delta applied to full backup"
 
 xtrabackup --prepare --target-dir=$topdir/full
