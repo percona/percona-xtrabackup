@@ -178,7 +178,7 @@ main () {
 
 TYPE="xtradb80"
 PXB_TYPE="release"
-VERSION="8.4.4-4"
+VERSION="8.4.11-11"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main
