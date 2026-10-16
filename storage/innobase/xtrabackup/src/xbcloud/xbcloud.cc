@@ -860,7 +860,8 @@ void put_func(put_thread_ctxt_t &cntx) {
       entry->path = chunk.path;
     }
 
-    if (chunk.type == XB_CHUNK_TYPE_PAYLOAD) {
+    if (chunk.type == XB_CHUNK_TYPE_PAYLOAD ||
+        chunk.type == XB_CHUNK_TYPE_SPARSE) {
       res = (xb_rstream_result_t)xb_stream_validate_checksum(&chunk);
       if (res != XB_STREAM_READ_CHUNK) {
         break;
@@ -909,6 +910,10 @@ void put_func(put_thread_ctxt_t &cntx) {
             std::placeholders::_1, object_name, chunk.raw_length,
             cntx.has_errors));
 
+    if (chunk.type == XB_CHUNK_TYPE_SPARSE) {
+      for (size_t i = 0; i < chunk.sparse_map_size; ++i)
+        entry->offset += chunk.sparse_map[i].skip;
+    }
     entry->offset += chunk.length;
     entry->chunk_idx++;
 
@@ -916,7 +921,10 @@ void put_func(put_thread_ctxt_t &cntx) {
       filehash.erase(entry->path);
     }
 
-    /* Reset chunk */
+    /* Reset chunk. chunk.raw_data is now owned by the upload buffer, but
+    chunk.sparse_map is not referenced by it, so free it here to avoid
+    leaking it on every iteration. */
+    my_free(chunk.sparse_map);
     memset(&chunk, 0, sizeof(chunk));
   } while (!cntx.has_errors->load());
 
