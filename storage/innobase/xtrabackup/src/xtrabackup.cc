@@ -5384,7 +5384,8 @@ static pfs_os_file_t xb_delta_open_matching_space(
 
         ut_a(os_file_status(oldpath, &exists, &type));
 
-        if (!fil_rename_tablespace(f_space_id, oldpath, tmpname, tmpname)) {
+        if (fil_rename_tablespace(f_space_id, oldpath, tmpname, tmpname) !=
+            DB_SUCCESS) {
           xb::error() << "Cannot rename " << dest_space_name << "to "
                       << tmpname;
           ut::free(oldpath);
@@ -5795,7 +5796,7 @@ xb_process_datadir
 @param[in]	suffix	suffix to match against
 @param[in]	func	callback
 @param[in]	data	additional argument for callback */
-void process_datadir_l2cbk(const char *datadir, const char *dbname,
+bool process_datadir_l2cbk(const char *datadir, const char *dbname,
                            const char *path, const char *name,
                            const char *suffix, handle_datadir_entry_func_t func,
                            void *data) {
@@ -5803,15 +5804,19 @@ void process_datadir_l2cbk(const char *datadir, const char *dbname,
   size_t suffix_len = strlen(suffix);
 
   if (stat(path, &statinfo) != 0) {
-    return;
+    // An earlier callback may have renamed or removed this directory entry.
+    if (errno == ENOENT) return true;
+    xb::error() << "Cannot stat " << path << ": " << strerror(errno);
+    return false;
   }
 
   if (S_ISREG(statinfo.st_mode) &&
       (strlen(name) > suffix_len &&
        strcmp(name + strlen(name) - suffix_len, suffix) == 0)) {
     check_datadir_enctry_access(name, &statinfo);
-    func(datadir_entry_t(datadir, path, dbname, name, false), data);
+    return func(datadir_entry_t(datadir, path, dbname, name, false), data);
   }
+  return true;
 }
 
 /** Process single top level datadir entry for xb_process_datadir
@@ -5821,34 +5826,42 @@ void process_datadir_l2cbk(const char *datadir, const char *dbname,
 @param[in]	suffix	suffix to match against
 @param[in]	func	callback
 @param[in]	data	additional argument for callback */
-void process_datadir_l1cbk(const char *datadir, const char *path,
+bool process_datadir_l1cbk(const char *datadir, const char *path,
                            const char *name, const char *suffix,
                            handle_datadir_entry_func_t func, void *data) {
   struct stat statinfo;
   size_t suffix_len = strlen(suffix);
 
   if (stat(path, &statinfo) != 0) {
-    return;
+    // An earlier callback may have renamed or removed this directory entry.
+    if (errno == ENOENT) return true;
+    xb::error() << "Cannot stat " << path << ": " << strerror(errno);
+    return false;
   }
 
   if (S_ISDIR(statinfo.st_mode) && !check_if_skip_database_by_path(name)) {
     bool is_empty_dir = true;
     check_datadir_enctry_access(name, &statinfo);
-    os_file_scan_directory(
+    bool callback_ok = true;
+    const bool scan_ok = os_file_scan_directory(
         path,
         [&](const char *l2path, const char *l2name) mutable -> void {
-          if (strcmp(l2name, ".") == 0 || strcmp(l2name, "..") == 0) {
+          if (!callback_ok || strcmp(l2name, ".") == 0 ||
+              strcmp(l2name, "..") == 0) {
             return;
           }
           is_empty_dir = false;
           char fullpath[FN_REFLEN];
           snprintf(fullpath, sizeof(fullpath), "%s/%s", l2path, l2name);
-          process_datadir_l2cbk(datadir, name, fullpath, l2name, suffix, func,
-                                data);
+          callback_ok = process_datadir_l2cbk(datadir, name, fullpath, l2name,
+                                              suffix, func, data);
         },
         false);
+    if (!scan_ok || !callback_ok) {
+      return false;
+    }
     if (is_empty_dir) {
-      func(datadir_entry_t(datadir, path, name, "", true), data);
+      return func(datadir_entry_t(datadir, path, name, "", true), data);
     }
   }
 
@@ -5856,8 +5869,9 @@ void process_datadir_l1cbk(const char *datadir, const char *path,
       (strlen(name) > suffix_len &&
        strcmp(name + strlen(name) - suffix_len, suffix) == 0)) {
     check_datadir_enctry_access(name, &statinfo);
-    func(datadir_entry_t(datadir, path, "", name, false), data);
+    return func(datadir_entry_t(datadir, path, "", name, false), data);
   }
+  return true;
 }
 
 /************************************************************************
@@ -5871,18 +5885,21 @@ bool xb_process_datadir(const char *path,   /*!<in: datadir path */
                         void *data) /*!<in: additional argument for
                                     callback */
 {
-  bool ret = os_file_scan_directory(
+  bool callback_ok = true;
+  const bool scan_ok = os_file_scan_directory(
       path,
       [&](const char *l1path, const char *l1name) -> void {
-        if (strcmp(l1name, ".") == 0 || strcmp(l1name, "..") == 0) {
+        if (!callback_ok || strcmp(l1name, ".") == 0 ||
+            strcmp(l1name, "..") == 0) {
           return;
         }
         char fullpath[FN_REFLEN];
         snprintf(fullpath, sizeof(fullpath), "%s/%s", l1path, l1name);
-        process_datadir_l1cbk(path, fullpath, l1name, suffix, func, data);
+        callback_ok =
+            process_datadir_l1cbk(path, fullpath, l1name, suffix, func, data);
       },
       false);
-  return ret;
+  return scan_ok && callback_ok;
 }
 
 /************************************************************************
@@ -7100,14 +7117,23 @@ skip_check:
       /** This is the new file, this might be less than the original .ibd
        * because we are copying the file while there are still dirty pages in
        * the BP. Those changes will later be conciliated via redo log*/
-      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW_META.c_str(),
-                         prepare_handle_new_files, NULL);
-      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW_DELTA.c_str(),
-                         prepare_handle_new_files, NULL);
-      xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW.c_str(),
-                         prepare_handle_new_files, NULL);
+      if (!xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW_META.c_str(),
+                              prepare_handle_new_files, NULL)) {
+        goto error_cleanup;
+      }
+      if (!xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW_DELTA.c_str(),
+                              prepare_handle_new_files, NULL)) {
+        goto error_cleanup;
+      }
+      if (!xb_process_datadir(xtrabackup_incremental_dir, EXT_NEW.c_str(),
+                              prepare_handle_new_files, NULL)) {
+        goto error_cleanup;
+      }
     } else {
-      xb_process_datadir(".", EXT_NEW.c_str(), prepare_handle_new_files, NULL);
+      if (!xb_process_datadir(".", EXT_NEW.c_str(), prepare_handle_new_files,
+                              NULL)) {
+        goto error_cleanup;
+      }
     }
 
     if (innodb_init_param()) {
@@ -7136,8 +7162,11 @@ skip_check:
     /* Cleanup datadir from tablespaces deleted between full and
     incremental backups */
 
-    xb_process_datadir("./", EXT_IBD.c_str(), rm_if_not_found, NULL);
-    xb_process_datadir("./", EXT_IBU.c_str(), rm_if_not_found, NULL);
+    if (!xb_process_datadir("./", EXT_IBD.c_str(), rm_if_not_found, NULL) ||
+        !xb_process_datadir("./", EXT_IBU.c_str(), rm_if_not_found, NULL)) {
+      xb_filter_hash_free(inc_dir_tables_hash);
+      goto error_cleanup;
+    }
 
     xb_filter_hash_free(inc_dir_tables_hash);
   }

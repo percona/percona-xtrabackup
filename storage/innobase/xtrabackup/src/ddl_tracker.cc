@@ -630,7 +630,10 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     ulint flags = tablespace.second.second;
 
     std::string dest_name = get_dest_name(space_id, path, flags, EXT_CRPT);
-    backup_file_printf(dest_name.c_str(), "%s", "");
+    if (!backup_file_printf(dest_name.c_str(), "%s", "")) {
+      xb::error() << "DDL tracking: failed to write DDL marker";
+      return DB_ERROR;
+    }
   }
 
   /* Some tables might get to the new list if the DDL happen in between
@@ -660,9 +663,13 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
         ut_ad(!fsp_is_system_tablespace(table));
         std::string old_table_name = renames[table].first;
         ulint flags = get_space_flags(table, tables_copied_no_lock);
-        backup_file_printf(
-            convert_file_name(table, old_table_name, flags, EXT_DEL).c_str(),
-            "%s", "");
+        if (!backup_file_printf(
+                convert_file_name(table, old_table_name, flags, EXT_DEL)
+                    .c_str(),
+                "%s", "")) {
+          xb::error() << "DDL tracking: failed to write DDL marker";
+          return DB_ERROR;
+        }
         /* The old-name base file is deleted via the .del above and the new
         name is reconstructed from the .new file during prepare. A sparse
         incremental delta would leave hole pages for such a table, so mark it
@@ -717,9 +724,12 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
     // We never create .del for ibdata*
     ut_ad(!fsp_is_system_tablespace(space_id));
-    backup_file_printf(
-        convert_file_name(space_id, table_name, flags, EXT_DEL).c_str(), "%s",
-        "");
+    if (!backup_file_printf(
+            convert_file_name(space_id, table_name, flags, EXT_DEL).c_str(),
+            "%s", "")) {
+      xb::error() << "DDL tracking: failed to write DDL marker";
+      return DB_ERROR;
+    }
   }
 
   for (auto &table : renames) {
@@ -755,9 +765,12 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
     ulint flags = get_space_flags(space_id, tables_copied_no_lock);
 
-    backup_file_printf(
-        convert_file_name(space_id, old_table_name, flags, EXT_REN).c_str(),
-        "%d\n%s", REN_FILE_VERSION, new_table_name.c_str());
+    if (!backup_file_printf(
+            convert_file_name(space_id, old_table_name, flags, EXT_REN).c_str(),
+            "%d\n%s", REN_FILE_VERSION, new_table_name.c_str())) {
+      xb::error() << "DDL tracking: failed to write DDL marker";
+      return DB_ERROR;
+    }
   }
 
   for (auto table = new_tables.begin(); table != new_tables.end();) {
@@ -833,9 +846,12 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   // Create .del files for deleted undo tablespaces
   for (auto &elem : deleted_undo_files) {
     ulint flags = get_space_flags(elem.second, tables_copied_no_lock);
-    backup_file_printf(
-        convert_file_name(elem.second, elem.first, flags, EXT_DEL).c_str(),
-        "%s", "");
+    if (!backup_file_printf(
+            convert_file_name(elem.second, elem.first, flags, EXT_DEL).c_str(),
+            "%s", "")) {
+      xb::error() << "DDL tracking: failed to write DDL marker";
+      return DB_ERROR;
+    }
   }
 
   // Add new undo files to be recopied
@@ -1147,9 +1163,9 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
       xb::info() << "prepare_handle_ren_files: staging " << fil_space->name
                  << " to temporary path " << pending_ren.temp_path;
 
-      if (!fil_rename_tablespace(fil_space->id, source_path,
-                                 pending_ren.temp_space_name.c_str(),
-                                 pending_ren.temp_path.c_str())) {
+      if (fil_rename_tablespace(fil_space->id, source_path,
+                                pending_ren.temp_space_name.c_str(),
+                                pending_ren.temp_path.c_str()) != DB_SUCCESS) {
         xb::error() << "prepare_handle_ren_files: Cannot rename "
                     << fil_space->name << " to temporary path "
                     << pending_ren.temp_path;
@@ -1219,9 +1235,13 @@ bool prepare_finalize_ren_files() {
                  << pending_ren.temp_path << " to "
                  << pending_ren.dest_space_name;
 
-      if (!fil_rename_tablespace(pending_ren.space_id,
-                                 pending_ren.temp_path.c_str(),
-                                 pending_ren.dest_space_name.c_str(), NULL)) {
+      // Enable the InnoDB fault only after all staging renames succeeded.
+      DBUG_EXECUTE_IF("ddl_tracker_fail_finalize_rename",
+                      DBUG_SET("+d,fil_rename_tablespace_failure_2"););
+
+      if (fil_rename_tablespace(
+              pending_ren.space_id, pending_ren.temp_path.c_str(),
+              pending_ren.dest_space_name.c_str(), NULL) != DB_SUCCESS) {
         xb::error() << "prepare_finalize_ren_files: Cannot rename "
                     << pending_ren.temp_path << " to "
                     << pending_ren.dest_space_name;
@@ -1245,7 +1265,11 @@ bool prepare_finalize_ren_files() {
       rename_force(pending_ren.temp_meta_path, pending_ren.dest_meta_path);
     }
 
-    os_file_delete(0, pending_ren.ren_path.c_str());
+    if (!os_file_delete(0, pending_ren.ren_path.c_str())) {
+      xb::error() << "prepare_finalize_ren_files: Cannot delete marker "
+                  << pending_ren.ren_path;
+      return false;
+    }
   }
 
   pending_ren_files.clear();
@@ -1370,8 +1394,7 @@ bool prepare_handle_del_files(const datadir_entry_t &entry,
   }
 
   xb::info() << "prepare_handle_del_files: deleting " << del_file.c_str();
-  os_file_delete(0, del_file.c_str());
-  return true;
+  return os_file_delete(0, del_file.c_str());
 }
 
 // Function to check if a string ends with another string
@@ -1436,11 +1459,16 @@ bool prepare_handle_new_files(const datadir_entry_t &entry,
   std::string src_path = entry.path;
   std::string dest_path = src_path;
   xb::info() << "prepare_handle_new_files: " << src_path;
-  size_t index = dest_path.find(EXT_NEW);
-#ifdef UNIV_DEBUG
-  assert(index != std::string::npos);
-#endif  // UNIV_DEBUG
-  dest_path.erase(index, 4);
+  // Strip only the marker suffix. General tablespace names and the
+  // incremental directory itself may contain ".new".
+  if (truncate_suffix(EXT_NEW_META, dest_path)) {
+    dest_path.append(EXT_META);
+  } else if (truncate_suffix(EXT_NEW_DELTA, dest_path)) {
+    dest_path.append(EXT_DELTA);
+  } else if (!truncate_suffix(EXT_NEW, dest_path)) {
+    xb::error() << "prepare_handle_new_files: invalid marker path " << src_path;
+    return false;
+  }
   rename_force(src_path, dest_path);
 
   return true;
