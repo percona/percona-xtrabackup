@@ -7808,7 +7808,7 @@ static void setup_signals()
   struct sigaction sa;
 
   /* Print a stacktrace on some signals */
-  sa.sa_flags = SA_RESETHAND | SA_NODEFER;
+  sa.sa_flags = SA_RESETHAND | SA_NODEFER | SA_SIGINFO;
   sigemptyset(&sa.sa_mask);
   sigprocmask(SIG_SETMASK, &sa.sa_mask, NULL);
 #ifdef HAVE_STACKTRACE
