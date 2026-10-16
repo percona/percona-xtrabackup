@@ -33,4 +33,4 @@ xtrabackup --backup --target-dir=$topdir/backup
 kill -SIGKILL $job_master
 stop_server
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup

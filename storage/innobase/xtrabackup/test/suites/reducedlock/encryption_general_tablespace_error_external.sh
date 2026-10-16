@@ -59,7 +59,7 @@ function run_test() {
 
   XB_ERROR_LOG=$topdir/backup_inc.log
 	BACKUP_DIR=$topdir/backup_inc_external
-	xtrabackup_background --backup --target-dir=$topdir/backup_inc_external --incremental-basedir=$topdir/backup_enc_general_tablespace_external --lock-ddl=REDUCED  --debug-sync-thread="before_file_copy"
+	xtrabackup_background --backup --target-dir=$topdir/backup_inc_external --backup-incremental-base=$topdir/backup_enc_general_tablespace_external --lock-ddl=REDUCED  --debug-sync-thread="before_file_copy"
 
 	wait_for_debug_sync_thread "before_file_copy"
 
@@ -93,8 +93,8 @@ function run_test() {
   record_db_state test
   stop_server
 
-  xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup_enc_general_tablespace_external --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
-  xtrabackup --prepare --target-dir=$topdir/backup_enc_general_tablespace_external --incremental-dir=$topdir/backup_inc_external --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+  xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup_enc_general_tablespace_external --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
+  xtrabackup --prepare --target-dir=$topdir/backup_enc_general_tablespace_external --prepare-incremental-from-dir=$topdir/backup_inc_external --xtrabackup-plugin-dir=${plugin_dir} ${keyring_args}
 
   rm -rf $mysql_datadir/*
   rm -rf $topdir/external/*

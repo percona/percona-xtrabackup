@@ -36,9 +36,9 @@ WITH RECURSIVE seq(n) AS (
 SELECT n, CONCAT('user', n) FROM seq;
 EOF
 
-vlog "Full backup + apply-log-only prepare"
+vlog "Full backup + apply-redo-only prepare"
 xtrabackup --backup --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 
 IBD=$topdir/backup/test/test_users.ibd
 

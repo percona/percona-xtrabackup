@@ -66,7 +66,7 @@ vlog "###############"
 
 # Incremental backup
 inc_backup_dir=$topdir/backup/inc
-xtrabackup --backup --incremental --incremental-basedir=$full_backup_dir \
+xtrabackup --backup --incremental --backup-incremental-base=$full_backup_dir \
     --target=dir=$inc_backup_dir
 vlog "Incremental backup done to directory $inc_backup_dir"
 
@@ -75,12 +75,12 @@ vlog "Preparing backup"
 vlog "##############"
 vlog "# PREPARE #1 #"
 vlog "##############"
-xtrabackup_no_defaults_file --prepare --apply-log-only --target-dir$full_backup_dir
+xtrabackup_no_defaults_file --prepare --apply-redo-only --target-dir$full_backup_dir
 vlog "Log applied to full backup"
 vlog "##############"
 vlog "# PREPARE #2 #"
 vlog "##############"
-xtrabackup_no_defaults_file --prepare --apply-log-only --incremental-dir=$inc_backup_dir \
+xtrabackup_no_defaults_file --prepare --apply-redo-only --prepare-incremental-from-dir=$inc_backup_dir \
     --target-dir=$full_backup_dir
 vlog "Delta applied to full backup"
 vlog "##############"

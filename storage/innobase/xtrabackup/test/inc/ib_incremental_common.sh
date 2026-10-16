@@ -7,7 +7,7 @@
 #                       backup invocations.
 #    ib_full_backup_extra_args: extra args to be passed to xtrabackup backup invocations.
 #    ib_inc_use_lsn:    if 1, use --incremental-lsn instead of
-#                       --incremental-basedir
+#                       --backup-incremental-base
 
 . inc/common.sh
 
@@ -70,7 +70,7 @@ then
 
     ib_inc_extra_args="${ib_inc_extra_args:-""} --incremental-lsn=$inc_lsn"
 else
-    ib_inc_extra_args="${ib_inc_extra_args:-""} --incremental-basedir=$full_backup_dir"
+    ib_inc_extra_args="${ib_inc_extra_args:-""} --backup-incremental-base=$full_backup_dir"
 fi
 
 $MYSQL $MYSQL_ARGS \
@@ -87,12 +87,12 @@ vlog "Preparing backup"
 vlog "##############"
 vlog "# PREPARE #1 #"
 vlog "##############"
-xtrabackup --prepare --apply-log-only --target-dir=$full_backup_dir
+xtrabackup --prepare --apply-redo-only --target-dir=$full_backup_dir
 vlog "Log applied to full backup"
 vlog "##############"
 vlog "# PREPARE #2 #"
 vlog "##############"
-xtrabackup --prepare --apply-log-only --incremental-dir=$inc_backup_dir \
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$inc_backup_dir \
     --target-dir=$full_backup_dir
 vlog "Delta applied to full backup"
 vlog "##############"

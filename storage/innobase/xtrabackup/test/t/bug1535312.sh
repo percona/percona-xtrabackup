@@ -33,13 +33,13 @@ INSERT INTO p VALUES (10), (20), (30);
 
 EOF
 
-xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/full
+xtrabackup --backup --target-dir=$topdir/inc --backup-incremental-base=$topdir/full
 
 record_db_state test
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 
-xtrabackup --prepare --target-dir=$topdir/full --incremental-dir=$topdir/inc
+xtrabackup --prepare --target-dir=$topdir/full --prepare-incremental-from-dir=$topdir/inc
 
 stop_server
 
