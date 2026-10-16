@@ -123,14 +123,21 @@ main () {
             # get served from the archive URL below.
             major_minor="${clean_version%.*}"
 
-            url="https://dev.mysql.com/get/Downloads/MySQL-${major_minor}"
-            fallback_url="https://downloads.mysql.com/archives/get/p/23/file"
+            urls=("https://dev.mysql.com/get/Downloads/MySQL-${major_minor}"
+                  "https://downloads.mysql.com/archives/get/p/23/file")
 
             tarball="mysql-${clean_version}-linux-glibc2.28-${arch}.tar.xz"
             ;;
         xtradb9x)
-            url="https://downloads.percona.com/downloads/Percona-Server-Innovation-Release/Percona-Server-${VERSION}/binary/tarball"
-            fallback_url="https://downloads.percona.com/downloads/TESTING/ps-${VERSION}"
+            # Released versions are under Percona-Server-<major>.<minor>/ (9.7
+            # and later) or Percona-Server-Innovation-Release/; release
+            # candidates only under TESTING/.
+            clean_version="${VERSION%-[0-9][0-9]}"
+            clean_version="${clean_version%-[0-9]}"
+            major_minor="${clean_version%.*}"
+            urls=("https://downloads.percona.com/downloads/Percona-Server-${major_minor}/Percona-Server-${VERSION}/binary/tarball"
+                  "https://downloads.percona.com/downloads/Percona-Server-Innovation-Release/Percona-Server-${VERSION}/binary/tarball"
+                  "https://downloads.percona.com/downloads/TESTING/ps-${VERSION}")
             if [[ ${PXB_TYPE} == "Debug" ]] || [[ ${PXB_TYPE} == "debug" ]]; then
                 SUFFIX="-debug"
               else
@@ -141,20 +148,24 @@ main () {
         *) 
             echo "Err: Specified unsupported ${TYPE}."
             echo "Supported types are: innodb9x, xtradb9x."
-            echo "Example: $0 --type=xtradb9x --version=9.7.0-1"
+            echo "Example: $0 --type=xtradb9x --version=9.7.2-2"
             exit 1
             ;;
     esac
 
-    # Check if tarball exists at primary URL
-    if check_url "${url}" "${tarball}"; then
-        echo "Downloading ${tarball} from ${url}"
-        wget -qc "${url}/${tarball}"
-    elif check_url "${fallback_url}" "${tarball}"; then
-        echo "Primary URL failed. Downloading ${tarball} from fallback URL: ${fallback_url}"
-        wget -qc "${fallback_url}/${tarball}"
-    else
-        echo "Version you specified (${VERSION}) does not exist at either ${url}/${tarball} or ${fallback_url}/${tarball}"
+    # Download from the first URL that has the tarball
+    found=""
+    for url in "${urls[@]}"; do
+        if check_url "${url}" "${tarball}"; then
+            echo "Downloading ${tarball} from ${url}"
+            wget -qc "${url}/${tarball}"
+            found=yes
+            break
+        fi
+        echo "${tarball} is not at ${url}"
+    done
+    if [[ -z "${found}" ]]; then
+        echo "Version you specified (${VERSION}) does not exist at any of: ${urls[*]}"
         exit 1
     fi
 
@@ -183,7 +194,7 @@ main () {
 
 TYPE="xtradb9x"
 PXB_TYPE="release"
-VERSION="9.7.0-1"
+VERSION="9.7.2-2"
 DESTDIR="./server"
 parse_arguments PICK-ARGS-FROM-ARGV "$@"
 main

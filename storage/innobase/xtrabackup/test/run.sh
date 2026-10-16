@@ -993,8 +993,8 @@ if [ -n "$tname" ]
 then
    tests="$tname"
 else
-   tests="suites/binlog/* suites/pagetracking/* suites/gr/*.sh suites/keyring/*.sh suites/xbcloud/*.sh suites/compression/*.sh suites/reducedlock/*.sh suites/rocksdb/*.sh suites/check_tables/*.sh t/*.sh"
-   suites=" pagetracking binlog gr keyring compression reducedlock rocksdb check_tables main xbcloud"
+   tests="suites/binlog/* suites/pagetracking/* suites/gr/*.sh suites/keyring/*.sh suites/xbcloud/*.sh suites/compression/*.sh suites/reducedlock/*.sh suites/rocksdb/*.sh suites/check_tables/*.sh suites/oidc/*.sh t/*.sh"
+   suites=" pagetracking binlog gr keyring compression reducedlock rocksdb check_tables oidc main xbcloud"
 fi
 
 export OUTFILE="$PWD/results/setup"
