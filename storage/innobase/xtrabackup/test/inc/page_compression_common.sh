@@ -91,10 +91,10 @@ EOF
 innodb_wait_for_flush_all
 
 xtrabackup --backup --target-dir=$topdir/backup1 \
-           --incremental-basedir=$topdir/backup --transition-key=123 ${extra_args}
+           --backup-incremental-base=$topdir/backup --transition-key=123 ${extra_args}
 
 xtrabackup --backup --target-dir=$topdir/tmp \
-           --incremental-basedir=$topdir/backuplsn --transition-key=123 \
+           --backup-incremental-base=$topdir/backuplsn --transition-key=123 \
            --stream=xbstream ${extra_args} > $topdir/backup1.xbs
 
 record_db_state test
@@ -106,7 +106,7 @@ function decompress() {
 }
 
 function restore_and_verify() {
-    xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup \
+    xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup \
                --transition-key=123
 
     if [ $working_compression = "yes" ] ; then
@@ -116,7 +116,7 @@ function restore_and_verify() {
         done
     fi
 
-    xtrabackup --prepare --target-dir=$topdir/backup --incremental-dir=$topdir/backup1 \
+    xtrabackup --prepare --target-dir=$topdir/backup --prepare-incremental-from-dir=$topdir/backup1 \
                --transition-key=123
 
     if [ $working_compression = "yes" ] ; then

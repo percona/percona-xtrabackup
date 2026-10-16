@@ -49,7 +49,7 @@ mysql -e "FLUSH TABLES" test
 # Take incremental backup
 ###############################################################################
 
-xtrabackup --backup --target-dir=$topdir/inc --incremental-basedir=$topdir/full --parallel=1
+xtrabackup --backup --target-dir=$topdir/inc --backup-incremental-base=$topdir/full --parallel=1
 
 # Show .delta file sizes for debugging
 vlog "Delta file sizes in incremental backup:"
@@ -71,8 +71,8 @@ cat $delta_sizes >&2
 # Test: Prepare with --parallel=1 applies largest .delta first
 ###############################################################################
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
-xtrabackup --prepare --apply-log-only --incremental-dir=$topdir/inc \
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --prepare-incremental-from-dir=$topdir/inc \
   --target-dir=$topdir/full --parallel=1
 
 # Extract the "Applying" lines from the log (only those referencing test/ deltas)

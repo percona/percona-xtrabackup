@@ -12,12 +12,12 @@ xtrabackup --backup --target-dir=$topdir/full
 
 $MYSQL $MYSQL_ARGS -e "INSERT INTO t VALUES (4), (5), (6)" test
 
-xtrabackup --backup --incremental-basedir=$topdir/full --target-dir=$topdir/inc
+xtrabackup --backup --backup-incremental-base=$topdir/full --target-dir=$topdir/inc
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full
 
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/full \
-				      --incremental-dir=$topdir/inc
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/full \
+				      --prepare-incremental-from-dir=$topdir/inc
 
 xtrabackup --prepare --target-dir=$topdir/full
 

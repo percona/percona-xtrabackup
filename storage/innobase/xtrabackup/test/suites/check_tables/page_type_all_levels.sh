@@ -35,9 +35,9 @@ WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 600
 SELECT LPAD(n, 250, '0'), REPEAT('x', 4000) FROM seq;
 EOF
 
-vlog "Full backup + apply-log-only prepare"
+vlog "Full backup + apply-redo-only prepare"
 xtrabackup --backup --target-dir=$topdir/backup
-xtrabackup --prepare --apply-log-only --target-dir=$topdir/backup
+xtrabackup --prepare --apply-redo-only --target-dir=$topdir/backup
 
 IBD=$topdir/backup/test/t.ibd
 
