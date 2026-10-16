@@ -18,11 +18,15 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 *******************************************************/
 #include "ddl_tracker.h"
+
 #include <fil0fil.h>
 #include <os0thread-create.h>  // os_thread_create
+
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -32,6 +36,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+
 #include "backup_copy.h"
 #include "file_utils.h"
 #include "fsp0fsp.h"  // fsp_is_undo_tablespace
@@ -360,7 +365,7 @@ typedef struct {
   uint num;
   uint *count;
   ib_mutex_t *count_mutex;
-  bool *error;
+  std::atomic_bool *error;
   std::thread::id id;
   space_id_to_name_t *new_tables;
 } copy_thread_ctxt_t;
@@ -430,7 +435,8 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
   THD *thd = create_thd(false, false, true, 0, 0);
   debug_sync_point("copy_for_reduced");
 
-  while ((node = datafiles_iter_next(ctxt->it)) != NULL && !*(ctxt->error)) {
+  while ((node = datafiles_iter_next(ctxt->it)) != NULL &&
+         !ctxt->error->load()) {
     if (ctxt->new_tables->find(node->space->id) == ctxt->new_tables->end()) {
       continue;
     }
@@ -440,7 +446,7 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
 
     if (xtrabackup_copy_datafile_func(node, num, dest_name.c_str())) {
       xb::error() << "failed to copy datafile " << node->name;
-      *(ctxt->error) = true;
+      ctxt->error->store(true);
     }
   }
 
@@ -737,10 +743,31 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     std::string old_table_name = table.second.first;
     std::string new_table_name = table.second.second;
 
-    if (check_if_skip_table(new_table_name.c_str())) {
+    const bool skip_old = check_if_skip_table(old_table_name.c_str());
+    const bool skip_new = check_if_skip_table(new_table_name.c_str());
+
+    /* A rename can cross the boundary of a partial backup filter. If the old
+    name was included but the new name is excluded, delete the copied old-name
+    file during prepare. If the old name was excluded but the new name is
+    included, copy the final tablespace under lock as a new file. */
+    if (skip_new) {
+      new_tables.erase(space_id);
+      auto copied = tables_copied_no_lock.find(space_id);
+      if (!skip_old && copied != tables_copied_no_lock.end() &&
+          recopy_renamed_spaces.find(space_id) == recopy_renamed_spaces.end()) {
+        ulint flags = copied->second.second;
+        if (!backup_file_printf(
+                convert_file_name(space_id, old_table_name, flags, EXT_DEL)
+                    .c_str(),
+                "%s", "")) {
+          xb::error() << "DDL tracking: failed to write DDL marker";
+          return DB_ERROR;
+        }
+      }
       continue;
     }
-    if (check_if_skip_table(old_table_name.c_str())) {
+    if (skip_old) {
+      new_tables[space_id] = new_table_name;
       continue;
     }
     /* renamed new table. update new table entry to renamed table name
@@ -892,7 +919,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   uint count = xtrabackup_parallel;
   ib_mutex_t count_mutex;
   mutex_create(LATCH_ID_XTRA_COUNT_MUTEX, &count_mutex);
-  bool data_copying_error = false;
+  std::atomic_bool data_copying_error{false};
   datafiles_iter_t *it = datafiles_iter_new(nullptr);
   for (uint i = 0; i < (uint)xtrabackup_parallel; i++) {
     data_threads[i].it = it;
@@ -908,20 +935,16 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
   /* Wait for threads to exit */
   while (1) {
-    xb::info() << "Sleeping for 1 second, waiting for the recopy of tables to"
-                  " be finished. Expecting count be 0, current count of"
-                  " tablespaces to be copied is "
-               << count;
     std::this_thread::sleep_for(std::chrono::seconds(1));
     mutex_enter(&count_mutex);
-    if (count == 0) {
-      mutex_exit(&count_mutex);
-      break;
-    }
+    const uint remaining = count;
     mutex_exit(&count_mutex);
+    xb::info() << "Waiting for the recopy of tables to finish. Remaining: "
+               << remaining;
+    if (remaining == 0) break;
   }
 
-  if (data_copying_error) {
+  if (data_copying_error.load()) {
     xb::error() << "DDL tracking : could not recopy tablespaces.";
     return DB_ERROR;
   }
@@ -1013,13 +1036,12 @@ static std::optional<std::pair<int, std::string>> parse_ren_file(
   }
 }
 
-static void delete_force(const std::string &path) {
-  if (access(path.c_str(), R_OK) == 0) {
-    if (my_delete(path.c_str(), MYF(MY_WME))) {
-      xb::error() << "Can not delete file " << path << "; errno " << errno;
-      exit(EXIT_FAILURE);
-    }
+static bool delete_force(const std::string &path) {
+  if (!os_file_delete_if_exists_func(path.c_str(), nullptr)) {
+    xb::error() << "Can not delete file " << path << "; errno " << errno;
+    return false;
   }
+  return true;
 }
 
 static void rename_file(const std::string &from, const std::string &to) {
@@ -1058,6 +1080,21 @@ static bool truncate_suffix(std::string suffix, std::string &path) {
   return (true);
 }
 
+static bool parse_marker_space_id(const std::string &value,
+                                  space_id_t *space_id) {
+  try {
+    size_t parsed = 0;
+    const auto id = std::stoull(value, &parsed, 10);
+    if (parsed != value.size() || id > std::numeric_limits<space_id_t>::max()) {
+      return false;
+    }
+    *space_id = static_cast<space_id_t>(id);
+    return true;
+  } catch (const std::exception &) {
+    return false;
+  }
+}
+
 /**
  * Handles RENAME DDL that happened during the backup taken in reduced mode
  * by processing the file with `.ren` extension.
@@ -1076,7 +1113,12 @@ bool prepare_handle_ren_files(const datadir_entry_t &entry, void *) {
   Fil_path::normalize(ren_path);
   // trim .ren
   truncate_suffix(EXT_REN, ren_file_name);
-  space_id_t source_space_id = std::stoi(ren_file_name);
+  space_id_t source_space_id;
+  if (!parse_marker_space_id(ren_file_name, &source_space_id)) {
+    xb::error() << "prepare_handle_ren_files: invalid tablespace ID in "
+                << ren_path;
+    return false;
+  }
 
   auto result = parse_ren_file(ren_path);
   if (!result) {
@@ -1346,7 +1388,12 @@ bool prepare_handle_del_files(const datadir_entry_t &entry,
 
   // trim .del
   truncate_suffix(EXT_DEL, del_file_name);
-  space_id_t space_id = atoi(del_file_name.c_str());
+  space_id_t space_id;
+  if (!parse_marker_space_id(del_file_name, &space_id)) {
+    xb::error() << "prepare_handle_del_files: invalid tablespace ID in "
+                << del_file;
+    return false;
+  }
 
   fil_space_t *fil_space = fil_space_get(space_id);
   if (fil_space != nullptr) {
@@ -1387,9 +1434,9 @@ bool prepare_handle_del_files(const datadir_entry_t &entry,
       truncate_suffix(EXT_META, delta_file);
       delta_file.append(EXT_DELTA);
       xb::info() << "Deleting incremental meta file: " << meta_file;
-      delete_force(meta_file);
+      if (!delete_force(meta_file)) return false;
       xb::info() << "Deleting incremental delta file: " << delta_file;
-      delete_force(delta_file);
+      if (!delete_force(delta_file)) return false;
     }
   }
 

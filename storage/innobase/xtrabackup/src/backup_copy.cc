@@ -780,12 +780,17 @@ bool copy_redo_encryption_info() {
     return false;
   }
   success = os_file_read(read_request, src_path, src_file, log_buf.get(), 0,
-                         LOG_FILE_HDR_SIZE);
+                         LOG_FILE_HDR_SIZE) == DB_SUCCESS;
+  if (!success) {
+    xb::fatal_or_error(UT_LOCATION_HERE)
+        << "cannot read encryption from redo log " << src_path;
+    return false;
+  }
 
   ulint encryption_offset = LOG_HEADER_CREATOR_END + LOG_ENCRYPTION;
   success = os_file_write(write_request, dst_path, dst_file,
                           log_buf.get() + encryption_offset, encryption_offset,
-                          Encryption::INFO_SIZE);
+                          Encryption::INFO_SIZE) == DB_SUCCESS;
   if (!success) {
     xb::fatal_or_error(UT_LOCATION_HERE)
         << "cannot write encryption to redo log " << dst_path;

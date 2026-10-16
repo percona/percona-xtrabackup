@@ -51,6 +51,17 @@ for location in schema root; do
   [ ! -e "$dir/test/t1.ibd.temp" ] || die "rename ran after invalid marker"
 done
 
+# Invalid marker filenames must fail cleanly and must never map to space 0.
+dir="$topdir/bad_space_id_ren"
+cp -a "$topdir/raw" "$dir"
+mv "$dir/test/$ren_name" "$dir/test/not-a-space.ren"
+expect_prepare_failure "$dir" 'invalid tablespace ID'
+
+dir="$topdir/bad_space_id_del"
+cp -a "$topdir/raw" "$dir"
+touch "$dir/test/not-a-space.del"
+expect_prepare_failure "$dir" 'invalid tablespace ID'
+
 # Make the first InnoDB rename return its real failure value.
 dir="$topdir/staging_failure"
 cp -a "$topdir/raw" "$dir"
@@ -101,4 +112,5 @@ grep -q 'failed to write DDL marker' "$topdir/blocked.log" || die "marker failur
 if grep -q 'completed OK!' "$topdir/blocked.log"; then
   die "backup reported success after marker create failed"
 fi
+
 stop_server

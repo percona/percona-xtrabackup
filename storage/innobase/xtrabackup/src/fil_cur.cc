@@ -44,9 +44,9 @@ static bool xb_get_zip_size(const char *file_name, pfs_os_file_t file,
                             byte *buf, page_size_t &page_size,
                             bool &is_encrypted) {
   IORequest read_request(IORequest::READ | IORequest::NO_COMPRESSION);
-  const auto ret =
+  auto err =
       os_file_read(read_request, file_name, file, buf, 0, UNIV_PAGE_SIZE_MIN);
-  if (!ret) {
+  if (err != DB_SUCCESS) {
     xb::warn() << "Failed to read file from server directory " << file_name;
     return (false);
   }
@@ -153,7 +153,10 @@ xb_fil_cur_result_t xb_fil_cur_open(
         xb::error() << "cannot open tablespace " << cursor->abs_path;
       }
 
-      return (XB_FIL_CUR_MISSING);
+      return srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED &&
+                     !is_server_locked()
+                 ? XB_FIL_CUR_MISSING
+                 : XB_FIL_CUR_ERROR;
     }
   }
 
@@ -188,7 +191,10 @@ xb_fil_cur_result_t xb_fil_cur_open(
   if (!xb_get_zip_size(cursor->rel_path, cursor->file, cursor->buf, page_size,
                        cursor->is_encrypted)) {
     xb_fil_cur_close(cursor);
-    return (XB_FIL_CUR_SKIP);
+    return srv_backup_mode && opt_lock_ddl == LOCK_DDL_REDUCED &&
+                   !is_server_locked()
+               ? XB_FIL_CUR_MISSING
+               : XB_FIL_CUR_ERROR;
   } else if (page_size.is_compressed()) {
     page_size_shift = get_bit_shift(page_size.physical());
     xb::info() << node->name

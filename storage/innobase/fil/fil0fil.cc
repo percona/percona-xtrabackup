@@ -11677,7 +11677,8 @@ std::tuple<dberr_t, space_id_t> fil_open_for_xtrabackup(
     /* Note that table has been renamed during scan, we will save it in missing
     tables and copy/rename will be handled by ddl_tracker */
     space_id_t spaceid = file.space_id();
-    if (ddl_tracker && err == DB_CANNOT_OPEN_FILE) {
+    if (ddl_tracker && !is_server_locked() && err == DB_CANNOT_OPEN_FILE &&
+        spaceid != SPACE_UNKNOWN) {
       ddl_tracker->add_missing_after_discovery(spaceid);
     }
 #endif /* XTRABACKUP */

@@ -3777,7 +3777,16 @@ static dberr_t xb_load_tablespaces()
     /* when LOCK_DDL_REDUCED while processing ddl files on prepare phase
     we should not load external files */
     if (!xtrabackup_prepare) {
-      fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
+      dberr_t open_err;
+      std::tie(open_err, std::ignore) =
+          fil_open_for_xtrabackup(tablespace.file_name, tablespace.name);
+      if (open_err != DB_SUCCESS && open_err != DB_TABLESPACE_EXISTS &&
+          !(opt_lock_ddl == LOCK_DDL_REDUCED &&
+            open_err == DB_CANNOT_OPEN_FILE)) {
+        xb::error() << "Cannot open external tablespace "
+                    << tablespace.file_name << " with error " << open_err;
+        return open_err;
+      }
     }
   }
 
@@ -4871,7 +4880,7 @@ static bool xtrabackup_init_temp_log(void) {
 
   /* read log file header */
   success = os_file_read(read_request, dst_path, src_file, log_buf, 0,
-                         LOG_FILE_HDR_SIZE);
+                         LOG_FILE_HDR_SIZE) == DB_SUCCESS;
   if (!success) {
     goto error;
   }
@@ -4935,7 +4944,7 @@ static bool xtrabackup_init_temp_log(void) {
   update_log_temp_checkpoint(log_buf, max_lsn);
 
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
-                          LOG_FILE_HDR_SIZE);
+                          LOG_FILE_HDR_SIZE) == DB_SUCCESS;
   if (!success) {
     goto error;
   }
@@ -4945,8 +4954,8 @@ static bool xtrabackup_init_temp_log(void) {
   if (file_size % UNIV_PAGE_SIZE_MAX) {
     ulint n = UNIV_PAGE_SIZE_MAX - (ulint)(file_size % UNIV_PAGE_SIZE_MAX);
     memset(log_buf, 0, UNIV_PAGE_SIZE_MAX);
-    success =
-        os_file_write(write_request, src_path, src_file, log_buf, file_size, n);
+    success = os_file_write(write_request, src_path, src_file, log_buf,
+                            file_size, n) == DB_SUCCESS;
     if (!success) {
       goto error;
     }
@@ -4962,8 +4971,9 @@ static bool xtrabackup_init_temp_log(void) {
     expand = (ulint)(file_size / UNIV_PAGE_SIZE_MAX / 8);
 
     for (; expand > 128; expand -= 128) {
-      success = os_file_write(write_request, src_path, src_file, log_buf,
-                              file_size, UNIV_PAGE_SIZE_MAX * 128);
+      success =
+          os_file_write(write_request, src_path, src_file, log_buf, file_size,
+                        UNIV_PAGE_SIZE_MAX * 128) == DB_SUCCESS;
       if (!success) {
         goto error;
       }
@@ -4971,8 +4981,9 @@ static bool xtrabackup_init_temp_log(void) {
     }
 
     if (expand) {
-      success = os_file_write(write_request, src_path, src_file, log_buf,
-                              file_size, expand * UNIV_PAGE_SIZE_MAX);
+      success =
+          os_file_write(write_request, src_path, src_file, log_buf, file_size,
+                        expand * UNIV_PAGE_SIZE_MAX) == DB_SUCCESS;
       if (!success) {
         goto error;
       }
@@ -4985,7 +4996,7 @@ static bool xtrabackup_init_temp_log(void) {
     memset(log_buf, 0, UNIV_PAGE_SIZE_MAX);
     while (file_size < 128 * UNIV_PAGE_SIZE_MAX) {
       success = os_file_write(write_request, src_path, src_file, log_buf,
-                              file_size, UNIV_PAGE_SIZE_MAX);
+                              file_size, UNIV_PAGE_SIZE_MAX) == DB_SUCCESS;
       if (!success) {
         goto error;
       }
@@ -5191,7 +5202,7 @@ static bool xb_space_create_file(
     buf_flush_init_for_writing(NULL, page, NULL, 0,
                                fsp_is_checksum_disabled(space_id), true);
     success = os_file_write(write_request, path, *file, page, 0,
-                            page_size.physical());
+                            page_size.physical()) == DB_SUCCESS;
   } else {
     page_zip_des_t page_zip;
 
@@ -5205,7 +5216,7 @@ static bool xb_space_create_file(
     buf_flush_init_for_writing(NULL, page, &page_zip, 0,
                                fsp_is_checksum_disabled(space_id), true);
     success = os_file_write(write_request, path, *file, page_zip.data, 0,
-                            page_size.physical());
+                            page_size.physical()) == DB_SUCCESS;
   }
 
   ut::free(buf2);
@@ -5440,8 +5451,8 @@ static pfs_os_file_t xb_delta_open_matching_space(
 
       ut_a(os_file_status(oldpath, &exists, &type));
 
-      if (exists &&
-          !fil_rename_tablespace(f_space_id, oldpath, tmpname, NULL)) {
+      if (exists && fil_rename_tablespace(f_space_id, oldpath, tmpname, NULL) !=
+                        DB_SUCCESS) {
         xb::error() << "Cannot rename " << dest_space_name << " to " << tmpname;
         ut::free(oldpath);
         ut::free(space_name);
@@ -5478,8 +5489,8 @@ static pfs_os_file_t xb_delta_open_matching_space(
 
     ut_a(os_file_status(oldpath, &exists, &type));
 
-    if (exists &&
-        !fil_rename_tablespace(fil_space->id, oldpath, tmpname, NULL)) {
+    if (exists && fil_rename_tablespace(fil_space->id, oldpath, tmpname,
+                                        NULL) != DB_SUCCESS) {
       xb::error() << "Cannot rename " << fil_space->name << " to "
                   << dest_space_name;
       ut::free(oldpath);
@@ -5630,7 +5641,10 @@ bool xtrabackup_apply_delta(
 
   os_file_set_nocache(dst_file.m_file, dst_path, "OPEN");
 
-  os_file_get_status(dst_path, &stat_info, false, false);
+  if (os_file_get_status(dst_path, &stat_info, false, false) != DB_SUCCESS) {
+    xb::error() << "cannot get file status for " << dst_path;
+    goto error;
+  }
 
   /* allocate buffer for incremental backup */
   incremental_buffer_base = static_cast<byte *>(
@@ -5648,7 +5662,7 @@ bool xtrabackup_apply_delta(
     /* first block of block cluster */
     offset = ((incremental_buffers * (page_size / 4)) << page_size_shift);
     success = os_file_read(read_request, src_path, src_file, incremental_buffer,
-                           offset, page_size);
+                           offset, page_size) == DB_SUCCESS;
     if (!success) {
       goto error;
     }
@@ -5675,7 +5689,7 @@ bool xtrabackup_apply_delta(
 
     /* read whole of the cluster */
     success = os_file_read(read_request, src_path, src_file, incremental_buffer,
-                           offset, page_in_buffer * page_size);
+                           offset, page_in_buffer * page_size) == DB_SUCCESS;
     if (!success) {
       goto error;
     }
@@ -5693,7 +5707,7 @@ bool xtrabackup_apply_delta(
       const auto offset_in_file = offset_on_page << page_size_shift;
 
       success = os_file_write(write_request, dst_path, dst_file, page,
-                              offset_in_file, page_size);
+                              offset_in_file, page_size) == DB_SUCCESS;
       if (!success) {
         goto error;
       }
@@ -5972,7 +5986,7 @@ static bool xtrabackup_replace_log_file(const char *redo_path,
   }
 
   success = os_file_read(read_request, src_path, src_file, log_buf, 0,
-                         LOG_FILE_HDR_SIZE);
+                         LOG_FILE_HDR_SIZE) == DB_SUCCESS;
   if (!success) {
     goto error;
   }
@@ -5980,7 +5994,7 @@ static bool xtrabackup_replace_log_file(const char *redo_path,
   /* clear LOG_HEADER_CREATOR field */
   memset(log_buf + LOG_HEADER_CREATOR, ' ', 4);
   success = os_file_write(write_request, src_path, src_file, log_buf, 0,
-                          LOG_FILE_HDR_SIZE);
+                          LOG_FILE_HDR_SIZE) == DB_SUCCESS;
   if (!success) {
     goto error;
   }
