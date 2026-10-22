@@ -46,6 +46,7 @@ using keyring_kmip::IdExt;
 namespace service_definition {
 DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::init,
                    (my_h_keyring_keys_metadata_iterator * forward_iterator)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   bool retval = init_keys_metadata_iterator_template<Keyring_kmip_backend>(
       it, *g_keyring_operations, *g_component_callbacks);
@@ -57,6 +58,7 @@ DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::init,
 
 DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::deinit,
                    (my_h_keyring_keys_metadata_iterator forward_iterator)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   it.reset(
       reinterpret_cast<Iterator<Data_extension<IdExt>> *>(forward_iterator));
@@ -66,6 +68,7 @@ DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::deinit,
 
 DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::is_valid,
                    (my_h_keyring_keys_metadata_iterator forward_iterator)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   it.reset(
       reinterpret_cast<Iterator<Data_extension<IdExt>> *>(forward_iterator));
@@ -78,6 +81,7 @@ DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::is_valid,
 
 DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::next,
                    (my_h_keyring_keys_metadata_iterator forward_iterator)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   it.reset(
       reinterpret_cast<Iterator<Data_extension<IdExt>> *>(forward_iterator));
@@ -91,6 +95,7 @@ DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::next,
 DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::get_length,
                    (my_h_keyring_keys_metadata_iterator forward_iterator,
                     size_t *data_id_length, size_t *auth_id_length)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   it.reset(
       reinterpret_cast<Iterator<Data_extension<IdExt>> *>(forward_iterator));
@@ -106,6 +111,7 @@ DEFINE_BOOL_METHOD(Keyring_keys_metadata_iterator_service_impl::get,
                    (my_h_keyring_keys_metadata_iterator forward_iterator,
                     char *data_id, size_t data_id_length, char *auth_id,
                     size_t auth_id_length)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   it.reset(
       reinterpret_cast<Iterator<Data_extension<IdExt>> *>(forward_iterator));

@@ -76,7 +76,7 @@ SET(KEYRING_KMIP_LIBRARIES
   keyring_common
   OpenSSL::SSL
   OpenSSL::Crypto
-  kmippp
+  kmipclient
 )
 
 MYSQL_ADD_COMPONENT(keyring_kmip
@@ -84,6 +84,14 @@ MYSQL_ADD_COMPONENT(keyring_kmip
   LINK_LIBRARIES ${KEYRING_KMIP_LIBRARIES}
   MODULE_ONLY
 )
+
+IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  # kmipclient public headers currently emit these diagnostics under strict
+  # server flags; keep suppression target-local instead of source pragmas.
+  TARGET_COMPILE_OPTIONS(component_keyring_kmip PRIVATE
+    -Wno-extra-semi
+    -Wno-overloaded-virtual)
+ENDIF()
 
 TARGET_LINK_OPTIONS(component_keyring_kmip PRIVATE "${LINK_FLAG_NO_UNDEFINED}")
 
