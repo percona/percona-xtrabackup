@@ -159,6 +159,7 @@ rm -rf $RPM_BUILD_ROOT
 /usr/lib/libkmipclient.a
 /usr/lib/libkmipcore.a
 %{_libdir}/xtrabackup/plugin/component_keyring_kmip.so
+%{_libdir}/xtrabackup/plugin/authentication_openid_connect_client.so
 %if 0%{?with_sbom}
 %dir %{_datadir}/%{name}
 %{_datadir}/%{name}/sbom

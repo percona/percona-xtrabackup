@@ -234,6 +234,7 @@ extern uint opt_backup_lock_retry_count;
 extern const char *opt_history;
 extern char *opt_history_user;
 extern char *opt_history_password;
+extern char *opt_oidc_id_token_file;
 extern char *opt_history_host;
 extern uint opt_history_port;
 extern char *opt_history_socket;
