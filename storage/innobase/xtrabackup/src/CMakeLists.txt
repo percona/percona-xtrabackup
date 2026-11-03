@@ -71,6 +71,7 @@ MY_ADD_COMPILE_DEFINITIONS(
   xtrabackup.cc
   backup_conn.cc
   backup_mysql.cc
+  backup_oidc.cc
   file_utils.cc
   xb_dict.cc
   COMPILE_DEFINITIONS MYSQL_CLIENT)
@@ -101,6 +102,7 @@ MYSQL_ADD_EXECUTABLE(xtrabackup
   xbstream_write.cc
   backup_conn.cc
   backup_mysql.cc
+  backup_oidc.cc
   xb_dict.cc
   backup_copy.cc
   keyring_plugins.cc
