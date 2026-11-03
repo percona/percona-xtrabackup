@@ -1,0 +1,4 @@
+*** Building dlopen_checker utility
+*** Checking for unresolved symbols
+dlopen() succeeded: <LIBRARY_PATH>
+*** Deleting dlopen_checker utility

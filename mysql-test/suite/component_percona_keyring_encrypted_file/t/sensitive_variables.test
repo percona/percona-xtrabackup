@@ -1,0 +1,5 @@
+--source ../inc/have_percona_component_keyring_encrypted_file.inc
+
+--source ../inc/setup_component.inc
+--source include/keyring_tests/sensitive_variables/sensitive_variables.inc
+--source ../inc/teardown_component.inc

@@ -1,0 +1,9 @@
+--source ../inc/have_percona_component_keyring_encrypted_file.inc
+--source include/big_test.inc
+--source include/not_parallel.inc
+--source ../inc/setup_component_customized.inc
+
+--let KEYRING_COMPONENT = $COMPONENT_NAME
+--source include/keyring_tests/mats/keyring_encryption.inc
+
+--source ../inc/teardown_component_customized.inc

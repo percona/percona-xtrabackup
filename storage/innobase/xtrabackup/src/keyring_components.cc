@@ -39,6 +39,9 @@ const char *XTRABACKUP_KEYRING_KMS_CONFIG = "component_keyring_kms.cnf";
 
 const char *XTRABACKUP_KEYRING_VAULT_CONFIG = "component_keyring_vault.cnf";
 
+const char *XTRABACKUP_KEYRING_ENCRYPTED_FILE_CONFIG =
+    "component_percona_keyring_encrypted_file.cnf";
+
 SERVICE_TYPE(registry) *reg_srv = nullptr;
 SERVICE_TYPE(keyring_reader_with_status) *keyring_reader_service = nullptr;
 bool service_handler_initialized = false;
@@ -105,6 +108,8 @@ const char *xb_component_config_file() {
     return XTRABACKUP_KEYRING_KMS_CONFIG;
   } else if (component_name == "component_keyring_vault") {
     return XTRABACKUP_KEYRING_VAULT_CONFIG;
+  } else if (component_name == "component_percona_keyring_encrypted_file") {
+    return XTRABACKUP_KEYRING_ENCRYPTED_FILE_CONFIG;
   }
   return nullptr;
 }
@@ -256,6 +261,17 @@ bool keyring_init_offline() {
     os_file_status(fname, &exists, &type);
     if (exists) {
       component_urn = "file://component_keyring_vault";
+      component_config_path = fname;
+      goto init_components;
+    }
+  }
+
+  /* keyring encrypted file */
+  if (set_component_config_path(XTRABACKUP_KEYRING_ENCRYPTED_FILE_CONFIG,
+                                fname)) {
+    os_file_status(fname, &exists, &type);
+    if (exists) {
+      component_urn = "file://component_percona_keyring_encrypted_file";
       component_config_path = fname;
       goto init_components;
     }

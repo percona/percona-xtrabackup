@@ -1,0 +1,231 @@
+--source ../inc/have_percona_component_keyring_encrypted_file.inc
+--source include/have_component_keyring_file.inc
+
+--echo *** Determining keyring component names
+--let $MYSQLD_DATADIR = `SELECT @@datadir`
+
+--let $ENCRYPTED_FILE_COMPONENT_LIBRARY = `SELECT SUBSTRING_INDEX('$PERCONA_KEYRING_ENCRYPTED_FILE_COMPONENT_LOAD', '=', -1)`
+--let $ENCRYPTED_FILE_COMPONENT_NAME    = `SELECT SUBSTRING_INDEX('$ENCRYPTED_FILE_COMPONENT_LIBRARY', '.', 1)`
+
+--let $KEYRING_FILE_COMPONENT_LIBRARY = `SELECT SUBSTRING_INDEX('$KEYRING_FILE_COMPONENT_LOAD', '=', -1)`
+--let $KEYRING_FILE_COMPONENT_NAME    = `SELECT SUBSTRING_INDEX('$KEYRING_FILE_COMPONENT_LIBRARY', '.', 1)`
+
+--echo *** Setting up percona_keyring_encrypted_file component
+--source ../inc/setup_component.inc
+
+--echo *** Asserting that percona_keyring_encrypted_file is installed and active
+--assert (`SELECT STATUS_VALUE = '$ENCRYPTED_FILE_COMPONENT_NAME' FROM performance_schema.keyring_component_status WHERE STATUS_KEY = 'Component_name'`)
+--assert (`SELECT STATUS_VALUE = 'Active' FROM performance_schema.keyring_component_status WHERE STATUS_KEY = 'Component_status'`)
+
+--echo *** Creating an encrypted table and filling it with some data
+CREATE TABLE t1(
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  PRIMARY KEY(id)
+) ENCRYPTION="Y" ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+--let $t1_checksum = query_get_value(CHECKSUM TABLE t1, Checksum, 1)
+
+--echo *** Extracting InnoDB master key name
+SELECT KEY_ID INTO @t1_key_id FROM performance_schema.keyring_keys;
+--let $stored_t1_key_id = `SELECT @t1_key_id`
+
+--echo *** Rotating InnoDB master key
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+
+--echo *** Creating another encrypted table and filling it with some data
+CREATE TABLE t2(
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  PRIMARY KEY(id)
+) ENCRYPTION="Y" ENGINE=InnoDB;
+INSERT INTO t2 VALUES(42);
+--let $t2_checksum = query_get_value(CHECKSUM TABLE t2, Checksum, 1)
+
+--echo *** Extracting InnoDB master key name after rotation
+SELECT KEY_ID INTO @t2_key_id FROM performance_schema.keyring_keys WHERE KEY_ID != @t1_key_id;
+--let $stored_t2_key_id = `SELECT @t2_key_id`
+
+--echo *** Installing keyring UDF plugin
+--disable_query_log
+eval INSTALL PLUGIN keyring_udf SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_generate RETURNS INTEGER SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_type_fetch RETURNS STRING SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_length_fetch RETURNS INTEGER SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_fetch RETURNS STRING SONAME '$KEYRING_UDF';
+--enable_query_log
+
+--echo *** Manually generating an AES key in the keyring via keyring_key_generate() UDF
+--let $stored_custom_key_id     = CustomKey
+--let $stored_custom_key_type   = AES
+--let $stored_custom_key_length = 32
+eval SELECT keyring_key_generate ('$stored_custom_key_id', '$stored_custom_key_type', $stored_custom_key_length);
+
+--echo *** Extracting custom key metadata
+SELECT KEY_ID INTO @custom_key_id FROM performance_schema.keyring_keys WHERE KEY_ID != @t1_key_id AND KEY_ID != @t2_key_id;
+--assert (`SELECT @custom_key_id = '$stored_custom_key_id'`)
+--assert (`SELECT keyring_key_type_fetch(@custom_key_id) = '$stored_custom_key_type'`)
+--assert (`SELECT keyring_key_length_fetch(@custom_key_id) = '$stored_custom_key_length'`)
+--let $stored_custom_key_data_hex = `SELECT HEX(keyring_key_fetch(@custom_key_id))`
+
+--echo *** Uninstalling keyring UDF plugin
+--disable_query_log
+DROP FUNCTION keyring_key_fetch;
+DROP FUNCTION keyring_key_length_fetch;
+DROP FUNCTION keyring_key_type_fetch;
+DROP FUNCTION keyring_key_generate;
+UNINSTALL PLUGIN keyring_udf;
+--enable_query_log
+
+--echo *** Preparing component_keyring_file config content
+--let $KEYRING_FILE_DATA_FILE_PATH         = `SELECT CONCAT('$MYSQLTEST_VARDIR', '/keyring_file_plain')`
+--let $KEYRING_FILE_CONFIG_CONTENT         = `SELECT JSON_OBJECT('path', '$KEYRING_FILE_DATA_FILE_PATH', 'read_only', FALSE)`
+--let $LOCAL_KEYRING_FILE_MANIFEST_CONTENT = `SELECT JSON_OBJECT('components', CONCAT('file://', '$KEYRING_FILE_COMPONENT_NAME'))`
+
+
+--echo
+--echo ************************************************************************************
+--echo *** Checking percona_keyring_encrypted_file -> component_keyring_file migration ***
+--echo ************************************************************************************
+--echo
+
+--echo *** Stopping the server (original, with percona_keyring_encrypted_file)
+--source include/stop_mysqld.inc
+
+--echo *** Creating local component_keyring_file config
+--let COMPONENT_NAME        = $KEYRING_FILE_COMPONENT_NAME
+--let CURRENT_DATADIR       = $MYSQLD_DATADIR
+--let KEYRING_CONFIG_CONTENT = $KEYRING_FILE_CONFIG_CONTENT
+--source include/keyring_tests/helper/local_keyring_create_config.inc
+
+--echo *** Executing keyring data migration utility (percona_keyring_encrypted_file -> component_keyring_file)
+--exec $MYSQL_MIGRATE_KEYRING --component-dir=$PERCONA_KEYRING_ENCRYPTED_FILE_COMPONENT_DIR --source-keyring=$ENCRYPTED_FILE_COMPONENT_NAME --source-keyring-configuration-dir=$MYSQLD_DATADIR --destination-keyring=$KEYRING_FILE_COMPONENT_NAME --destination-keyring-configuration-dir=$MYSQLD_DATADIR >/dev/null 2>&1
+
+--echo *** Backing up local manifest file for current server instance with percona_keyring_encrypted_file
+--let CURRENT_DATADIR = $MYSQLD_DATADIR
+--source include/keyring_tests/helper/instance_backup_manifest.inc
+
+--echo *** Creating local manifest file for current server instance with component_keyring_file
+--let CURRENT_DATADIR        = $MYSQLD_DATADIR
+--let LOCAL_MANIFEST_CONTENT = $LOCAL_KEYRING_FILE_MANIFEST_CONTENT
+--source include/keyring_tests/helper/instance_create_manifest.inc
+
+--echo *** Starting the server (with component_keyring_file)
+--let $restart_parameters = restart: $KEYRING_FILE_COMPONENT_OPT
+--let $do_not_echo_parameters = 1
+--source include/start_mysqld.inc
+
+--echo *** Asserting that component_keyring_file is installed and active
+--assert (`SELECT STATUS_VALUE = '$KEYRING_FILE_COMPONENT_NAME' FROM performance_schema.keyring_component_status WHERE STATUS_KEY = 'Component_name'`)
+--assert (`SELECT STATUS_VALUE = 'Active' FROM performance_schema.keyring_component_status WHERE STATUS_KEY = 'Component_status'`)
+
+--echo *** Installing keyring UDF plugin once again after keyring component switch
+--disable_query_log
+eval INSTALL PLUGIN keyring_udf SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_type_fetch RETURNS STRING SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_length_fetch RETURNS INTEGER SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_fetch RETURNS STRING SONAME '$KEYRING_UDF';
+--enable_query_log
+
+--echo *** Asserting that keys stored in percona_keyring_encrypted_file successfully migrated to component_keyring_file
+--assert (`SELECT COUNT(*) = 1 FROM performance_schema.keyring_keys WHERE KEY_ID = '$stored_t1_key_id'`)
+--assert (`SELECT COUNT(*) = 1 FROM performance_schema.keyring_keys WHERE KEY_ID = '$stored_t2_key_id'`)
+--assert (`SELECT COUNT(*) = 1 FROM performance_schema.keyring_keys WHERE KEY_ID = '$stored_custom_key_id'`)
+
+--assert (`SELECT keyring_key_type_fetch('$stored_custom_key_id') = '$stored_custom_key_type'`)
+--assert (`SELECT keyring_key_length_fetch('$stored_custom_key_id') = '$stored_custom_key_length'`)
+--assert (`SELECT HEX(keyring_key_fetch('$stored_custom_key_id')) = '$stored_custom_key_data_hex'`)
+
+--echo *** Uninstalling keyring UDF plugin once again after keyring component switch
+--disable_query_log
+DROP FUNCTION keyring_key_fetch;
+DROP FUNCTION keyring_key_length_fetch;
+DROP FUNCTION keyring_key_type_fetch;
+UNINSTALL PLUGIN keyring_udf;
+--enable_query_log
+
+--echo *** Asserting that data can be read from the sample tables
+--let $t1_checksum_after_switch = query_get_value(CHECKSUM TABLE t1, Checksum, 1)
+--assert (`SELECT $t1_checksum_after_switch = $t1_checksum`)
+--let $t2_checksum_after_switch = query_get_value(CHECKSUM TABLE t2, Checksum, 1)
+--assert (`SELECT $t2_checksum_after_switch = $t2_checksum`)
+
+--echo *** Preparing percona_keyring_encrypted_file config content for back-migration
+--let $ENCRYPTED_FILE_DATA_FILE_PATH              = `SELECT CONCAT('$MYSQLTEST_VARDIR', '/keyring_file')`
+--let $ENCRYPTED_FILE_CONFIG_CONTENT              = `SELECT CONCAT('{ "path": "', '$ENCRYPTED_FILE_DATA_FILE_PATH', '", "read_only": false, "password": "secret_password", "iterations": 42 }')`
+--let $LOCAL_ENCRYPTED_FILE_MANIFEST_CONTENT      = `SELECT JSON_OBJECT('components', CONCAT('file://', '$ENCRYPTED_FILE_COMPONENT_NAME'))`
+
+
+--echo
+--echo ************************************************************************************
+--echo *** Checking component_keyring_file -> percona_keyring_encrypted_file migration ***
+--echo ************************************************************************************
+--echo
+
+--echo *** Stopping the server (with component_keyring_file)
+--source include/stop_mysqld.inc
+
+--echo *** Creating local percona_keyring_encrypted_file config
+--let COMPONENT_NAME         = $ENCRYPTED_FILE_COMPONENT_NAME
+--let CURRENT_DATADIR        = $MYSQLD_DATADIR
+--let KEYRING_CONFIG_CONTENT = $ENCRYPTED_FILE_CONFIG_CONTENT
+--source include/keyring_tests/helper/local_keyring_create_config.inc
+
+--echo *** Removing original encrypted keyring file to prepare a fresh migration destination
+--remove_file $ENCRYPTED_FILE_DATA_FILE_PATH
+
+--echo *** Executing keyring data migration utility (component_keyring_file -> percona_keyring_encrypted_file)
+--exec $MYSQL_MIGRATE_KEYRING --verbose --component-dir=$PERCONA_KEYRING_ENCRYPTED_FILE_COMPONENT_DIR --source-keyring=$KEYRING_FILE_COMPONENT_NAME --source-keyring-configuration-dir=$MYSQLD_DATADIR --destination-keyring=$ENCRYPTED_FILE_COMPONENT_NAME --destination-keyring-configuration-dir=$MYSQLD_DATADIR 2>&1 >/dev/null
+
+--echo *** Removing component_keyring_file data file
+--remove_file $KEYRING_FILE_DATA_FILE_PATH
+
+--echo *** Restoring local manifest file for current server instance with percona_keyring_encrypted_file
+--let CURRENT_DATADIR = $MYSQLD_DATADIR
+--source include/keyring_tests/helper/instance_restore_manifest.inc
+
+--echo *** Starting the server (with percona_keyring_encrypted_file)
+--let $restart_parameters = restart: $PERCONA_KEYRING_ENCRYPTED_FILE_COMPONENT_OPT
+--let $do_not_echo_parameters = 1
+--source include/start_mysqld.inc
+
+--echo *** Asserting that percona_keyring_encrypted_file is installed and active again
+--assert (`SELECT STATUS_VALUE = '$ENCRYPTED_FILE_COMPONENT_NAME' FROM performance_schema.keyring_component_status WHERE STATUS_KEY = 'Component_name'`)
+--assert (`SELECT STATUS_VALUE = 'Active' FROM performance_schema.keyring_component_status WHERE STATUS_KEY = 'Component_status'`)
+
+--echo *** Installing keyring UDF plugin once again after keyring component switch back
+--disable_query_log
+eval INSTALL PLUGIN keyring_udf SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_type_fetch RETURNS STRING SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_length_fetch RETURNS INTEGER SONAME '$KEYRING_UDF';
+eval CREATE FUNCTION keyring_key_fetch RETURNS STRING SONAME '$KEYRING_UDF';
+--enable_query_log
+
+--echo *** Asserting that keys stored in component_keyring_file successfully migrated to percona_keyring_encrypted_file
+--assert (`SELECT COUNT(*) = 1 FROM performance_schema.keyring_keys WHERE KEY_ID = '$stored_t1_key_id'`)
+--assert (`SELECT COUNT(*) = 1 FROM performance_schema.keyring_keys WHERE KEY_ID = '$stored_t2_key_id'`)
+--assert (`SELECT COUNT(*) = 1 FROM performance_schema.keyring_keys WHERE KEY_ID = '$stored_custom_key_id'`)
+
+--assert (`SELECT keyring_key_type_fetch('$stored_custom_key_id') = '$stored_custom_key_type'`)
+--assert (`SELECT keyring_key_length_fetch('$stored_custom_key_id') = '$stored_custom_key_length'`)
+--assert (`SELECT HEX(keyring_key_fetch('$stored_custom_key_id')) = '$stored_custom_key_data_hex'`)
+
+--echo *** Uninstalling keyring UDF plugin once again after keyring component switch back
+--disable_query_log
+DROP FUNCTION keyring_key_fetch;
+DROP FUNCTION keyring_key_length_fetch;
+DROP FUNCTION keyring_key_type_fetch;
+UNINSTALL PLUGIN keyring_udf;
+--enable_query_log
+
+--echo *** Asserting that data can be read from the sample tables
+--let $t1_checksum_after_switch = query_get_value(CHECKSUM TABLE t1, Checksum, 1)
+--assert (`SELECT $t1_checksum_after_switch = $t1_checksum`)
+--let $t2_checksum_after_switch = query_get_value(CHECKSUM TABLE t2, Checksum, 1)
+--assert (`SELECT $t2_checksum_after_switch = $t2_checksum`)
+
+
+--echo *** Dropping the sample tables
+DROP TABLE t2;
+DROP TABLE t1;
+
+--echo *** Tearing down percona_keyring_encrypted_file component
+--source ../inc/teardown_component.inc
