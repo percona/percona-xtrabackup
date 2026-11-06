@@ -2421,6 +2421,16 @@ detect this and will eventually quit sooner. */
   /** Position of the hidden percona_vec_aux_id column in cols[], or
   ULINT_UNDEFINED when the table does not have it. */
   ulint vec_aux_col;
+
+  /** Next label of the hidden percona_vec_aux_id column of a Percona Server
+  table with a vector index. The server assigns the labels; here the counter
+  only travels through the dynamic metadata (PM_TABLE_VEC_IDX_ID) so that
+  recovery and --prepare never lower it. 0 for every other table. */
+  std::atomic<uint64_t> vec_aux_autoinc_next_id;
+
+  /** Value of vec_aux_autoinc_next_id last written to the redo log or the
+  DD buffer table. Only grows. */
+  std::atomic<uint64_t> vec_aux_autoinc_persisted;
 #endif /* XTRABACKUP */
 
   /** The transaction that currently holds the the AUTOINC lock on this table.
@@ -2834,6 +2844,19 @@ enum persistent_type_t {
   /** Persistent Metadata type for autoinc counter */
   PM_TABLE_AUTO_INC = 2,
 
+#ifdef XTRABACKUP
+  /** Persistent metadata type for the hidden vec_idx_id counter of
+  vector-indexed tables. Deliberately far from the dense
+  upstream range: upstream owns this namespace and allocates small
+  values (3..5 are already earmarked below), so a distant byte can
+  never be misparsed as a future upstream type on a crossed-over
+  datadir - only rejected. Only tables carrying vector remnants (which
+  are upstream-incompatible anyway, via the hidden SE column) ever
+  write this entry, and any cleanup rebuild sheds it with the old
+  table_id. */
+  PM_TABLE_VEC_IDX_ID = 200,
+#endif /* XTRABACKUP */
+
   /* TODO: Will add following types
   PM_TABLE_UPDATE_TIME = 3,
   Maybe something tablespace related
@@ -2842,7 +2865,12 @@ enum persistent_type_t {
 
   /** The biggest type, which should be 1 bigger than the last
   true type */
-  PM_BIGGEST_TYPE = 3
+  PM_BIGGEST_TYPE =
+#ifdef XTRABACKUP
+      201
+#else
+      3
+#endif /* XTRABACKUP */
 };
 
 typedef std::vector<index_id_t, ut::allocator<index_id_t>> corrupted_ids_t;
@@ -2854,7 +2882,17 @@ class PersistentTableMetadata {
   @param[in]    id      table id
   @param[in]    version table dynamic metadata version */
   PersistentTableMetadata(table_id_t id, uint64_t version)
-      : m_id(id), m_version(version), m_corrupted_ids(), m_autoinc(0) {}
+#ifdef XTRABACKUP
+      : m_id(id),
+        m_version(version),
+        m_corrupted_ids(),
+        m_autoinc(0),
+        m_vec_next_id(0) {
+  }
+#else
+      : m_id(id), m_version(version), m_corrupted_ids(), m_autoinc(0) {
+  }
+#endif /* XTRABACKUP */
 
   /** Get the corrupted indexes' IDs
   @return the vector of indexes' IDs */
@@ -2897,6 +2935,25 @@ class PersistentTableMetadata {
   @return the autoinc counter */
   uint64_t get_autoinc() const { return (m_autoinc); }
 
+#ifdef XTRABACKUP
+  /** Set the hidden vec_idx_id counter of the table if it's bigger
+  (the exact analog of set_autoinc_if_bigger;)
+  @param[in]    value   vec_idx_id counter */
+  void set_vec_next_id_if_bigger(uint64_t value) {
+    if (value > m_vec_next_id) {
+      m_vec_next_id = value;
+    }
+  }
+
+  /** Set the hidden vec_idx_id counter of the table
+  @param[in]    value   vec_idx_id counter */
+  void set_vec_next_id(uint64_t value) { m_vec_next_id = value; }
+
+  /** Get the hidden vec_idx_id counter of the table
+  @return the vec_idx_id counter */
+  uint64_t get_vec_next_id() const { return (m_vec_next_id); }
+#endif /* XTRABACKUP */
+
  private:
   /** Table ID which this metadata belongs to */
   table_id_t m_id;
@@ -2909,6 +2966,12 @@ class PersistentTableMetadata {
 
   /** Autoinc counter of the table */
   uint64_t m_autoinc;
+
+#ifdef XTRABACKUP
+  /** Hidden vec_idx_id counter of vector-indexed tables;
+  0 when the table never consumed one */
+  uint64_t m_vec_next_id;
+#endif /* XTRABACKUP */
 
   /* TODO: We will add update_time, etc. here and APIs accordingly */
 };
@@ -3044,6 +3107,43 @@ class AutoIncPersister : public Persister {
   void aggregate(PersistentTableMetadata &metadata,
                  const PersistentTableMetadata &new_entry) const override;
 };
+
+#ifdef XTRABACKUP
+/** Persister for the hidden vec_idx_id counter of vector-indexed
+tables - the structural twin of AutoIncPersister: the
+counter is a hidden per-table autoinc written into the vec_idx_id
+column, and it must survive restart AND crash so labels are never
+reissued (an id consumed by a NULL-vector row or a rolled-back insert
+exists nowhere the aux-table maximum can see). */
+class VecIdxIdPersister : public Persister {
+ public:
+  /** Write the vec_idx_id counter of a table.
+  @param[in]    metadata        persistent metadata
+  @param[out]   buffer          write buffer
+  @param[in]    size            size of write buffer
+  @return the length of bytes written */
+  ulint write(const PersistentTableMetadata &metadata, byte *buffer,
+              ulint size) const override;
+
+  /** @return 1 type byte + max 11 bytes of much-compressed u64 */
+  inline ulint get_write_size(const PersistentTableMetadata &metadata
+                              [[maybe_unused]]) const override {
+    return (12);
+  }
+
+  /** Read the vec_idx_id counter from buffer into metadata.
+  @param[out]   metadata        metadata where we store the read data
+  @param[in]    buffer          buffer to read
+  @param[in]    size            size of buffer
+  @param[out]   corrupt         true if buffer content is corrupted
+  @return bytes consumed, 0 if the buffer is incomplete */
+  ulint read(PersistentTableMetadata &metadata, const byte *buffer, ulint size,
+             bool *corrupt) const override;
+
+  void aggregate(PersistentTableMetadata &metadata,
+                 const PersistentTableMetadata &new_entry) const override;
+};
+#endif /* XTRABACKUP */
 
 /** Container of persisters used in the system. Currently we don't need
 to protect this object since we only initialize it at very beginning and

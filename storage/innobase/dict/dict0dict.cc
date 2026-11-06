@@ -3967,6 +3967,9 @@ void dict_persist_init() {
       ut::new_withkey<Persisters>(UT_NEW_THIS_FILE_PSI_KEY);
   dict_persist->persisters->add(PM_INDEX_CORRUPTED);
   dict_persist->persisters->add(PM_TABLE_AUTO_INC);
+#ifdef XTRABACKUP
+  dict_persist->persisters->add(PM_TABLE_VEC_IDX_ID);
+#endif /* XTRABACKUP */
 
 #ifndef UNIV_HOTBACKUP
   dict_persist_update_log_margin();
@@ -4006,6 +4009,15 @@ static void dict_init_dynamic_metadata(dict_table_t *table,
   if (table->autoinc_persisted != 0) {
     metadata->set_autoinc(table->autoinc_persisted);
   }
+
+#ifdef XTRABACKUP
+  /* The hidden vec_idx_id counter of vector-indexed tables.
+  Nonzero only when the table ever consumed one, so ordinary tables
+  never carry the entry. */
+  if (table->vec_aux_autoinc_persisted.load() != 0) {
+    metadata->set_vec_next_id(table->vec_aux_autoinc_persisted.load());
+  }
+#endif /* XTRABACKUP */
 
   /* Will initialize other metadata here */
 }
@@ -4053,6 +4065,17 @@ static bool dict_table_apply_dynamic_metadata(
           << " or couldn't be loaded.";
     }
   }
+
+#ifdef XTRABACKUP
+  /* The vector next id only grows for a table id, and no DDL lowers it, so
+  it does not depend on the version: take the larger value. */
+  const uint64_t vec_next_id = metadata->get_vec_next_id();
+  if (vec_next_id > table->vec_aux_autoinc_persisted.load()) {
+    table->vec_aux_autoinc_next_id.store(vec_next_id);
+    table->vec_aux_autoinc_persisted.store(vec_next_id);
+    get_dirty = true;
+  }
+#endif /* XTRABACKUP */
 
   /* FIXME: Move this to the beginning of this function once corrupted
   index IDs are also written back to dd::Table::se_private_data. */
@@ -4362,6 +4385,29 @@ back to mysql.innodb_dynamic_metadata. Update LSN limit, which is used
 to stop user threads when redo log is running out of space and they
 do not hold latches (log.free_check_limit_lsn). */
 static void dict_persist_update_log_margin() {
+#ifdef XTRABACKUP
+  /* Below variables basically considers only the AUTO_INCREMENT counter,
+  the hidden vec_idx_id counter, and a small margin for
+  corrupted indexes. */
+
+  /* Worst case bytes for one PM_TABLE_VEC_IDX_ID entry, matching
+  VecIdxIdPersister::get_write_size(): 1 type byte + max 11 bytes of
+  much-compressed u64. A table can be dirty for its AUTO_INCREMENT
+  counter and its vec_idx_id counter at the same time, and
+  Persisters::write() then serializes both entries into the same
+  dynamic metadata record, so this must be added on top of the
+  AUTO_INCREMENT-only estimate below rather than assumed to overlap. */
+  static constexpr uint32_t log_margin_per_table_vec_idx_id = 12;
+
+  /* Every table will generate less than 80 bytes without
+  considering page split, plus the vec_idx_id entry above. */
+  static constexpr uint32_t log_margin_per_table_no_split =
+      80 + log_margin_per_table_vec_idx_id;
+
+  /* Every table metadata log may roughly consume such many bytes. */
+  static constexpr uint32_t record_size_per_table =
+      50 + log_margin_per_table_vec_idx_id;
+#else
   /* Below variables basically considers only the AUTO_INCREMENT counter
   and a small margin for corrupted indexes. */
 
@@ -4371,6 +4417,7 @@ static void dict_persist_update_log_margin() {
 
   /* Every table metadata log may roughly consume such many bytes. */
   static constexpr uint32_t record_size_per_table = 50;
+#endif /* XTRABACKUP */
 
   /* How many tables may generate one page split */
   static const uint32_t tables_per_split =
@@ -5751,6 +5798,67 @@ void AutoIncPersister::aggregate(
   }
 }
 
+#ifdef XTRABACKUP
+ulint VecIdxIdPersister::write(const PersistentTableMetadata &metadata,
+                               byte *buffer, ulint size) const {
+  ulint length = 0;
+  const uint64_t value = metadata.get_vec_next_id();
+
+  /* Zero means "never used" - write nothing, exactly like a table
+  without an autoinc column writes no PM_TABLE_AUTO_INC payload worth
+  keeping. Skipping the entry entirely keeps ordinary tables' metadata
+  rows free of the Percona type byte. */
+  if (value == 0) {
+    return (0);
+  }
+
+  mach_write_to_1(buffer, static_cast<byte>(PM_TABLE_VEC_IDX_ID));
+  ++length;
+  ++buffer;
+
+  ulint len = mach_u64_write_much_compressed(buffer, value);
+  length += len;
+  buffer += len;
+
+  ut_ad(length <= size);
+  return (length);
+}
+
+ulint VecIdxIdPersister::read(PersistentTableMetadata &metadata,
+                              const byte *buffer, ulint size,
+                              bool *corrupt) const {
+  *corrupt = false;
+
+  const byte *start = buffer;
+  const auto value = mach_parse_u64_much_compressed(&start, buffer + size);
+
+  if (start == nullptr) {
+    /* Just incomplete data, not corrupted */
+    return (0);
+  }
+
+  metadata.set_vec_next_id(value);
+
+  const ulint consumed = start - buffer;
+  ut_ad(consumed <= size);
+  return (consumed);
+}
+
+void VecIdxIdPersister::aggregate(
+    PersistentTableMetadata &metadata,
+    const PersistentTableMetadata &new_entry) const {
+  /* DEVIATION FROM AutoIncPersister: the vec counter is monotonic for
+  the whole lifetime of a table_id - legitimate resets ride table_id
+  reassignment (TRUNCATE, IMPORT, rebuilds), never a version bump on
+  the same table. A newer-version redo entry written by ANOTHER
+  persister (e.g. autoinc after an INSTANT DDL) carries vec == 0;
+  taking it version-authoritatively would wipe the counter on crash
+  recovery. Always keep the maximum, and leave the shared version
+  field to the persisters whose semantics depend on it. */
+  metadata.set_vec_next_id_if_bigger(new_entry.get_vec_next_id());
+}
+#endif /* XTRABACKUP */
+
 /** Destructor */
 Persisters::~Persisters() {
   persisters_t::iterator iter;
@@ -5794,6 +5902,11 @@ Persister *Persisters::add(persistent_type_t type) {
     case PM_TABLE_AUTO_INC:
       persister = ut::new_withkey<AutoIncPersister>(UT_NEW_THIS_FILE_PSI_KEY);
       break;
+#ifdef XTRABACKUP
+    case PM_TABLE_VEC_IDX_ID:
+      persister = ut::new_withkey<VecIdxIdPersister>(UT_NEW_THIS_FILE_PSI_KEY);
+      break;
+#endif /* XTRABACKUP */
     default:
       ut_d(ut_error);
       ut_o(break);
@@ -5823,14 +5936,28 @@ void Persisters::remove(persistent_type_t type) {
 size_t Persisters::write(PersistentTableMetadata &metadata, byte *buffer) {
   size_t size = 0;
   byte *pos = buffer;
+
+#ifdef XTRABACKUP
+  /* Iterate the REGISTERED persisters rather than the numeric type
+  range: the type space is sparse since Percona's PM_TABLE_VEC_IDX_ID
+  sits at 200, far from upstream's dense low values. The map is
+  ordered by type, so the serialization order (1, 2, 200) stays
+  deterministic. */
+  for (const auto &entry : m_persisters) {
+#else
   persistent_type_t type;
 
   for (type = static_cast<persistent_type_t>(PM_SMALLEST_TYPE + 1);
        type < PM_BIGGEST_TYPE;
        type = static_cast<persistent_type_t>(type + 1)) {
+#endif /* XTRABACKUP */
     ut_ad(size <= REC_MAX_DATA_SIZE);
 
+#ifdef XTRABACKUP
+    Persister *persister = entry.second;
+#else
     Persister *persister = get(type);
+#endif /* XTRABACKUP */
     ulint consumed = persister->write(metadata, pos, REC_MAX_DATA_SIZE - size);
 
     pos += consumed;

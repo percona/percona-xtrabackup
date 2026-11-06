@@ -1228,6 +1228,18 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     table->autoinc_persisted = autoinc;
   }
 
+  /* The label counter as of the last DDL, as Percona Server loads it. The
+  dynamic metadata applied below takes the larger value. */
+  if (add_vec_aux_col) {
+    const dd::Properties &p = dd_table->table().se_private_data();
+    const char *key = dd_table_key_strings[DD_TABLE_VEC_NEXT_ID];
+    uint64_t next_id = 0;
+    if (p.exists(key) && !p.get(key, &next_id)) {
+      table->vec_aux_autoinc_next_id.store(next_id);
+      table->vec_aux_autoinc_persisted.store(next_id);
+    }
+  }
+
   /* Now fill the space ID and Root page number for each index */
   bool first_index = true;
   i = 0;
