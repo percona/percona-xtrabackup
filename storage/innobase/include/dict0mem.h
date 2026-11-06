@@ -3183,6 +3183,17 @@ class Persisters {
   @return the length of serialized metadata */
   size_t write(PersistentTableMetadata &metadata, byte *buffer);
 
+#ifdef XTRABACKUP
+  /** Merge new_entry into metadata, each persister by its own rule.
+  MetadataRecover::store() uses it to fold the entry recovered from the redo
+  log into the buffered one, so the aggregate() of each persister must leave
+  metadata unchanged when new_entry has nothing of its kind.
+  @param[in,out]  metadata   entry to fold into
+  @param[in]      new_entry  entry to fold in */
+  void aggregate(PersistentTableMetadata &metadata,
+                 const PersistentTableMetadata &new_entry) const;
+#endif /* XTRABACKUP */
+
  private:
   /** A map to store all persisters needed */
   persisters_t m_persisters;

@@ -5728,9 +5728,18 @@ ulint CorruptedIndexPersister::read(PersistentTableMetadata &metadata,
 void CorruptedIndexPersister::aggregate(
     PersistentTableMetadata &metadata,
     const PersistentTableMetadata &new_entry) const {
+#ifdef XTRABACKUP
+  const corrupted_ids_t &known = metadata.get_corrupted_indexes();
+  for (auto id : new_entry.get_corrupted_indexes()) {
+    if (std::find(known.begin(), known.end(), id) == known.end()) {
+      metadata.add_corrupted_index(id);
+    }
+  }
+#else
   for (auto id : new_entry.get_corrupted_indexes()) {
     metadata.add_corrupted_index(id);
   }
+#endif /* XTRABACKUP */
 }
 
 /** Write the autoinc counter of a table, we can pre-calculate
@@ -5966,6 +5975,15 @@ size_t Persisters::write(PersistentTableMetadata &metadata, byte *buffer) {
 
   return (size);
 }
+
+#ifdef XTRABACKUP
+void Persisters::aggregate(PersistentTableMetadata &metadata,
+                           const PersistentTableMetadata &new_entry) const {
+  for (const auto &entry : m_persisters) {
+    entry.second->aggregate(metadata, new_entry);
+  }
+}
+#endif /* XTRABACKUP */
 
 void dict_sdi_close_table(dict_table_t *table) {
   ut_ad(dict_table_is_sdi(table->id));
