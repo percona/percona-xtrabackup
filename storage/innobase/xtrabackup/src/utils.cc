@@ -169,12 +169,14 @@ unsigned long host_total_memory() {
   meminfo();
   return kb_main_total * 1024;
 #else
-  struct meminfo_info *mem_info;
+  struct meminfo_info *mem_info = nullptr;
   if (procps_meminfo_new(&mem_info) < 0) {
     return 0;
   }
 
-  return MEMINFO_GET(mem_info, MEMINFO_MEM_TOTAL, ul_int) * 1024;
+  unsigned long total_mem = MEMINFO_GET(mem_info, MEMINFO_MEM_TOTAL, ul_int) * 1024;
+  procps_meminfo_unref(&mem_info);
+  return total_mem;
 #endif  // HAVE_PROCPS_V3
 }
 
@@ -183,12 +185,14 @@ unsigned long host_free_memory() {
   meminfo();
   return kb_main_available * 1024;
 #else
-  struct meminfo_info *mem_info;
+  struct meminfo_info *mem_info = nullptr;
   if (procps_meminfo_new(&mem_info) < 0) {
     return 0;
   }
 
-  return MEMINFO_GET(mem_info, MEMINFO_MEM_AVAILABLE, ul_int) * 1024;
+  unsigned long free_mem = MEMINFO_GET(mem_info, MEMINFO_MEM_AVAILABLE, ul_int) * 1024;
+  procps_meminfo_unref(&mem_info);
+  return free_mem;
 #endif  // HAVE_PROCPS_V3
 }
 #endif
