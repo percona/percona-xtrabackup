@@ -218,6 +218,15 @@ static dict_index_t *dict_index_build_internal_fts(
     dict_table_t *table,  /*!< in: table */
     dict_index_t *index); /*!< in: user representation of an FTS index */
 
+#ifdef XTRABACKUP
+/** Builds the internal dictionary cache representation for a vector index.
+@param[in]      table   table
+@param[in]      index   user representation of a vector index
+@return own: the internal representation of the vector index */
+static dict_index_t *dict_index_build_internal_vec(dict_table_t *table,
+                                                   dict_index_t *index);
+#endif /* XTRABACKUP */
+
 /** Removes an index from the dictionary cache. */
 static void dict_index_remove_from_cache_low(
     dict_table_t *table, /*!< in/out: table */
@@ -1179,6 +1188,13 @@ void dict_table_add_to_cache(dict_table_t *table, bool can_be_evicted) {
   // In PXB, we always load tables as evictable. We do not have create table
   // and upgrade from 5.7 scenarios. These paths can load table as non-evictable
   IF_XB(ut_ad(can_be_evicted);)
+
+#ifdef XTRABACKUP
+  /* DICT_TF2_HAS_VEC_AUX_COL and vec_aux_col describe one fact: the table
+  has the hidden percona_vec_aux_id column, at that position. */
+  ut_ad(DICT_TF2_FLAG_IS_SET(table, DICT_TF2_HAS_VEC_AUX_COL) ==
+        (table->vec_aux_col != ULINT_UNDEFINED));
+#endif /* XTRABACKUP */
 
   table->cached = true;
 
@@ -2220,7 +2236,11 @@ static bool dict_index_too_big_for_tree(const dict_table_t *table,
                                         const dict_index_t *new_index) {
   /* FTS index consists of auxiliary tables, they shall be excluded from index
   row size check */
+#ifdef XTRABACKUP
+  if (new_index->type & (DICT_FTS | DICT_VECTOR)) {
+#else
   if (new_index->type & DICT_FTS) {
+#endif /* XTRABACKUP */
     return (false);
   }
 
@@ -2449,6 +2469,10 @@ dberr_t dict_index_add_to_cache_w_vcol(dict_table_t *table, dict_index_t *index,
 
   if (index->type == DICT_FTS) {
     new_index = dict_index_build_internal_fts(table, index);
+#ifdef XTRABACKUP
+  } else if (dict_index_is_vector(index)) {
+    new_index = dict_index_build_internal_vec(table, index);
+#endif /* XTRABACKUP */
   } else if (index->is_clustered()) {
     new_index = dict_index_build_internal_clust(table, index);
   } else {
@@ -3287,6 +3311,32 @@ static dict_index_t *dict_index_build_internal_fts(
 
   return (new_index);
 }
+
+#ifdef XTRABACKUP
+static dict_index_t *dict_index_build_internal_vec(dict_table_t *table,
+                                                   dict_index_t *index) {
+  ut_ad(table && index);
+  ut_ad(dict_index_is_vector(index));
+  ut_ad(!dict_sys_mutex_own());
+  ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
+
+  /* Like an FTS index: only the indexed column, no system fields. */
+  auto new_index =
+      dict_mem_index_create(table->name.m_name, index->name, index->space,
+                            index->type, index->n_fields);
+
+  new_index->n_user_defined_cols = index->n_fields;
+
+  new_index->id = index->id;
+
+  dict_index_copy(new_index, index, table, 0, index->n_fields);
+
+  new_index->n_uniq = 0;
+  new_index->cached = true;
+
+  return (new_index);
+}
+#endif /* XTRABACKUP */
 /*====================== FOREIGN KEY PROCESSING ========================*/
 
 /** Checks if a table is referenced by foreign keys.
@@ -3374,6 +3424,9 @@ NOT NULL */
 
   while (index != nullptr) {
     if (types_idx != index && !(index->type & DICT_FTS) &&
+#ifdef XTRABACKUP
+        !(index->type & DICT_VECTOR) &&
+#endif /* XTRABACKUP */
         !dict_index_is_spatial(index) && !index->to_be_dropped &&
         (!(index->uncommitted &&
            ((index->online_status == ONLINE_INDEX_ABORTED_DROPPED) ||
@@ -3631,6 +3684,9 @@ bool dict_index_check_search_tuple(
   ut_ad(index->page >= FSP_FIRST_INODE_PAGE_NO);
   ut_ad(dtuple_check_typed(tuple));
   ut_ad(!(index->type & DICT_FTS));
+#ifdef XTRABACKUP
+  ut_ad(!(index->type & DICT_VECTOR));
+#endif /* XTRABACKUP */
   return true;
 }
 #endif /* UNIV_DEBUG */

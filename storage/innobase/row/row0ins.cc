@@ -3613,7 +3613,11 @@ static inline void row_ins_get_row_from_query_block(
   ut_ad(node->state == INS_NODE_INSERT_ENTRIES);
 
   while (node->index != nullptr) {
+#ifdef XTRABACKUP
+    if (node->index->type != DICT_FTS && !node->index->is_vector()) {
+#else
     if (node->index->type != DICT_FTS) {
+#endif /* XTRABACKUP */
       err = row_ins_index_entry_step(node, thr);
 
       switch (err) {

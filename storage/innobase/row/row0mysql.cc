@@ -4554,7 +4554,12 @@ dberr_t row_scan_index_for_mysql(row_prebuilt_t *prebuilt, dict_index_t *index,
     indexes of the old table will remain valid and the new
     table will be unaccessible to MySQL until the
     completion of the ALTER TABLE. */
+#ifdef XTRABACKUP
+  } else if (dict_index_is_online_ddl(index) || (index->type & DICT_FTS) ||
+             index->is_vector()) {
+#else
   } else if (dict_index_is_online_ddl(index) || (index->type & DICT_FTS)) {
+#endif /* XTRABACKUP */
     /* Full Text index are implemented by auxiliary tables,
     not the B-tree. We also skip secondary indexes that are
     being created online. */

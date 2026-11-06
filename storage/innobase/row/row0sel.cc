@@ -4490,7 +4490,12 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
   we implemented FTS as reversed inverted index with auxiliary tables.
   So anything related to traditional index query would not apply to
   it. */
+#ifdef XTRABACKUP
+  if ((prebuilt->index->type & DICT_FTS) ||
+      dict_index_is_vector(prebuilt->index)) {
+#else
   if (prebuilt->index->type & DICT_FTS) {
+#endif /* XTRABACKUP */
     return DB_END_OF_INDEX;
   }
 

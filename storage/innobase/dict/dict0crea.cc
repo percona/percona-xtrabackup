@@ -388,7 +388,11 @@ dberr_t dict_create_index_tree_in_mem(dict_index_t *index, trx_t *trx) {
 
   DBUG_EXECUTE_IF("ib_dict_create_index_tree_fail", return (DB_OUT_OF_MEMORY););
 
+#ifdef XTRABACKUP
+  if (index->type & (DICT_FTS | DICT_VECTOR)) {
+#else
   if (index->type == DICT_FTS) {
+#endif /* XTRABACKUP */
     /* FTS index does not need an index tree */
     return (DB_SUCCESS);
   }

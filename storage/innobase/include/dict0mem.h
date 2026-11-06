@@ -111,9 +111,18 @@ constexpr uint32_t DICT_VIRTUAL = 128;
 constexpr uint32_t DICT_SDI = 256;
 /** Multi-value index */
 constexpr uint32_t DICT_MULTI_VALUE = 512;
+#ifdef XTRABACKUP
+/** Percona Server vector index. It has no B-tree: the graph lives in
+auxiliary tables, so insert, undo, purge and statistics skip it. */
+constexpr uint32_t DICT_VECTOR = 1024;
+#endif /* XTRABACKUP */
 
 /** number of bits used for SYS_INDEXES.TYPE */
+#ifdef XTRABACKUP
+constexpr uint32_t DICT_IT_BITS = 11;
+#else
 constexpr uint32_t DICT_IT_BITS = 10;
+#endif /* XTRABACKUP */
 /** @} */
 
 #if 0                         /* not implemented, retained for history */
@@ -262,7 +271,11 @@ ROW_FORMAT=REDUNDANT.  InnoDB engines do not check these flags
 for unknown bits in order to protect backward incompatibility. */
 /** @{ */
 /** Total number of bits in table->flags2. */
+#ifdef XTRABACKUP
+constexpr uint32_t DICT_TF2_BITS = 12;
+#else
 constexpr uint32_t DICT_TF2_BITS = 11;
+#endif /* XTRABACKUP */
 constexpr uint32_t DICT_TF2_UNUSED_BIT_MASK = ~0U << DICT_TF2_BITS;
 constexpr uint32_t DICT_TF2_BIT_MASK = ~DICT_TF2_UNUSED_BIT_MASK;
 
@@ -286,6 +299,12 @@ constexpr uint32_t DICT_TF2_USE_FILE_PER_TABLE = 16;
 /** Set when we discard/detach the tablespace */
 constexpr uint32_t DICT_TF2_DISCARDED = 32;
 
+#ifdef XTRABACKUP
+/** The table has the hidden percona_vec_aux_id column (BIGINT UNSIGNED NOT
+NULL) that Percona Server adds while the table has a vector index. */
+constexpr uint32_t DICT_TF2_HAS_VEC_AUX_COL = 64;
+#endif /* XTRABACKUP */
+
 /** Intrinsic table bit
 Intrinsic table is table created internally by MySQL modules viz. Optimizer,
 FTS, etc.... Intrinsic table has all the properties of the normal table except
@@ -300,6 +319,12 @@ constexpr uint32_t DICT_TF2_AUX = 512;
 
 /** Table is opened by resurrected trx during crash recovery. */
 constexpr uint32_t DICT_TF2_RESURRECT_PREPARED = 1024;
+
+#ifdef XTRABACKUP
+/** Auxiliary table of a Percona Server vector index. Kept apart from
+DICT_TF2_AUX, which means an FTS auxiliary table. */
+constexpr uint32_t DICT_TF2_VEC_AUX = 2048;
+#endif /* XTRABACKUP */
 /** @} */
 
 /** Tables could be chained together with Foreign key constraint. When
@@ -1324,6 +1349,16 @@ struct dict_index_t {
 
     return (type & DICT_MULTI_VALUE);
   }
+
+#ifdef XTRABACKUP
+  /** Check whether the index is a Percona Server vector index.
+  @return true if the index is a vector index */
+  [[nodiscard]] bool is_vector() const {
+    ut_ad(magic_n == DICT_INDEX_MAGIC_N);
+
+    return (type & DICT_VECTOR);
+  }
+#endif /* XTRABACKUP */
 
   /** Returns the minimum data size of an index record.
   @return minimum data size in bytes */
@@ -2382,6 +2417,12 @@ detect this and will eventually quit sooner. */
   be no conflict to access it, so no protection is needed. */
   ulint autoinc_field_no;
 
+#ifdef XTRABACKUP
+  /** Position of the hidden percona_vec_aux_id column in cols[], or
+  ULINT_UNDEFINED when the table does not have it. */
+  ulint vec_aux_col;
+#endif /* XTRABACKUP */
+
   /** The transaction that currently holds the the AUTOINC lock on this table.
   Protected by lock_sys table shard latch. To "peek" the current value one
   can read it without any latch, understanding that in general it may change.
@@ -2716,6 +2757,15 @@ detect this and will eventually quit sooner. */
     ut_ad(magic_n == DICT_TABLE_MAGIC_N);
     return (flags2 & DICT_TF2_AUX);
   }
+
+#ifdef XTRABACKUP
+  /** Determine if this is an auxiliary table of a vector index.
+  @return true if the table is a vector auxiliary table */
+  bool is_vec_aux() const {
+    ut_ad(magic_n == DICT_TABLE_MAGIC_N);
+    return (flags2 & DICT_TF2_VEC_AUX);
+  }
+#endif /* XTRABACKUP */
 
   /** Determine whether the table is intrinsic.
   An intrinsic table is a special kind of temporary table that
