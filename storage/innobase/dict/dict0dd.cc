@@ -425,6 +425,10 @@ ulint get_innobase_type_from_dd(const dd::Column *col, ulint &unsigned_type) {
       return DATA_BLOB;
     case dd::enum_column_types::JSON:
       return DATA_BLOB;
+#ifdef XTRABACKUP
+    case dd::enum_column_types::VECTOR:
+      return DATA_BLOB;
+#endif /* XTRABACKUP */
 
     case dd::enum_column_types::GEOMETRY:
       return DATA_GEOMETRY;
