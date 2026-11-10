@@ -49,6 +49,7 @@ DEFINE_BOOL_METHOD(Keyring_aes_service_impl::encrypt,
                     const unsigned char *data_buffer, size_t data_buffer_length,
                     unsigned char *out_buffer, size_t out_buffer_length,
                     size_t *out_length)) {
+  if (!g_keyring_operations) return true;
   return aes_encrypt_template<
       Keyring_kmip_backend,
       keyring_common::data::Data_extension<keyring_kmip::IdExt>>(
@@ -63,6 +64,7 @@ DEFINE_BOOL_METHOD(Keyring_aes_service_impl::decrypt,
                     const unsigned char *data_buffer, size_t data_buffer_length,
                     unsigned char *out_buffer, size_t out_buffer_length,
                     size_t *out_length)) {
+  if (!g_keyring_operations) return true;
   return aes_decrypt_template<
       Keyring_kmip_backend,
       keyring_common::data::Data_extension<keyring_kmip::IdExt>>(
