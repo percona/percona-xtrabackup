@@ -131,7 +131,9 @@ fi
 # The .md5 file is out of this user's reach.  Saying so on every delete would
 # be noise, and it is what xbcloud did before the fix, so the run has to be
 # quiet about it.
-if grep -qiE 'warning|failed to delete|access denied|forbidden|403' $LOG_DELETE; then
+# Match the messages xbcloud actually prints: a bare "403", and even the word
+# "warning", can occur inside the random bucket and backup names.
+if grep -qiE 'Warning:|Failed to delete|Delete failed|Access Denied|Forbidden' $LOG_DELETE; then
     cat $LOG_DELETE >&2
     die "PXB-3609: delete complained about ${BACKUP_NAME}.md5, which this user \
 has no rights on"
