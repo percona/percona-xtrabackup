@@ -160,6 +160,30 @@ assert_eq() {
   vlog "$label: $actual (EXACT)"
 }
 
+# expect_log <pattern> <message> <file>
+#   die() with <message> unless a line of <file> matches the basic regular
+#   expression <pattern>. <file> is printed first, so the test log shows why.
+expect_log() {
+  local pattern=$1 message=$2 file=$3
+  if ! grep -q -- "$pattern" "$file" ; then
+    cat "$file"
+    die "$message: no line matches '$pattern' in $file"
+  fi
+}
+
+# expect_no_log <pattern> <message> <file>
+#   die() with <message> if a line of <file> matches the basic regular
+#   expression <pattern>. <file> is printed first, then the matching lines.
+expect_no_log() {
+  local pattern=$1 message=$2 file=$3
+  if grep -q -- "$pattern" "$file" ; then
+    cat "$file"
+    vlog "Lines matching '$pattern':"
+    grep -- "$pattern" "$file" >&2
+    die "$message: a line matches '$pattern' in $file"
+  fi
+}
+
 # assert_target_strict <dir> <bs> <label>
 #   backup_size (bs) read from extra-lsndir/xtrabackup_info must equal
 #   the sum of file sizes under <dir>.  Uses the extra-lsndir copy
