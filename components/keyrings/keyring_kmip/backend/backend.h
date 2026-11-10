@@ -23,14 +23,21 @@
 #ifndef KEYRING_FILE_BACKEND_INCLUDED
 #define KEYRING_FILE_BACKEND_INCLUDED
 
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include <components/keyrings/common/data/data_extension.h>
 #include <components/keyrings/common/memstore/iterator.h>
 #include <components/keyrings/common/operations/operations.h>
 #include "config/config.h"
+#include "kmipclient/Kmip.hpp"
 
-#include "kmippp.h"
+namespace kmipclient {
+class Kmip;
+}
 
 namespace keyring_kmip {
 
@@ -44,7 +51,7 @@ class Keyring_kmip_backend final {
  public:
   explicit Keyring_kmip_backend(config::Config_pod const &config);
 
-  ~Keyring_kmip_backend() {}
+  ~Keyring_kmip_backend();
 
   /**
     Fetch data
@@ -128,11 +135,125 @@ class Keyring_kmip_backend final {
   bool valid() const { return valid_; }
 
  private:
+  struct Cached_object_ids {
+    std::vector<std::string> key_ids;
+    std::vector<std::string> secret_ids;
+  };
+
+  template <typename Callable>
+  auto with_kmip_operation(Callable callable) const -> decltype(callable()) {
+    std::lock_guard<std::mutex> op_guard(kmip_operation_mutex_);
+    return callable();
+  }
+
+  template <typename Callable>
+  auto with_cache_state(Callable callable) const -> decltype(callable()) {
+    std::lock_guard<std::mutex> cache_guard(cache_state_mutex_);
+    return callable();
+  }
+
+  Cached_object_ids snapshot_cached_object_ids() const {
+    return with_cache_state([this]() {
+      return Cached_object_ids{cached_key_ids_, cached_secret_ids_};
+    });
+  }
+
+  void update_cached_object_ids(
+      const std::vector<std::string> &key_ids,
+      const std::vector<std::string> &secret_ids) const {
+    with_cache_state([this, &key_ids, &secret_ids]() {
+      cached_key_ids_ = key_ids;
+      cached_secret_ids_ = secret_ids;
+    });
+  }
+
+  std::optional<size_t> get_expected_cacheable_size() const {
+    return with_cache_state([this]() { return expected_cacheable_size_; });
+  }
+
+  void reset_expected_cacheable_size() const {
+    with_cache_state([this]() { expected_cacheable_size_ = std::nullopt; });
+  }
+
+  void set_expected_cacheable_size(size_t value) const {
+    with_cache_state([this, value]() { expected_cacheable_size_ = value; });
+  }
+
+  void increment_expected_cacheable_size_if_set() const {
+    with_cache_state([this]() {
+      if (expected_cacheable_size_.has_value()) {
+        ++(*expected_cacheable_size_);
+      }
+    });
+  }
+
+  static bool is_empty_or_whitespace(const std::string &value);
+  static bool validate_required_config(const config::Config_pod &config,
+                                       std::string &missing_options);
+  std::vector<std::string> get_object_ids(
+      kmipclient::Kmip &kmip, kmipclient::object_type object_type) const {
+    return with_kmip_operation([this, &kmip, object_type]() {
+      return config_.object_group.empty()
+                 ? kmip.client().op_all(object_type, config_.max_objects)
+                 : kmip.client().op_locate_by_group(
+                       config_.object_group, object_type, config_.max_objects);
+    });
+  }
+
+  /** Decrement expected cacheable size when a backend object is intentionally
+   * skipped. */
+  void decrement_expected_cacheable_size() const {
+    with_cache_state([this]() {
+      if (expected_cacheable_size_.has_value() &&
+          *expected_cacheable_size_ > 0) {
+        --(*expected_cacheable_size_);
+      }
+    });
+  }
+
+  /** Clear cached object IDs after load_cache completes */
+  void clear_cached_object_ids() const {
+    with_cache_state([this]() {
+      cached_key_ids_.clear();
+      cached_secret_ids_.clear();
+    });
+  }
+
   /** Validity */
   bool valid_;
   config::Config_pod config_;
 
-  kmippp::context kmip_ctx() const;
+  /** KMIP client instance - lazy initialized on first use */
+  mutable std::unique_ptr<kmipclient::Kmip> kmip_client_;
+
+  /** Guards lazy initialization of kmip_client_. */
+  mutable std::mutex kmip_client_mutex_;
+
+  /** Serializes calls to kmip.client().op_* APIs on the shared client instance.
+   */
+  mutable std::mutex kmip_operation_mutex_;
+
+  /** Protects expected_cacheable_size_ and cached object ID vectors. */
+  mutable std::mutex cache_state_mutex_;
+
+  /**
+    Backend size as expected by Keyring_operations::load_cache():
+    number of entries that should be inserted into cache.
+    It is initialized from locate() counts and adjusted for entries that
+    cannot be inserted into cache.
+  */
+  mutable std::optional<size_t> expected_cacheable_size_;
+
+  /** Cached SYMMETRIC_KEY object IDs - populated by size() and reused in
+   * load_cache() */
+  mutable std::vector<std::string> cached_key_ids_;
+
+  /** Cached SECRET_DATA object IDs - populated by size() and reused in
+   * load_cache() */
+  mutable std::vector<std::string> cached_secret_ids_;
+
+  /** Initialize or get existing KMIP client instance */
+  kmipclient::Kmip &get_kmip_client() const;
 };
 }  // namespace backend
 }  // namespace keyring_kmip

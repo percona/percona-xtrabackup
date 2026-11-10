@@ -44,6 +44,7 @@ namespace service_definition {
 DEFINE_BOOL_METHOD(Keyring_reader_service_impl::init,
                    (const char *data_id, const char *auth_id,
                     my_h_keyring_reader_object *reader_object)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   int retval = init_reader_template<Keyring_kmip_backend>(
       data_id, auth_id, it, *g_keyring_operations, *g_component_callbacks);
@@ -55,6 +56,7 @@ DEFINE_BOOL_METHOD(Keyring_reader_service_impl::init,
 
 DEFINE_BOOL_METHOD(Keyring_reader_service_impl::deinit,
                    (my_h_keyring_reader_object reader_object)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   it.reset(reinterpret_cast<Iterator<Data_extension<IdExt>> *>(reader_object));
   return deinit_reader_template<Keyring_kmip_backend>(it, *g_keyring_operations,
@@ -64,6 +66,7 @@ DEFINE_BOOL_METHOD(Keyring_reader_service_impl::deinit,
 DEFINE_BOOL_METHOD(Keyring_reader_service_impl::fetch_length,
                    (my_h_keyring_reader_object reader_object, size_t *data_size,
                     size_t *data_type_size)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   it.reset(reinterpret_cast<Iterator<Data_extension<IdExt>> *>(reader_object));
   bool retval = fetch_length_template<Keyring_kmip_backend>(
@@ -79,6 +82,7 @@ DEFINE_BOOL_METHOD(Keyring_reader_service_impl::fetch,
                     unsigned char *data_buffer, size_t data_buffer_length,
                     size_t *data_size, char *data_type_buffer,
                     size_t data_type_buffer_length, size_t *data_type_size)) {
+  if (!g_keyring_operations) return true;
   std::unique_ptr<Iterator<Data_extension<IdExt>>> it;
   it.reset(reinterpret_cast<Iterator<Data_extension<IdExt>> *>(reader_object));
   bool retval = fetch_template<Keyring_kmip_backend>(
