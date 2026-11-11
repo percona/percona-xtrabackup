@@ -1118,19 +1118,14 @@ static inline ulint buf_pool_size_align(ulint size) {
 }
 
 #ifdef XTRABACKUP
-/** Calculate aligned buffer pool size based on srv_buf_pool_chunk_unit,
-if needed we round it down.
+/** Round a buffer pool size down to a multiple of
+srv_buf_pool_instances * srv_buf_pool_chunk_unit.
 @param[in]	size	size in bytes
-@return	aligned size */
+@return the largest multiple that is not above size, or 0 if size is
+smaller than one multiple; the caller must handle 0 */
 static inline ulint buf_pool_size_align_down(ulint size) {
   const ulint m = srv_buf_pool_instances * srv_buf_pool_chunk_unit;
-  size = std::max(size, srv_buf_pool_min_size);
-
-  if (size % m == 0) {
-    return (size);
-  } else {
-    return ((size / m - 1) * m);
-  }
+  return ((size / m) * m);
 }
 #endif
 
