@@ -175,6 +175,9 @@ bool xtrabackup_use_memory_set = false;
 uint xtrabackup_use_free_memory_pct = 0;
 bool estimate_memory = false;
 bool xtrabackup_estimate_memory = false;
+/** True when the buffer pool size for --prepare comes from
+--use-free-memory-pct, false when it comes from --use-memory. */
+static bool buf_pool_size_from_free_memory = false;
 
 bool xtrabackup_create_ib_logfile = false;
 
@@ -2358,6 +2361,83 @@ inline ulong innodb_page_size_validate(ulong page_size) {
   return (0);
 }
 
+/** Check whether the free memory read can be used to size the buffer pool
+for --use-free-memory-pct.
+@param[in]	free_mem	free memory of the host in bytes
+@param[in]	total_mem	total memory of the host in bytes
+@return nullptr if free_mem can be used, otherwise the reason why not */
+static const char *free_memory_check(ulint free_mem, ulint total_mem) {
+  if (free_mem == 0) return "the free memory was read as 0";
+  if (total_mem == 0) return "the total memory was read as 0";
+  if (free_mem >= total_mem)
+    return "the free memory is not below the total memory";
+  if (free_mem < srv_buf_pool_instances * srv_buf_pool_chunk_unit)
+    return "the free memory is below one buffer pool chunk";
+  return nullptr;
+}
+
+/** Choose the buffer pool size for --prepare --use-free-memory-pct.
+
+The size is the memory the backup estimate asks for, capped at
+--use-free-memory-pct percent of the free memory. If free_memory_check()
+rejects the free memory read, the size from --use-memory is kept and a
+warning says why. Otherwise the result is above 0 and not above the free
+memory.
+
+@param[in]	required	memory the estimate asks for, aligned to the
+                                buffer pool chunk size
+@return buffer pool size in bytes */
+static longlong free_memory_pct_buffer_pool_size(ulint required) {
+  buf_pool_size_from_free_memory = false;
+
+  ulint free_mem = xtrabackup::utils::host_free_memory();
+  ulint total_mem = xtrabackup::utils::host_total_memory();
+  /* Debug builds: --debug=d,xb_simulate_free_memory replaces the values with
+  the ones in the environment variables XB_DEBUG_FREE_MEMORY and
+  XB_DEBUG_TOTAL_MEMORY (bytes), so tests can simulate any read. */
+  DBUG_EXECUTE_IF("xb_simulate_free_memory", {
+    const char *env = getenv("XB_DEBUG_FREE_MEMORY");
+    if (env != nullptr) free_mem = strtoull(env, nullptr, 10);
+    env = getenv("XB_DEBUG_TOTAL_MEMORY");
+    if (env != nullptr) total_mem = strtoull(env, nullptr, 10);
+  });
+  xb::info() << "Free memory of this host: " << free_mem
+             << " bytes. Total memory: " << total_mem << " bytes.";
+
+  const char *invalid = free_memory_check(free_mem, total_mem);
+  if (invalid != nullptr) {
+    xb::warn() << "Ignoring --use-free-memory-pct="
+               << xtrabackup_use_free_memory_pct << ": " << invalid << " (free "
+               << free_mem << " bytes, total " << total_mem
+               << " bytes). Using --use-memory=" << xtrabackup_use_memory
+               << " bytes for the buffer pool.";
+    return xtrabackup_use_memory;
+  }
+
+  const ulint free_usable =
+      free_mem / 100 * xtrabackup_use_free_memory_pct +
+      free_mem % 100 * xtrabackup_use_free_memory_pct / 100;
+
+  ulint size = required;
+  if (required > free_usable) {
+    xb::info() << "Required memory will exceed Free memory configuration. "
+               << "Free memory: " << free_mem << ". "
+               << "Free memory %: " << xtrabackup_use_free_memory_pct
+               << ". Allowed usage of Free Memory: " << free_usable;
+    size = free_usable;
+    /* innodb_init_param() rounds the size up to whole chunks. Round down
+    instead if rounding up would go above the free memory. free_mem is at
+    least one chunk, so this never gives 0. */
+    if (buf_pool_size_align(size) > free_mem) {
+      size = buf_pool_size_align_down(size);
+    }
+  }
+  ut_ad(size > 0 && size <= free_mem);
+
+  buf_pool_size_from_free_memory = true;
+  return static_cast<longlong>(size);
+}
+
 static bool innodb_init_param(void) {
   /* innobase_init */
   static char current_dir[3]; /* Set if using current lib */
@@ -2551,31 +2631,13 @@ static bool innodb_init_param(void) {
   if (estimate_memory) {
     ut_ad(real_redo_frames != UINT64_MAX);
 
-    ulint free_memory_total = xtrabackup::utils::host_free_memory();
-    ulint free_memory_usable =
-        (free_memory_total * xtrabackup_use_free_memory_pct) / 100;
     ulint mem = buf_pool_size_align(real_redo_memory +
                                     (real_redo_frames * UNIV_PAGE_SIZE));
     if (mem > (ulint)xtrabackup_use_memory) {
       xb::info() << "Got estimation from backup: " << real_redo_memory
                  << " bytes for parsing and " << real_redo_frames
                  << " frames. Requesting " << mem << " for --prepare.";
-      if (mem > free_memory_usable) {
-        xb::info() << "Required memory will exceed Free memory configuration. "
-                   << "Free memory: " << free_memory_total << ". "
-                   << "Free memory %: " << xtrabackup_use_free_memory_pct
-                   << ". Allowed usage of Free Memory: " << free_memory_usable;
-
-        /* We might exaust free memory if we pass 100% as parameter.
-         * In this case we align usable memory down
-         */
-        if (buf_pool_size_align(free_memory_usable) > free_memory_total) {
-          free_memory_usable = buf_pool_size_align_down(free_memory_usable);
-        }
-        xtrabackup_use_memory = free_memory_usable;
-      } else {
-        xtrabackup_use_memory = mem;
-      }
+      xtrabackup_use_memory = free_memory_pct_buffer_pool_size(mem);
       xb::info() << "Setting buffer pool to: " << xtrabackup_use_memory;
     }
     if ((long)real_redo_frames > innobase_open_files) {
@@ -2584,6 +2646,13 @@ static bool innodb_init_param(void) {
     }
   }
 
+  /* --use-memory has a minimum of 1M, so only a computed size can get here
+  as 0 or negative. Never hand such a value to InnoDB. */
+  if (xtrabackup_use_memory <= 0) {
+    xb::error() << "Invalid buffer pool size " << xtrabackup_use_memory
+                << " bytes.";
+    goto error;
+  }
   srv_buf_pool_size = (ulint)xtrabackup_use_memory;
   srv_buf_pool_size = buf_pool_size_align(srv_buf_pool_size);
 
@@ -7447,7 +7516,8 @@ skip_check:
   xb::info() << "Starting InnoDB instance for recovery.";
   xb::info() << "Using " << xtrabackup_use_memory
              << " bytes for buffer pool (set by "
-             << ((estimate_memory) ? "--use-free-memory-pct" : "--use-memory")
+             << (buf_pool_size_from_free_memory ? "--use-free-memory-pct"
+                                                : "--use-memory")
              << " parameter)";
 
   if (innodb_init(true, true)) {
