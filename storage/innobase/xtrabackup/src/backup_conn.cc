@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 #include <limits>
 
 #include "backup_conn.h"
+#include "backup_oidc.h"
 #include "common.h"
 #include "xb0xb.h"
 #include "xtrabackup.h"
@@ -142,7 +143,9 @@ bool is_configured(Destination destination) {
 }
 
 static Dsn resolve(Destination destination) {
-  Dsn dsn{opt_host, opt_user, opt_password, opt_port, opt_socket, {}};
+  Dsn dsn{opt_host, opt_user,   opt_password,
+          opt_port, opt_socket, opt_oidc_id_token_file,
+          {}};
 
   if (destination == Destination::MAIN) {
     return (dsn);
@@ -164,12 +167,15 @@ static Dsn resolve(Destination destination) {
   }
   if (check_if_param_set("history-user")) {
     dsn.user = opt_history_user;
-    /* The password belongs to the backup account, so it is inherited only
-    together with the user it authenticates. */
+    /* The password and the ID token belong to the backup account, so they
+    are inherited only together with the user they authenticate. */
     dsn.password = nullptr;
+    dsn.id_token_file = nullptr;
   }
   if (check_if_param_set("history-password")) {
     dsn.password = opt_history_password;
+    /* A password named for the history server is what authenticates there. */
+    dsn.id_token_file = nullptr;
   }
 
   if (any_param_set(history_tls_options)) {
@@ -273,7 +279,10 @@ bool connect(Purpose purpose, Connection &connection) {
   xb::info() << "Connecting to MySQL server host: "
              << (dsn.host ? dsn.host : "localhost")
              << ", user: " << (dsn.user ? dsn.user : "not set")
-             << ", password: " << (dsn.password ? "set" : "not set")
+             << ", password: "
+             << (dsn.id_token_file ? "not set (using OpenID Connect ID token)"
+                 : dsn.password    ? "set"
+                                   : "not set")
              << ", port: " << (dsn.port != 0 ? mysql_port_str : "not set")
              << ", socket: " << (dsn.socket ? dsn.socket : "not set")
              << ", purpose: " << purpose_name(purpose);
@@ -285,13 +294,21 @@ bool connect(Purpose purpose, Connection &connection) {
     }
   }
 
-  if (!mysql_real_connect(connection, dsn.host ? dsn.host : "localhost",
-                          dsn.user, dsn.password, "" /*database*/, dsn.port,
-                          dsn.socket, 0)) {
-    xb::error() << "Failed to connect to MySQL server: "
-                << mysql_error(connection);
-    connection.close();
-    return (false);
+  {
+    xb::oidc::Connect_guard oidc;
+    if (!oidc.set_plugin_options(dsn.id_token_file)) {
+      connection.close();
+      return (false);
+    }
+
+    if (!mysql_real_connect(connection, dsn.host ? dsn.host : "localhost",
+                            dsn.user, dsn.password, "" /*database*/, dsn.port,
+                            dsn.socket, 0)) {
+      xb::error() << "Failed to connect to MySQL server: "
+                  << mysql_error(connection);
+      connection.close();
+      return (false);
+    }
   }
 
   xb_mysql_query(connection, "SET SESSION wait_timeout=2147483", false, true);
@@ -319,6 +336,10 @@ bool connect(Purpose purpose, Connection &connection) {
 }
 
 bool open_connections() {
+  if (!xb::oidc::load_plugin()) {
+    return (false);
+  }
+
   if (!connect(Purpose::BACKUP, main_connection)) {
     return (false);
   }
@@ -338,6 +359,7 @@ bool open_connections() {
 void close_connections() {
   history_connection.close();
   main_connection.close();
+  xb::oidc::release();
 }
 
 const std::list<std::string> &Connection::granted_privileges() {
