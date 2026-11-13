@@ -1,0 +1,90 @@
+*** Determining keyring component names
+*** Setting up percona_keyring_encrypted_file component
+# ----------------------------------------------------------------------
+# Setup
+# Creating local configuration file for keyring component: component_percona_keyring_encrypted_file
+# Creating manifest file for current MySQL server instance
+# Re-starting mysql server with manifest file
+# ----------------------------------------------------------------------
+*** Asserting that percona_keyring_encrypted_file is installed and active
+*** Creating an encrypted table and filling it with some data
+CREATE TABLE t1(
+id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+PRIMARY KEY(id)
+) ENCRYPTION="Y" ENGINE=InnoDB;
+INSERT INTO t1 VALUES(DEFAULT);
+*** Extracting InnoDB master key name
+SELECT KEY_ID INTO @t1_key_id FROM performance_schema.keyring_keys;
+*** Rotating InnoDB master key
+ALTER INSTANCE ROTATE INNODB MASTER KEY;
+*** Creating another encrypted table and filling it with some data
+CREATE TABLE t2(
+id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+PRIMARY KEY(id)
+) ENCRYPTION="Y" ENGINE=InnoDB;
+INSERT INTO t2 VALUES(42);
+*** Extracting InnoDB master key name after rotation
+SELECT KEY_ID INTO @t2_key_id FROM performance_schema.keyring_keys WHERE KEY_ID != @t1_key_id;
+*** Installing keyring UDF plugin
+*** Manually generating an AES key in the keyring via keyring_key_generate() UDF
+SELECT keyring_key_generate ('CustomKey', 'AES', 32);
+keyring_key_generate ('CustomKey', 'AES', 32)
+1
+*** Extracting custom key metadata
+SELECT KEY_ID INTO @custom_key_id FROM performance_schema.keyring_keys WHERE KEY_ID != @t1_key_id AND KEY_ID != @t2_key_id;
+*** Uninstalling keyring UDF plugin
+*** Preparing component_keyring_file config content
+
+************************************************************************************
+*** Checking percona_keyring_encrypted_file -> component_keyring_file migration ***
+************************************************************************************
+
+*** Stopping the server (original, with percona_keyring_encrypted_file)
+include/stop_mysqld.inc [server 1]
+*** Creating local component_keyring_file config
+# Creating local configuration file for keyring component: component_keyring_file
+*** Executing keyring data migration utility (percona_keyring_encrypted_file -> component_keyring_file)
+*** Backing up local manifest file for current server instance with percona_keyring_encrypted_file
+# Taking backup of local manifest file for MySQL server instance
+*** Creating local manifest file for current server instance with component_keyring_file
+# Creating manifest file for current MySQL server instance
+*** Starting the server (with component_keyring_file)
+# restart
+*** Asserting that component_keyring_file is installed and active
+*** Installing keyring UDF plugin once again after keyring component switch
+*** Asserting that keys stored in percona_keyring_encrypted_file successfully migrated to component_keyring_file
+*** Uninstalling keyring UDF plugin once again after keyring component switch
+*** Asserting that data can be read from the sample tables
+*** Preparing percona_keyring_encrypted_file config content for back-migration
+
+************************************************************************************
+*** Checking component_keyring_file -> percona_keyring_encrypted_file migration ***
+************************************************************************************
+
+*** Stopping the server (with component_keyring_file)
+include/stop_mysqld.inc [server 1]
+*** Creating local percona_keyring_encrypted_file config
+# Creating local configuration file for keyring component: component_percona_keyring_encrypted_file
+*** Removing original encrypted keyring file to prepare a fresh migration destination
+*** Executing keyring data migration utility (component_keyring_file -> percona_keyring_encrypted_file)
+*** Removing component_keyring_file data file
+*** Restoring local manifest file for current server instance with percona_keyring_encrypted_file
+# Restore local manifest file for MySQL server instance from backup
+*** Starting the server (with percona_keyring_encrypted_file)
+# restart
+*** Asserting that percona_keyring_encrypted_file is installed and active again
+*** Installing keyring UDF plugin once again after keyring component switch back
+*** Asserting that keys stored in component_keyring_file successfully migrated to percona_keyring_encrypted_file
+*** Uninstalling keyring UDF plugin once again after keyring component switch back
+*** Asserting that data can be read from the sample tables
+*** Dropping the sample tables
+DROP TABLE t2;
+DROP TABLE t1;
+*** Tearing down percona_keyring_encrypted_file component
+# ----------------------------------------------------------------------
+# Teardown
+# Removing manifest file for current MySQL server instance
+# Removing local keyring file for keyring component: component_percona_keyring_encrypted_file
+# Removing local configuration file for keyring component: component_percona_keyring_encrypted_file
+# Restarting server without the manifest file
+# ----------------------------------------------------------------------
