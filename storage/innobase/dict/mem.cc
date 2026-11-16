@@ -246,6 +246,11 @@ dict_table_t *dict_mem_table_create(const char *name, space_id_t space,
   table->version = 0;
   table->autoinc = 0;
   table->autoinc_persisted = 0;
+#ifdef XTRABACKUP
+  table->vec_aux_col = ULINT_UNDEFINED;
+  table->vec_aux_autoinc_next_id.store(0);
+  table->vec_aux_autoinc_persisted.store(0);
+#endif /* XTRABACKUP */
   table->autoinc_field_no = ULINT_UNDEFINED;
   table->sess_row_id = 0;
   table->sess_trx_id = 0;

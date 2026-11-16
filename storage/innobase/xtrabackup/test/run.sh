@@ -46,8 +46,8 @@ Usage: $0 [-f] [-g] [-h] [-s suite] [-t test_name] [-d mysql_basedir] [-c build_
 -k          Make a copy of failed var directory
 -t path     Run only a single named test. This option can be passed multiple times.
 -h          Print this help message
--s suite    Select a test suite to run. Possible values: binlog, experimental, gr, keyring, rocksdb, pagetracking,  main, compression, reducedlock, check_tables and xbcloud.
-            Default is 'binlog, main, gr, pagetracking, rocksdb, keyring, compression, reducedlock, check_tables and xbcloud'.
+-s suite    Select a test suite to run. Possible values: binlog, experimental, gr, keyring, rocksdb, pagetracking,  main, compression, reducedlock, check_tables, vector and xbcloud.
+            Default is 'binlog, main, gr, pagetracking, rocksdb, keyring, compression, reducedlock, check_tables, vector and xbcloud'.
 -j N        Run tests in N parallel processes.
 -T seconds  Test timeout (default is $TEST_TIMEOUT seconds).
 -x options  Extra options to pass to xtrabackup
@@ -993,8 +993,8 @@ if [ -n "$tname" ]
 then
    tests="$tname"
 else
-   tests="suites/binlog/* suites/pagetracking/* suites/gr/*.sh suites/keyring/*.sh suites/xbcloud/*.sh suites/compression/*.sh suites/reducedlock/*.sh suites/rocksdb/*.sh suites/check_tables/*.sh t/*.sh"
-   suites=" pagetracking binlog gr keyring compression reducedlock rocksdb check_tables main xbcloud"
+   tests="suites/binlog/* suites/pagetracking/* suites/gr/*.sh suites/keyring/*.sh suites/xbcloud/*.sh suites/compression/*.sh suites/reducedlock/*.sh suites/rocksdb/*.sh suites/check_tables/*.sh suites/vector/*.sh t/*.sh"
+   suites=" pagetracking binlog gr keyring compression reducedlock rocksdb check_tables vector main xbcloud"
 fi
 
 export OUTFILE="$PWD/results/setup"

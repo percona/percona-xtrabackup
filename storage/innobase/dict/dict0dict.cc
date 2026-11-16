@@ -218,6 +218,15 @@ static dict_index_t *dict_index_build_internal_fts(
     dict_table_t *table,  /*!< in: table */
     dict_index_t *index); /*!< in: user representation of an FTS index */
 
+#ifdef XTRABACKUP
+/** Builds the internal dictionary cache representation for a vector index.
+@param[in]      table   table
+@param[in]      index   user representation of a vector index
+@return own: the internal representation of the vector index */
+static dict_index_t *dict_index_build_internal_vec(dict_table_t *table,
+                                                   dict_index_t *index);
+#endif /* XTRABACKUP */
+
 /** Removes an index from the dictionary cache. */
 static void dict_index_remove_from_cache_low(
     dict_table_t *table, /*!< in/out: table */
@@ -1179,6 +1188,13 @@ void dict_table_add_to_cache(dict_table_t *table, bool can_be_evicted) {
   // In PXB, we always load tables as evictable. We do not have create table
   // and upgrade from 5.7 scenarios. These paths can load table as non-evictable
   IF_XB(ut_ad(can_be_evicted);)
+
+#ifdef XTRABACKUP
+  /* DICT_TF2_HAS_VEC_AUX_COL and vec_aux_col describe one fact: the table
+  has the hidden percona_vec_aux_id column, at that position. */
+  ut_ad(DICT_TF2_FLAG_IS_SET(table, DICT_TF2_HAS_VEC_AUX_COL) ==
+        (table->vec_aux_col != ULINT_UNDEFINED));
+#endif /* XTRABACKUP */
 
   table->cached = true;
 
@@ -2220,7 +2236,11 @@ static bool dict_index_too_big_for_tree(const dict_table_t *table,
                                         const dict_index_t *new_index) {
   /* FTS index consists of auxiliary tables, they shall be excluded from index
   row size check */
+#ifdef XTRABACKUP
+  if (new_index->type & (DICT_FTS | DICT_VECTOR)) {
+#else
   if (new_index->type & DICT_FTS) {
+#endif /* XTRABACKUP */
     return (false);
   }
 
@@ -2449,6 +2469,10 @@ dberr_t dict_index_add_to_cache_w_vcol(dict_table_t *table, dict_index_t *index,
 
   if (index->type == DICT_FTS) {
     new_index = dict_index_build_internal_fts(table, index);
+#ifdef XTRABACKUP
+  } else if (dict_index_is_vector(index)) {
+    new_index = dict_index_build_internal_vec(table, index);
+#endif /* XTRABACKUP */
   } else if (index->is_clustered()) {
     new_index = dict_index_build_internal_clust(table, index);
   } else {
@@ -3287,6 +3311,32 @@ static dict_index_t *dict_index_build_internal_fts(
 
   return (new_index);
 }
+
+#ifdef XTRABACKUP
+static dict_index_t *dict_index_build_internal_vec(dict_table_t *table,
+                                                   dict_index_t *index) {
+  ut_ad(table && index);
+  ut_ad(dict_index_is_vector(index));
+  ut_ad(!dict_sys_mutex_own());
+  ut_ad(table->magic_n == DICT_TABLE_MAGIC_N);
+
+  /* Like an FTS index: only the indexed column, no system fields. */
+  auto new_index =
+      dict_mem_index_create(table->name.m_name, index->name, index->space,
+                            index->type, index->n_fields);
+
+  new_index->n_user_defined_cols = index->n_fields;
+
+  new_index->id = index->id;
+
+  dict_index_copy(new_index, index, table, 0, index->n_fields);
+
+  new_index->n_uniq = 0;
+  new_index->cached = true;
+
+  return (new_index);
+}
+#endif /* XTRABACKUP */
 /*====================== FOREIGN KEY PROCESSING ========================*/
 
 /** Checks if a table is referenced by foreign keys.
@@ -3374,6 +3424,9 @@ NOT NULL */
 
   while (index != nullptr) {
     if (types_idx != index && !(index->type & DICT_FTS) &&
+#ifdef XTRABACKUP
+        !(index->type & DICT_VECTOR) &&
+#endif /* XTRABACKUP */
         !dict_index_is_spatial(index) && !index->to_be_dropped &&
         (!(index->uncommitted &&
            ((index->online_status == ONLINE_INDEX_ABORTED_DROPPED) ||
@@ -3631,6 +3684,9 @@ bool dict_index_check_search_tuple(
   ut_ad(index->page >= FSP_FIRST_INODE_PAGE_NO);
   ut_ad(dtuple_check_typed(tuple));
   ut_ad(!(index->type & DICT_FTS));
+#ifdef XTRABACKUP
+  ut_ad(!(index->type & DICT_VECTOR));
+#endif /* XTRABACKUP */
   return true;
 }
 #endif /* UNIV_DEBUG */
@@ -3911,6 +3967,9 @@ void dict_persist_init() {
       ut::new_withkey<Persisters>(UT_NEW_THIS_FILE_PSI_KEY);
   dict_persist->persisters->add(PM_INDEX_CORRUPTED);
   dict_persist->persisters->add(PM_TABLE_AUTO_INC);
+#ifdef XTRABACKUP
+  dict_persist->persisters->add(PM_TABLE_VEC_IDX_ID);
+#endif /* XTRABACKUP */
 
 #ifndef UNIV_HOTBACKUP
   dict_persist_update_log_margin();
@@ -3950,6 +4009,15 @@ static void dict_init_dynamic_metadata(dict_table_t *table,
   if (table->autoinc_persisted != 0) {
     metadata->set_autoinc(table->autoinc_persisted);
   }
+
+#ifdef XTRABACKUP
+  /* The hidden vec_idx_id counter of vector-indexed tables.
+  Nonzero only when the table ever consumed one, so ordinary tables
+  never carry the entry. */
+  if (table->vec_aux_autoinc_persisted.load() != 0) {
+    metadata->set_vec_next_id(table->vec_aux_autoinc_persisted.load());
+  }
+#endif /* XTRABACKUP */
 
   /* Will initialize other metadata here */
 }
@@ -3997,6 +4065,17 @@ static bool dict_table_apply_dynamic_metadata(
           << " or couldn't be loaded.";
     }
   }
+
+#ifdef XTRABACKUP
+  /* The vector next id only grows for a table id, and no DDL lowers it, so
+  it does not depend on the version: take the larger value. */
+  const uint64_t vec_next_id = metadata->get_vec_next_id();
+  if (vec_next_id > table->vec_aux_autoinc_persisted.load()) {
+    table->vec_aux_autoinc_next_id.store(vec_next_id);
+    table->vec_aux_autoinc_persisted.store(vec_next_id);
+    get_dirty = true;
+  }
+#endif /* XTRABACKUP */
 
   /* FIXME: Move this to the beginning of this function once corrupted
   index IDs are also written back to dd::Table::se_private_data. */
@@ -4306,6 +4385,29 @@ back to mysql.innodb_dynamic_metadata. Update LSN limit, which is used
 to stop user threads when redo log is running out of space and they
 do not hold latches (log.free_check_limit_lsn). */
 static void dict_persist_update_log_margin() {
+#ifdef XTRABACKUP
+  /* Below variables basically considers only the AUTO_INCREMENT counter,
+  the hidden vec_idx_id counter, and a small margin for
+  corrupted indexes. */
+
+  /* Worst case bytes for one PM_TABLE_VEC_IDX_ID entry, matching
+  VecIdxIdPersister::get_write_size(): 1 type byte + max 11 bytes of
+  much-compressed u64. A table can be dirty for its AUTO_INCREMENT
+  counter and its vec_idx_id counter at the same time, and
+  Persisters::write() then serializes both entries into the same
+  dynamic metadata record, so this must be added on top of the
+  AUTO_INCREMENT-only estimate below rather than assumed to overlap. */
+  static constexpr uint32_t log_margin_per_table_vec_idx_id = 12;
+
+  /* Every table will generate less than 80 bytes without
+  considering page split, plus the vec_idx_id entry above. */
+  static constexpr uint32_t log_margin_per_table_no_split =
+      80 + log_margin_per_table_vec_idx_id;
+
+  /* Every table metadata log may roughly consume such many bytes. */
+  static constexpr uint32_t record_size_per_table =
+      50 + log_margin_per_table_vec_idx_id;
+#else
   /* Below variables basically considers only the AUTO_INCREMENT counter
   and a small margin for corrupted indexes. */
 
@@ -4315,6 +4417,7 @@ static void dict_persist_update_log_margin() {
 
   /* Every table metadata log may roughly consume such many bytes. */
   static constexpr uint32_t record_size_per_table = 50;
+#endif /* XTRABACKUP */
 
   /* How many tables may generate one page split */
   static const uint32_t tables_per_split =
@@ -5625,9 +5728,18 @@ ulint CorruptedIndexPersister::read(PersistentTableMetadata &metadata,
 void CorruptedIndexPersister::aggregate(
     PersistentTableMetadata &metadata,
     const PersistentTableMetadata &new_entry) const {
+#ifdef XTRABACKUP
+  const corrupted_ids_t &known = metadata.get_corrupted_indexes();
+  for (auto id : new_entry.get_corrupted_indexes()) {
+    if (std::find(known.begin(), known.end(), id) == known.end()) {
+      metadata.add_corrupted_index(id);
+    }
+  }
+#else
   for (auto id : new_entry.get_corrupted_indexes()) {
     metadata.add_corrupted_index(id);
   }
+#endif /* XTRABACKUP */
 }
 
 /** Write the autoinc counter of a table, we can pre-calculate
@@ -5695,6 +5807,67 @@ void AutoIncPersister::aggregate(
   }
 }
 
+#ifdef XTRABACKUP
+ulint VecIdxIdPersister::write(const PersistentTableMetadata &metadata,
+                               byte *buffer, ulint size) const {
+  ulint length = 0;
+  const uint64_t value = metadata.get_vec_next_id();
+
+  /* Zero means "never used" - write nothing, exactly like a table
+  without an autoinc column writes no PM_TABLE_AUTO_INC payload worth
+  keeping. Skipping the entry entirely keeps ordinary tables' metadata
+  rows free of the Percona type byte. */
+  if (value == 0) {
+    return (0);
+  }
+
+  mach_write_to_1(buffer, static_cast<byte>(PM_TABLE_VEC_IDX_ID));
+  ++length;
+  ++buffer;
+
+  ulint len = mach_u64_write_much_compressed(buffer, value);
+  length += len;
+  buffer += len;
+
+  ut_ad(length <= size);
+  return (length);
+}
+
+ulint VecIdxIdPersister::read(PersistentTableMetadata &metadata,
+                              const byte *buffer, ulint size,
+                              bool *corrupt) const {
+  *corrupt = false;
+
+  const byte *start = buffer;
+  const auto value = mach_parse_u64_much_compressed(&start, buffer + size);
+
+  if (start == nullptr) {
+    /* Just incomplete data, not corrupted */
+    return (0);
+  }
+
+  metadata.set_vec_next_id(value);
+
+  const ulint consumed = start - buffer;
+  ut_ad(consumed <= size);
+  return (consumed);
+}
+
+void VecIdxIdPersister::aggregate(
+    PersistentTableMetadata &metadata,
+    const PersistentTableMetadata &new_entry) const {
+  /* DEVIATION FROM AutoIncPersister: the vec counter is monotonic for
+  the whole lifetime of a table_id - legitimate resets ride table_id
+  reassignment (TRUNCATE, IMPORT, rebuilds), never a version bump on
+  the same table. A newer-version redo entry written by ANOTHER
+  persister (e.g. autoinc after an INSTANT DDL) carries vec == 0;
+  taking it version-authoritatively would wipe the counter on crash
+  recovery. Always keep the maximum, and leave the shared version
+  field to the persisters whose semantics depend on it. */
+  metadata.set_vec_next_id_if_bigger(new_entry.get_vec_next_id());
+}
+#endif /* XTRABACKUP */
+
 /** Destructor */
 Persisters::~Persisters() {
   persisters_t::iterator iter;
@@ -5738,6 +5911,11 @@ Persister *Persisters::add(persistent_type_t type) {
     case PM_TABLE_AUTO_INC:
       persister = ut::new_withkey<AutoIncPersister>(UT_NEW_THIS_FILE_PSI_KEY);
       break;
+#ifdef XTRABACKUP
+    case PM_TABLE_VEC_IDX_ID:
+      persister = ut::new_withkey<VecIdxIdPersister>(UT_NEW_THIS_FILE_PSI_KEY);
+      break;
+#endif /* XTRABACKUP */
     default:
       ut_d(ut_error);
       ut_o(break);
@@ -5767,14 +5945,28 @@ void Persisters::remove(persistent_type_t type) {
 size_t Persisters::write(PersistentTableMetadata &metadata, byte *buffer) {
   size_t size = 0;
   byte *pos = buffer;
+
+#ifdef XTRABACKUP
+  /* Iterate the REGISTERED persisters rather than the numeric type
+  range: the type space is sparse since Percona's PM_TABLE_VEC_IDX_ID
+  sits at 200, far from upstream's dense low values. The map is
+  ordered by type, so the serialization order (1, 2, 200) stays
+  deterministic. */
+  for (const auto &entry : m_persisters) {
+#else
   persistent_type_t type;
 
   for (type = static_cast<persistent_type_t>(PM_SMALLEST_TYPE + 1);
        type < PM_BIGGEST_TYPE;
        type = static_cast<persistent_type_t>(type + 1)) {
+#endif /* XTRABACKUP */
     ut_ad(size <= REC_MAX_DATA_SIZE);
 
+#ifdef XTRABACKUP
+    Persister *persister = entry.second;
+#else
     Persister *persister = get(type);
+#endif /* XTRABACKUP */
     ulint consumed = persister->write(metadata, pos, REC_MAX_DATA_SIZE - size);
 
     pos += consumed;
@@ -5783,6 +5975,15 @@ size_t Persisters::write(PersistentTableMetadata &metadata, byte *buffer) {
 
   return (size);
 }
+
+#ifdef XTRABACKUP
+void Persisters::aggregate(PersistentTableMetadata &metadata,
+                           const PersistentTableMetadata &new_entry) const {
+  for (const auto &entry : m_persisters) {
+    entry.second->aggregate(metadata, new_entry);
+  }
+}
+#endif /* XTRABACKUP */
 
 void dict_sdi_close_table(dict_table_t *table) {
   ut_ad(dict_table_is_sdi(table->id));
