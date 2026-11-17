@@ -111,9 +111,18 @@ constexpr uint32_t DICT_VIRTUAL = 128;
 constexpr uint32_t DICT_SDI = 256;
 /** Multi-value index */
 constexpr uint32_t DICT_MULTI_VALUE = 512;
+#ifdef XTRABACKUP
+/** Percona Server vector index. It has no B-tree: the graph lives in
+auxiliary tables, so insert, undo, purge and statistics skip it. */
+constexpr uint32_t DICT_VECTOR = 1024;
+#endif /* XTRABACKUP */
 
 /** number of bits used for SYS_INDEXES.TYPE */
+#ifdef XTRABACKUP
+constexpr uint32_t DICT_IT_BITS = 11;
+#else
 constexpr uint32_t DICT_IT_BITS = 10;
+#endif /* XTRABACKUP */
 /** @} */
 
 #if 0                         /* not implemented, retained for history */
@@ -262,7 +271,11 @@ ROW_FORMAT=REDUNDANT.  InnoDB engines do not check these flags
 for unknown bits in order to protect backward incompatibility. */
 /** @{ */
 /** Total number of bits in table->flags2. */
+#ifdef XTRABACKUP
+constexpr uint32_t DICT_TF2_BITS = 12;
+#else
 constexpr uint32_t DICT_TF2_BITS = 11;
+#endif /* XTRABACKUP */
 constexpr uint32_t DICT_TF2_UNUSED_BIT_MASK = ~0U << DICT_TF2_BITS;
 constexpr uint32_t DICT_TF2_BIT_MASK = ~DICT_TF2_UNUSED_BIT_MASK;
 
@@ -286,6 +299,12 @@ constexpr uint32_t DICT_TF2_USE_FILE_PER_TABLE = 16;
 /** Set when we discard/detach the tablespace */
 constexpr uint32_t DICT_TF2_DISCARDED = 32;
 
+#ifdef XTRABACKUP
+/** The table has the hidden percona_vec_aux_id column (BIGINT UNSIGNED NOT
+NULL) that Percona Server adds while the table has a vector index. */
+constexpr uint32_t DICT_TF2_HAS_VEC_AUX_COL = 64;
+#endif /* XTRABACKUP */
+
 /** Intrinsic table bit
 Intrinsic table is table created internally by MySQL modules viz. Optimizer,
 FTS, etc.... Intrinsic table has all the properties of the normal table except
@@ -300,6 +319,12 @@ constexpr uint32_t DICT_TF2_AUX = 512;
 
 /** Table is opened by resurrected trx during crash recovery. */
 constexpr uint32_t DICT_TF2_RESURRECT_PREPARED = 1024;
+
+#ifdef XTRABACKUP
+/** Auxiliary table of a Percona Server vector index. Kept apart from
+DICT_TF2_AUX, which means an FTS auxiliary table. */
+constexpr uint32_t DICT_TF2_VEC_AUX = 2048;
+#endif /* XTRABACKUP */
 /** @} */
 
 /** Tables could be chained together with Foreign key constraint. When
@@ -1324,6 +1349,16 @@ struct dict_index_t {
 
     return (type & DICT_MULTI_VALUE);
   }
+
+#ifdef XTRABACKUP
+  /** Check whether the index is a Percona Server vector index.
+  @return true if the index is a vector index */
+  [[nodiscard]] bool is_vector() const {
+    ut_ad(magic_n == DICT_INDEX_MAGIC_N);
+
+    return (type & DICT_VECTOR);
+  }
+#endif /* XTRABACKUP */
 
   /** Returns the minimum data size of an index record.
   @return minimum data size in bytes */
@@ -2382,6 +2417,22 @@ detect this and will eventually quit sooner. */
   be no conflict to access it, so no protection is needed. */
   ulint autoinc_field_no;
 
+#ifdef XTRABACKUP
+  /** Position of the hidden percona_vec_aux_id column in cols[], or
+  ULINT_UNDEFINED when the table does not have it. */
+  ulint vec_aux_col;
+
+  /** Next label of the hidden percona_vec_aux_id column of a Percona Server
+  table with a vector index. The server assigns the labels; here the counter
+  only travels through the dynamic metadata (PM_TABLE_VEC_IDX_ID) so that
+  recovery and --prepare never lower it. 0 for every other table. */
+  std::atomic<uint64_t> vec_aux_autoinc_next_id;
+
+  /** Value of vec_aux_autoinc_next_id last written to the redo log or the
+  DD buffer table. Only grows. */
+  std::atomic<uint64_t> vec_aux_autoinc_persisted;
+#endif /* XTRABACKUP */
+
   /** The transaction that currently holds the the AUTOINC lock on this table.
   Protected by lock_sys table shard latch. To "peek" the current value one
   can read it without any latch, understanding that in general it may change.
@@ -2717,6 +2768,15 @@ detect this and will eventually quit sooner. */
     return (flags2 & DICT_TF2_AUX);
   }
 
+#ifdef XTRABACKUP
+  /** Determine if this is an auxiliary table of a vector index.
+  @return true if the table is a vector auxiliary table */
+  bool is_vec_aux() const {
+    ut_ad(magic_n == DICT_TABLE_MAGIC_N);
+    return (flags2 & DICT_TF2_VEC_AUX);
+  }
+#endif /* XTRABACKUP */
+
   /** Determine whether the table is intrinsic.
   An intrinsic table is a special kind of temporary table that
   is invisible to the end user. It can be created internally by InnoDB,
@@ -2784,6 +2844,19 @@ enum persistent_type_t {
   /** Persistent Metadata type for autoinc counter */
   PM_TABLE_AUTO_INC = 2,
 
+#ifdef XTRABACKUP
+  /** Persistent metadata type for the hidden vec_idx_id counter of
+  vector-indexed tables. Deliberately far from the dense
+  upstream range: upstream owns this namespace and allocates small
+  values (3..5 are already earmarked below), so a distant byte can
+  never be misparsed as a future upstream type on a crossed-over
+  datadir - only rejected. Only tables carrying vector remnants (which
+  are upstream-incompatible anyway, via the hidden SE column) ever
+  write this entry, and any cleanup rebuild sheds it with the old
+  table_id. */
+  PM_TABLE_VEC_IDX_ID = 200,
+#endif /* XTRABACKUP */
+
   /* TODO: Will add following types
   PM_TABLE_UPDATE_TIME = 3,
   Maybe something tablespace related
@@ -2792,7 +2865,12 @@ enum persistent_type_t {
 
   /** The biggest type, which should be 1 bigger than the last
   true type */
-  PM_BIGGEST_TYPE = 3
+  PM_BIGGEST_TYPE =
+#ifdef XTRABACKUP
+      201
+#else
+      3
+#endif /* XTRABACKUP */
 };
 
 typedef std::vector<index_id_t, ut::allocator<index_id_t>> corrupted_ids_t;
@@ -2804,7 +2882,17 @@ class PersistentTableMetadata {
   @param[in]    id      table id
   @param[in]    version table dynamic metadata version */
   PersistentTableMetadata(table_id_t id, uint64_t version)
-      : m_id(id), m_version(version), m_corrupted_ids(), m_autoinc(0) {}
+#ifdef XTRABACKUP
+      : m_id(id),
+        m_version(version),
+        m_corrupted_ids(),
+        m_autoinc(0),
+        m_vec_next_id(0) {
+  }
+#else
+      : m_id(id), m_version(version), m_corrupted_ids(), m_autoinc(0) {
+  }
+#endif /* XTRABACKUP */
 
   /** Get the corrupted indexes' IDs
   @return the vector of indexes' IDs */
@@ -2847,6 +2935,25 @@ class PersistentTableMetadata {
   @return the autoinc counter */
   uint64_t get_autoinc() const { return (m_autoinc); }
 
+#ifdef XTRABACKUP
+  /** Set the hidden vec_idx_id counter of the table if it's bigger
+  (the exact analog of set_autoinc_if_bigger;)
+  @param[in]    value   vec_idx_id counter */
+  void set_vec_next_id_if_bigger(uint64_t value) {
+    if (value > m_vec_next_id) {
+      m_vec_next_id = value;
+    }
+  }
+
+  /** Set the hidden vec_idx_id counter of the table
+  @param[in]    value   vec_idx_id counter */
+  void set_vec_next_id(uint64_t value) { m_vec_next_id = value; }
+
+  /** Get the hidden vec_idx_id counter of the table
+  @return the vec_idx_id counter */
+  uint64_t get_vec_next_id() const { return (m_vec_next_id); }
+#endif /* XTRABACKUP */
+
  private:
   /** Table ID which this metadata belongs to */
   table_id_t m_id;
@@ -2859,6 +2966,12 @@ class PersistentTableMetadata {
 
   /** Autoinc counter of the table */
   uint64_t m_autoinc;
+
+#ifdef XTRABACKUP
+  /** Hidden vec_idx_id counter of vector-indexed tables;
+  0 when the table never consumed one */
+  uint64_t m_vec_next_id;
+#endif /* XTRABACKUP */
 
   /* TODO: We will add update_time, etc. here and APIs accordingly */
 };
@@ -2995,6 +3108,43 @@ class AutoIncPersister : public Persister {
                  const PersistentTableMetadata &new_entry) const override;
 };
 
+#ifdef XTRABACKUP
+/** Persister for the hidden vec_idx_id counter of vector-indexed
+tables - the structural twin of AutoIncPersister: the
+counter is a hidden per-table autoinc written into the vec_idx_id
+column, and it must survive restart AND crash so labels are never
+reissued (an id consumed by a NULL-vector row or a rolled-back insert
+exists nowhere the aux-table maximum can see). */
+class VecIdxIdPersister : public Persister {
+ public:
+  /** Write the vec_idx_id counter of a table.
+  @param[in]    metadata        persistent metadata
+  @param[out]   buffer          write buffer
+  @param[in]    size            size of write buffer
+  @return the length of bytes written */
+  ulint write(const PersistentTableMetadata &metadata, byte *buffer,
+              ulint size) const override;
+
+  /** @return 1 type byte + max 11 bytes of much-compressed u64 */
+  inline ulint get_write_size(const PersistentTableMetadata &metadata
+                              [[maybe_unused]]) const override {
+    return (12);
+  }
+
+  /** Read the vec_idx_id counter from buffer into metadata.
+  @param[out]   metadata        metadata where we store the read data
+  @param[in]    buffer          buffer to read
+  @param[in]    size            size of buffer
+  @param[out]   corrupt         true if buffer content is corrupted
+  @return bytes consumed, 0 if the buffer is incomplete */
+  ulint read(PersistentTableMetadata &metadata, const byte *buffer, ulint size,
+             bool *corrupt) const override;
+
+  void aggregate(PersistentTableMetadata &metadata,
+                 const PersistentTableMetadata &new_entry) const override;
+};
+#endif /* XTRABACKUP */
+
 /** Container of persisters used in the system. Currently we don't need
 to protect this object since we only initialize it at very beginning and
 destroy it in the end. During the server running, we only get the persisters */
@@ -3032,6 +3182,17 @@ class Persisters {
   @param[out]   buffer          buffer to store the serialized metadata
   @return the length of serialized metadata */
   size_t write(PersistentTableMetadata &metadata, byte *buffer);
+
+#ifdef XTRABACKUP
+  /** Merge new_entry into metadata, each persister by its own rule.
+  MetadataRecover::store() uses it to fold the entry recovered from the redo
+  log into the buffered one, so the aggregate() of each persister must leave
+  metadata unchanged when new_entry has nothing of its kind.
+  @param[in,out]  metadata   entry to fold into
+  @param[in]      new_entry  entry to fold in */
+  void aggregate(PersistentTableMetadata &metadata,
+                 const PersistentTableMetadata &new_entry) const;
+#endif /* XTRABACKUP */
 
  private:
   /** A map to store all persisters needed */

@@ -4995,7 +4995,12 @@ bool btr_validate_index(
 
   /* Full Text index are implemented by auxiliary tables,
   not the B-tree */
+#ifdef XTRABACKUP
+  if (dict_index_is_online_ddl(index) ||
+      (index->type & (DICT_FTS | DICT_VECTOR))) {
+#else
   if (dict_index_is_online_ddl(index) || (index->type & DICT_FTS)) {
+#endif /* XTRABACKUP */
     return (true);
   }
 

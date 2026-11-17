@@ -405,7 +405,11 @@ static dberr_t row_undo_ins_remove_multi_sec(dict_index_t *index,
   while (index != nullptr) {
     dtuple_t *entry;
 
+#ifdef XTRABACKUP
+    if ((index->type & DICT_FTS) || index->is_vector()) {
+#else
     if (index->type & DICT_FTS) {
+#endif /* XTRABACKUP */
       dict_table_next_uncorrupted_index(index);
       continue;
     }

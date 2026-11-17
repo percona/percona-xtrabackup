@@ -973,7 +973,11 @@ dberr_t Log_DDL::write_free_tree_log(trx_t *trx, const dict_index_t *index,
     return (DB_SUCCESS);
   }
 
+#ifdef XTRABACKUP
+  if ((index->type & DICT_FTS) || index->is_vector()) {
+#else
   if (index->type & DICT_FTS) {
+#endif /* XTRABACKUP */
     ut_ad(index->page == FIL_NULL);
     return (DB_SUCCESS);
   }

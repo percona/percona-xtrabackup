@@ -841,7 +841,11 @@ This is the specific function to handle the modify on multi-value indexes.
     dict_index_t *index = node->index;
     dtuple_t *entry;
 
+#ifdef XTRABACKUP
+    if ((index->type & DICT_FTS) || index->is_vector()) {
+#else
     if (index->type & DICT_FTS) {
+#endif /* XTRABACKUP */
       dict_table_next_uncorrupted_index(node->index);
       continue;
     }
@@ -953,7 +957,11 @@ This is the specific function to handle the modify on multi-value indexes.
     dict_index_t *index = node->index;
     dtuple_t *entry;
 
+#ifdef XTRABACKUP
+    if (index->type == DICT_FTS || index->is_vector()) {
+#else
     if (index->type == DICT_FTS) {
+#endif /* XTRABACKUP */
       dict_table_next_uncorrupted_index(node->index);
       continue;
     }
@@ -1095,7 +1103,11 @@ static dberr_t row_undo_mod_upd_exist_multi_sec(undo_node_t *node,
         continue;
       }
     } else {
+#ifdef XTRABACKUP
+      if (index->type == DICT_FTS || index->is_vector() ||
+#else
       if (index->type == DICT_FTS ||
+#endif /* XTRABACKUP */
           !row_upd_changes_ord_field_binary(
               index, node->update, thr, node->row, node->ext,
               (index->is_multi_value() ? &non_mv_upd : nullptr))) {

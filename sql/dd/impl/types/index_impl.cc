@@ -52,6 +52,9 @@
 #include "sql/dd/types/index_element.h"
 #include "sql/dd/types/object_table.h"
 #include "sql/dd/types/weak_object.h"
+#ifdef XTRABACKUP
+#include "sql/dd_table_share.h"
+#endif /* XTRABACKUP */
 #include "sql/field.h"
 #include "string_with_len.h"
 
@@ -64,9 +67,21 @@ class Sdi_rcontext;
 class Sdi_wcontext;
 class Table;
 
+#ifdef XTRABACKUP
+static const std::set<String_type> default_valid_option_keys = {
+    "block_size",
+    "flags",
+    "parser_name",
+    "gipk", /* generated implicit primary key */
+    dd::PERCONA_VECTOR_INDEX_MARKER_KEY,
+    dd::PERCONA_VECTOR_INDEX_TYPE_KEY,
+    dd::PERCONA_VECTOR_INDEX_PARAMS_KEY,
+};
+#else
 static const std::set<String_type> default_valid_option_keys = {
     "block_size", "flags", "parser_name",
     "gipk" /* generated implicit primary key */};
+#endif /* XTRABACKUP */
 
 ///////////////////////////////////////////////////////////////////////////
 // Index_impl implementation.
