@@ -1188,6 +1188,18 @@ function require_debug_server()
 }
 
 #########################################################################
+# Skip the test unless the running server has vector indexes (Percona
+# Server with HNSW support, which has innodb_hnsw_max_memory)
+########################################################################
+function require_vector_index()
+{
+    if [ -z "$($MYSQL $MYSQL_ARGS -Ns -e \
+          "SHOW GLOBAL VARIABLES LIKE 'innodb_hnsw_max_memory'")" ]; then
+        skip_test "Requires a server with vector index support"
+    fi
+}
+
+#########################################################################
 # Require a server version higher than the first argument
 ########################################################################
 function require_server_version_higher_than()

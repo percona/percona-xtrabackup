@@ -75,6 +75,9 @@ Data dictionary interface */
 #include "mysql/strings/m_ctype.h"
 #include "query_options.h"
 #include "sql/create_field.h"
+#ifdef XTRABACKUP
+#include "sql/dd_table_share.h"
+#endif                   /* XTRABACKUP */
 #include "sql/mysqld.h"  // lower_case_file_system
 #include "storage/innobase/xtrabackup/src/xb_dict.h"
 #include "univ.i"  // Using OS_PATH_SEPARATOR
@@ -338,6 +341,59 @@ inline bool dd_table_contains_fulltext(const dd::Table &table) {
   }
   return (false);
 }
+
+/** Name of the SE-hidden column that Percona Server adds to a table with a
+vector index: the label of the row in the vector index. */
+constexpr const char *VEC_AUX_ID_COL_NAME = "percona_vec_aux_id";
+
+/** Determine if an index is a Percona Server vector index.
+@param[in]      index   dd::Index
+@return whether the index is a vector index */
+static bool dd_index_is_vector(const dd::Index *index) {
+  return index->options().exists(dd::PERCONA_VECTOR_INDEX_MARKER_KEY);
+}
+
+/** Prefix of the name of an auxiliary table of a Percona Server vector
+index: "<db>/percona_vec_<type>_<parent table id>_<index id>". */
+constexpr const char *VEC_AUX_PREFIX = "percona_vec_";
+
+/** Check that [begin, end) is a non-empty run of hex digits.
+@param[in]      begin   first character
+@param[in]      end     one past the last character
+@return true if it is */
+static bool vec_aux_field_is_object_id(const char *begin, const char *end) {
+  if (begin >= end) return false;
+  for (const char *p = begin; p < end; ++p) {
+    if (isxdigit(static_cast<unsigned char>(*p)) == 0) return false;
+  }
+  return true;
+}
+
+/** Parse the name of a vector index auxiliary table, the way Percona Server
+does when it loads one (vec_aux_parse_table_name()).
+@param[in]      name            table name, "db/table"
+@param[out]     parent_id       id of the table that has the vector index
+@return true if name is the name of a vector index auxiliary table */
+static bool dd_vec_aux_parse_table_name(const char *name,
+                                        table_id_t *parent_id) {
+  const char *slash = strchr(name, '/');
+  const char *after_db = slash != nullptr ? slash + 1 : name;
+  const size_t prefix_len = strlen(VEC_AUX_PREFIX);
+  if (strncmp(after_db, VEC_AUX_PREFIX, prefix_len) != 0) return false;
+
+  /* HNSW is the only index type Percona Server has. */
+  const char *token = after_db + prefix_len;
+  constexpr const char *hnsw = "hnsw_";
+  if (strncmp(token, hnsw, strlen(hnsw)) != 0) return false;
+
+  const char *tail = token + strlen(hnsw);
+  const char *sep = strchr(tail, '_');
+  if (sep == nullptr) return false;
+  if (!vec_aux_field_is_object_id(tail, sep)) return false;
+  if (!vec_aux_field_is_object_id(sep + 1, tail + strlen(tail))) return false;
+
+  return fts_read_object_id(parent_id, tail);
+}
 #endif /* XTRABACKUP */
 
 ulint get_innobase_type_from_dd(const dd::Column *col, ulint &unsigned_type) {
@@ -425,6 +481,10 @@ ulint get_innobase_type_from_dd(const dd::Column *col, ulint &unsigned_type) {
       return DATA_BLOB;
     case dd::enum_column_types::JSON:
       return DATA_BLOB;
+#ifdef XTRABACKUP
+    case dd::enum_column_types::VECTOR:
+      return DATA_BLOB;
+#endif /* XTRABACKUP */
 
     case dd::enum_column_types::GEOMETRY:
       return DATA_GEOMETRY;
@@ -505,11 +565,20 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     add_doc_id = 1;
   }
 
+  /* A Percona Server table with a vector index has the SE-hidden column
+  percona_vec_aux_id. The server adds it to dict_table_t after FTS_DOC_ID,
+  and so must we, or the clustered index records do not match the table. */
+  const dd::Column *vec_aux_col = dd_find_column(dd_table, VEC_AUX_ID_COL_NAME);
+  const bool add_vec_aux_col =
+      vec_aux_col != nullptr &&
+      vec_aux_col->type() == dd::enum_column_types::LONGLONG &&
+      !vec_aux_col->is_nullable() && vec_aux_col->is_se_hidden();
+
   ulint n_cols = 0;
   for (auto dd_col : dd_table->columns()) {
     if (!dd_col->is_se_hidden()) n_cols++;
   }
-  n_cols += add_doc_id;
+  n_cols += add_doc_id + (add_vec_aux_col ? 1 : 0);
 
   ulint n_v_cols = 0;
   ulint n_m_v_cols = 0;
@@ -581,6 +650,13 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
   if (fts_is_aux_table_name(&aux_table, table_name, strlen(table_name))) {
     DICT_TF2_FLAG_SET(table, DICT_TF2_AUX);
     table->parent_id = aux_table.parent_id;
+  }
+
+  /* The same for an auxiliary table of a vector index */
+  table_id_t vec_parent_id = 0;
+  if (dd_vec_aux_parse_table_name(table_name, &vec_parent_id)) {
+    DICT_TF2_FLAG_SET(table, DICT_TF2_VEC_AUX);
+    table->parent_id = vec_parent_id;
   }
 
   table->fts = nullptr;
@@ -874,6 +950,16 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     fts_add_doc_id_column(table, heap);
   }
 
+  if (add_vec_aux_col) {
+    /* Same definition as vec_add_aux_id_column() in Percona Server. */
+    dict_mem_table_add_col(
+        table, heap, VEC_AUX_ID_COL_NAME, DATA_INT,
+        dtype_form_prtype(DATA_NOT_NULL | DATA_UNSIGNED | DATA_BINARY_TYPE, 0),
+        sizeof(uint64_t), false);
+    DICT_TF2_FLAG_SET(table, DICT_TF2_HAS_VEC_AUX_COL);
+    table->vec_aux_col = table->n_def - 1;
+  }
+
   /* Add system columns to make adding index work */
   dict_table_add_system_columns(table, heap);
 
@@ -954,6 +1040,12 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     } else if (dd_index->type() == dd::Index::IT_FULLTEXT) {
       ut_ad(!table->is_intrinsic());
       type = DICT_FTS;
+      n_uniq = 0;
+    } else if (dd_index_is_vector(dd_index)) {
+      /* Stored as IT_MULTIPLE. It has no B-tree: its graph lives in
+      auxiliary tables, and InnoDB skips it on insert, undo and purge. */
+      ut_ad(!table->is_intrinsic());
+      type = DICT_VECTOR;
       n_uniq = 0;
     } else if (dd_index == primary_key) {
       ut_ad(dd_index->type() == dd::Index::IT_PRIMARY ||
@@ -1136,6 +1228,18 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     table->autoinc_persisted = autoinc;
   }
 
+  /* The label counter as of the last DDL, as Percona Server loads it. The
+  dynamic metadata applied below takes the larger value. */
+  if (add_vec_aux_col) {
+    const dd::Properties &p = dd_table->table().se_private_data();
+    const char *key = dd_table_key_strings[DD_TABLE_VEC_NEXT_ID];
+    uint64_t next_id = 0;
+    if (p.exists(key) && !p.get(key, &next_id)) {
+      table->vec_aux_autoinc_next_id.store(next_id);
+      table->vec_aux_autoinc_persisted.store(next_id);
+    }
+  }
+
   /* Now fill the space ID and Root page number for each index */
   bool first_index = true;
   i = 0;
@@ -1176,7 +1280,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     }
 
     ut_ad(root > 1);
-    ut_ad(index->type & DICT_FTS || root != FIL_NULL ||
+    ut_ad((index->type & (DICT_FTS | DICT_VECTOR)) || root != FIL_NULL ||
           dict_table_is_discarded(table));
     ut_ad(id != 0);
     index->page = root;

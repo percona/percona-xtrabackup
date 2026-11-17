@@ -670,7 +670,11 @@ static inline void row_purge_remove_multi_sec_if_poss(purge_node_t *node,
       break;
     }
 
+#ifdef XTRABACKUP
+    if (node->index->type != DICT_FTS && !node->index->is_vector()) {
+#else
     if (node->index->type != DICT_FTS) {
+#endif /* XTRABACKUP */
       if (node->index->is_multi_value()) {
         row_purge_remove_multi_sec_if_poss(node, heap, false);
       } else {
@@ -1265,7 +1269,11 @@ bool purge_node_t::validate_pcur() {
     return (true);
   }
 
+#ifdef XTRABACKUP
+  if (index->type == DICT_FTS || index->is_vector()) {
+#else
   if (index->type == DICT_FTS) {
+#endif /* XTRABACKUP */
     return (true);
   }
 

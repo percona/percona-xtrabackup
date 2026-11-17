@@ -302,8 +302,13 @@ static ulint opt_calc_index_goodness(
 
   /* At least for now we don't support using FTS indexes, or
   virtual index for queries done through InnoDB's own SQL parser. */
+#ifdef XTRABACKUP
+  if (dict_index_is_online_ddl(index) || (index->type & DICT_FTS) ||
+      dict_index_is_vector(index) || dict_index_has_virtual(index)) {
+#else
   if (dict_index_is_online_ddl(index) || (index->type & DICT_FTS) ||
       dict_index_has_virtual(index)) {
+#endif /* XTRABACKUP */
     return (0);
   }
 

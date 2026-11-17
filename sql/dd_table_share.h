@@ -40,6 +40,19 @@ namespace dd {
 class Table;
 class Abstract_table;
 
+#ifdef XTRABACKUP
+/**
+  Names of Index::options() options which Percona Server uses to identify and
+  store information about its vector indexes. A vector index is stored as an
+  IT_MULTIPLE index; PERCONA_VECTOR_INDEX_MARKER_KEY is what tells it apart.
+  xtrabackup reads these from the SDI of a table taken from Percona Server.
+*/
+constexpr const char *PERCONA_VECTOR_INDEX_MARKER_KEY = "PS_is_vector_index";
+constexpr const char *PERCONA_VECTOR_INDEX_TYPE_KEY = "PS_vector_index_type";
+constexpr const char *PERCONA_VECTOR_INDEX_PARAMS_KEY =
+    "PS_vector_index_params";
+#endif /* XTRABACKUP */
+
 enum class enum_column_types;
 }  // namespace dd
 
