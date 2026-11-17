@@ -73,6 +73,9 @@ struct Dsn {
   const char *password{nullptr};
   uint port{0};
   const char *socket{nullptr};
+  /** The OpenID Connect ID token file that authenticates the user instead of
+  a password, or nullptr. */
+  const char *id_token_file{nullptr};
   Tls_overrides tls{};
 
   /** Apply the TLS settings to a handle that has not connected yet. The
