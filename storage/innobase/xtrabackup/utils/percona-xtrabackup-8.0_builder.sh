@@ -182,9 +182,6 @@ get_sources(){
     sed -i "s:@@XB_REVISION@@:${REVISION}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     sed -i "s:@@RPM_RELEASE@@:${RPM_RELEASE}:g" storage/innobase/xtrabackup/utils/percona-xtrabackup.spec
     #
-    # == fix for resolute ==
-    sed -i.bak -z 's|IF(NOT WIN32)\n  ADD_COMPILE_FLAGS(${ZLIB_SRCS} COMPILE_FLAGS "-fvisibility=hidden")\nENDIF()|IF(NOT WIN32)\n  ADD_COMPILE_FLAGS(${ZLIB_SRCS} COMPILE_FLAGS "-fvisibility=hidden")\n  ADD_COMPILE_FLAGS(${ZLIB_SRCS} COMPILE_FLAGS "-fno-lto")\nENDIF()|' extra/zlib/zlib-1.2.13/CMakeLists.txt
-    #
     # create a PXB tar
     cd ${WORKDIR}/percona-xtrabackup
     tar --owner=0 --group=0 --exclude=.bzr --exclude=.git -czf ${PXBDIR}.tar.gz ${PXBDIR}
