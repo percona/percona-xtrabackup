@@ -214,6 +214,59 @@ The backup is prepared. To restore the backup use the `--copy-back` option.
 If the keyring has been rotated, you must restore the specific keyring used
 to take and prepare the backup.
 
+## Use the `component_percona_keyring_encrypted_file` component
+
+The `component_percona_keyring_encrypted_file` component is a Percona Server
+keyring component that stores keys in a password-protected file. The
+encryption key of the keyring file is derived from the password with
+PBKDF2-HMAC-SHA256.
+
+An example of `./bin/mysqld.my`:
+
+```
+{
+   "components": "file://component_percona_keyring_encrypted_file"
+}
+```
+
+An example of `/lib/plugin/component_percona_keyring_encrypted_file.cnf`:
+
+```
+{
+   "path": "/var/lib/mysql-keyring/keyring_encrypted_file",
+   "read_only": false,
+   "password_file": "/etc/mysql/keyring_password"
+}
+```
+
+The configuration must contain exactly one of `password` or `password_file`.
+The optional `iterations` attribute sets the number of PBKDF2 iterations.
+
+The component has no special requirements for backing up a database that
+contains encrypted InnoDB tablespaces:
+
+```
+xtrabackup --backup --target-dir=/data/backup --user=root
+```
+
+**WARNING**: *xtrabackup* does not copy the keyring file or the password
+file into the backup directory. To prepare the backup, the keyring file
+and the password must be available.
+
+### Prepare the backup with the `component_percona_keyring_encrypted_file` component
+
+Pass the component configuration with the `--component-keyring-config`
+option. The file name must be `component_percona_keyring_encrypted_file.cnf`:
+
+```
+xtrabackup --prepare --target-dir=/data/backup \
+--component-keyring-config=/lib/plugin/component_percona_keyring_encrypted_file.cnf
+```
+
+The backup is prepared. To restore the backup use the `--copy-back` option.
+If the keyring has been rotated, you must restore the specific keyring used
+to take and prepare the backup.
+
 ## Incremental encrypted InnoDB tablespace backups with `keyring_file`
 
 The process of taking incremental backups with InnoDB tablespace encryption
