@@ -92,6 +92,28 @@ aes_return_status aes_decrypt(const unsigned char *source,
                               Keyring_aes_opmode mode, const unsigned char *iv,
                               bool padding, size_t *decrypted_length);
 
+/**
+  Encrypt using a password: derives a 256-bit AES key via PBKDF2-HMAC-SHA256
+  and then encrypts with the requested mode.
+*/
+aes_return_status aes_encrypt_pbkdf2(
+    const unsigned char *source, unsigned int source_length,
+    unsigned char *dest, const unsigned char *password, size_t password_len,
+    const unsigned char *salt, size_t salt_len, unsigned int iterations,
+    Keyring_aes_opmode mode, const unsigned char *iv, bool padding,
+    size_t *encrypted_length);
+
+/**
+  Decrypt using a password: derives a 256-bit AES key via PBKDF2-HMAC-SHA256
+  and then decrypts with the requested mode.
+*/
+aes_return_status aes_decrypt_pbkdf2(
+    const unsigned char *source, unsigned int source_length,
+    unsigned char *dest, const unsigned char *password, size_t password_len,
+    const unsigned char *salt, size_t salt_len, unsigned int iterations,
+    Keyring_aes_opmode mode, const unsigned char *iv, bool padding,
+    size_t *decrypted_length);
+
 }  // namespace keyring_common::aes_encryption
 
 #endif  // !AES_INCLUDED

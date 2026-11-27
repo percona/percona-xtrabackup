@@ -1,0 +1,4 @@
+--source ../inc/have_percona_component_keyring_encrypted_file.inc
+
+--let $DLOPEN_CHECKER_LIBRARY_PATH = $PERCONA_KEYRING_ENCRYPTED_FILE_COMPONENT_DIR/$PERCONA_KEYRING_ENCRYPTED_FILE_COMPONENT
+--source include/keyring_tests/mats/dynamic_loading.inc
